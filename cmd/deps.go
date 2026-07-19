@@ -20,6 +20,7 @@ type Deps struct {
 	Out      io.Writer
 	ErrOut   io.Writer
 	Store    *store.Store
+	DataRoot string
 	CacheDir string
 	GH       *gh.Client
 	Version  string
@@ -51,6 +52,7 @@ func newDeps(version string) (*Deps, error) {
 		Out:      os.Stdout,
 		ErrOut:   os.Stderr,
 		Store:    store.New(root),
+		DataRoot: root,
 		CacheDir: cacheDir,
 		GH:       ghClient,
 		Version:  version,

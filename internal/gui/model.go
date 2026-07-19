@@ -26,15 +26,17 @@ type Config struct {
 // model is the shirei-side binding state: the latest session snapshot plus
 // widget-local buffers.
 type model struct {
-	cfg       Config
-	sess      *ui.Session
-	state     ui.State
-	filter    string
-	auditGrid bool
-	about     bool
-	cols      int // current grid columns, derived from live width
-	cardW     int // current card width in px, derived from live width
-	cardH     int // current card height in px
+	cfg          Config
+	sess         *ui.Session
+	state        ui.State
+	filter       string
+	auditGrid    bool
+	about        bool
+	settingsOpen bool
+	versionBuf   string
+	cols         int // current grid columns, derived from live width
+	cardW        int // current card width in px, derived from live width
+	cardH        int // current card height in px
 }
 
 func newModel(cfg Config) *model {

@@ -14,10 +14,46 @@ func (m *model) sidebar() {
 		Label("✦", FontSize(22), TextColorVec(toneColor(2)))
 		if Button(0, "Games") {
 			m.about = false
+			m.settingsOpen = false
+		}
+		if Button(0, "Settings") {
+			m.about = false
+			m.openSettings()
 		}
 		if Button(0, "About") {
+			m.settingsOpen = false
 			m.about = true
 		}
+	})
+}
+
+// openSettings primes the settings modal from the session.
+func (m *model) openSettings() {
+	if m.sess != nil {
+		m.versionBuf = m.sess.Settings().DefaultVersion
+	}
+	m.settingsOpen = true
+}
+
+func (m *model) settingsModal() {
+	Modal(480, func() { m.settingsOpen = false }, func() {
+		Container(Attrs(Pad(18), Gap(10), BackgroundVec(bgPanel)), func() {
+			txt("Settings")
+			muted("Default OptiScaler version (tag or 'latest')")
+			TextInput(&m.versionBuf)
+			if m.sess == nil {
+				return
+			}
+			if Button(SymIRight, "Apply") {
+				m.sess.SetDefaultVersion(m.versionBuf)
+			}
+			if Button(SymIRight, "Clear OptiScaler cache") {
+				m.sess.ClearBundleCache()
+			}
+			if Button(SymILeft, "Close") {
+				m.settingsOpen = false
+			}
+		})
 	})
 }
 
@@ -26,6 +62,9 @@ func (m *model) toolbar(ctx context.Context) {
 	Container(Attrs(Expand, Row, CrossMid, Gap(10), Pad2(8, 4)), func() {
 		if m.sess != nil && Button(SymIRight, "Scan Games") {
 			m.sess.Scan(ctx)
+		}
+		if m.sess != nil && Button(SymIPlus, "Add Game") {
+			m.sess.PickAndAddDirectory(ctx)
 		}
 		Container(Attrs(Grow(1), MinSize(140, 34), MaxSizeVec(Vec2{420, 34})), func() {
 			TextInput(&m.filter)

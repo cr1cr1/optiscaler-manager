@@ -34,6 +34,8 @@ func (m *model) rootView() {
 		m.toastOverlay()
 		if m.about {
 			m.aboutModal()
+		} else if m.settingsOpen {
+			m.settingsModal()
 		} else if m.state.Confirm != nil {
 			m.confirmModal()
 		} else if m.state.Selected != "" {
