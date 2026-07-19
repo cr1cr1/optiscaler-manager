@@ -1,104 +1,116 @@
 package gui
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/cr1cr1/optiscaler-manager/internal/app"
+	"github.com/cr1cr1/optiscaler-manager/internal/covers"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/gh"
+	"github.com/cr1cr1/optiscaler-manager/internal/store"
+	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
-func entry(name, appid string, status domain.Status, mod time.Time) app.LibraryEntry {
-	return app.LibraryEntry{
-		Game:    domain.Game{AppID: appid, Name: name, InstallDir: "/games/" + name},
-		Status:  status,
-		ModTime: mod,
+// guiFakes builds a session against the same fakes as the ui package tests.
+func guiFakes(t *testing.T) (*ui.Session, string) {
+	t.Helper()
+	var srv *httptest.Server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/optiscaler/OptiScaler/releases", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `[{"tag_name":"v0.9.4-test","prerelease":false,"assets":[{"name":"Optiscaler_test.7z","browser_download_url":%q,"size":100}]}]`, srv.URL+"/bundle")
+	})
+	mux.HandleFunc("/bundle", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, filepath.Join("..", "installer", "testdata", "bundle.7z"))
+	})
+	mux.HandleFunc("/cdn/", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) })
+	mux.HandleFunc("/search/", func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, `{"items":[]}`) })
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	root := t.TempDir()
+	steamRoot := t.TempDir()
+	gameRoot := filepath.Join(steamRoot, "steamapps", "common", "GameOne")
+	bin := filepath.Join(gameRoot, "bin")
+	writeGUIFile(t, filepath.Join(steamRoot, "steamapps", "libraryfolders.vdf"),
+		`"libraryfolders" { "0" { "path" "`+steamRoot+`" } }`)
+	writeGUIFile(t, filepath.Join(steamRoot, "steamapps", "appmanifest_100.acf"),
+		`"AppState" { "appid" "100" "name" "Game One" "installdir" "GameOne" }`)
+	writeGUIFile(t, filepath.Join(bin, "gameone.exe"), "GAME")
+	writeGUIFile(t, filepath.Join(bin, "nvngx_dlss.dll"), "DLSS")
+
+	sess := ui.NewSession(ui.Deps{
+		Store:     store.New(root),
+		GH:        gh.NewWithBaseURL(nil, filepath.Join(root, "cache"), srv.URL),
+		Covers:    covers.NewWithBase(nil, filepath.Join(root, "covers"), srv.URL+"/cdn/%s", srv.URL+"/search/"),
+		CacheDir:  filepath.Join(root, "cache"),
+		SteamRoot: steamRoot,
+	})
+	return sess, gameRoot
+}
+
+func writeGUIFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestActionListSortsActionableFirst(t *testing.T) {
-	now := time.Now()
-	rows := []app.LibraryEntry{
-		entry("Bravo", "2", "", now),                       // normal, newest
-		entry("Alpha", "1", domain.StatusFailed, now.Add(-time.Hour)), // failed, oldest
-		entry("Charlie", "3", "", now.Add(-time.Minute)),   // normal, older
-	}
-	sortRows(rows)
+func TestGUIBindsSessionState(t *testing.T) {
+	sess, _ := guiFakes(t)
+	m := newModel(Config{Session: sess})
 
-	if rows[0].Game.Name != "Alpha" {
-		t.Errorf("actionable (failed) install should sort first, got %s", rows[0].Game.Name)
+	sess.Scan(context.Background())
+	deadline := time.Now().Add(15 * time.Second)
+	for m.state.StatusLine != "1 games" && time.Now().Before(deadline) {
+		select {
+		case <-sess.Events():
+			m.drain()
+		case <-time.After(20 * time.Millisecond):
+		}
 	}
-	if rows[1].Game.Name != "Bravo" || rows[2].Game.Name != "Charlie" {
-		t.Errorf("recency order broken: %v", []string{rows[1].Game.Name, rows[2].Game.Name})
+	if len(m.state.Rows) != 1 {
+		t.Fatalf("model state not bound: %+v", m.state)
 	}
-	for i, r := range rows {
-		t.Logf("%d: %s (status=%q)", i, r.Game.Name, r.Status)
+	if m.state.Rows[0].Title != "Game One" {
+		t.Errorf("row title %q", m.state.Rows[0].Title)
 	}
+	t.Logf("bound state: %s, %d rows", m.state.StatusLine, len(m.state.Rows))
 }
 
-func TestFilterNarrowsList(t *testing.T) {
-	rows := []app.LibraryEntry{
-		entry("Cyberpunk 2077", "1091500", "", time.Now()),
-		entry("The Witcher 3", "292030", "", time.Now()),
-		entry("ELDEN RING", "1245620", "", time.Now()),
+func TestGUIFilterSyncsToSession(t *testing.T) {
+	sess, _ := guiFakes(t)
+	m := newModel(Config{Session: sess})
+	m.filter = "cyber"
+	m.syncFilter()
+	if got := sess.Snapshot().Query; got != "cyber" {
+		t.Errorf("session query %q, want cyber", got)
 	}
-
-	cases := []struct {
-		query string
-		want  []string
-	}{
-		{"cyber", []string{"Cyberpunk 2077"}},
-		{"WITCHER", []string{"The Witcher 3"}},
-		{"elden", []string{"ELDEN RING"}},
-		{"1091500", []string{"Cyberpunk 2077"}},
-		{"", []string{"Cyberpunk 2077", "The Witcher 3", "ELDEN RING"}},
-		{"nothing-matches-this", nil},
-	}
-	for _, tc := range cases {
-		got := filterRows(rows, tc.query)
-		var names []string
-		for _, r := range got {
-			names = append(names, r.Game.Name)
-		}
-		if len(names) != len(tc.want) {
-			t.Errorf("filter %q: got %v, want %v", tc.query, names, tc.want)
-			continue
-		}
-		for i := range names {
-			if names[i] != tc.want[i] {
-				t.Errorf("filter %q: got %v, want %v", tc.query, names, tc.want)
-				break
-			}
-		}
-		t.Logf("filter %q → %v", tc.query, names)
-	}
-}
-
-func TestEACModalShownBeforeInstall(t *testing.T) {
-	protected := entry("Protected Game", "1", "", time.Now())
-	protected.EAC = true
-	if decideInstall(protected) != confirmEAC {
-		t.Error("EAC-protected game must route to the confirmation modal")
-	}
-	clean := entry("Clean Game", "2", "", time.Now())
-	if decideInstall(clean) != installNow {
-		t.Error("clean game must install without the modal")
-	}
-	t.Log("EAC gating: protected → modal, clean → direct")
 }
 
 func TestRenderToPNGSmoke(t *testing.T) {
 	m := newModel(Config{AuditGrid: false})
-	m.rows = []app.LibraryEntry{
-		entry("Cyberpunk 2077", "1091500", domain.StatusCommitted, time.Now()),
-		entry("Broken Game", "42", domain.StatusFailed, time.Now()),
+	m.state = ui.State{
+		StatusLine: "2 games",
+		Mode:       ui.ViewGrid,
+		Rows: []ui.GameRow{
+			{Title: "Cyberpunk 2077", AppID: "1091500", Status: domain.StatusCommitted,
+				TechBadges: []ui.Badge{{Label: "DLSS", Tone: ui.ToneGreen}}, CoverPath: ""},
+			{Title: "Broken Game", AppID: "42", Status: domain.StatusFailed, Actionable: true},
+		},
+		Toasts: []ui.Toast{{Text: "Installed Cyberpunk 2077", AddedAt: time.Now()}},
 	}
-	sortRows(m.rows)
 
 	out := filepath.Join(t.TempDir(), "frame.png")
-	if err := renderToPNG(out, 900, 600, m.rootView); err != nil {
+	if err := renderToPNG(out, 1000, 700, m.rootView); err != nil {
 		t.Fatalf("renderToPNG: %v", err)
 	}
 	st, err := os.Stat(out)
@@ -108,5 +120,22 @@ func TestRenderToPNGSmoke(t *testing.T) {
 	if st.Size() == 0 {
 		t.Fatal("PNG is empty")
 	}
-	t.Logf("smoke frame: %s (%d bytes)", out, st.Size())
+	t.Logf("smoke frame: %d bytes", st.Size())
+}
+
+func TestRenderToPNGSmokeWithConfirm(t *testing.T) {
+	m := newModel(Config{})
+	m.state = ui.State{
+		StatusLine: "1 games",
+		Rows:       []ui.GameRow{{Title: "Protected", AppID: "1", EAC: true}},
+		Confirm:    &ui.Confirmation{Kind: ui.ConfirmEAC, GameDir: "/g/p", Message: "Protected uses Easy Anti-Cheat. Installing OptiScaler may result in a ban."},
+	}
+	out := filepath.Join(t.TempDir(), "frame.png")
+	if err := renderToPNG(out, 1000, 700, m.rootView); err != nil {
+		t.Fatalf("renderToPNG with confirm modal: %v", err)
+	}
+	if st, _ := os.Stat(out); st == nil || st.Size() == 0 {
+		t.Fatal("empty PNG")
+	}
+	t.Log("confirm modal renders")
 }

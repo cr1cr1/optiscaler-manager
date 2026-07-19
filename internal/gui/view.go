@@ -1,23 +1,27 @@
 package gui
 
 import (
-	"path/filepath"
 	"strings"
 
 	. "go.hasen.dev/shirei"
 	. "go.hasen.dev/shirei/widgets"
 
-	"github.com/cr1cr1/optiscaler-manager/internal/app"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
 // rootView re-declares the whole window each frame (immediate mode).
 func (m *model) rootView() {
+	m.drain()
+	m.syncFilter()
 	Container(Attrs(Viewport, Background(220, 10, 97, 1)), func() {
 		Container(Attrs(Pad(14), Gap(10)), func() {
 			Container(Attrs(Row, CrossMid, Gap(10)), func() {
 				Label("optiscaler-manager")
-				Label(m.status)
+				if m.state.Busy != "" {
+					Label(m.state.Busy)
+				}
+				Label(m.state.StatusLine)
 			})
 			TextInput(&m.filter)
 			if m.auditGrid {
@@ -25,10 +29,11 @@ func (m *model) rootView() {
 			} else {
 				m.actionList()
 			}
+			m.toastStrip()
 		})
-		if m.eacPending != "" {
-			m.eacModal()
-		} else if m.selected != "" {
+		if m.state.Confirm != nil {
+			m.confirmModal()
+		} else if m.state.Selected != "" {
 			m.dashboard()
 		}
 	})
@@ -36,15 +41,15 @@ func (m *model) rootView() {
 
 // actionList is the fuzzy-filtered, actionable-first virtualized game list.
 func (m *model) actionList() {
-	rows := filterRows(m.rows, m.filter)
+	rows := m.visibleRows()
 	VirtualListView("games", len(rows),
-		func(i int) any { return rows[i].Game.InstallDir },
+		func(i int) any { return rows[i].InstallDir },
 		func(i int, w float32) float32 { return 30 },
 		func(i int, w float32) {
 			e := rows[i]
 			Container(Attrs(Row, CrossMid, Gap(10), Pad2(3, 6), MinSize(w, 30)), func() {
 				badge := ""
-				if actionable(e.Status) {
+				if e.Actionable {
 					badge = " [" + string(e.Status) + "]"
 				} else if e.Status == domain.StatusCommitted {
 					badge = " [installed]"
@@ -52,12 +57,16 @@ func (m *model) actionList() {
 				if e.EAC {
 					badge += " [EAC]"
 				}
-				Label(e.Game.Name + badge)
-				if len(e.Tech) > 0 {
-					Label(strings.Join(e.Tech, ","))
+				Label(e.Title + badge)
+				var tech []string
+				for _, b := range e.TechBadges {
+					tech = append(tech, b.Label)
 				}
-				if PressAction() {
-					m.selected = e.Game.InstallDir
+				if len(tech) > 0 {
+					Label(strings.Join(tech, ","))
+				}
+				if PressAction() && m.sess != nil {
+					m.sess.Select(e.InstallDir)
 				}
 			})
 		})
@@ -65,75 +74,105 @@ func (m *model) actionList() {
 
 // dashboard is the per-game modal with status and actions.
 func (m *model) dashboard() {
-	e := m.selectedEntry()
+	e := m.selectedRow()
 	if e == nil {
-		m.selected = ""
+		if m.sess != nil {
+			m.sess.Select("")
+		}
 		return
 	}
-	Modal(520, func() { m.selected = "" }, func() {
+	Modal(520, func() {
+		if m.sess != nil {
+			m.sess.Select("")
+		}
+	}, func() {
 		Container(Attrs(Pad(18), Gap(8)), func() {
-			Label(e.Game.Name)
-			Label(e.Game.InstallDir)
-			Label("Status: " + statusText(*e))
-			if m.busy {
+			Label(e.Title)
+			Label(e.InstallDir)
+			Label("Status: " + statusLabel(e))
+			if m.state.Busy != "" {
 				Label("Working…")
 				return
 			}
-			if Button(SymIRight, "Install") {
-				if decideInstall(*e) == confirmEAC {
-					m.eacPending = e.Game.InstallDir
-				} else {
-					go m.install(e.Game.InstallDir, false)
-				}
+			if m.sess == nil {
+				return
 			}
-			if e.Status == domain.StatusCommitted && Button(SymIRight, "Uninstall") {
-				go m.uninstall(e.Game.InstallDir)
+			if Button(SymIRight, quickLabel(e)) {
+				m.sess.QuickInstall(e.InstallDir)
 			}
-			if actionable(e.Status) && Button(SymIRight, "Rollback") {
-				go m.rollback(e.Game.InstallDir)
+			if e.Actionable && Button(SymIRight, "Rollback") {
+				m.sess.Rollback(e.InstallDir)
 			}
-			if e.Status == domain.StatusCommitted && e.InjectionDir != "" &&
-				Button(SymIRight, "Open OptiScaler.ini in editor") {
-				go m.openEditor(filepath.Join(e.InjectionDir, "OptiScaler.ini"))
+			if e.Status == domain.StatusCommitted && Button(SymIRight, "Open OptiScaler.ini in editor") {
+				m.sess.OpenINI(e.InstallDir)
 			}
 			if Button(SymILeft, "Close") {
-				m.selected = ""
+				m.sess.Select("")
 			}
 		})
 	})
 }
 
-// eacModal gates installs into anti-cheat-protected games.
-func (m *model) eacModal() {
-	Modal(460, func() { m.eacPending = "" }, func() {
+// confirmModal renders the session's pending consent gate.
+func (m *model) confirmModal() {
+	c := m.state.Confirm
+	Modal(460, func() {
+		if m.sess != nil {
+			m.sess.AnswerConfirm(false)
+		}
+	}, func() {
 		Container(Attrs(Pad(18), Gap(8)), func() {
-			Label("This game uses Easy Anti-Cheat.")
-			Label("Installing OptiScaler into it may result in a ban.")
-			if Button(SymIRight, "Install anyway") {
-				dir := m.eacPending
-				m.eacPending = ""
-				m.selected = ""
-				go m.install(dir, true)
+			Label(c.Message)
+			if m.sess == nil {
+				return
+			}
+			if Button(SymIRight, "Proceed") {
+				m.sess.AnswerConfirm(true)
 			}
 			if Button(SymILeft, "Cancel") {
-				m.eacPending = ""
+				m.sess.AnswerConfirm(false)
 			}
 		})
 	})
+}
+
+// toastStrip renders active session toasts under the list.
+func (m *model) toastStrip() {
+	for _, t := range m.state.Toasts {
+		prefix := ""
+		if t.Warn {
+			prefix = "! "
+		}
+		Label(prefix + t.Text)
+	}
 }
 
 // auditTable is the raw, sortable dump behind --audit-grid.
 func (m *model) auditTable() {
 	Table("audit", 26,
-		[]TableColumn[app.LibraryEntry]{
-			{Label: "Name", Render: func(r app.LibraryEntry) { Label(r.Game.Name) },
-				Less: func(a, b app.LibraryEntry) bool { return a.Game.Name < b.Game.Name }},
-			{Label: "AppID", Width: 90, Render: func(r app.LibraryEntry) { Label(r.Game.AppID) }},
-			{Label: "Tech", Width: 150, Render: func(r app.LibraryEntry) { Label(strings.Join(r.Tech, ",")) }},
-			{Label: "Status", Width: 110, Render: func(r app.LibraryEntry) { Label(statusText(r)) }},
-			{Label: "Path", Render: func(r app.LibraryEntry) { Label(r.Game.InstallDir) }},
+		[]TableColumn[ui.GameRow]{
+			{Label: "Name", Render: func(r ui.GameRow) { Label(r.Title) },
+				Less: func(a, b ui.GameRow) bool { return a.Title < b.Title }},
+			{Label: "AppID", Width: 90, Render: func(r ui.GameRow) { Label(r.AppID) }},
+			{Label: "Status", Width: 110, Render: func(r ui.GameRow) { Label(statusLabel(&r)) }},
+			{Label: "Path", Render: func(r ui.GameRow) { Label(r.InstallDir) }},
 		},
-		filterRows(m.rows, m.filter),
-		func(r app.LibraryEntry) any { return r.Game.InstallDir },
+		m.visibleRows(),
+		func(r ui.GameRow) any { return r.InstallDir },
 		0)
+}
+
+func statusLabel(e *ui.GameRow) string {
+	if e.Status == "" {
+		return "not installed"
+	}
+	return string(e.Status)
+}
+
+// quickLabel is the toggle caption matching the reference client.
+func quickLabel(e *ui.GameRow) string {
+	if e.Status == domain.StatusCommitted {
+		return "Uninstall"
+	}
+	return "Install"
 }

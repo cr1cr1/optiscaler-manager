@@ -211,6 +211,24 @@ Append-only milestone and task log. Newest at the bottom.
   requires consent, toast lifecycle + expiry, open-ini opener call,
   sort/filter semantics. `-race` clean.
 
+## 2026-07-19 — P3: GUI refactored onto ui.Session
+
+- `internal/gui` is now a thin shirei binding: `model` holds only the latest
+  `ui.State` snapshot + the filter text buffer; views render `ui.GameRow`
+  verbatim and forward commands (`QuickInstall`, `Rollback`, `OpenINI`,
+  `Select`, `AnswerConfirm`, `SetQuery`). The v0.1 view model (sort/filter/
+  decide logic) was deleted — it lives in `internal/ui` now.
+- Dashboard drives the session's QuickInstall toggle; the confirm modal
+  renders `ui.Confirmation` (EAC/stale-cache) and answers it.
+- `cmd/gui.go` builds the session (store, gh, covers, cache) and starts a
+  scan on launch.
+- Bug found by the binding test: `drain()` must snapshot unconditionally
+  after consuming events (previously a caller-side read could leave the
+  model stale forever).
+- Tests: `TestGUIBindsSessionState`, `TestGUIFilterSyncsToSession`, PNG
+  smoke (list + confirm-modal frames). Sort/filter/EAC unit tests live in
+  `internal/ui` since P2.
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`
