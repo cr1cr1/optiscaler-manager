@@ -49,6 +49,7 @@ type CLI struct {
 	Install   InstallCmd   `cmd:"" help:"Install OptiScaler into a game directory"`
 	Uninstall UninstallCmd `cmd:"" help:"Reverse a committed install"`
 	Rollback  RollbackCmd  `cmd:"" help:"Restore a game after an interrupted or failed install"`
+	Gui       GUICmd       `cmd:"" default:"withargs" help:"Launch the graphical interface (default)"`
 
 	args []string // original args, used to detect --help before side effects
 }

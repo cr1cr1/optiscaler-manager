@@ -1,15 +1,11 @@
 package optiscalermanager
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
-	"github.com/rs/zerolog/log"
-
-	"github.com/cr1cr1/optiscaler-manager/internal/classify"
-	"github.com/cr1cr1/optiscaler-manager/internal/discovery"
-	"github.com/cr1cr1/optiscaler-manager/internal/domain"
-	"github.com/cr1cr1/optiscaler-manager/internal/installer"
+	"github.com/cr1cr1/optiscaler-manager/internal/app"
 )
 
 // ScanCmd lists locally installed Steam games with detected upscalers.
@@ -19,51 +15,24 @@ type ScanCmd struct {
 
 // Run executes the scan.
 func (c *ScanCmd) Run(d *Deps) error {
-	roots := []string{}
-	if c.SteamRoot != "" {
-		roots = append(roots, c.SteamRoot)
-	} else {
-		roots = discovery.SteamRoots()
+	entries, err := app.ScanLibrary(context.Background(), d.Store, c.SteamRoot)
+	if err != nil {
+		return err
 	}
-	if len(roots) == 0 {
-		return fmt.Errorf("no Steam installation found (set OM_STEAM_ROOT or use --steam-root)")
-	}
-
-	seen := map[string]bool{}
-	for _, root := range roots {
-		games, err := discovery.ScanSteam(root)
-		if err != nil {
-			log.Warn().Err(err).Str("root", root).Msg("scan failed for root")
-			fmt.Fprintf(d.ErrOut, "warning: %s: %v\n", root, err)
-			continue
+	for _, e := range entries {
+		tech := "-"
+		if len(e.Tech) > 0 {
+			tech = strings.Join(e.Tech, ",")
 		}
-		for _, g := range games {
-			if seen[g.InstallDir] {
-				continue
-			}
-			seen[g.InstallDir] = true
-			printGame(d, g)
+		marker := ""
+		if e.EAC {
+			marker = " [EAC]"
 		}
+		status := ""
+		if e.Status != "" {
+			status = fmt.Sprintf(" [%s]", e.Status)
+		}
+		fmt.Fprintf(d.Out, "%s\t%s\t%s\t%s%s%s\n", e.Game.Name, e.Game.AppID, tech, e.Game.InstallDir, marker, status)
 	}
 	return nil
-}
-
-func printGame(d *Deps, g domain.Game) {
-	kinds := map[string]bool{}
-	for _, c := range classify.Dir(g.InstallDir) {
-		kinds[c.Kind.String()] = true
-	}
-	tech := "-"
-	if len(kinds) > 0 {
-		var list []string
-		for k := range kinds {
-			list = append(list, k)
-		}
-		tech = strings.Join(list, ",")
-	}
-	marker := ""
-	if installer.EACProtected(g.InstallDir) {
-		marker = " [EAC]"
-	}
-	fmt.Fprintf(d.Out, "%s\t%s\t%s\t%s%s\n", g.Name, g.AppID, tech, g.InstallDir, marker)
 }

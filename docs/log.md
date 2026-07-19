@@ -139,6 +139,34 @@ Append-only milestone and task log. Newest at the bottom.
   (end-to-end against httptest GitHub + fixture bundle, incl. uninstall),
   `TestStartupRecoveryFlagsInterruptedManifests`. Lint clean.
 
+## 2026-07-19 — M6: GUI (shirei Action List)
+
+- `internal/app` extracted as the shared orchestration both frontends
+  consume (second-consumer rule): `ScanLibrary` (scan + classify + EAC +
+  status + mtime + InjectionDir enrichment), `Install` (resolve → download →
+  transaction, `InstallOpts{AllowCached, EACOverride}`, typed
+  `ErrEACProtected`), `Uninstall`, `Rollback`, `ManifestIDFor`. cmd commands
+  refactored onto it; all M5 tests stayed green.
+- `internal/gui` (the only shirei importer): pure view model
+  (`sortRows` actionable-first then recency, `filterRows` substring/appid,
+  `decideInstall` EAC gating) + shirei views: filter TextInput, VirtualListView
+  Action List, per-game dashboard Modal (install/uninstall/rollback/open-ini),
+  EAC confirmation Modal, `--audit-grid` raw Table. Background work mutates
+  state under `WithFrameLock` + `RequestNextFrame`; domain packages never
+  import shirei.
+- `cmd/gui.go`: `Gui GUICmd \`cmd:"" default:"withargs"\`` — bare
+  `optiscaler-manager` launches the GUI.
+- Deps: go.hasen.dev/shirei **v0.5.2 pinned** (vendored). `f32` is an
+  unexported alias upstream; `float32` used directly.
+- Lint: ST1001 (dot imports) excluded for `internal/gui/` only — shirei's
+  documented idiom; exclusion lives at `linters.exclusions` (v2 config).
+- Tests: `TestActionListSortsActionableFirst`, `TestFilterNarrowsList`,
+  `TestEACModalShownBeforeInstall`, `TestRenderToPNGSmoke` (headless 5.5KB
+  PNG). Full suite + `-race` + golangci-lint all green.
+- Not covered by automated tests: the real window launch (needs a display;
+  `go run .` is banned by repo rules). First manual launch is a user
+  checkpoint.
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`

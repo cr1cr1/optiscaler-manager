@@ -6,6 +6,12 @@ github.com/alecthomas/kong
 github.com/andybalholm/brotli
 github.com/andybalholm/brotli/flate
 github.com/andybalholm/brotli/matchfinder
+# github.com/anthonynsimon/bild v0.14.0
+## explicit; go 1.21
+github.com/anthonynsimon/bild/blur
+github.com/anthonynsimon/bild/clone
+github.com/anthonynsimon/bild/convolution
+github.com/anthonynsimon/bild/parallel
 # github.com/bodgit/plumbing v1.3.0
 ## explicit; go 1.13
 github.com/bodgit/plumbing
@@ -29,11 +35,51 @@ github.com/bodgit/sevenzip/internal/zstd
 # github.com/bodgit/windows v1.0.1
 ## explicit; go 1.13
 github.com/bodgit/windows
+# github.com/cespare/xxhash/v2 v2.3.0
+## explicit; go 1.11
+github.com/cespare/xxhash/v2
+# github.com/cli/browser v1.3.0
+## explicit; go 1.21
+github.com/cli/browser
+# github.com/dboslee/lru v0.0.1
+## explicit; go 1.18
+github.com/dboslee/lru
+github.com/dboslee/lru/internal
+# github.com/ebitengine/purego v0.10.1
+## explicit; go 1.18
+github.com/ebitengine/purego
+github.com/ebitengine/purego/internal/cgo
+github.com/ebitengine/purego/internal/fakecgo
+github.com/ebitengine/purego/internal/strings
+github.com/ebitengine/purego/internal/xreflect
+# github.com/fsnotify/fsnotify v1.9.0
+## explicit; go 1.17
+github.com/fsnotify/fsnotify
+github.com/fsnotify/fsnotify/internal
+# github.com/go-text/typesetting v0.3.0
+## explicit; go 1.19
+github.com/go-text/typesetting/font
+github.com/go-text/typesetting/font/cff
+github.com/go-text/typesetting/font/cff/interpreter
+github.com/go-text/typesetting/font/opentype
+github.com/go-text/typesetting/font/opentype/tables
+github.com/go-text/typesetting/fontscan
+github.com/go-text/typesetting/harfbuzz
+github.com/go-text/typesetting/language
+github.com/go-text/typesetting/unicodedata
+# github.com/godbus/dbus/v5 v5.2.2
+## explicit; go 1.20
+github.com/godbus/dbus/v5
 # github.com/hashicorp/golang-lru/v2 v2.0.7
 ## explicit; go 1.18
 github.com/hashicorp/golang-lru/v2
 github.com/hashicorp/golang-lru/v2/internal
 github.com/hashicorp/golang-lru/v2/simplelru
+# github.com/jezek/xgb v1.1.1
+## explicit; go 1.11
+github.com/jezek/xgb
+github.com/jezek/xgb/shm
+github.com/jezek/xgb/xproto
 # github.com/joho/godotenv v1.5.1
 ## explicit; go 1.12
 github.com/joho/godotenv
@@ -85,9 +131,44 @@ github.com/stangelandcl/ppmd/internal/h7z
 github.com/ulikunitz/xz/internal/hash
 github.com/ulikunitz/xz/internal/xlog
 github.com/ulikunitz/xz/lzma
+# go.hasen.dev/generic v0.1.6
+## explicit; go 1.21
+go.hasen.dev/generic
+# go.hasen.dev/shirei v0.5.2
+## explicit; go 1.24.4
+go.hasen.dev/shirei
+go.hasen.dev/shirei/app
+go.hasen.dev/shirei/cocoabackend
+go.hasen.dev/shirei/internal/iconimg
+go.hasen.dev/shirei/internal/qwerty
+go.hasen.dev/shirei/internal/wayland/cursorshape
+go.hasen.dev/shirei/internal/wayland/os
+go.hasen.dev/shirei/internal/wayland/textinput
+go.hasen.dev/shirei/internal/wayland/wl
+go.hasen.dev/shirei/internal/wayland/wlclient
+go.hasen.dev/shirei/internal/wayland/wlcursor
+go.hasen.dev/shirei/internal/wayland/wlcursor/xcursor
+go.hasen.dev/shirei/internal/wayland/xdg
+go.hasen.dev/shirei/internal/wayland/xkbcommon
+go.hasen.dev/shirei/waylandbackend
+go.hasen.dev/shirei/widgets
+go.hasen.dev/shirei/win32backend
+go.hasen.dev/shirei/x11backend
 # go4.org v0.0.0-20260112195520-a5071408f32f
 ## explicit; go 1.24.0
 go4.org/readerutil
+# golang.org/x/image v0.29.0
+## explicit; go 1.23.0
+golang.org/x/image/ccitt
+golang.org/x/image/draw
+golang.org/x/image/math/f64
+golang.org/x/image/riff
+golang.org/x/image/tiff
+golang.org/x/image/tiff/lzw
+golang.org/x/image/vector
+golang.org/x/image/vp8
+golang.org/x/image/vp8l
+golang.org/x/image/webp
 # golang.org/x/sys v0.40.0
 ## explicit; go 1.24.0
 golang.org/x/sys/unix
@@ -101,4 +182,5 @@ golang.org/x/text/encoding/unicode
 golang.org/x/text/internal/utf8internal
 golang.org/x/text/runes
 golang.org/x/text/transform
+golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
