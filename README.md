@@ -20,6 +20,7 @@ model, and the milestone plan.
 
 ```
 optiscaler-manager                  # launch the GUI
+optiscaler-manager tui              # launch the terminal UI (same session core)
 optiscaler-manager gui --audit-grid # raw sortable table view
 optiscaler-manager scan             # list installed games (all stores) + upscalers/versions
 optiscaler-manager install <path>   # install OptiScaler into a game directory
