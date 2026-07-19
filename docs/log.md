@@ -20,6 +20,31 @@ Append-only milestone and task log. Newest at the bottom.
   vendor update.
 - README filled with project summary, status, and dev commands.
 
+## 2026-07-19 — M2b: classify
+
+- `internal/classify`: `Dir()` walks a game tree, matches DLL base names
+  (case-insensitive) against the DLSS/DLSS-FG/FSR/XeSS table, dedups by
+  (Kind, DLL), returns sorted components. Non-`.dll` files and `.git` skipped.
+- TDD: `TestClassifyDetectsKnownComponentDLLs` red first, then green.
+- Note: case-variant duplicates (e.g. `NVNGX_DLSS.DLL` vs `nvngx_dlss.dll`)
+  are kept as separate entries ("as found" semantics).
+
+## 2026-07-19 — M2c: gh client
+
+- `internal/gh`: `Client.Resolve(ctx, requested)` →
+  `(domain.ResolvedAsset, fromCache bool, err)` against the GitHub releases
+  API; asset selected by glob `Optiscaler_*.7z` (never exact name);
+  "latest" skips prereleases; missing tags fail loud.
+- `Client.Download` streams to temp + rename, computing SHA-256 en route.
+- Rate-limit handling: any API attempt starts a 15-min persisted cooldown;
+  inside cooldown, resolution serves `releases.json` cache with
+  `fromCache=true`; without cache → `ErrRateLimited`. No retry machinery.
+- Tests: glob match, cooldown/cache, requested-vs-resolved separation, and
+  a download SHA-256 test — all against httptest, zero real network.
+- Deviation: `Release.Prerelease` added (required for "latest" semantics);
+  client keeps an asset-name→URL index since `domain.ResolvedAsset` carries
+  no URL.
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`
