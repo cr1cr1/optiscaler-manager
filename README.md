@@ -34,7 +34,8 @@ optiscaler-manager rollback <path>  # restore after an interrupted/failed instal
 optiscaler-manager version
 ```
 
-Scanning covers Steam, Epic, GOG, and manually added folders (recursive);
+Scanning covers Steam, Epic, GOG (discovery is Windows-only), and manually
+added folders (recursive);
 the grid shows each game's store, installed OptiScaler version, and detected
 upscaler versions (DLSS/FSR/XeSS marketing names). Launch a game from its
 card or dashboard button (GUI) or the `l` key (TUI): Steam games go through

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -23,12 +24,6 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 )
-
-// emptyLibraryError mirrors the "no games found" error app.ScanAllLibraries
-// returns for an empty scan. For the interactive UI an empty library is a
-// settled state (the frontend shows empty-state guidance), never a failure.
-// (internal/app should export a sentinel; until then, match the message.)
-const emptyLibraryError = "no games found"
 
 // toastTTL is how long a toast stays visible.
 const toastTTL = 8 * time.Second
@@ -135,15 +130,25 @@ func NewSession(deps Deps) *Session {
 		deps.Launcher = launch.New(nil, "", nil)
 	}
 	return &Session{
-		deps:      deps,
-		events:    make(chan Event, 64),
-		st:        State{Mode: ViewGrid, StatusLine: "Ready"},
-		now:       time.Now,
-		opCancels: map[string]context.CancelFunc{},
-		openExternal: func(path string) error {
-			return exec.Command("xdg-open", path).Start()
-		},
-		pickDir: pickdir.Pick,
+		deps:         deps,
+		events:       make(chan Event, 64),
+		st:           State{Mode: ViewGrid, StatusLine: "Ready"},
+		now:          time.Now,
+		opCancels:    map[string]context.CancelFunc{},
+		openExternal: openExternal,
+		pickDir:      pickdir.Pick,
+	}
+}
+
+// openExternal opens path with the platform's default handler.
+func openExternal(path string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", path).Start()
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", path).Start()
+	default: // linux and the rest
+		return exec.Command("xdg-open", path).Start()
 	}
 }
 
@@ -161,8 +166,9 @@ func (s *Session) SetDefaultVersion(v string) {
 	}
 	s.mu.Lock()
 	s.deps.Settings.DefaultVersion = v
+	snap := s.deps.Settings
 	s.mu.Unlock()
-	if err := settings.Save(s.deps.SettingsRoot, s.deps.Settings); err != nil {
+	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
 		s.toast("settings not saved: "+err.Error(), true)
 		return
 	}
@@ -177,8 +183,9 @@ func (s *Session) SetLaunchTemplate(tmpl string) {
 	}
 	s.mu.Lock()
 	s.deps.Settings.LaunchTemplate = tmpl
+	snap := s.deps.Settings
 	s.mu.Unlock()
-	if err := settings.Save(s.deps.SettingsRoot, s.deps.Settings); err != nil {
+	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
 		s.toast("settings not saved: "+err.Error(), true)
 		return
 	}
@@ -256,12 +263,13 @@ func (s *Session) Scan(ctx context.Context) {
 	go func() {
 		s.emit(Event{Kind: EvScanStarted})
 		s.setBusy("Scanning…")
+		snap := s.Settings()
 		entries, err := app.ScanAllLibraries(ctx, s.deps.Store, app.ScanAllOptions{
 			SteamRoot: s.deps.SteamRoot,
-			ExtraDirs: s.deps.Settings.ExtraDirs,
+			ExtraDirs: snap.ExtraDirs,
 		})
 		if err != nil {
-			if err.Error() == emptyLibraryError {
+			if errors.Is(err, app.ErrNoGames) {
 				entries = nil // empty first-run library: settle at 0 games
 			} else {
 				s.setBusy("")
@@ -275,7 +283,7 @@ func (s *Session) Scan(ctx context.Context) {
 		for _, e := range entries {
 			rows = append(rows, s.toRow(ctx, e))
 		}
-		rows = s.mergeExtraDirs(ctx, rows)
+		rows = s.mergeExtraDirs(ctx, rows, snap.ExtraDirs)
 		sortRows(rows)
 		s.mu.Lock()
 		s.st.Rows = rows
@@ -362,8 +370,9 @@ func (s *Session) AddDirectory(dir string) {
 			s.deps.Settings.ExtraDirs = append(s.deps.Settings.ExtraDirs, entry.Game.InstallDir)
 		}
 	}
+	snap := s.deps.Settings
 	s.mu.Unlock()
-	if err := settings.Save(s.deps.SettingsRoot, s.deps.Settings); err != nil {
+	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
 		s.toast("settings not saved: "+err.Error(), true)
 		return
 	}
@@ -391,8 +400,9 @@ func (s *Session) PickAndAddDirectory(ctx context.Context) {
 }
 
 // mergeExtraDirs appends rows for directories the user added manually.
-func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow) []GameRow {
-	for _, d := range s.deps.Settings.ExtraDirs {
+// extraDirs must be a locked settings snapshot taken by the caller.
+func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow, extraDirs []string) []GameRow {
+	for _, d := range extraDirs {
 		entry, err := app.ManualEntry(d)
 		if err != nil {
 			log.Warn().Err(err).Str("dir", d).Msg("extra dir unavailable")
@@ -459,10 +469,6 @@ func (s *Session) doLaunch(gameDir string) {
 	if err != nil {
 		s.launchFailed(err, gameDir)
 		return
-	}
-	if _, argv, err := s.deps.Launcher.Command(target); err == nil {
-		log.Info().Str("store", target.Store.String()).Str("game", target.Name).
-			Str("argv0", argv[0]).Msg("launch requested")
 	}
 	if err := s.deps.Launcher.Launch(context.Background(), target); err != nil {
 		s.launchFailed(err, gameDir)
@@ -566,7 +572,7 @@ func (s *Session) doInstall(gameDir string, eacOK, cachedOK bool) {
 	}
 	s.opStarted("Installing…")
 	_, err := app.Install(ctx, s.deps.Store, s.deps.GH, s.deps.CacheDir, gameDir,
-		app.InstallOpts{AllowCached: cachedOK, EACOverride: eacOK, Requested: s.deps.Settings.DefaultVersion})
+		app.InstallOpts{AllowCached: cachedOK, EACOverride: eacOK, Requested: s.Settings().DefaultVersion})
 	s.finishOp(gameDir)
 	if errors.Is(err, context.Canceled) {
 		s.opCancelled(gameDir, pre)
@@ -653,6 +659,16 @@ func (s *Session) CancelOp(gameDir string) bool {
 		cancel()
 	}
 	return ok
+}
+
+// OpBusy reports whether gameDir has an op in flight. Frontends gate
+// per-game cancel affordances on it (a global busy flag would point the
+// button at the wrong game).
+func (s *Session) OpBusy(gameDir string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, busy := s.opCancels[gameDir]
+	return busy
 }
 
 func gameTitle(row *GameRow, dir string) string {

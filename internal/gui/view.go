@@ -96,43 +96,43 @@ func (m *model) dashboard() {
 			m.sess.Select("")
 		}
 	}, func() {
-	Container(Attrs(Pad(18), Gap(8), BackgroundVec(bgPanel)), func() {
-		txt(e.Title)
-		muted(e.InstallDir)
-		txt("Status: " + statusLabel(e))
-		if pills := versionPills(e); len(pills) > 0 {
-			Container(Attrs(Row, Gap(4)), func() {
-				for _, p := range pills {
-					badgePill(p.Label, p.Tone)
-				}
-			})
-		}
-		if m.state.Busy != "" {
-			muted("Working…")
-			if m.sess != nil && focusableButton(SymILeft, "Cancel") {
-				m.sess.CancelOp(e.InstallDir)
+		Container(Attrs(Pad(18), Gap(8), BackgroundVec(bgPanel)), func() {
+			txt(e.Title)
+			muted(e.InstallDir)
+			txt("Status: " + statusLabel(e))
+			if pills := versionPills(e); len(pills) > 0 {
+				Container(Attrs(Row, Gap(4)), func() {
+					for _, p := range pills {
+						badgePill(p.Label, p.Tone)
+					}
+				})
 			}
-			return
-		}
-		if m.sess == nil {
-			return
-		}
-		if focusableButton(SymIRight, quickLabel(e)) {
-			m.sess.QuickInstall(e.InstallDir)
-		}
-		if launchable(e) && focusableButton(0, "Launch") {
-			m.launchGame(*e)
-		}
-		if e.Actionable && focusableButton(SymIRight, "Rollback") {
-			m.sess.Rollback(e.InstallDir)
-		}
-		if e.Status == domain.StatusCommitted && focusableButton(SymIRight, "Open OptiScaler.ini in editor") {
-			m.sess.OpenINI(e.InstallDir)
-		}
-		if focusableButton(SymILeft, "Close") {
-			m.sess.Select("")
-		}
-	})
+			if m.state.Busy != "" {
+				muted("Working…")
+				if m.sess != nil && m.sess.OpBusy(e.InstallDir) && focusableButton(SymILeft, "Cancel") {
+					m.sess.CancelOp(e.InstallDir)
+				}
+				return
+			}
+			if m.sess == nil {
+				return
+			}
+			if focusableButton(SymIRight, quickLabel(e)) {
+				m.sess.QuickInstall(e.InstallDir)
+			}
+			if launchable(e) && focusableButton(0, "Launch") {
+				m.launchGame(*e)
+			}
+			if e.Actionable && focusableButton(SymIRight, "Rollback") {
+				m.sess.Rollback(e.InstallDir)
+			}
+			if e.Status == domain.StatusCommitted && focusableButton(SymIRight, "Open OptiScaler.ini in editor") {
+				m.sess.OpenINI(e.InstallDir)
+			}
+			if focusableButton(SymILeft, "Close") {
+				m.sess.Select("")
+			}
+		})
 	})
 }
 
@@ -144,18 +144,18 @@ func (m *model) confirmModal() {
 			m.sess.AnswerConfirm(false)
 		}
 	}, func() {
-	Container(Attrs(Pad(18), Gap(8), BackgroundVec(bgPanel)), func() {
-		txt(c.Message)
-		if m.sess == nil {
-			return
-		}
-		if focusableButton(SymIRight, "Proceed") {
-			m.sess.AnswerConfirm(true)
-		}
-		if focusableButton(SymILeft, "Cancel") {
-			m.sess.AnswerConfirm(false)
-		}
-	})
+		Container(Attrs(Pad(18), Gap(8), BackgroundVec(bgPanel)), func() {
+			txt(c.Message)
+			if m.sess == nil {
+				return
+			}
+			if focusableButton(SymIRight, "Proceed") {
+				m.sess.AnswerConfirm(true)
+			}
+			if focusableButton(SymILeft, "Cancel") {
+				m.sess.AnswerConfirm(false)
+			}
+		})
 	})
 }
 

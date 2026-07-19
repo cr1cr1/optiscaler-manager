@@ -98,10 +98,10 @@ func TestSanitizeNameRejectsUnsafe(t *testing.T) {
 	}
 
 	good := map[string]string{
-		"OptiScaler.dll":          "OptiScaler.dll",
-		"amd64/nvapi64.dll":       filepath.Join("amd64", "nvapi64.dll"),
-		"a\\b\\c.dll":             filepath.Join("a", "b", "c.dll"),
-		"dir with spaces/f.ini":   filepath.Join("dir with spaces", "f.ini"),
+		"OptiScaler.dll":        "OptiScaler.dll",
+		"amd64/nvapi64.dll":     filepath.Join("amd64", "nvapi64.dll"),
+		"a\\b\\c.dll":           filepath.Join("a", "b", "c.dll"),
+		"dir with spaces/f.ini": filepath.Join("dir with spaces", "f.ini"),
 	}
 	for in, want := range good {
 		got, err := SanitizeName(in)

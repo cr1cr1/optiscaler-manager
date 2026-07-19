@@ -15,13 +15,13 @@ import (
 
 // fakeCDN serves covers and store-search responses like Steam's services.
 type fakeCDN struct {
-	srv         *httptest.Server
-	coverHits   int
-	searchHits  int
-	knownAppID  string
-	knownName   string
-	coverBytes  []byte
-	failCovers  bool
+	srv        *httptest.Server
+	coverHits  int
+	searchHits int
+	knownAppID string
+	knownName  string
+	coverBytes []byte
+	failCovers bool
 }
 
 func newFakeCDN(t *testing.T) *fakeCDN {

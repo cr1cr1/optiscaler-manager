@@ -143,11 +143,11 @@ func TestInstallCommandRunsTransaction(t *testing.T) {
 func TestStartupRecoveryFlagsInterruptedManifests(t *testing.T) {
 	d, out := testDeps(t, nil)
 	m := &domain.Manifest{
-		ID:           "deadbeef",
+		ID:            "deadbeef",
 		SchemaVersion: domain.SchemaVersion,
-		Status:       domain.StatusFailed,
-		GameRoot:     "/games/somegame",
-		InstallDir:   "/games/somegame/bin",
+		Status:        domain.StatusFailed,
+		GameRoot:      "/games/somegame",
+		InstallDir:    "/games/somegame/bin",
 	}
 	if err := d.Store.Save(m); err != nil {
 		t.Fatal(err)

@@ -144,20 +144,20 @@ func Install(ctx context.Context, st *store.Store, req Request) (*domain.Manifes
 		dst := filepath.Join(installDir, fp.dstRel)
 		if _, err := os.Stat(dst); err == nil {
 			if err := installOverwrite(st, m, src, dst, backupFiles, fp.dstRel); err != nil {
-				return fail(ctx, st, m, err)
+				return fail(st, m, err)
 			}
 		} else {
 			if err := installCreate(st, m, src, dst, installDir); err != nil {
-				return fail(ctx, st, m, err)
+				return fail(st, m, err)
 			}
 		}
 		if err := st.Save(m); err != nil {
-			return fail(ctx, st, m, err)
+			return fail(st, m, err)
 		}
 	}
 
 	if err := applyCuratedINI(st, m); err != nil {
-		return fail(ctx, st, m, err)
+		return fail(st, m, err)
 	}
 
 	// Cancel boundary (post-INI write, pre-commit): the swap is done but not
@@ -168,10 +168,12 @@ func Install(ctx context.Context, st *store.Store, req Request) (*domain.Manifes
 
 	m.Status = domain.StatusCommitted
 	if err := st.Save(m); err != nil {
-		return fail(ctx, st, m, err)
+		return fail(st, m, err)
 	}
+	// The manifest is committed — that is the truth. A staging-cleanup
+	// failure afterwards is housekeeping, not an op failure.
 	if err := os.RemoveAll(staging); err != nil {
-		return m, fmt.Errorf("clean staging: %w", err)
+		log.Warn().Str("id", m.ID).Err(err).Msg("clean staging after commit")
 	}
 	return m, nil
 }
@@ -295,7 +297,7 @@ func applyCuratedINI(st *store.Store, m *domain.Manifest) error {
 }
 
 // fail marks the manifest failed and persists it before returning the error.
-func fail(_ context.Context, st *store.Store, m *domain.Manifest, cause error) (*domain.Manifest, error) {
+func fail(st *store.Store, m *domain.Manifest, cause error) (*domain.Manifest, error) {
 	m.Status = domain.StatusFailed
 	m.LastError = cause.Error()
 	if err := st.Save(m); err != nil {

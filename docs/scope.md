@@ -104,11 +104,12 @@ injection-method picker (dxgi only), native file dialogs inside shirei
 Added after v0.2 (waves W3–W5, release work W6). Decisions closed; reopen
 only with new evidence.
 
-- **Multi-store discovery**: Steam, Epic (.item manifests), GOG (registry +
-  `goggame-<id>.info`), macOS `/Applications` .app bundles, and manual
-  recursive roots (settings ExtraDirs). `ScanAll` merges in that order,
-  deduped by canonical install dir. `domain.Game` gains `Store` (enum;
-  `StoreSteam` is the zero value), `AppName`, `ExePath`, `CompatPrefix`.
+- **Multi-store discovery**: Steam, Epic (.item manifests), GOG (Windows
+  only — registry + `goggame-<id>.info`), macOS `/Applications` .app
+  bundles, and manual recursive roots (settings ExtraDirs). `ScanAll` merges
+  in that order, deduped by canonical install dir. `domain.Game` gains
+  `Store` (enum; `StoreSteam` is the zero value), `AppName`, `ExePath`,
+  `CompatPrefix`.
 - **Windows + macOS scanning**: OS-agnostic parsers are tested on every GOOS;
   OS probes are build-tagged per platform (Steam roots incl. Windows
   registry, Epic manifest dirs, GOG Windows registry behind a reader seam,

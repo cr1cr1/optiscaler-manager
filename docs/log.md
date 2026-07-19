@@ -345,6 +345,29 @@ Append-only milestone and task log. Newest at the bottom.
 - Stdlib only; no new dependencies, vendor/ untouched. Verified with
   `go test ./...` and `go vet ./...`, also under `GOFLAGS=-mod=vendor`.
 
+## 2026-07-20 — W3-T1: pever — PE version parser, marketing maps, OptiScaler version chain
+
+- TDD: red-first tests across `pe_test.go`, `versionmaps_test.go`,
+  `optiscaler_test.go`, `real_archive_test.go` before the implementation
+  (commit dae1360).
+- `internal/pever` (new, stdlib only, no cgo): hand-rolled PE32/PE32+
+  version-resource parser (`pe.go`). Every input is treated as hostile: all
+  reads bounds-checked, malformed input yields the sentinels `ErrNotPE` /
+  `ErrNoVersionInfo`, never panics. `FileVersion` normalizes the raw
+  version: the ProductVersion string wins unless it is the placeholder
+  1.0 / 1.0.x (then the fixed FILEVERSION quad), commas become dots, a
+  leading "FSR " prefix is stripped, surrounding whitespace and one leading
+  "v" trimmed.
+- `versionmaps.go`: vendored lookup tables mapping raw DLL versions to
+  vendor marketing names (DLSS/FSR/XeSS — e.g. 3.7.10.0 → "DLSS 3.7.10");
+  `MarketingName(kind, raw)` is the public seam.
+- `optiscaler.go`: `OptiScalerVersion(dir)` resolves the installed
+  OptiScaler version via an evidence chain — `manifest.json` version beats
+  the `OptiScaler.log` banner, which beats ini presence (install proven,
+  version unknown).
+- Verified: `go test ./...`, `go vet ./...`. No changes outside
+  `internal/pever`.
+
 ## 2026-07-20 — W3-T2: per-store per-OS game launch (internal/launch)
 
 - TDD: wrote `launch_test.go` first (red: `no non-test Go files`), then
@@ -500,7 +523,7 @@ Append-only milestone and task log. Newest at the bottom.
 - Verified: `go test ./...` (18 packages ok), `go vet ./...`,
   `golangci-lint run` (0 issues). No changes to launch/discovery/domain.
 
-## 2026-07-20 — W5-T7: bubbletea TUI frontend on ui.Session
+## 2026-07-20 — W5-T9: bubbletea TUI frontend on ui.Session
 
 - TDD: six red-first teatest tests in `internal/tui/model_test.go` failing on
   undefined `New`/`Model` before the implementation: `TestTUIListsGames`

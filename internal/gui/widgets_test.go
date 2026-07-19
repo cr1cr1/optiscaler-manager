@@ -57,14 +57,14 @@ func TestFocusableButtonTabCyclesAndEnterActivates(t *testing.T) {
 		})
 	}
 
-	keyFrame(KeyCodeNone, 0, view)       // build + register focusables
-	keyFrame(KeyTab, 0, view)            // nothing focused -> first button
-	keyFrame(KeyEnter, 0, view)          // Enter activates Alpha
-	keyFrame(KeyTab, 0, view)            // Alpha -> Beta
-	keyFrame(KeySpace, 0, view)          // Space activates Beta
-	keyFrame(KeyTab, ModShift, view)     // Beta -> Alpha
-	keyFrame(KeyTab, ModShift, view)     // Alpha -> wraps back to Gamma
-	keyFrame(KeyEnter, 0, view)          // Enter activates Gamma
+	keyFrame(KeyCodeNone, 0, view)   // build + register focusables
+	keyFrame(KeyTab, 0, view)        // nothing focused -> first button
+	keyFrame(KeyEnter, 0, view)      // Enter activates Alpha
+	keyFrame(KeyTab, 0, view)        // Alpha -> Beta
+	keyFrame(KeySpace, 0, view)      // Space activates Beta
+	keyFrame(KeyTab, ModShift, view) // Beta -> Alpha
+	keyFrame(KeyTab, ModShift, view) // Alpha -> wraps back to Gamma
+	keyFrame(KeyEnter, 0, view)      // Enter activates Gamma
 
 	want := []string{"Alpha", "Beta", "Gamma"}
 	if !slices.Equal(fired, want) {

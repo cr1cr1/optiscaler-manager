@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -211,7 +212,7 @@ func (l *Launcher) epicCommand(t Target) (string, []string, error) {
 		}
 		return "", nil, fmt.Errorf("launch %q: %w", t.Name, ErrMissingAppName)
 	}
-	url := "com.epicgames.launcher://apps/" + t.AppName + "?action=launch&silent=true"
+	url := "com.epicgames.launcher://apps/" + url.PathEscape(t.AppName) + "?action=launch&silent=true"
 	switch l.goos {
 	case "windows":
 		return "", []string{"rundll32", "url.dll,FileProtocolHandler", url}, nil

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -156,6 +157,56 @@ func TestLibraryEntryComponentVersions(t *testing.T) {
 	}
 }
 
+// TestScanAllLibrariesEmptyLibrarySentinel: an empty scan must fail with the
+// exported sentinel so frontends can detect it with errors.Is (no string
+// matching).
+func TestScanAllLibrariesEmptyLibrarySentinel(t *testing.T) {
+	steamRoot := mkSteamRoot(t)
+	_, err := ScanAllLibraries(context.Background(), nil, ScanAllOptions{SteamRoot: steamRoot})
+	if !errors.Is(err, ErrNoGames) {
+		t.Fatalf("err = %v, want errors.Is(err, ErrNoGames)", err)
+	}
+}
+
+// TestLibraryEntryVersionFallsBackToStoreManifest: a fresh install whose game
+// has not written OptiScaler.log/manifest.json yet still shows the resolved
+// version recorded in the committed store manifest.
+func TestLibraryEntryVersionFallsBackToStoreManifest(t *testing.T) {
+	steamRoot := mkSteamRoot(t)
+	game := mkSteamGame(t, steamRoot, "100", "Fresh Install", "FreshInstall")
+	writeScanFile(t, filepath.Join(game, "fresh.exe"), []byte("GAME"))
+	writeScanFile(t, filepath.Join(game, "OptiScaler.dll"), []byte("OPT"))
+
+	installDir, err := installDirOf(game)
+	if err != nil {
+		t.Fatalf("installDirOf: %v", err)
+	}
+	st := store.New(t.TempDir())
+	if err := st.Save(&domain.Manifest{
+		ID:            "fresh1",
+		SchemaVersion: domain.SchemaVersion,
+		Status:        domain.StatusCommitted,
+		GameRoot:      game,
+		InstallDir:    installDir,
+		Resolved:      domain.ResolvedAsset{Version: "0.9.4"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := ScanAllLibraries(context.Background(), st, ScanAllOptions{SteamRoot: steamRoot})
+	if err != nil {
+		t.Fatalf("ScanAllLibraries: %v", err)
+	}
+	e, ok := entriesByName(entries)["Fresh Install"]
+	if !ok {
+		t.Fatal("game missing from scan")
+	}
+	if e.OptiScalerVersion != "0.9.4" {
+		t.Fatalf("OptiScalerVersion = %q, want %q from the committed store manifest",
+			e.OptiScalerVersion, "0.9.4")
+	}
+}
+
 func TestLibraryEntryOptiScalerVersionChain(t *testing.T) {
 	steamRoot := mkSteamRoot(t)
 
@@ -205,10 +256,10 @@ func TestLibraryEntryOptiScalerVersionChain(t *testing.T) {
 		game string
 		want string
 	}{
-		{"Chain Manifest", "0.9.4"},     // manifest beats log
-		{"Chain Log", "0.9.4-pre2"},     // log banner when no manifest
-		{"Chain Ini", ""},               // ini proves install, not version
-		{"Chain Committed", "0.8.1"},    // committed status triggers enrichment
+		{"Chain Manifest", "0.9.4"},  // manifest beats log
+		{"Chain Log", "0.9.4-pre2"},  // log banner when no manifest
+		{"Chain Ini", ""},            // ini proves install, not version
+		{"Chain Committed", "0.8.1"}, // committed status triggers enrichment
 	}
 	for _, tc := range cases {
 		e, ok := byName[tc.game]
