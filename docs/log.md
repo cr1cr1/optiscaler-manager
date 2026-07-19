@@ -403,3 +403,40 @@ Append-only milestone and task log. Newest at the bottom.
   terminal events (no stale-slot race on rapid re-trigger).
 - TDD: six new tests red-first (installer ×3, app ×3 incl. RunOps, ui ×1),
   then green; five pre-existing fault-injection tests untouched and passing.
+
+## 2026-07-20 — W3-T3: cross-platform multi-store discovery
+
+- TDD throughout: every parser/probe/orchestrator behaviour landed as a
+  failing test first (Epic fixtures, GOG playTasks, recursive depth/heuristics,
+  rescan idempotence, fake-registry GOG, compat prefix, Store enum, ScanAll
+  merge/dedupe), then implemented to green.
+- `internal/domain`: additive `Store` enum (`StoreSteam` is the zero value so
+  pre-existing Games stay Steam), `Game.Store/AppName/ExePath/CompatPrefix`.
+- `internal/discovery` split into OS-agnostic parsers vs build-tagged probes:
+  - Parsers (test on every GOOS): `epic.go` (.item manifests, `games`
+    category filter), `gog.go` (goggame-<id>.info playTasks → primary exe,
+    Windows separators normalised), `recursive.go` (each subdir of a root is
+    a game; exe search depth ≤ 3; skip-token list; rank = folder-name match
+    → size → 64-bit name → lexicographic; canonical-path dedupe),
+    `gog_registry.go` (registry-reader seam), `plist.go` (XML plist via
+    encoding/xml only; binary plists rejected), `scanall.go` (`ScanAll`
+    merges Steam → Epic → GOG → apps → manual, deduped by canonical
+    InstallDir, ctx-aware).
+  - Probes (GOOS-tagged): Steam roots (linux paths moved to `steam_linux.go`
+    unchanged; Windows HKLM `SOFTWARE\Valve\Steam` InstallPath with WOW64
+    fallback; macOS `~/Library/Application Support/Steam`), Epic manifest
+    dirs (Windows `%ProgramData%`, macOS `~/Library`), GOG registry
+    (Windows-only; `golang.org/x/sys/windows/registry` — vendored that
+    subtree only via `go mod vendor`), macOS `/Applications` .app scan
+    (XML Info.plist → CFBundleName/CFBundleExecutable, else bundle-name
+    fallback), `compat_linux.go` Proton prefix
+    (`steamapps/compatdata/<appid>/pfx`, display-only) with stub elsewhere.
+  - Recursive binary acceptance is per-GOOS: unix = exec bit, skips
+    .so/.dll/.desktop; Windows = .exe only; darwin = Mach-O magic or .app.
+- Exported signatures `ScanSteam`, `ParseLibraryFolders`, `ParseAppmanifest`,
+  `ResolveInstallDir` unchanged; existing linux Steam tests untouched green.
+- Verified: `go test ./...` (16 packages ok), `go vet ./...`,
+  `golangci-lint run` (0 issues), `GOOS=windows`/`GOOS=darwin`
+  `go vet` + `go test -c` compile green for discovery+domain. Deviation:
+  cross-GOOS test binaries cannot execute on this host (no wine/darling;
+  binfmt_misc registers only mono CLR) — compile-verified instead.
