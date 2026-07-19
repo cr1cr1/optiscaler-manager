@@ -42,3 +42,35 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	t.Log("settings round-trip + normalization ok")
 }
+
+func TestLaunchTemplatePersists(t *testing.T) {
+	// Defaults carry the plain exe+args template.
+	d := Defaults()
+	if d.LaunchTemplate != `"{exe}" {args}` {
+		t.Fatalf("Defaults().LaunchTemplate %q, want %q", d.LaunchTemplate, `"{exe}" {args}`)
+	}
+
+	// A custom template survives the save/load round-trip.
+	root := t.TempDir()
+	custom := `umu-run "{exe}" {args}`
+	if err := Save(root, Settings{LaunchTemplate: custom}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.LaunchTemplate != custom {
+		t.Errorf("persisted LaunchTemplate %q, want %q", got.LaunchTemplate, custom)
+	}
+
+	// Empty in JSON normalizes back to the default at load.
+	if err := Save(root, Settings{LaunchTemplate: ""}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = Load(root)
+	if got.LaunchTemplate != `"{exe}" {args}` {
+		t.Errorf("empty template normalized to %q, want default", got.LaunchTemplate)
+	}
+	t.Log("launch template: default, custom round-trip, empty normalization ok")
+}

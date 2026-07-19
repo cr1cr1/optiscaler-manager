@@ -470,3 +470,32 @@ Append-only milestone and task log. Newest at the bottom.
   by app and cmd tests (no production dependency).
 - Verified: `go test ./...` (18 packages ok), `go vet ./...`,
   `golangci-lint run` (0 issues).
+
+## 2026-07-20 — W4-T6: session game launching with user template
+
+- TDD: five red-first tests — `TestLaunchTemplatePersists` (settings:
+  default, custom round-trip, empty normalization) and four ui tests
+  (`TestSessionLaunchSteamBuildsRunGameID`, `TestSessionLaunchManualUsesTemplate`,
+  `TestSessionLaunchUnknownStoreErrors`, `TestSessionLaunchNotifiesOnSpawnFailure`)
+  failing on undefined `LaunchTemplate`/`Deps.Launcher`/`Session.Launch`
+  before the implementation.
+- `internal/settings`: additive `LaunchTemplate` field (default
+  `"{exe}" {args}` via exported `DefaultLaunchTemplate`); empty in JSON
+  normalizes to the default at load and save, mirroring `DefaultVersion`.
+- `internal/ui`: `Session.Launch(gameDir)` — fire-and-forget goroutine (no
+  op slot; a spawn request is instantaneous and proves nothing about the
+  game running). Row → `launch.Target` mapping (domain store → launch
+  store; manual games get `Settings.LaunchTemplate`). Blank `ExePath` on
+  manual/GOG rows falls back to `discovery.ScanRecursive` exe picking on
+  the parent dir (canonical-path match); unresolvable → clear error toast,
+  no launch. Success: `Launch requested: <game>` toast + `EvOpDone`;
+  failure: warn toast `Launch failed: <err>` + `EvOpFailed`. zerolog info
+  "launch requested" with store/game/argv0. `SetLaunchTemplate` persists
+  like `SetDefaultVersion`.
+- Runner seam: `Deps.Launcher *launch.Launcher`; nil selects the platform
+  detached-spawn default (`launch.New(nil, "", nil)`). Tests inject a
+  capturing runner + stub lookPath; captured argv artifacts:
+  `[xdg-open steam://rungameid/100]` (Steam), `[umu-run <exe> --]` (custom
+  manual template).
+- Verified: `go test ./...` (18 packages ok), `go vet ./...`,
+  `golangci-lint run` (0 issues). No changes to launch/discovery/domain.
