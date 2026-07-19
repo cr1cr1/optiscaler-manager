@@ -1,10 +1,11 @@
 module github.com/cr1cr1/optiscaler-manager
 
-go 1.26
+go 1.26.1
 
 require (
 	github.com/alecthomas/kong v1.15.0
 	github.com/joho/godotenv v1.5.1
+	github.com/lewisgibson/go-vdf v0.0.0-20260423173933-a31546981217
 	github.com/rs/zerolog v1.35.1
 )
 

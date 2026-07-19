@@ -45,6 +45,23 @@ Append-only milestone and task log. Newest at the bottom.
   client keeps an asset-name→URL index since `domain.ResolvedAsset` carries
   no URL.
 
+## 2026-07-19 — M2a: discovery
+
+- `internal/discovery`: `ParseLibraryFolders` (modern nested + legacy flat
+  VDF forms), `ParseAppmanifest`, `ScanSteam` (root + all libraries, broken
+  manifests and missing install dirs skipped, error only when no library is
+  readable), `SteamRoots` (native/Flatpak/Snap candidates, symlink-deduped),
+  and `ResolveInstallDir` (UE5 Phoenix/Binaries/Win64 rule first, else exe
+  scoring: +15 name, +5 Binaries/Win64, +10 >5MiB, +25 upscaler adjacency
+  via `internal/classify`; crash/redist/setup/installer/launcher/unins exes
+  excluded; lexicographic tiebreak).
+- Added `github.com/lewisgibson/go-vdf` (vendored). Its `Decode(&node)` raw
+  tree API is used; case-insensitive key lookup covers both VDF casings.
+- TDD: the test suite (salvaged from a blocked sub-agent run, reviewed) was
+  in place first; implementation written against it. A rogue sub-agent
+  dep-upgrade commit (testify + upgraded kong/x/sys) was reverted before
+  this milestone was redone by the lead.
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`

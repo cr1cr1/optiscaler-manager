@@ -4,6 +4,10 @@ github.com/alecthomas/kong
 # github.com/joho/godotenv v1.5.1
 ## explicit; go 1.12
 github.com/joho/godotenv
+# github.com/lewisgibson/go-vdf v0.0.0-20260423173933-a31546981217
+## explicit; go 1.26.1
+github.com/lewisgibson/go-vdf
+github.com/lewisgibson/go-vdf/internal
 # github.com/mattn/go-colorable v0.1.14
 ## explicit; go 1.18
 github.com/mattn/go-colorable
