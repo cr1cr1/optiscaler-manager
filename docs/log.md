@@ -167,6 +167,19 @@ Append-only milestone and task log. Newest at the bottom.
   `go run .` is banned by repo rules). First manual launch is a user
   checkpoint.
 
+## 2026-07-19 — M7: polish / release verification
+
+- README rewritten: real usage (all subcommands), EAC/rate-limit refusal
+  semantics, state-root location, env-var table, dev commands.
+- `goreleaser release --snapshot --clean` — **succeeded**: linux + windows
+  amd64 archives build vendored with CGO off (one-time release-config gate;
+  the no-build rule governs the dev loop, not release tooling).
+- arm64 and darwin are commented out in the skaffold's `.goreleaser.yml`;
+  enabling arm64 later is a one-line change (all deps are pure Go on
+  linux/windows; darwin needs CGO).
+- Final gates: `go test ./...`, `go vet ./...`, `golangci-lint run` — all
+  green. v0.1 scope complete: M0–M7 done.
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`
