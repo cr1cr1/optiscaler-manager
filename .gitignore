@@ -1,0 +1,13 @@
+.vscode/settings.json
+/bin/
+/dist/
+/tmp/
+/config/
+.env
+.*.env
+.state/
+
+/dotdrift
+/dotdrift.*
+
+.omo/
