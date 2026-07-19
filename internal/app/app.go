@@ -23,6 +23,39 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 )
 
+// ManualEntry builds a library entry for a user-supplied game directory
+// (added via the directory picker, not launcher discovery).
+func ManualEntry(dir string) (LibraryEntry, error) {
+	root, err := canonicalDir(dir)
+	if err != nil {
+		return LibraryEntry{}, err
+	}
+	name := filepath.Base(root)
+	e := LibraryEntry{
+		Game: domain.Game{
+			AppID:      "custom_" + name,
+			Name:       name,
+			InstallDir: root,
+		},
+		EAC: installer.EACProtected(root),
+	}
+	tech := map[string]bool{}
+	for _, c := range classify.Dir(root) {
+		tech[c.Kind.String()] = true
+	}
+	for k := range tech {
+		e.Tech = append(e.Tech, k)
+	}
+	sort.Strings(e.Tech)
+	if st, err := os.Stat(root); err == nil {
+		e.ModTime = st.ModTime()
+	}
+	if d, err := installDirOf(root); err == nil {
+		e.InjectionDir = d
+	}
+	return e, nil
+}
+
 // ErrEACProtected is returned by Install when the game ships an anti-cheat
 // launcher and the caller did not pass InstallOpts.EACOverride.
 var ErrEACProtected = errors.New("game is EAC-protected")

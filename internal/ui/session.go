@@ -16,6 +16,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
+	"github.com/cr1cr1/optiscaler-manager/internal/pickdir"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 )
@@ -107,6 +108,7 @@ type Session struct {
 	now func() time.Time
 
 	openExternal func(path string) error
+	pickDir      func(ctx context.Context) (string, error)
 }
 
 // NewSession starts a session. The library is empty until Scan is called.
@@ -122,6 +124,7 @@ func NewSession(deps Deps) *Session {
 		openExternal: func(path string) error {
 			return exec.Command("xdg-open", path).Start()
 		},
+		pickDir: pickdir.Pick,
 	}
 }
 
@@ -230,6 +233,7 @@ func (s *Session) Scan(ctx context.Context) {
 		for _, e := range entries {
 			rows = append(rows, s.toRow(ctx, e))
 		}
+		rows = s.mergeExtraDirs(ctx, rows)
 		sortRows(rows)
 		s.mu.Lock()
 		s.st.Rows = rows
@@ -273,6 +277,86 @@ func (s *Session) Rollback(gameDir string) {
 		s.setRowStatus(gameDir, domain.StatusRolledBack)
 		s.opDone("Rolled back "+dir, gameDir)
 	}()
+}
+
+// AddDirectory registers a user-picked directory as a game row and persists
+// it in settings so later scans keep it.
+func (s *Session) AddDirectory(dir string) {
+	entry, err := app.ManualEntry(dir)
+	if err != nil {
+		s.toast("add directory: "+err.Error(), true)
+		return
+	}
+	s.mu.Lock()
+	exists := false
+	for _, r := range s.st.Rows {
+		if r.InstallDir == entry.Game.InstallDir {
+			exists = true
+			break
+		}
+	}
+	if !exists {
+		s.st.Rows = append(s.st.Rows, s.toRow(context.Background(), entry))
+		sortRows(s.st.Rows)
+		present := false
+		for _, d := range s.deps.Settings.ExtraDirs {
+			if d == entry.Game.InstallDir {
+				present = true
+				break
+			}
+		}
+		if !present {
+			s.deps.Settings.ExtraDirs = append(s.deps.Settings.ExtraDirs, entry.Game.InstallDir)
+		}
+	}
+	s.mu.Unlock()
+	if err := settings.Save(s.deps.SettingsRoot, s.deps.Settings); err != nil {
+		s.toast("settings not saved: "+err.Error(), true)
+		return
+	}
+	if exists {
+		s.toast(entry.Game.Name+" already in library", false)
+		return
+	}
+	s.toast("added "+entry.Game.Name, false)
+	s.emit(Event{Kind: EvScanDone, Text: "directory added"})
+}
+
+// PickAndAddDirectory opens the OS directory picker and adds the choice.
+func (s *Session) PickAndAddDirectory(ctx context.Context) {
+	go func() {
+		dir, err := s.pickDir(ctx)
+		if err != nil {
+			s.toast(err.Error(), true)
+			return
+		}
+		if dir == "" {
+			return // cancelled
+		}
+		s.AddDirectory(dir)
+	}()
+}
+
+// mergeExtraDirs appends rows for directories the user added manually.
+func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow) []GameRow {
+	for _, d := range s.deps.Settings.ExtraDirs {
+		entry, err := app.ManualEntry(d)
+		if err != nil {
+			log.Warn().Err(err).Str("dir", d).Msg("extra dir unavailable")
+			continue
+		}
+		dup := false
+		for _, r := range rows {
+			if r.InstallDir == entry.Game.InstallDir {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			rows = append(rows, s.toRow(ctx, entry))
+		}
+	}
+	return rows
 }
 
 // AnswerConfirm resolves a pending confirmation. Accepted confirmations

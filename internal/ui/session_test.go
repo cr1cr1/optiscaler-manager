@@ -309,3 +309,74 @@ func TestClearBundleCache(t *testing.T) {
 	}
 	t.Logf("cache cleared, toast: %q", st.Toasts[len(st.Toasts)-1].Text)
 }
+
+func TestAddDirectoryAddsRowAndPersists(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	custom := filepath.Join(t.TempDir(), "MyGame")
+	writeUIFile(t, filepath.Join(custom, "game.exe"), "GAME")
+
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+	if got := len(e.sess.Snapshot().Rows); got != 1 {
+		t.Fatalf("rows before add: %d", got)
+	}
+
+	e.sess.AddDirectory(custom)
+	st := e.sess.Snapshot()
+	if len(st.Rows) != 2 {
+		t.Fatalf("rows after add: %d", len(st.Rows))
+	}
+	var found bool
+	for _, r := range st.Rows {
+		if r.InstallDir == custom && r.Title == "MyGame" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("custom game row missing: %+v", st.Rows)
+	}
+	loaded, _ := settings.Load(e.sess.deps.SettingsRoot)
+	if len(loaded.ExtraDirs) != 1 || loaded.ExtraDirs[0] != custom {
+		t.Fatalf("persisted ExtraDirs: %v", loaded.ExtraDirs)
+	}
+
+	// Duplicate add is a no-op (still 2 rows, 1 persisted dir).
+	e.sess.AddDirectory(custom)
+	if got := len(e.sess.Snapshot().Rows); got != 2 {
+		t.Fatalf("rows after duplicate add: %d", got)
+	}
+	loaded, _ = settings.Load(e.sess.deps.SettingsRoot)
+	if len(loaded.ExtraDirs) != 1 {
+		t.Fatalf("ExtraDirs after duplicate: %v", loaded.ExtraDirs)
+	}
+
+	// A later scan keeps the manually added game.
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+	if got := len(e.sess.Snapshot().Rows); got != 2 {
+		t.Fatalf("rows after rescan: %d", got)
+	}
+	t.Log("manual add: row added, persisted, deduped, survives rescan")
+}
+
+func TestPickAndAddDirectory(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	custom := filepath.Join(t.TempDir(), "PickedGame")
+	writeUIFile(t, filepath.Join(custom, "game.exe"), "GAME")
+	e.sess.pickDir = func(ctx context.Context) (string, error) { return custom, nil }
+
+	e.sess.PickAndAddDirectory(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+	found := false
+	for _, r := range e.sess.Snapshot().Rows {
+		if r.InstallDir == custom {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("picked directory was not added")
+	}
+	t.Log("picker result added to library")
+}
