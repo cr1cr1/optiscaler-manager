@@ -71,3 +71,29 @@ hashes; only then copy into the game dir.
 Deliberately absent: syscall-combinatoric fault matrices, content-addressed
 backup stores, clock interfaces. Ceiling named: if real-world crash reports
 appear, deepen injection at the observed boundary (`ponytail`).
+
+## Cancellation invariant
+
+6. **Cancelling an op at any phase boundary leaves zero partial state.** The
+   manifest is marked `failed` with the context cause recorded, the install
+   is rolled back to the pre-op state, and the returned error unwraps to
+   `context.Canceled`.
+
+Mechanics:
+
+- Cancel checks sit at every phase boundary: pre-resolve and pre-download
+  (`internal/app`), pre-extract, per-file during the swap, post-extract,
+  post-INI write, and pre-commit (`internal/installer`), plus per-entry
+  checks in the rollback/uninstall loops.
+- Rollback triggered by a cancellation runs under `context.WithoutCancel`:
+  the op context is dead by definition, but cleanup belongs to the same
+  atomic operation and must run to completion. Detaching (rather than
+  `context.Background()`) keeps the caller's values — trace IDs, log
+  fields — on the cleanup path while ignoring cancellation.
+- A cancelled install ends `rolled_back` (the usual `failed → rolled_back`
+  transition); `last_error` records the cancellation.
+- A cancelled uninstall keeps the manifest `committed` with processed
+  entries already dropped; retrying resumes where it stopped.
+- The session layer exposes per-game cancellation (`Session.CancelOp`); a
+  cancelled op restores the row's pre-op status and surfaces exactly one
+  "Cancelled" toast/event — never the failure path.

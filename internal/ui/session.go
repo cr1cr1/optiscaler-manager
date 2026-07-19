@@ -42,6 +42,7 @@ const (
 	EvOpStarted
 	EvOpDone
 	EvOpFailed
+	EvOpCancelled
 	EvConfirm
 )
 
@@ -103,9 +104,10 @@ type Session struct {
 	deps   Deps
 	events chan Event
 
-	mu  sync.Mutex
-	st  State
-	now func() time.Time
+	mu        sync.Mutex
+	st        State
+	now       func() time.Time
+	opCancels map[string]context.CancelFunc // in-flight op per game dir
 
 	openExternal func(path string) error
 	pickDir      func(ctx context.Context) (string, error)
@@ -117,10 +119,11 @@ func NewSession(deps Deps) *Session {
 		deps.Settings.DefaultVersion = "latest"
 	}
 	return &Session{
-		deps:   deps,
-		events: make(chan Event, 64),
-		st:     State{Mode: ViewGrid, StatusLine: "Ready"},
-		now:    time.Now,
+		deps:      deps,
+		events:    make(chan Event, 64),
+		st:        State{Mode: ViewGrid, StatusLine: "Ready"},
+		now:       time.Now,
+		opCancels: map[string]context.CancelFunc{},
 		openExternal: func(path string) error {
 			return exec.Command("xdg-open", path).Start()
 		},
@@ -268,8 +271,19 @@ func (s *Session) Uninstall(gameDir string) {
 // Rollback starts a rollback of an interrupted/failed install.
 func (s *Session) Rollback(gameDir string) {
 	go func() {
+		pre := preOpStatus(s.findRow(gameDir))
+		ctx, ok := s.registerOp(gameDir)
+		if !ok {
+			s.toast("operation already in progress for this game", true)
+			return
+		}
 		s.opStarted("Rolling back…")
-		dir, err := app.Rollback(context.Background(), s.deps.Store, gameDir)
+		dir, err := app.Rollback(ctx, s.deps.Store, gameDir)
+		s.finishOp(gameDir)
+		if errors.Is(err, context.Canceled) {
+			s.opCancelled(gameDir, pre)
+			return
+		}
 		if err != nil {
 			s.opFailed(err)
 			return
@@ -399,9 +413,20 @@ func (s *Session) doInstall(gameDir string, eacOK, cachedOK bool) {
 		})
 		return
 	}
+	pre := preOpStatus(row)
+	ctx, ok := s.registerOp(gameDir)
+	if !ok {
+		s.toast("operation already in progress for this game", true)
+		return
+	}
 	s.opStarted("Installing…")
-	_, err := app.Install(context.Background(), s.deps.Store, s.deps.GH, s.deps.CacheDir, gameDir,
+	_, err := app.Install(ctx, s.deps.Store, s.deps.GH, s.deps.CacheDir, gameDir,
 		app.InstallOpts{AllowCached: cachedOK, EACOverride: eacOK, Requested: s.deps.Settings.DefaultVersion})
+	s.finishOp(gameDir)
+	if errors.Is(err, context.Canceled) {
+		s.opCancelled(gameDir, pre)
+		return
+	}
 	if errors.Is(err, app.ErrStaleCache) {
 		s.opAborted()
 		s.setConfirm(&Confirmation{
@@ -420,14 +445,69 @@ func (s *Session) doInstall(gameDir string, eacOK, cachedOK bool) {
 }
 
 func (s *Session) doUninstall(gameDir string) {
+	pre := preOpStatus(s.findRow(gameDir))
+	ctx, ok := s.registerOp(gameDir)
+	if !ok {
+		s.toast("operation already in progress for this game", true)
+		return
+	}
 	s.opStarted("Uninstalling…")
-	_, err := app.Uninstall(context.Background(), s.deps.Store, gameDir)
+	_, err := app.Uninstall(ctx, s.deps.Store, gameDir)
+	s.finishOp(gameDir)
+	if errors.Is(err, context.Canceled) {
+		s.opCancelled(gameDir, pre)
+		return
+	}
 	if err != nil {
 		s.opFailed(err)
 		return
 	}
 	s.setRowStatus(gameDir, "")
 	s.opDone("Uninstalled "+gameTitle(s.findRow(gameDir), gameDir), gameDir)
+}
+
+func preOpStatus(row *GameRow) domain.Status {
+	if row != nil {
+		return row.Status
+	}
+	return ""
+}
+
+// registerOp records a cancellable context for gameDir, serializing ops per
+// game: false (and no context) when one is already in flight.
+func (s *Session) registerOp(gameDir string) (context.Context, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, busy := s.opCancels[gameDir]; busy {
+		return nil, false
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.opCancels[gameDir] = cancel
+	return ctx, true
+}
+
+// finishOp releases the op slot for gameDir. It runs before any terminal
+// event is emitted so a follow-up op never sees a stale slot.
+func (s *Session) finishOp(gameDir string) {
+	s.mu.Lock()
+	if cancel, ok := s.opCancels[gameDir]; ok {
+		delete(s.opCancels, gameDir)
+		cancel()
+	}
+	s.mu.Unlock()
+}
+
+// CancelOp cancels the in-flight install/uninstall/rollback for gameDir and
+// reports whether one was running.
+func (s *Session) CancelOp(gameDir string) bool {
+	s.mu.Lock()
+	cancel, ok := s.opCancels[gameDir]
+	s.mu.Unlock()
+	if ok {
+		log.Info().Str("gameDir", gameDir).Msg("cancelling op")
+		cancel()
+	}
+	return ok
 }
 
 func gameTitle(row *GameRow, dir string) string {
@@ -530,6 +610,16 @@ func (s *Session) opFailed(err error) {
 func (s *Session) opAborted() {
 	s.setBusy("")
 	s.setStatus("Ready")
+}
+
+// opCancelled settles a cancelled op: the row returns to its pre-op status
+// and exactly one "Cancelled" toast/event surfaces — never the failure path.
+func (s *Session) opCancelled(gameDir string, pre domain.Status) {
+	s.setBusy("")
+	s.setStatus("Cancelled")
+	s.setRowStatus(gameDir, pre)
+	s.toast("Cancelled", false)
+	s.emit(Event{Kind: EvOpCancelled, Text: "Cancelled", GameDir: gameDir})
 }
 
 func (s *Session) toast(text string, warn bool) {

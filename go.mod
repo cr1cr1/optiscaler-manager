@@ -9,6 +9,7 @@ require (
 	github.com/lewisgibson/go-vdf v0.0.0-20260423173933-a31546981217
 	github.com/rs/zerolog v1.35.1
 	go.hasen.dev/shirei v0.5.2
+	golang.org/x/sync v0.22.0
 )
 
 require (

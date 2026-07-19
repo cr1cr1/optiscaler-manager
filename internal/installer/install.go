@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/cr1cr1/optiscaler-manager/internal/archive"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/profile"
@@ -67,12 +69,21 @@ func Install(ctx context.Context, st *store.Store, req Request) (*domain.Manifes
 		case domain.StatusCommitted:
 			return nil, fmt.Errorf("already installed at %s; uninstall first", installDir)
 		case domain.StatusInProgress, domain.StatusFailed:
-			if err := Rollback(ctx, st, id); err != nil {
+			// Leftover cleanup is not op work: it runs to completion even
+			// when the op context is already dead (docs/safety.md —
+			// cancellation invariant). WithoutCancel keeps the caller's
+			// values while detaching from cancellation.
+			if err := Rollback(context.WithoutCancel(ctx), st, id); err != nil {
 				return nil, fmt.Errorf("rollback leftover install: %w", err)
 			}
 		}
 	}
 
+	// Cancel boundary: nothing has been staged or written yet, so returning
+	// the bare cause leaves the filesystem exactly as found.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	names, err := archive.List(req.ArchivePath)
 	if err != nil {
 		return nil, err
@@ -101,6 +112,14 @@ func Install(ctx context.Context, st *store.Store, req Request) (*domain.Manifes
 		}
 	}
 
+	// Cancel boundary (post-extract): staging is ours and the game dir is
+	// still untouched (invariant 1), so dropping staging and returning the
+	// bare cause leaves no partial state.
+	if err := ctx.Err(); err != nil {
+		_ = os.RemoveAll(staging)
+		return nil, err
+	}
+
 	m := &domain.Manifest{
 		ID:               id,
 		SchemaVersion:    domain.SchemaVersion,
@@ -119,7 +138,7 @@ func Install(ctx context.Context, st *store.Store, req Request) (*domain.Manifes
 	backupFiles := filepath.Join(st.BackupDir(id), "files")
 	for _, fp := range plan {
 		if err := ctx.Err(); err != nil {
-			return fail(ctx, st, m, err)
+			return cancelInstall(ctx, st, m)
 		}
 		src := filepath.Join(staging, fp.srcRel)
 		dst := filepath.Join(installDir, fp.dstRel)
@@ -139,6 +158,12 @@ func Install(ctx context.Context, st *store.Store, req Request) (*domain.Manifes
 
 	if err := applyCuratedINI(st, m); err != nil {
 		return fail(ctx, st, m, err)
+	}
+
+	// Cancel boundary (post-INI write, pre-commit): the swap is done but not
+	// committed, so the cancellation rolls everything back.
+	if err := ctx.Err(); err != nil {
+		return cancelInstall(ctx, st, m)
 	}
 
 	m.Status = domain.StatusCommitted
@@ -275,6 +300,31 @@ func fail(_ context.Context, st *store.Store, m *domain.Manifest, cause error) (
 	m.LastError = cause.Error()
 	if err := st.Save(m); err != nil {
 		return m, fmt.Errorf("mark install failed: %w (original error: %v)", err, cause)
+	}
+	return m, cause
+}
+
+// cancelInstall settles a cancelled install atomically: the manifest is
+// marked failed with the cancellation recorded (crash-recovery evidence),
+// then rolled back to the pre-op state so zero partial files remain in the
+// game dir. Rollback runs under context.WithoutCancel: the op context is
+// dead by definition, but cleanup belongs to the same atomic operation and
+// must run to completion (docs/safety.md — cancellation invariant). The
+// returned error always unwraps to the context cause.
+func cancelInstall(ctx context.Context, st *store.Store, m *domain.Manifest) (*domain.Manifest, error) {
+	cause := ctx.Err()
+	log.Warn().Str("id", m.ID).Str("installDir", m.InstallDir).Err(cause).
+		Msg("install cancelled; marking failed and rolling back")
+	m.Status = domain.StatusFailed
+	m.LastError = cause.Error()
+	if err := st.Save(m); err != nil {
+		return m, fmt.Errorf("%w (mark cancelled install failed: %v)", cause, err)
+	}
+	if err := Rollback(context.WithoutCancel(ctx), st, m.ID); err != nil {
+		return m, fmt.Errorf("%w (rollback after cancel: %v)", cause, err)
+	}
+	if err := os.RemoveAll(st.StagingDir(m.ID)); err != nil {
+		log.Warn().Str("id", m.ID).Err(err).Msg("clean staging after cancel")
 	}
 	return m, cause
 }

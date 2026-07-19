@@ -30,6 +30,9 @@ func Rollback(ctx context.Context, st *store.Store, id string) error {
 	}
 
 	for i, ow := range m.Overwritten {
+		if err := ctx.Err(); err != nil {
+			return err // idempotent: a later Rollback redoes completed steps safely
+		}
 		if ow.PreSHA256 == "" {
 			continue // original was never touched before the crash
 		}
@@ -111,9 +114,9 @@ func Uninstall(ctx context.Context, st *store.Store, id string) error {
 	var refused []string
 
 	kept := m.Created[:0]
-	for _, c := range m.Created {
+	for i, c := range m.Created {
 		if err := ctx.Err(); err != nil {
-			return err
+			return abortUninstall(ctx, st, m, append(kept, m.Created[i:]...), m.Overwritten)
 		}
 		current, err := hashFile(c.Path)
 		if os.IsNotExist(err) {
@@ -135,7 +138,10 @@ func Uninstall(ctx context.Context, st *store.Store, id string) error {
 	m.Created = kept
 
 	keptOw := m.Overwritten[:0]
-	for _, ow := range m.Overwritten {
+	for i, ow := range m.Overwritten {
+		if err := ctx.Err(); err != nil {
+			return abortUninstall(ctx, st, m, m.Created, append(keptOw, m.Overwritten[i:]...))
+		}
 		current, err := hashFile(ow.Path)
 		switch {
 		case os.IsNotExist(err):
@@ -172,10 +178,32 @@ func Uninstall(ctx context.Context, st *store.Store, id string) error {
 		return &RefusedError{Paths: refused}
 	}
 
+	// Cancel boundary (pre-cleanup): everything processable is already
+	// reversed; persist progress so a retry resumes instead of redoing.
+	if err := ctx.Err(); err != nil {
+		return abortUninstall(ctx, st, m, m.Created, m.Overwritten)
+	}
+
 	if err := os.RemoveAll(st.BackupDir(id)); err != nil {
 		return fmt.Errorf("remove backups %s: %w", id, err)
 	}
 	return st.Delete(id)
+}
+
+// abortUninstall persists uninstall progress on cancellation: processed
+// entries are already dropped from the retained slices, so a retry resumes
+// where this run stopped. The manifest stays committed and the returned
+// error is the context cause.
+func abortUninstall(ctx context.Context, st *store.Store, m *domain.Manifest, created []domain.CreatedEntry, overwritten []domain.OverwrittenEntry) error {
+	cause := ctx.Err()
+	log.Warn().Str("id", m.ID).Err(cause).Msg("uninstall cancelled; progress persisted for resume")
+	m.Created = created
+	m.Overwritten = overwritten
+	m.LastError = cause.Error()
+	if err := st.Save(m); err != nil {
+		return fmt.Errorf("%w (persist uninstall progress: %v)", cause, err)
+	}
+	return cause
 }
 
 // removeEmptyDirs deletes recorded created dirs that are now empty, deepest
