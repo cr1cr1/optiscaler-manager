@@ -19,9 +19,9 @@ import (
 // Extraction caps (decompression-bomb defenses). Generous for game-mod
 // bundles, fatal for zip-bomb class inputs.
 const (
-	maxFileSize  = 1 << 30          // 1 GiB per file
-	maxTotalSize = 4 * (1 << 30)    // 4 GiB per archive
-	maxEntries   = 100_000          // entry-count cap
+	maxFileSize  = 1 << 30       // 1 GiB per file
+	maxTotalSize = 4 * (1 << 30) // 4 GiB per archive
+	maxEntries   = 100_000       // entry-count cap
 )
 
 // List returns the entry names of the archive at path, in archive order.

@@ -69,15 +69,15 @@ func (m *model) settingsModal() {
 			if m.sess == nil {
 				return
 			}
-		if focusableButton(SymIRight, "Apply") {
-			m.sess.SetDefaultVersion(m.versionBuf)
-		}
-		if focusableButton(SymIRight, "Clear OptiScaler cache") {
-			m.sess.ClearBundleCache()
-		}
-		if focusableButton(SymILeft, "Close") {
-			m.settingsOpen = false
-		}
+			if focusableButton(SymIRight, "Apply") {
+				m.sess.SetDefaultVersion(m.versionBuf)
+			}
+			if focusableButton(SymIRight, "Clear OptiScaler cache") {
+				m.sess.ClearBundleCache()
+			}
+			if focusableButton(SymILeft, "Close") {
+				m.settingsOpen = false
+			}
 		})
 	})
 }
@@ -137,9 +137,9 @@ func (m *model) aboutModal() {
 			txt("optiscaler-manager " + m.cfg.Version)
 			muted("OptiScaler manager for local games — Linux + Steam.")
 			muted("GUI: go-shirei (pinned v0.5.2)")
-		if focusableButton(SymILeft, "Close") {
-			m.about = false
-		}
+			if focusableButton(SymILeft, "Close") {
+				m.about = false
+			}
 		})
 	})
 }

@@ -213,12 +213,12 @@ func TestScanSteamSkipsNonGames(t *testing.T) {
 		`"libraryfolders" { "0" { "path" "`+steamRoot+`" } }`)
 
 	manifests := map[string]string{
-		"appmanifest_100.acf":    `"AppState" { "appid" "100" "name" "Game One" "installdir" "GameOne" }`,
-		"appmanifest_228980.acf": `"AppState" { "appid" "228980" "name" "Steamworks Common Redistributables" "installdir" "SteamworksShared" }`,
+		"appmanifest_100.acf":     `"AppState" { "appid" "100" "name" "Game One" "installdir" "GameOne" }`,
+		"appmanifest_228980.acf":  `"AppState" { "appid" "228980" "name" "Steamworks Common Redistributables" "installdir" "SteamworksShared" }`,
 		"appmanifest_1391110.acf": `"AppState" { "appid" "1391110" "name" "Steam Linux Runtime 2.0 (soldier)" "installdir" "SteamLinuxRuntime_soldier" }`,
 		"appmanifest_1887720.acf": `"AppState" { "appid" "1887720" "name" "Proton Experimental" "installdir" "ProtonExp" }`,
-		"appmanifest_250820.acf": `"AppState" { "appid" "250820" "name" "SteamVR" "installdir" "SteamVR" }`,
-		"appmanifest_250900.acf": `"AppState" { "appid" "250900" "name" "Wallpaper Engine" "installdir" "Wallpaper" }`,
+		"appmanifest_250820.acf":  `"AppState" { "appid" "250820" "name" "SteamVR" "installdir" "SteamVR" }`,
+		"appmanifest_250900.acf":  `"AppState" { "appid" "250900" "name" "Wallpaper Engine" "installdir" "Wallpaper" }`,
 	}
 	for name, content := range manifests {
 		writeFile(t, filepath.Join(steamRoot, "steamapps", name), content)

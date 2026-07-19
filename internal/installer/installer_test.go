@@ -71,7 +71,7 @@ func TestRejectsUnsafeArchive(t *testing.T) {
 		{"/abs/optiscaler.dll", "fakenvapi.dll", "fakenvapi.ini"},
 		{"optiscaler.dll", "fakenvapi.dll", "fakenvapi.ini", "sub/../../evil"},
 		{"optiscaler.dll", "fakenvapi.dll", "fakenvapi.ini", "DXGI.dll", "dxgi.dll"}, // collides with injection rename
-		{"fakenvapi.dll", "fakenvapi.ini"},                                            // missing optiscaler.dll
+		{"fakenvapi.dll", "fakenvapi.ini"},                                           // missing optiscaler.dll
 	}
 	for _, names := range bad {
 		if _, err := buildPlan(names); err == nil {

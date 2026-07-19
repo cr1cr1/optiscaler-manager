@@ -294,6 +294,28 @@ func TestSetDefaultVersionPersistsAndApplies(t *testing.T) {
 	t.Log("default version persisted and applied to install")
 }
 
+// TestOpBusyReflectsInFlightOp: the dashboard gates its per-game Cancel
+// button on OpBusy, so it must track exactly the game with an in-flight op.
+func TestOpBusyReflectsInFlightOp(t *testing.T) {
+	e := newTestEnv(t)
+	if e.sess.OpBusy(e.gameRoot) {
+		t.Fatal("OpBusy true before any op")
+	}
+	if _, ok := e.sess.registerOp(e.gameRoot); !ok {
+		t.Fatal("registerOp refused a free slot")
+	}
+	if !e.sess.OpBusy(e.gameRoot) {
+		t.Fatal("OpBusy false with an op in flight")
+	}
+	if e.sess.OpBusy("/some/other/game") {
+		t.Fatal("OpBusy true for a different game")
+	}
+	e.sess.finishOp(e.gameRoot)
+	if e.sess.OpBusy(e.gameRoot) {
+		t.Fatal("OpBusy true after the op settled")
+	}
+}
+
 func TestClearBundleCache(t *testing.T) {
 	e := newTestEnv(t)
 	dir := filepath.Join(e.sess.deps.CacheDir, "optiscaler", "v1")

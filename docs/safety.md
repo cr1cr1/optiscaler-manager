@@ -60,13 +60,20 @@ metadata, case-folded duplicate targets, dir/file conflicts, decompression-bomb
 totals, and unexpected filenames. Extract to staging; verify required files and
 hashes; only then copy into the game dir.
 
-## Fault-injection scope (exactly five tests)
+## Fault-injection scope
+
+Destructive fault injection (five tests):
 
 1. `TestRejectsUnsafeArchive` — traversal/absolutes rejected at plan time.
 2. `TestBacksUpBeforeOverwrite` — original bytes verified in backup first.
 3. `TestRecordsCreatedAndOverwritten` — manifest reflects reality after commit.
 4. `TestRollbackFromInProgress` — restore originals, delete matching created.
 5. `TestUninstallRefusesChangedFile` — SHA mismatch → refuse, report.
+
+Cancellation fault injection (three tests; see the invariant below):
+`TestInstallCancelBeforeExtract_RollsBack`,
+`TestInstallCancelMidSwap_ManifestFailedAndRollbackClean`,
+`TestUninstallCancel_IdempotentResume`.
 
 Deliberately absent: syscall-combinatoric fault matrices, content-addressed
 backup stores, clock interfaces. Ceiling named: if real-world crash reports

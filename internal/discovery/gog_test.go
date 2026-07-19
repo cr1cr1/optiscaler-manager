@@ -116,3 +116,44 @@ func TestGOGExePath(t *testing.T) {
 		t.Fatalf("empty dir must yield no exe, got %q", exe)
 	}
 }
+
+// TestGOGExePathRejectsTraversal: goggame info files are third-party input;
+// task paths must never resolve outside the game directory.
+func TestGOGExePathRejectsTraversal(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "game")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The hostile target exists on disk, one level above the game dir.
+	writeSized(t, filepath.Join(parent, "evil.exe"), 1<<20)
+
+	cases := []struct {
+		name string
+		info string
+	}{
+		{"dotdot breakout", `{"gameId":"1","playTasks":[{"path":"../evil.exe","isPrimary":true}]}`},
+		{"dotdot breakout windows separators", `{"gameId":"1","playTasks":[{"path":"..\\evil.exe","isPrimary":true}]}`},
+		{"absolute path", `{"gameId":"1","playTasks":[{"path":"` + filepath.Join(parent, "evil.exe") + `","isPrimary":true}]}`},
+		{"workingdir breakout", `{"gameId":"1","playTasks":[{"path":"evil.exe","workingDir":"..","isPrimary":true}]}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			writeFile(t, filepath.Join(dir, "goggame-1.info"), tc.info)
+			if exe := GOGExePath(dir); exe != "" {
+				t.Fatalf("hostile task path resolved to %q; must be rejected", exe)
+			}
+		})
+	}
+
+	// A benign nested path inside the game dir still resolves.
+	writeFile(t, filepath.Join(dir, "goggame-1.info"),
+		`{"gameId":"1","playTasks":[{"path":"bin/game.exe","isPrimary":true}]}`)
+	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSized(t, filepath.Join(dir, "bin", "game.exe"), 1<<20)
+	if exe := GOGExePath(dir); exe != filepath.Join(dir, "bin", "game.exe") {
+		t.Fatalf("benign nested path: got %q", exe)
+	}
+}

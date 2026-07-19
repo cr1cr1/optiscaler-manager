@@ -35,9 +35,9 @@ type model struct {
 	about        bool
 	settingsOpen bool
 	versionBuf   string
-	cols         int // current grid columns, derived from live width
-	cardW        int // current card width in px, derived from live width
-	cardH        int // current card height in px
+	cols         int            // current grid columns, derived from live width
+	cardW        int            // current card width in px, derived from live width
+	cardH        int            // current card height in px
 	exitNow      func(code int) // quit seam: os.Exit in production, stubbed in tests
 }
 

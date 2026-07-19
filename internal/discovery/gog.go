@@ -105,11 +105,18 @@ func GOGExePath(gameDir string) string {
 		return ""
 	}
 	rel = strings.ReplaceAll(rel, `\`, string(filepath.Separator))
-	candidates := []string{filepath.Join(gameDir, rel)}
+	primary, ok := joinWithin(gameDir, rel)
+	if !ok {
+		log.Warn().Str("dir", gameDir).Str("path", rel).Msg("goggame task path escapes game dir, rejected")
+		return ""
+	}
+	candidates := []string{primary}
 	for _, pt := range info.PlayTasks {
 		if pt.WorkingDir != "" && pt.WorkingDir != "." {
 			wd := strings.ReplaceAll(pt.WorkingDir, `\`, string(filepath.Separator))
-			candidates = append(candidates, filepath.Join(gameDir, wd, filepath.Base(rel)))
+			if c, ok := joinWithin(gameDir, filepath.Join(wd, filepath.Base(rel))); ok {
+				candidates = append(candidates, c)
+			}
 		}
 	}
 	for _, c := range candidates {
@@ -119,4 +126,19 @@ func GOGExePath(gameDir string) string {
 	}
 	log.Debug().Str("dir", gameDir).Str("rel", rel).Msg("goggame primary exe not found on disk")
 	return ""
+}
+
+// joinWithin joins rel onto root and reports whether the cleaned result
+// stays inside root. goggame info files are third-party input: absolute
+// paths, volume names, and `..` breakouts are rejected, never resolved.
+func joinWithin(root, rel string) (string, bool) {
+	if rel == "" || filepath.IsAbs(rel) || filepath.VolumeName(rel) != "" {
+		return "", false
+	}
+	root = filepath.Clean(root)
+	j := filepath.Join(root, rel)
+	if j != root && !strings.HasPrefix(j, root+string(os.PathSeparator)) {
+		return "", false
+	}
+	return j, true
 }

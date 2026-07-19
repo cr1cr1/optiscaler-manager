@@ -70,6 +70,10 @@ var ErrEACProtected = errors.New("game is EAC-protected")
 // pass InstallOpts.AllowCached.
 var ErrStaleCache = errors.New("github API rate-limited; refusing stale cached release info")
 
+// ErrNoGames is returned by ScanAllLibraries when discovery finds zero
+// games. Frontends treat it as a settled empty library, never a failure.
+var ErrNoGames = errors.New("no games found")
+
 // LibraryEntry is one row of the game library: the discovered game enriched
 // with upscaler tech, anti-cheat flag, install status, and directory mtime.
 type LibraryEntry struct {
@@ -95,8 +99,9 @@ type ScanAllOptions struct {
 
 // ScanAllLibraries discovers games across every store the platform supports
 // (Steam, Epic, GOG, manual roots) via discovery.ScanAll and enriches them
-// like ScanLibrary does. Games carry Store/AppName/ExePath/CompatPrefix
-// straight from discovery.
+// with tech, EAC, install status, and versions. Games carry
+// Store/AppName/ExePath/CompatPrefix straight from discovery. An empty
+// result fails with ErrNoGames.
 func ScanAllLibraries(ctx context.Context, st *store.Store, opts ScanAllOptions) ([]LibraryEntry, error) {
 	var steamRoots []string
 	if opts.SteamRoot != "" {
@@ -130,58 +135,7 @@ func ScanAllLibraries(ctx context.Context, st *store.Store, opts ScanAllOptions)
 		out = append(out, enrich(g, byInstallDir))
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("no games found")
-	}
-	return out, nil
-}
-
-// ScanLibrary discovers games (one Steam root, or all auto-detected roots
-// when steamRoot is empty) and enriches them. When st is non-nil, committed
-// or interrupted installs are reflected in Status.
-func ScanLibrary(ctx context.Context, st *store.Store, steamRoot string) ([]LibraryEntry, error) {
-	roots := []string{}
-	if steamRoot != "" {
-		roots = append(roots, steamRoot)
-	} else {
-		roots = discovery.SteamRoots()
-	}
-	if len(roots) == 0 {
-		return nil, fmt.Errorf("no Steam installation found")
-	}
-
-	var manifests []*domain.Manifest
-	if st != nil {
-		var err error
-		manifests, err = st.List()
-		if err != nil {
-			return nil, err
-		}
-	}
-	byInstallDir := map[string]*domain.Manifest{}
-	for _, m := range manifests {
-		byInstallDir[m.InstallDir] = m
-	}
-
-	var out []LibraryEntry
-	seen := map[string]bool{}
-	for _, root := range roots {
-		games, err := discovery.ScanSteam(root)
-		if err != nil {
-			continue // one bad root must not sink the scan; caller sees the rest
-		}
-		for _, g := range games {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			if seen[g.InstallDir] {
-				continue
-			}
-			seen[g.InstallDir] = true
-			out = append(out, enrich(g, byInstallDir))
-		}
-	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("no games found")
+		return nil, ErrNoGames
 	}
 	return out, nil
 }
@@ -201,21 +155,26 @@ func enrich(g domain.Game, byInstallDir map[string]*domain.Manifest) LibraryEntr
 	if st, err := os.Stat(g.InstallDir); err == nil {
 		e.ModTime = st.ModTime()
 	}
+	var m *domain.Manifest
 	if dir, err := installDirOf(g.InstallDir); err == nil {
 		e.InjectionDir = dir
-		if m, ok := byInstallDir[dir]; ok {
-			e.Status = m.Status
-			e.ManifestID = m.ID
+		if mm, ok := byInstallDir[dir]; ok {
+			e.Status = mm.Status
+			e.ManifestID = mm.ID
+			m = mm
 		}
 	}
-	enrichVersions(&e)
+	enrichVersions(&e, m)
 	return e
 }
 
 // enrichVersions fills OptiScalerVersion/ComponentVersions for managed
 // installs only (committed manifest or OptiScaler.dll present): parsing PEs
-// for every unmanaged game would multiply scan I/O for no benefit.
-func enrichVersions(e *LibraryEntry) {
+// for every unmanaged game would multiply scan I/O for no benefit. When the
+// on-disk evidence chain (manifest.json → log → ini) yields no version —
+// e.g. a fresh install that has not run yet — the committed store
+// manifest's resolved version is the fallback.
+func enrichVersions(e *LibraryEntry, m *domain.Manifest) {
 	if e.InjectionDir == "" {
 		return
 	}
@@ -225,6 +184,9 @@ func enrichVersions(e *LibraryEntry) {
 		return
 	}
 	e.OptiScalerVersion = pever.OptiScalerVersion(e.InjectionDir)
+	if e.OptiScalerVersion == "" && m != nil {
+		e.OptiScalerVersion = m.Resolved.Version
+	}
 	e.ComponentVersions = componentVersions(e.InjectionDir)
 }
 
