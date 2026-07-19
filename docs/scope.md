@@ -66,6 +66,30 @@ grid view; profile system and INI editors; import-from-INI; bulk install;
 self-update; i18n; GPU detection; analysis cache; clean-folder tool; beta
 channel; component pickers.
 
+## v0.2 scope (GUI restyle + frontend abstraction)
+
+Added after v0.1, modeled on the reference client's main window:
+
+- **Cover-art card grid** (default view) with list view toggle. Cards:
+  cover, platform pill, installed badge, EAC badge, status badges, tech
+  pills, quick-install toggle.
+- **Covers**: Steam CDN `library_600x900.jpg` by appid (primary) → Steam
+  store search (name→appid, zero-key fallback) → generated placeholder.
+  Cached on disk by sanitized appid. (Ecosystem-verified keyless pattern:
+  Lutris and Heroic use the same Steam CDN primary; Bottles uses a private
+  SteamGridDB proxy, not copyable.)
+- **Chrome**: dark theme, icon sidebar, toolbar (scan/search/view toggle),
+  toast overlay, full-width status bar, About modal.
+- **`internal/ui` Session**: frontend-agnostic interactive core (state,
+  commands, event stream, consent gating). The shirei GUI is a thin binding
+  over it; a bubbletea TUI will bind to the same Session (decided, not yet
+  built). One-shot CLI keeps using `internal/app` directly.
+
+Still deferred in v0.2: the TUI itself, Add-Manually GUI flow, bulk install,
+edit mode, profiles UI, GPU indicator, SteamGridDB key support, i18n,
+window-state persistence, injection-method picker (dxgi only), native file
+dialogs (shirei has none).
+
 ## Dependencies (settled)
 
 - Vendored (`go mod vendor`, `vendor/` committed; `-mod=vendor` stays in CI and

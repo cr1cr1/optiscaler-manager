@@ -266,6 +266,20 @@ Append-only milestone and task log. Newest at the bottom.
 - Visual QA: iterated `RenderToPNG` frames against the reference screenshot
   until sidebar, grid, pills, toasts, and status bar all render correctly.
 
+## 2026-07-19 — P6: docs + cover-chain validation
+
+- Cover-chain research (user question — where does Bottles get covers?):
+  **Bottles uses a private proxy** (`steamgrid.usebottles.com/api/search/{name}`)
+  wrapping SteamGridDB with the key server-side — not a copyable keyless
+  source. Ecosystem validation instead: **Lutris and Heroic both hit Steam
+  CDN keyless** (`library_600x900.jpg` / `header.jpg` by appid) — our exact
+  primary; SteamGridDB elsewhere always needs a user key (Heroic model,
+  stays cut). Our chain (Steam CDN → store search → placeholder) is the
+  proven pattern; no change.
+- docs/scope.md: v0.2 section (grid, covers, chrome, ui.Session, deferred).
+  docs/architecture.md: package map + data flow with Session. README: v0.2
+  status and frontend-abstraction note.
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`

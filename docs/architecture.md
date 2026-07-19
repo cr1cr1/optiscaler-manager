@@ -27,29 +27,35 @@ internal/
   discovery/  Steam library scan (go-vdf), install-dir resolution
   classify/   upscaler kind+DLL detection
   gh/         GitHub releases: glob asset match, cooldown cache
-  archive/    7z backend interface + sevenzip impl (or 7z shell-out)
+  archive/    7z extraction with hostile-input defenses (sevenzip)
   installer/  transaction core: stage → validate → backup → copy → manifest;
               rollback; uninstall; EAC check
   profile/    curated OptiScaler.ini writer
-  gui/        ALL shirei imports; Action List view-model + views
+  covers/     cover art: Steam CDN → store search → placeholder (disk cache)
+  app/        shared orchestration: ScanLibrary, Install, Uninstall, Rollback
+  ui/         frontend-agnostic Session: state, commands, events, consent
+  gui/        shirei binding over ui.Session (ALL shirei imports live here)
 ```
 
-`internal/installer` is the deep module: GUI and CLI both call it directly.
-No service/orchestration layer between them (ceremony).
+`internal/installer` is the deep module for file transactions. `internal/app`
+sequences domain packages into workflows both frontends share. `internal/ui`
+adds interactive session semantics (async commands, event stream, consent
+gates, toasts) with zero display-toolkit imports; `internal/gui` renders its
+snapshot and forwards commands. A future TUI binds to the same Session.
 
 ## Data flow
 
 ```
 scan/install (CLI) ─┐
                     ├─→ discovery → classify → gh → archive → installer → store
-GUI (frame gor.) ───┘        (domain packages never import shirei)
-```
+GUI/TUI (Session) ──┘        (domain packages never import shirei)
+                 ↕ covers (Steam CDN / store search)
 
-- Background goroutines do IO (scan, download, install); UI runs only on the
-  shirei frame goroutine. State crosses via `WithFrameLock` +
-  `RequestNextFrame`; commands via channels; cancellation via `context` at
-  transaction boundaries only.
-- View tests assert view-model state, never pixels (`RenderToPNG` smoke only).
+ui.Session: commands spawn goroutines; state mutated under its mutex;
+frontends drain Events() and render Snapshot(). shirei rule: all UI calls on
+the frame goroutine; the GUI binding drains events each frame (non-blocking)
+and re-renders.
+```
 
 ## External state root
 

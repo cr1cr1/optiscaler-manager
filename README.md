@@ -7,7 +7,13 @@ a game directory with full backup + rollback safety, and uninstalls cleanly.
 GUI: [go-shirei](https://github.com/hasenj/go-shirei) (`go.hasen.dev/shirei`,
 pinned v0.5.2). v0.1 targets **Linux + Steam (Proton)**.
 
-Status: v0.1 feature-complete. See `docs/` for scope, architecture, safety
+The GUI is a thin [go-shirei](https://github.com/hasenj/go-shirei) binding
+over a frontend-agnostic session core (`internal/ui`) — a bubbletea TUI can
+bind to the same session later.
+
+Status: v0.2 — cover-card grid GUI (dark theme, sidebar, toasts, status bar,
+quick install/uninstall per game), headless CLI, and the interactive session
+core shared by future frontends. See `docs/` for scope, architecture, safety
 model, and the milestone plan.
 
 ## Usage
