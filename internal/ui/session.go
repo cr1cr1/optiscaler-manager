@@ -24,6 +24,12 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 )
 
+// emptyLibraryError mirrors the "no games found" error app.ScanAllLibraries
+// returns for an empty scan. For the interactive UI an empty library is a
+// settled state (the frontend shows empty-state guidance), never a failure.
+// (internal/app should export a sentinel; until then, match the message.)
+const emptyLibraryError = "no games found"
+
 // toastTTL is how long a toast stays visible.
 const toastTTL = 8 * time.Second
 
@@ -255,11 +261,15 @@ func (s *Session) Scan(ctx context.Context) {
 			ExtraDirs: s.deps.Settings.ExtraDirs,
 		})
 		if err != nil {
-			s.setBusy("")
-			s.setStatus("Scan failed: " + err.Error())
-			log.Warn().Err(err).Msg("scan failed")
-			s.emit(Event{Kind: EvScanFailed, Text: err.Error()})
-			return
+			if err.Error() == emptyLibraryError {
+				entries = nil // empty first-run library: settle at 0 games
+			} else {
+				s.setBusy("")
+				s.setStatus("Scan failed: " + err.Error())
+				log.Warn().Err(err).Msg("scan failed")
+				s.emit(Event{Kind: EvScanFailed, Text: err.Error()})
+				return
+			}
 		}
 		rows := make([]GameRow, 0, len(entries))
 		for _, e := range entries {

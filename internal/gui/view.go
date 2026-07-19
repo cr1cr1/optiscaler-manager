@@ -47,6 +47,10 @@ func (m *model) rootView() {
 // actionList is the fuzzy-filtered, actionable-first virtualized game list.
 func (m *model) actionList() {
 	rows := m.visibleRows()
+	if len(rows) == 0 {
+		m.emptyState()
+		return
+	}
 	VirtualListView("games", len(rows),
 		func(i int) any { return rows[i].InstallDir },
 		func(i int, w float32) float32 { return 30 },
@@ -168,6 +172,22 @@ func (m *model) auditTable() {
 		m.visibleRows(),
 		func(r ui.GameRow) any { return r.InstallDir },
 		0)
+}
+
+// emptyStateCopy is the single guidance line shown when the library (or the
+// current filter) has nothing to display.
+func emptyStateCopy(query string) string {
+	if query != "" {
+		return "No games match \"" + query + "\" — clear the search to see the library"
+	}
+	return "No games found — use Add Game to register a folder"
+}
+
+// emptyState renders the guidance line in place of an empty library view.
+func (m *model) emptyState() {
+	Container(Attrs(Pad(18)), func() {
+		muted(emptyStateCopy(m.state.Query))
+	})
 }
 
 func statusLabel(e *ui.GameRow) string {

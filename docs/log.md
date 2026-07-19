@@ -572,3 +572,37 @@ Append-only milestone and task log. Newest at the bottom.
   cardW capped at 320.
 - Verified: `go test ./...` (18 packages ok), `go vet ./...`,
   `golangci-lint run` (0 issues). No changes outside internal/gui + this log.
+
+## 2026-07-20 — W6-T8 (F1): zero-config first-run E2E + empty states
+
+- TDD: four red-first tests. RED evidence: `TestFirstRunEmptyLibraryScanSucceeds`
+  failed with `scan reported as failure: "no games found"`;
+  `TestEmptyStateCopyShown` compile-red on the missing `emptyStateCopy` seam.
+  `TestFirstRunZeroConfigScanToInstalled` and `TestFirstRunEACInlinePrompt`
+  passed on first run — they prove the existing flow end-to-end (fresh
+  profile, fake GitHub, real bundle.7z fixture): scan → ONE QuickInstall →
+  status committed + `dxgi.dll` in the game bin dir; EAC game → inline
+  confirm pending with NO install started → `AnswerConfirm(true)` →
+  installed. Full `t.Log` transcripts in `internal/ui/firstrun_test.go`.
+- Friction fix (the only genuine first-run blocker found):
+  `app.ScanAllLibraries` errors with "no games found" on an empty library,
+  so a first-run user with zero games got a scary `EvScanFailed` ("Scan
+  failed: no games found") and no guidance. `internal/ui/session.go` now
+  settles that one case as a successful empty scan (`EvScanDone "0 games"`);
+  all other scan errors still fail loudly. The message is matched via the
+  new `emptyLibraryError` const because internal/app is read-only here — it
+  should export a sentinel later.
+- `internal/gui/view.go`: `emptyStateCopy(query)` + `emptyState()` — one
+  muted line in place of an empty grid/list: "No games found — use Add Game
+  to register a folder" (empty library) vs "No games match …" (filter).
+  Wired into `gridView` and `actionList`; audit table untouched (dev view).
+- Friction audit, checked and NOT changed: settings modal is never required
+  before install (`DefaultVersion` defaults to `latest`); EAC and
+  stale-cache consent gates still fire (proven by tests); TUI keeps its
+  "(no matches)" line (conflates empty library with filter-empty, but
+  harmless and ponytail-minimal); "no Steam installation found" only exists
+  in the CLI `ScanLibrary` path — the session's multi-store scan never hits
+  it, and the empty-library fix covers the GUI/TUI outcome.
+- Verified: `go test ./...` (20 packages ok), `go vet ./...`,
+  `golangci-lint run` (0 issues). No changes outside internal/ui,
+  internal/gui, and this log.
