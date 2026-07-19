@@ -13,10 +13,21 @@ builds:
       - CGO_ENABLED=0
     goos:
       - linux
+      # darwin is blocked by the toolchain, not by config: shirei v0.5.2's
+      # only macOS backend (vendored cocoabackend) is cgo + Cocoa/QuartzCore/
+      # IOSurface, so a darwin build needs an Apple SDK. CGO_ENABLED=0 fails
+      # at compile (cocoabackend/perf_darwin.go references symbols defined in
+      # the cgo file, which the toolchain drops when cgo is off), and
+      # cross-linking cgo from a Linux runner needs osxcross + a licensed
+      # Xcode SDK. Unlock path: a macos-latest release runner building the
+      # darwin targets with CGO_ENABLED=1. Verified 2026-07-20 (W6):
+      # `GOOS=darwin go build ./...` fails both ways on ubuntu-latest.
       # - darwin
       - windows
     goarch:
       - amd64
+      # arm64 for linux/windows is a one-line add (pure Go, CGO off);
+      # darwin arm64 shares the cgo blocker above.
       # - arm64
     flags:
     - -mod=vendor

@@ -38,3 +38,35 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12
+
+  # Cross-GOOS compile gates. Windows is fully CGO-free, so the whole tree
+  # vets. Darwin is package-scoped: shirei's cocoa backend needs an Apple SDK
+  # (see .goreleaser.yml), so the whole-tree darwin build cannot run on a
+  # Linux runner. Cross-compiled test binaries cannot execute here (no
+  # wine/darling), so the honest gate is vet + test-compile (W3 decision).
+  xplatform:
+    runs-on: ubuntu-latest
+    env:
+      GOFLAGS: -mod=vendor
+      CGO_ENABLED: 0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.mod'
+      - name: Vet windows (whole tree)
+        run: GOOS=windows go vet ./...
+      - name: Vet darwin (non-GUI packages)
+        run: GOOS=darwin go vet ./internal/discovery/ ./internal/launch/
+      - name: Compile windows test binaries
+        run: |
+          for pkg in ./internal/discovery/ ./internal/launch/; do
+            GOOS=windows go test -c -o /dev/null "$pkg"
+          done
+      - name: Compile darwin test binaries
+        run: |
+          for pkg in ./internal/discovery/ ./internal/launch/; do
+            GOOS=darwin go test -c -o /dev/null "$pkg"
+          done

@@ -97,3 +97,20 @@ Mechanics:
 - The session layer exposes per-game cancellation (`Session.CancelOp`); a
   cancelled op restores the row's pre-op status and surfaces exactly one
   "Cancelled" toast/event — never the failure path.
+
+## Launch safety
+
+Launching a game is fire-and-forget by design:
+
+- Spawns are detached (`Start` + `Process.Release`, never `Wait`). The app
+  holds no process handles, tracks no game lifetime, and never kills what it
+  started. Logs say "launch requested", never "launched" — spawn success
+  proves nothing about the game running.
+- The manual-store template is split on double-quote grouping only: no shell,
+  no metacharacter expansion. `{exe}`/`{dir}`/`{appid}`/`{args}` expand to
+  argv entries verbatim, so a crafted game path cannot inject commands.
+- URL openers (xdg-open / open / rundll32) get a 10-second context cap and
+  are waited on, so a hung opener can't leak a zombie or block the session.
+- Proton is never invoked directly (`proton run` is an upstream-unsupported
+  path); Steam games launch through `steam://rungameid`, leaving Proton
+  selection to Steam.
