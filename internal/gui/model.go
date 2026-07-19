@@ -30,6 +30,7 @@ type model struct {
 	state     ui.State
 	filter    string
 	auditGrid bool
+	cols      int // current grid columns, derived from live width
 }
 
 func newModel(cfg Config) *model {
@@ -37,6 +38,7 @@ func newModel(cfg Config) *model {
 		cfg:       cfg,
 		sess:      cfg.Session,
 		auditGrid: cfg.AuditGrid,
+		cols:      4,
 		state:     ui.State{Mode: ui.ViewGrid, StatusLine: "Ready"},
 	}
 }

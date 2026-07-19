@@ -22,15 +22,23 @@ func (m *model) rootView() {
 					Label(m.state.Busy)
 				}
 				Label(m.state.StatusLine)
+				if m.sess != nil && Button(SymIRight, viewToggleLabel(m.state.Mode)) {
+					m.sess.ToggleView()
+				}
 			})
 			TextInput(&m.filter)
-			if m.auditGrid {
-				m.auditTable()
-			} else {
-				m.actionList()
-			}
 			m.toastStrip()
 		})
+		// The virtualized views must be direct Viewport children: they size
+		// themselves to the remaining window space and render nothing inside
+		// auto-sized wrapper columns (upstream demos do the same).
+		if m.auditGrid {
+			m.auditTable()
+		} else if m.state.Mode == ui.ViewList {
+			m.actionList()
+		} else {
+			m.gridView()
+		}
 		if m.state.Confirm != nil {
 			m.confirmModal()
 		} else if m.state.Selected != "" {
@@ -175,4 +183,11 @@ func quickLabel(e *ui.GameRow) string {
 		return "Uninstall"
 	}
 	return "Install"
+}
+
+func viewToggleLabel(mode ui.ViewMode) string {
+	if mode == ui.ViewGrid {
+		return "View: grid"
+	}
+	return "View: list"
 }

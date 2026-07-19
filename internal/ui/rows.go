@@ -35,6 +35,7 @@ type GameRow struct {
 	AppID        string
 	InstallDir   string
 	InjectionDir string
+	Platform     string
 	TechBadges   []Badge
 	Status       domain.Status
 	Actionable   bool

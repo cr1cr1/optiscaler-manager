@@ -229,6 +229,26 @@ Append-only milestone and task log. Newest at the bottom.
   smoke (list + confirm-modal frames). Sort/filter/EAC unit tests live in
   `internal/ui` since P2.
 
+## 2026-07-19 — P4: cover-card grid + view toggle
+
+- `internal/gui/grid.go`: the C#-client-style card grid — cover image
+  (170×255, `Image` scales down to fit), platform pill, `✦ OptiScaler`
+  installed badge, EAC marker, title, tech badges, quick-install toggle
+  (`quickLabel`: Install/Uninstall by status). Cards chunk into rows of N
+  (`chunkRows`, N recomputed from live width each frame) inside
+  `VirtualListView`.
+- `GameRow.Platform` added ("Steam" — discovery is Steam-only for now).
+- Grid is the default view; header button toggles grid↔list via
+  `Session.ToggleView` (`ui.ViewMode`).
+- Key shirei finding (documented in view.go): virtualized views must be
+  DIRECT Viewport children — inside auto-sized wrapper columns
+  (Grow/Expand/Clip all fail) they render nothing; only explicit FixSize
+  wrappers work otherwise. Verified against upstream demos.
+- Visual QA loop: headless `RenderToPNG` reviewed as an image — grid,
+  badges, covers confirmed rendering.
+- Tests: `TestChunkRows`, `TestQuickInstallButtonLabelByStatus`,
+  `TestGridSmoke`, `TestGridToggleRendersListMode`, `TestToggleView` (ui).
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`

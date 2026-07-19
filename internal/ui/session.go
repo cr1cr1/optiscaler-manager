@@ -321,6 +321,7 @@ func (s *Session) toRow(ctx context.Context, e app.LibraryEntry) GameRow {
 		AppID:        e.Game.AppID,
 		InstallDir:   e.Game.InstallDir,
 		InjectionDir: e.InjectionDir,
+		Platform:     "Steam", // v0.1 discovery is Steam-only
 		Status:       e.Status,
 		Actionable:   actionableStatus(e.Status),
 		EAC:          e.EAC,
