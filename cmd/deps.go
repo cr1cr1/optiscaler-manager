@@ -26,7 +26,8 @@ type Deps struct {
 }
 
 // newDeps builds production dependencies. OM_DATA_DIR overrides the store
-// root (testability); OM_GH_BASE_URL overrides the GitHub API base.
+// root and OM_CACHE_DIR the cache root (testability); OM_GH_BASE_URL
+// overrides the GitHub API base.
 func newDeps(version string) (*Deps, error) {
 	root := os.Getenv("OM_DATA_DIR")
 	if root == "" {
@@ -36,7 +37,10 @@ func newDeps(version string) (*Deps, error) {
 			return nil, err
 		}
 	}
-	cacheDir := filepath.Join(root, "cache")
+	cacheDir := os.Getenv("OM_CACHE_DIR")
+	if cacheDir == "" {
+		cacheDir = defaultCacheRoot()
+	}
 	var ghClient *gh.Client
 	if base := os.Getenv("OM_GH_BASE_URL"); base != "" {
 		ghClient = gh.NewWithBaseURL(nil, cacheDir, base)
@@ -51,6 +55,18 @@ func newDeps(version string) (*Deps, error) {
 		GH:       ghClient,
 		Version:  version,
 	}, nil
+}
+
+// defaultCacheRoot returns $XDG_CACHE_HOME/optiscaler-manager, falling back
+// to ~/.cache/optiscaler-manager.
+func defaultCacheRoot() string {
+	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
+		return filepath.Join(xdg, "optiscaler-manager")
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".cache", "optiscaler-manager")
+	}
+	return filepath.Join(os.TempDir(), "optiscaler-manager")
 }
 
 // checkInterrupted warns about installs left in in_progress/failed state.

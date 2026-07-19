@@ -20,7 +20,7 @@ func (c *GUICmd) Run(d *Deps) error {
 	sess := ui.NewSession(ui.Deps{
 		Store:    d.Store,
 		GH:       d.GH,
-		Covers:   covers.New(nil, filepath.Join(filepath.Dir(d.CacheDir), "covers")),
+		Covers:   covers.New(nil, filepath.Join(d.CacheDir, "covers")),
 		CacheDir: d.CacheDir,
 	})
 	return gui.Run(context.Background(), gui.Config{Session: sess, AuditGrid: c.AuditGrid, Version: d.Version})

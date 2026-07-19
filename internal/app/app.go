@@ -5,8 +5,11 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -155,9 +158,14 @@ func Install(ctx context.Context, st *store.Store, client *gh.Client, cacheDir, 
 		return nil, ErrStaleCache
 	}
 
-	bundlePath, digest, err := client.Download(ctx, resolved, cacheDir)
+	bundleDir := filepath.Join(cacheDir, "optiscaler", resolved.Version)
+	bundlePath := filepath.Join(bundleDir, resolved.AssetName)
+	digest, err := fileSHA256(bundlePath)
 	if err != nil {
-		return nil, err
+		bundlePath, digest, err = client.Download(ctx, resolved, bundleDir)
+		if err != nil {
+			return nil, err
+		}
 	}
 	resolved.SHA256 = digest
 
@@ -227,4 +235,18 @@ func canonicalDir(path string) (string, error) {
 		return "", fmt.Errorf("%s is not a directory", abs)
 	}
 	return abs, nil
+}
+
+// fileSHA256 streams a file through SHA-256 and returns the hex digest.
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }

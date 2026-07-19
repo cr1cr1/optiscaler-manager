@@ -92,7 +92,7 @@ func Install(ctx context.Context, st *store.Store, req Request) (*domain.Manifes
 
 	resolved := req.Resolved
 	for _, fp := range plan {
-		if strings.EqualFold(filepath.Base(fp.srcRel), "OptiScaler.dll") {
+		if strings.EqualFold(filepath.Base(fp.srcRel), "OptiScaler.dll") && resolved.SHA256 == "" {
 			digest, err := hashFile(filepath.Join(staging, fp.srcRel))
 			if err != nil {
 				return nil, fmt.Errorf("hash staged OptiScaler.dll: %w", err)
