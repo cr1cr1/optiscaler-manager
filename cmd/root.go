@@ -50,6 +50,7 @@ type CLI struct {
 	Uninstall UninstallCmd `cmd:"" help:"Reverse a committed install"`
 	Rollback  RollbackCmd  `cmd:"" help:"Restore a game after an interrupted or failed install"`
 	Gui       GUICmd       `cmd:"" default:"withargs" help:"Launch the graphical interface (default)"`
+	Tui       TUICmd       `cmd:"" help:"Launch the terminal user interface"`
 
 	args []string // original args, used to detect --help before side effects
 }

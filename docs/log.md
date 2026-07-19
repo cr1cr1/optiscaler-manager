@@ -499,3 +499,39 @@ Append-only milestone and task log. Newest at the bottom.
   manual template).
 - Verified: `go test ./...` (18 packages ok), `go vet ./...`,
   `golangci-lint run` (0 issues). No changes to launch/discovery/domain.
+
+## 2026-07-20 — W5-T7: bubbletea TUI frontend on ui.Session
+
+- TDD: six red-first teatest tests in `internal/tui/model_test.go` failing on
+  undefined `New`/`Model` before the implementation: `TestTUIListsGames`
+  (golden-ish frame assertion on the final view + captured frame artifact),
+  `TestTUIFilter` (`/` narrows, Esc clears via `Session.SetQuery("")`),
+  `TestTUIInstallRoundTrip` (enter → real install → status line),
+  `TestTUIQuitsOnQ`, `TestTUIConfirmEACPrompt` (EAC dialog, `y` consents,
+  install proceeds), `TestTUILaunchBinding` (`l` → `Session.Launch` via the
+  injected launcher seam; captured argv `[xdg-open steam://rungameid/100]`).
+- `internal/tui`: second frontend proving the frontend-agnostic core.
+  bubbletea `Model` over `*ui.Session` — the classic channel→Cmd bridge
+  (`waitEvent` re-subscribes after every event), render from
+  `Snapshot()`/`VisibleRows()`, keys forwarded to session commands
+  (j/k navigate, enter quick install/uninstall, l launch, c cancel,
+  `/` filter, `?`/f1 help, q quit). Pending confirmations are modal
+  (`y`/`n`/Esc → `AnswerConfirm`). Plain-text rendering; no lipgloss/bubbles
+  in production code. Zero business logic.
+- `cmd`: shared session construction factored out of `gui.go` into
+  `cmd/session.go` (`newSession`), consumed by both frontends; new `tui`
+  kong subcommand (GUI stays the default). zerolog is redirected to
+  `$OM_DATA_DIR/tui.log` while the TUI runs so logging never corrupts the
+  display (`zerolog.Nop()` fallback).
+- Test env mirrors the ui seams through the exported API only: httptest
+  GitHub/CDN/search, temp store, temp Steam root, `Deps.Launcher` capture
+  runner; hermetic (no home dir, no network). teatest note: `WaitFor`
+  consumes the output stream — one wait per synchronization point.
+- Deps: `github.com/charmbracelet/bubbletea v1.3.10`,
+  `github.com/charmbracelet/x/exp/teatest v0.0.0-20260719004043-bb9a97036f23`
+  (pins bubbletea v1 API); lipgloss/x-ansi/cellbuf etc. enter `vendor/` only
+  as transitive test-deps of teatest. `go mod tidy && go mod vendor` in this
+  commit.
+- Verified: `go test ./...` (19 packages ok, 6 new tui tests), `go vet ./...`,
+  `golangci-lint run` (0 issues), `goreleaser release --snapshot --clean`.
+  No changes to `internal/ui`'s public API.

@@ -41,13 +41,15 @@ internal/
               ManualEntry, versioned bundle cache
   ui/         frontend-agnostic Session: state, commands, events, consent
   gui/        shirei binding over ui.Session (ALL shirei imports live here)
+  tui/        bubbletea binding over ui.Session (renders snapshots, forwards
+              keys; no business logic)
 ```
 
 `internal/installer` is the deep module for file transactions. `internal/app`
 sequences domain packages into workflows both frontends share. `internal/ui`
 adds interactive session semantics (async commands, event stream, consent
-gates, toasts) with zero display-toolkit imports; `internal/gui` renders its
-snapshot and forwards commands. A future TUI binds to the same Session.
+gates, toasts) with zero display-toolkit imports; `internal/gui` and
+`internal/tui` render its snapshot and forward commands.
 
 ## Data flow
 
