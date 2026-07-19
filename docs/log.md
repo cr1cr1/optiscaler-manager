@@ -535,3 +535,40 @@ Append-only milestone and task log. Newest at the bottom.
 - Verified: `go test ./...` (19 packages ok, 6 new tui tests), `go vet ./...`,
   `golangci-lint run` (0 issues), `goreleaser release --snapshot --clean`.
   No changes to `internal/ui`'s public API.
+## 2026-07-20 — W5-T7: GUI keyboard nav, exit, responsive grid, version badges, launch
+
+- TDD: eight red-first tests (compile-red on the new seams, then green):
+  `TestFocusableButtonTabCyclesAndEnterActivates`,
+  `TestFocusableButtonConsumesKey`, `TestExitButtonFlushesSettings`,
+  `TestRenderPNG800pxValid`, `TestRenderPNG3840pxValid`,
+  `TestCardShowsVersionBadges`, `TestLaunchButtonCallsSessionLaunch`,
+  `TestEscClosesModal` (EAC modal regression).
+- `internal/gui/widgets.go` (new): `focusableButton` — wraps
+  `widgets.Button` in a `Focusable` container with `CycleFocusOnTab`, a
+  focus ring, and Enter/Space activation that consumes the key
+  (`FrameInput.Key = KeyCodeNone`) so no later widget double-fires. Applied
+  to every button: cards, toolbar, sidebar, settings/about/confirm/dashboard
+  modals. Tab and Shift-Tab cycling across the whole app comes free from
+  shirei's global focus cycle. Also `versionPills` (✦ OptiScaler pill
+  versioned when known, one pill per component version, Proton marker when
+  `CompatPrefix` is set) and `launchable` (AppID or ExePath).
+- Exit: sidebar "Exit" calls `model.exit()` — flushes a pending
+  settings-modal edit through the session's existing persistence path
+  (`SetDefaultVersion` → `settings.Save`), then quits via the injected
+  `exitNow` seam (`os.Exit` in production; shirei has no `app.Quit`).
+- Launch: per-card and dashboard "Launch" button (only when launchable) →
+  `session.Launch(dir)`; dashboard busy state gains a "Cancel" button →
+  `session.CancelOp(dir)`. Cards and dashboard render the version pills.
+- Responsive grid: `fitCards` clamps columns to [1, 8], caps card width at
+  320px (rows stay left-aligned on ultrawide), and computes card width from
+  the padding-corrected inner width — fixing a ~22px right-edge clip the old
+  math produced at every window size. shirei API verification notes: key
+  constants are `KeyEnter`/`KeySpace`/`KeyCodeNone` (not `KeyCodeEnter`/
+  `KeyCodeSpace`); `CycleFocusOnTab`, `HasFocus`, `Focusable`, and the
+  modal's built-in Esc handling confirmed against vendored v0.5.2.
+- Render artifacts (validated in-test via the existing RenderToPNG harness):
+  800x600 frame decodes at 800x600 with cols=3, cardW=230, no horizontal
+  overflow; 3840x1080 frame decodes at 3840x1080 with cols capped at 8 and
+  cardW capped at 320.
+- Verified: `go test ./...` (18 packages ok), `go vet ./...`,
+  `golangci-lint run` (0 issues). No changes outside internal/gui + this log.

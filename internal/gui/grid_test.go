@@ -97,6 +97,90 @@ func TestGridSmoke(t *testing.T) {
 	t.Logf("grid frame: %d bytes", st.Size())
 }
 
+func TestRenderPNG800pxValid(t *testing.T) {
+	m := newModel(Config{})
+	m.state = ui.State{
+		StatusLine: "3 games",
+		Mode:       ui.ViewGrid,
+		Rows: []ui.GameRow{
+			{Title: "Cyberpunk 2077", AppID: "1091500", Platform: "Steam", Status: domain.StatusCommitted,
+				OptiScalerVersion: "0.9.4", Components: []string{"DLSS 3.7.10"}, CompatPrefix: "/pfx/1091500",
+				TechBadges: []ui.Badge{{Label: "DLSS", Tone: ui.ToneGreen}}},
+			{Title: "Beat Saber", AppID: "620980", Platform: "Steam"},
+			{Title: "Starfield", AppID: "1716740", Platform: "Steam", Status: domain.StatusFailed, Actionable: true},
+		},
+	}
+
+	out := filepath.Join(t.TempDir(), "frame800.png")
+	if err := renderToPNG(out, 800, 600, m.rootView); err != nil {
+		t.Fatalf("renderToPNG 800px: %v", err)
+	}
+	f, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	cfg, err := png.DecodeConfig(f)
+	if err != nil {
+		t.Fatalf("decode 800px frame: %v", err)
+	}
+	if cfg.Width != 800 || cfg.Height != 600 {
+		t.Errorf("frame %dx%d, want 800x600", cfg.Width, cfg.Height)
+	}
+	if m.cols < 1 {
+		t.Errorf("cols %d at 800px, want >= 1", m.cols)
+	}
+	if m.cardW < 120 {
+		t.Errorf("cardW %d at 800px: cards unusably narrow", m.cardW)
+	}
+	used := m.cols*m.cardW + (m.cols-1)*cardGap
+	avail := 800 - 64 - 2*rowPadH // window minus sidebar and row padding
+	if used > avail {
+		t.Errorf("grid row occupies %dpx of %dpx usable width at 800px: horizontal overflow", used, avail)
+	}
+	t.Logf("800px frame: %dx%d, cols=%d cardW=%d cardH=%d used=%d avail=%d",
+		cfg.Width, cfg.Height, m.cols, m.cardW, m.cardH, used, avail)
+}
+
+func TestRenderPNG3840pxValid(t *testing.T) {
+	m := newModel(Config{})
+	rows := make([]ui.GameRow, 12)
+	for i := range rows {
+		rows[i] = ui.GameRow{Title: string(rune('A' + i)), AppID: string(rune('1' + i)), Platform: "Steam"}
+	}
+	m.state = ui.State{StatusLine: "12 games", Mode: ui.ViewGrid, Rows: rows}
+
+	out := filepath.Join(t.TempDir(), "frame3840.png")
+	if err := renderToPNG(out, 3840, 1080, m.rootView); err != nil {
+		t.Fatalf("renderToPNG 3840px: %v", err)
+	}
+	f, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	cfg, err := png.DecodeConfig(f)
+	if err != nil {
+		t.Fatalf("decode 3840px frame: %v", err)
+	}
+	if cfg.Width != 3840 || cfg.Height != 1080 {
+		t.Errorf("frame %dx%d, want 3840x1080", cfg.Width, cfg.Height)
+	}
+	if m.cols != maxCols {
+		t.Errorf("cols %d at 3840px, want capped at %d", m.cols, maxCols)
+	}
+	if m.cardW > maxCardW {
+		t.Errorf("cardW %d at 3840px exceeds cap %d: cards stretch absurdly", m.cardW, maxCardW)
+	}
+	used := m.cols*m.cardW + (m.cols-1)*cardGap
+	avail := 3840 - 64 - 2*rowPadH
+	if used > avail {
+		t.Errorf("grid row occupies %dpx of %dpx usable width at 3840px", used, avail)
+	}
+	t.Logf("3840px frame: %dx%d, cols=%d cardW=%d used=%d avail=%d",
+		cfg.Width, cfg.Height, m.cols, m.cardW, used, avail)
+}
+
 func TestGridToggleRendersListMode(t *testing.T) {
 	m := newModel(Config{})
 	m.state = ui.State{

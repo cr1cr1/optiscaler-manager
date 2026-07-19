@@ -5,6 +5,7 @@ package gui
 
 import (
 	"context"
+	"os"
 
 	shireiapp "go.hasen.dev/shirei/app"
 
@@ -37,6 +38,7 @@ type model struct {
 	cols         int // current grid columns, derived from live width
 	cardW        int // current card width in px, derived from live width
 	cardH        int // current card height in px
+	exitNow      func(code int) // quit seam: os.Exit in production, stubbed in tests
 }
 
 func newModel(cfg Config) *model {
@@ -48,6 +50,7 @@ func newModel(cfg Config) *model {
 		cardW:     190,
 		cardH:     310,
 		state:     ui.State{Mode: ui.ViewGrid, StatusLine: "Ready"},
+		exitNow:   os.Exit,
 	}
 }
 
@@ -101,4 +104,22 @@ func (m *model) selectedRow() *ui.GameRow {
 		}
 	}
 	return nil
+}
+
+// exit flushes a pending settings-modal edit through the session's
+// persistence path, then quits via the injected seam (shirei has no
+// app.Quit, so production exits the process).
+func (m *model) exit() {
+	if m.sess != nil && m.versionBuf != "" && m.versionBuf != m.sess.Settings().DefaultVersion {
+		m.sess.SetDefaultVersion(m.versionBuf)
+	}
+	m.exitNow(0)
+}
+
+// launchGame starts the game when the row carries launch identity.
+func (m *model) launchGame(e ui.GameRow) {
+	if m.sess == nil || !launchable(&e) {
+		return
+	}
+	m.sess.Launch(e.InstallDir)
 }
