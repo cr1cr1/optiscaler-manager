@@ -24,7 +24,10 @@ cmd/
 internal/
   domain/     Game, Release, Component, Kind, InstallStatus, Manifest, entries
   store/      manifest + backup persistence (external root)
-  discovery/  Steam library scan (go-vdf), install-dir resolution
+  discovery/  multi-store game scan: Steam (go-vdf), Epic .item manifests,
+              GOG registry + goggame info, macOS .app bundles, manual
+              recursive roots; OS-agnostic parsers vs build-tagged OS probes;
+              install-dir resolution
   classify/   upscaler kind+DLL detection
   gh/         GitHub releases: glob asset match, cooldown cache
   archive/    7z extraction with hostile-input defenses (sevenzip)
