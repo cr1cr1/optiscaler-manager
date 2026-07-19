@@ -67,6 +67,10 @@ func (m *model) fitCards(w int) {
 // Columns and card size are recomputed from the live width each frame.
 func (m *model) gridView() {
 	rows := m.visibleRows()
+	if len(rows) == 0 {
+		m.emptyState()
+		return
+	}
 	cols := m.cols
 	if cols < 1 {
 		cols = 1
