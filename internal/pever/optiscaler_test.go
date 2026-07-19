@@ -3,6 +3,7 @@ package pever
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -67,6 +68,26 @@ func TestOptiScalerVersionChain(t *testing.T) {
 		write(dir, "OptiScaler.log", "OptiScaler v0.8.1\n")
 		if got := OptiScalerVersion(dir); got != "0.8.1" {
 			t.Errorf("got %q, want %q", got, "0.8.1")
+		}
+	})
+
+	t.Run("oversized manifest is not slurped and falls through to log", func(t *testing.T) {
+		dir := t.TempDir()
+		write(dir, "manifest.json", `{"version":"9.9.9","pad":"`+strings.Repeat("x", maxManifestSize)+`"}`)
+		write(dir, "OptiScaler.log", "OptiScaler v0.8.1\n")
+		if got := OptiScalerVersion(dir); got != "0.8.1" {
+			t.Errorf("got %q, want log fallback %q", got, "0.8.1")
+		}
+	})
+
+	t.Run("manifest path that is a directory falls through to log", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(dir, "manifest.json"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		write(dir, "OptiScaler.log", "OptiScaler v0.8.2\n")
+		if got := OptiScalerVersion(dir); got != "0.8.2" {
+			t.Errorf("got %q, want log fallback %q", got, "0.8.2")
 		}
 	})
 }

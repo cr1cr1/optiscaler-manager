@@ -643,3 +643,39 @@ Append-only milestone and task log. Newest at the bottom.
 - Verified: `go test ./...`, `go vet ./...`, `GOOS=windows go vet ./...`,
   `GOOS=darwin go vet` + `go test -c` (discovery, launch), `goreleaser
   release --snapshot --clean`. No Go source changed; no new dependencies.
+
+## 2026-07-20 — fix(pever): raw-keyed FSR version map, bounded reads, real subcomponent coverage
+
+- **Root cause (review-blocking)**: `internal/pever/versionmaps.go` keyed
+  the FSR table by marketing numbers ("3.1.4", "4.1.1"), but real FSR DLLs
+  report raw PE file versions (FSR 3.1.4 = `1.0.1.41314`, FSR 4.1 =
+  `2.2.0.1328`), so tier-2 lookup mislabeled them "FSR 1.0"/"FSR 2.2".
+- **Fix**: all three tables re-vendored VERBATIM (keys) from the reference
+  client Agustinm28/Optiscaler-Client `assets/configs/{fsr,dlss,xess}_version_map.json`
+  (main == development, fetched 2026-07-20): FSR 22 entries, DLSS 23
+  (adds 310.4.0→4.0, 310.5.x/310.6.0→4.5), XeSS 10. Values keep the
+  package's vendor-prefixed output convention. The 4-tier algorithm is
+  unchanged; numeric compare handles 4-segment keys.
+- **TDD**: real-raw cases added to `TestMarketingNameLookup_FourTier` red
+  first (`MarketingName(FSR,"1.0.1.41314") = "FSR 1.0", want "FSR 3.1.4"`),
+  then green via the new tables. Stale expectations updated to real data
+  (old data was wrong). Table-driven tier-3 case dropped: no cross-major
+  same-value bracket exists in the real maps; tier-3 stays covered by the
+  synthetic `lookupMarketing` subtests.
+- **Hardening (security MEDIUM)**: new `readBounded` — stat first, require
+  regular file (`ErrNotRegular`), size cap (`ErrTooLarge`), read via
+  `io.LimitReader`. `FileVersion` caps at 128 MiB (deviation from the
+  suggested 64 MiB: the real 0.9.4 bundle ships a 78 MB libxess.dll);
+  `manifestVersion` caps at 1 MiB. Red-first tests: >cap sparse file,
+  directory-as-PE, oversized manifest falls through to the log chain.
+- **Real-bundle proof** (`OM_TEST_ARCHIVE` gated, extended): 0.9.4
+  subcomponents — vk.dll `1.0.1.41314`→FSR 3.1.4, upscaler `4.1.1.0`→FSR
+  4.1, framegen `4.0.1.0`→FSR 4.1, dx12 shim `2.3.0.0`→FSR 4.1 (tier-2
+  fallback; reference map has no 2.3.x key), libxess `2.0.2.68`→XeSS 2.0;
+  no nvngx_dlss.dll ships in 0.9.4 (conditional check catches future drift).
+- **Blast radius outside pever (deviation)**: `cmd/cli_test.go` and
+  `internal/app/scan_test.go` fixtures used marketing-style synthetic
+  versions (3.7.10.0 / 3.1.4.0) that only resolved under the old wrong
+  table; updated to REAL raws (3.7.20.0→DLSS 3.7.20, 1.0.1.41314→FSR 3.1.4).
+- Verified: `go test ./...`, `go vet ./...`, `golangci-lint run` (0 issues),
+  full suite with `OM_TEST_ARCHIVE=/tmp/opencode/optiscaler-0.9.4.7z`.
