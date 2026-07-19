@@ -45,7 +45,7 @@ func TestSessionSettingsConcurrentAccess(t *testing.T) {
 			case <-stop:
 				return
 			case ev := <-e.sess.Events():
-				if ev.Kind == EvScanDone || ev.Kind == EvScanFailed {
+				if ev.Kind == EvScanFailed || (ev.Kind == EvScanDone && ev.Text != "directory added") {
 					scansDone.Add(1)
 				}
 			}
