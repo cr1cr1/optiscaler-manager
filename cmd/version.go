@@ -8,7 +8,7 @@ import (
 type VersionCmd struct{}
 
 // Run prints the application name and version.
-func (v *VersionCmd) Run(version string) error {
-	fmt.Printf("%s %s\n", appName, version)
+func (v *VersionCmd) Run(d *Deps) error {
+	fmt.Fprintf(d.Out, "%s %s\n", appName, d.Version)
 	return nil
 }

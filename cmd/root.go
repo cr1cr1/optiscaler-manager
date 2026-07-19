@@ -44,7 +44,11 @@ type RootFlags struct {
 type CLI struct {
 	RootFlags `kong:"embed"`
 
-	Version VersionCmd `cmd:"" help:"Show version information"`
+	Version   VersionCmd   `cmd:"" help:"Show version information"`
+	Scan      ScanCmd      `cmd:"" help:"List installed Steam games with detected upscalers"`
+	Install   InstallCmd   `cmd:"" help:"Install OptiScaler into a game directory"`
+	Uninstall UninstallCmd `cmd:"" help:"Reverse a committed install"`
+	Rollback  RollbackCmd  `cmd:"" help:"Restore a game after an interrupted or failed install"`
 
 	args []string // original args, used to detect --help before side effects
 }
@@ -128,14 +132,15 @@ func Run(version string, args []string) error {
 		return nil
 	}
 
-	if kctx.Command() == "version" {
-		if err := kctx.Run(version); err != nil {
-			return &ExitError{Code: 1, Err: err}
-		}
-		return nil
+	deps, err := newDeps(version)
+	if err != nil {
+		return &ExitError{Code: 1, Err: err}
+	}
+	if kctx.Command() != "version" {
+		checkInterrupted(deps.ErrOut, deps.Store)
 	}
 
-	if err := kctx.Run(); err != nil {
+	if err := kctx.Run(deps); err != nil {
 		return &ExitError{Code: 1, Err: err}
 	}
 	return nil

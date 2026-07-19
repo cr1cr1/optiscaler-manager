@@ -93,6 +93,14 @@ func New(httpClient *http.Client, cacheDir string) *Client {
 	}
 }
 
+// NewWithBaseURL is New with an explicit API base URL, for tests and
+// OM_GH_BASE_URL-style overrides.
+func NewWithBaseURL(httpClient *http.Client, cacheDir, baseURL string) *Client {
+	c := New(httpClient, cacheDir)
+	c.baseURL = baseURL
+	return c
+}
+
 // Resolve maps a requested version to a concrete release asset.
 //
 // requested semantics: "latest" → first non-prerelease release; otherwise

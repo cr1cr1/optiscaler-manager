@@ -118,6 +118,27 @@ Append-only milestone and task log. Newest at the bottom.
 - Tests: `TestDefaultINISafeDefaults`, `TestInstallWritesCuratedINI`,
   `TestEACProtectedDetectsStartProtectedGame`. Lint clean.
 
+## 2026-07-19 — M5: CLI commands + startup recovery
+
+- `cmd/scan.go` (`scan`): Steam roots auto-detect or `--steam-root` /
+  `OM_STEAM_ROOT`; prints name, appid, upscaler kinds (via classify),
+  install dir, `[EAC]` marker.
+- `cmd/install.go` (`install <path>`): ResolveInstallDir → EAC refusal
+  (`--force` overrides) → gh.Resolve latest (rate-limit cache refused unless
+  `--allow-cached`) → Download with SHA-256 → installer transaction →
+  committed manifest. `uninstall <path>` and `rollback <path>` reverse via
+  the manifest (installer.ManifestIDFor helper added).
+- `cmd/deps.go`: `Deps` (Out/ErrOut/Store/CacheDir/GH/Version) injected via
+  kong bindings; `newDeps` honors `OM_DATA_DIR` and `OM_GH_BASE_URL`;
+  `checkInterrupted` startup-recovery hook warns on in_progress/failed
+  manifests before dispatch.
+- `gh.NewWithBaseURL` exported for the env override and tests.
+- `version` now prints through `Deps.Out` (uniform `kctx.Run(deps)`
+  dispatch).
+- Tests: `TestScanCommandListsGames`, `TestInstallCommandRunsTransaction`
+  (end-to-end against httptest GitHub + fixture bundle, incl. uninstall),
+  `TestStartupRecoveryFlagsInterruptedManifests`. Lint clean.
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`

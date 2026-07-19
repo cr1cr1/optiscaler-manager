@@ -279,6 +279,16 @@ func fail(_ context.Context, st *store.Store, m *domain.Manifest, cause error) (
 	return m, cause
 }
 
+// ManifestIDFor returns the manifest ID for an install directory,
+// canonicalizing the path the same way Install does.
+func ManifestIDFor(installDir string) (string, error) {
+	c, err := canonicalPath(installDir)
+	if err != nil {
+		return "", err
+	}
+	return domain.ManifestID(c), nil
+}
+
 // buildPlan validates raw archive member names and maps them to destinations.
 // Directory members are skipped; OptiScaler.dll is renamed to the injection
 // DLL. This is the plan-time hostile-input gate (safety invariant 1).
