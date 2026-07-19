@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // TestSessionSettingsConcurrentAccess hammers every settings-holding path
@@ -29,6 +31,27 @@ func TestSessionSettingsConcurrentAccess(t *testing.T) {
 	}
 
 	ctx := context.Background()
+
+	// Drain events continuously so the 64-slot buffer never drops, and
+	// count scan completions: Scan is fire-and-forget, so without this the
+	// test would return with scans in flight and TempDir cleanup would race
+	// them. The switch below issues one Scan per (w+i)%4==0 slot: 25 total.
+	var scansDone atomic.Int32
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case ev := <-e.sess.Events():
+				if ev.Kind == EvScanDone || ev.Kind == EvScanFailed {
+					scansDone.Add(1)
+				}
+			}
+		}
+	}()
+
 	var wg sync.WaitGroup
 	for w := 0; w < workers; w++ {
 		wg.Add(1)
@@ -50,6 +73,15 @@ func TestSessionSettingsConcurrentAccess(t *testing.T) {
 		}(w)
 	}
 	wg.Wait()
+
+	const wantScans = workers * iters / 4
+	deadline := time.Now().Add(30 * time.Second)
+	for scansDone.Load() < wantScans && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := scansDone.Load(); got < wantScans {
+		t.Fatalf("only %d of %d scans finished", got, wantScans)
+	}
 
 	got := e.sess.Settings()
 	if got.DefaultVersion == "" || got.LaunchTemplate == "" {
