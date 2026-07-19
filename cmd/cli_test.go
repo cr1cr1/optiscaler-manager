@@ -77,7 +77,7 @@ func TestScanCommandListsGames(t *testing.T) {
 	writeCmdTestFile(t, filepath.Join(gameRoot, "bin", "OptiScaler.dll"), "OPT")
 	writeCmdTestFile(t, filepath.Join(gameRoot, "bin", "manifest.json"), `{"name":"OptiScaler","version":"0.9.4"}`)
 	if err := os.WriteFile(filepath.Join(gameRoot, "bin", "nvngx_dlss.dll"),
-		testutil.FixedVersionPE(3, 7, 10, 0), 0o644); err != nil {
+		testutil.FixedVersionPE(3, 7, 20, 0), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	d, out := testDeps(t, nil)
@@ -88,7 +88,7 @@ func TestScanCommandListsGames(t *testing.T) {
 	}
 	got := out.String()
 	t.Logf("scan output:\n%s", got)
-	for _, want := range []string{"Game One", "100", "Steam", "DLSS", "OptiScaler 0.9.4", "DLSS 3.7.10"} {
+	for _, want := range []string{"Game One", "100", "Steam", "DLSS", "OptiScaler 0.9.4", "DLSS 3.7.20"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("scan output missing %q", want)
 		}

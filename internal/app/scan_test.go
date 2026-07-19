@@ -121,12 +121,12 @@ func TestLibraryEntryComponentVersions(t *testing.T) {
 	managed := mkSteamGame(t, steamRoot, "100", "Versioned Game", "VersionedGame")
 	writeScanFile(t, filepath.Join(managed, "versionedgame.exe"), []byte("GAME"))
 	writeScanFile(t, filepath.Join(managed, "OptiScaler.dll"), []byte("OPT"))
-	writeScanFile(t, filepath.Join(managed, "nvngx_dlss.dll"), testutil.FixedVersionPE(3, 7, 10, 0))
-	writeScanFile(t, filepath.Join(managed, "amd_fidelityfx_dx12.dll"), testutil.FixedVersionPE(3, 1, 4, 0))
+	writeScanFile(t, filepath.Join(managed, "nvngx_dlss.dll"), testutil.FixedVersionPE(3, 7, 20, 0))
+	writeScanFile(t, filepath.Join(managed, "amd_fidelityfx_dx12.dll"), testutil.FixedVersionPE(1, 0, 1, 41314))
 
 	unmanaged := mkSteamGame(t, steamRoot, "200", "Unmanaged Game", "UnmanagedGame")
 	writeScanFile(t, filepath.Join(unmanaged, "unmanagedgame.exe"), []byte("GAME"))
-	writeScanFile(t, filepath.Join(unmanaged, "nvngx_dlss.dll"), testutil.FixedVersionPE(3, 7, 10, 0))
+	writeScanFile(t, filepath.Join(unmanaged, "nvngx_dlss.dll"), testutil.FixedVersionPE(3, 7, 20, 0))
 
 	entries, err := ScanAllLibraries(context.Background(), nil, ScanAllOptions{SteamRoot: steamRoot})
 	if err != nil {
@@ -139,8 +139,8 @@ func TestLibraryEntryComponentVersions(t *testing.T) {
 		t.Fatal("managed game missing")
 	}
 	t.Logf("managed components: %v (OptiScaler %q)", v.ComponentVersions, v.OptiScalerVersion)
-	if got := v.ComponentVersions["dlss"]; got != "DLSS 3.7.10" {
-		t.Errorf("dlss component = %q, want %q", got, "DLSS 3.7.10")
+	if got := v.ComponentVersions["dlss"]; got != "DLSS 3.7.20" {
+		t.Errorf("dlss component = %q, want %q", got, "DLSS 3.7.20")
 	}
 	if got := v.ComponentVersions["fsr"]; got != "FSR 3.1.4" {
 		t.Errorf("fsr component = %q, want %q", got, "FSR 3.1.4")

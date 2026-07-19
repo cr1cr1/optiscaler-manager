@@ -198,6 +198,32 @@ func TestPEFileVersion_RejectsTruncated(t *testing.T) {
 	})
 }
 
+func TestFileVersion_BoundedReads(t *testing.T) {
+	t.Run("oversized file rejected via stat without slurping", func(t *testing.T) {
+		p := filepath.Join(t.TempDir(), "huge.dll")
+		f, err := os.Create(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Sparse file just past the cap: stat rejects it before any read.
+		if err := f.Truncate(maxPEFileSize + 1); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := FileVersion(p); !errors.Is(err, ErrTooLarge) {
+			t.Errorf("got err %v, want errors.Is ErrTooLarge", err)
+		}
+	})
+
+	t.Run("directory rejected as non-regular", func(t *testing.T) {
+		if _, err := FileVersion(t.TempDir()); !errors.Is(err, ErrNotRegular) {
+			t.Errorf("got err %v, want errors.Is ErrNotRegular", err)
+		}
+	})
+}
+
 func withBadSig(b []byte) []byte {
 	c := append([]byte(nil), b...)
 	c[0x40] = 'X'
