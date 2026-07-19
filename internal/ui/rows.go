@@ -42,6 +42,13 @@ type GameRow struct {
 	EAC          bool
 	CoverPath    string
 	ModTime      time.Time
+
+	Store             domain.Store // raw storefront (launch needs it)
+	AppName           string       // Epic launch AppName; "" elsewhere
+	ExePath           string       // resolved main executable; "" when unknown
+	CompatPrefix      string       // Proton prefix (linux only); "" when absent
+	OptiScalerVersion string       // "" when not installed or unknown
+	Components        []string     // marketing names, e.g. ["DLSS 3.7.10","FSR 3.1.4"]
 }
 
 // badgeForTech maps a classified upscaler kind to its display badge.

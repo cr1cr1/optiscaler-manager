@@ -13,13 +13,17 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/classify"
 	"github.com/cr1cr1/optiscaler-manager/internal/discovery"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
 	"github.com/cr1cr1/optiscaler-manager/internal/installer"
+	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 )
 
@@ -36,6 +40,7 @@ func ManualEntry(dir string) (LibraryEntry, error) {
 			AppID:      "custom_" + name,
 			Name:       name,
 			InstallDir: root,
+			Store:      domain.StoreManual,
 		},
 		EAC: installer.EACProtected(root),
 	}
@@ -75,6 +80,59 @@ type LibraryEntry struct {
 	ManifestID   string
 	InjectionDir string // resolved install dir (where injection + ini live)
 	ModTime      time.Time
+
+	OptiScalerVersion string            // "" when not installed or unknown
+	ComponentVersions map[string]string // "dlss"/"fsr"/"xess" → marketing name
+}
+
+// ScanAllOptions controls ScanAllLibraries. An empty SteamRoot means "probe
+// the platform's Steam roots"; ExtraDirs lists manual roots whose
+// subdirectories are individual games (settings.ExtraDirs).
+type ScanAllOptions struct {
+	SteamRoot string
+	ExtraDirs []string
+}
+
+// ScanAllLibraries discovers games across every store the platform supports
+// (Steam, Epic, GOG, manual roots) via discovery.ScanAll and enriches them
+// like ScanLibrary does. Games carry Store/AppName/ExePath/CompatPrefix
+// straight from discovery.
+func ScanAllLibraries(ctx context.Context, st *store.Store, opts ScanAllOptions) ([]LibraryEntry, error) {
+	var steamRoots []string
+	if opts.SteamRoot != "" {
+		steamRoots = []string{opts.SteamRoot}
+	}
+	games, err := discovery.ScanAll(ctx, discovery.ScanOptions{
+		SteamRoots:     steamRoots,
+		RecursiveRoots: opts.ExtraDirs,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var manifests []*domain.Manifest
+	if st != nil {
+		manifests, err = st.List()
+		if err != nil {
+			return nil, err
+		}
+	}
+	byInstallDir := map[string]*domain.Manifest{}
+	for _, m := range manifests {
+		byInstallDir[m.InstallDir] = m
+	}
+
+	var out []LibraryEntry
+	for _, g := range games {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		out = append(out, enrich(g, byInstallDir))
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no games found")
+	}
+	return out, nil
 }
 
 // ScanLibrary discovers games (one Steam root, or all auto-detected roots
@@ -150,7 +208,67 @@ func enrich(g domain.Game, byInstallDir map[string]*domain.Manifest) LibraryEntr
 			e.ManifestID = m.ID
 		}
 	}
+	enrichVersions(&e)
 	return e
+}
+
+// enrichVersions fills OptiScalerVersion/ComponentVersions for managed
+// installs only (committed manifest or OptiScaler.dll present): parsing PEs
+// for every unmanaged game would multiply scan I/O for no benefit.
+func enrichVersions(e *LibraryEntry) {
+	if e.InjectionDir == "" {
+		return
+	}
+	managed := e.Status == domain.StatusCommitted ||
+		fileExists(filepath.Join(e.InjectionDir, "OptiScaler.dll"))
+	if !managed {
+		return
+	}
+	e.OptiScalerVersion = pever.OptiScalerVersion(e.InjectionDir)
+	e.ComponentVersions = componentVersions(e.InjectionDir)
+}
+
+// componentVersions parses each detected upscaler DLL under dir and maps it
+// to the vendor marketing name. Unparseable DLLs are skipped, never fatal.
+func componentVersions(dir string) map[string]string {
+	var out map[string]string
+	for _, f := range classify.DirFiles(dir) {
+		kind, ok := peverKind(f.Kind)
+		if !ok {
+			continue // e.g. DLSS-FG has no marketing table
+		}
+		key := strings.ToLower(f.Kind.String())
+		if _, dup := out[key]; dup {
+			continue
+		}
+		raw, err := pever.FileVersion(f.Path)
+		if err != nil {
+			log.Debug().Err(err).Str("dll", f.Path).Msg("upscaler DLL version unreadable, skipping")
+			continue
+		}
+		if out == nil {
+			out = map[string]string{}
+		}
+		out[key] = pever.MarketingName(kind, raw)
+	}
+	return out
+}
+
+func peverKind(k domain.Kind) (pever.Kind, bool) {
+	switch k {
+	case domain.KindDLSS:
+		return pever.KindDLSS, true
+	case domain.KindFSR:
+		return pever.KindFSR, true
+	case domain.KindXeSS:
+		return pever.KindXeSS, true
+	}
+	return 0, false
+}
+
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && !st.IsDir()
 }
 
 // installDirOf mirrors the install-dir resolution for manifest lookup;

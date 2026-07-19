@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -224,7 +225,10 @@ func (s *Session) Scan(ctx context.Context) {
 	go func() {
 		s.emit(Event{Kind: EvScanStarted})
 		s.setBusy("Scanning…")
-		entries, err := app.ScanLibrary(ctx, s.deps.Store, s.deps.SteamRoot)
+		entries, err := app.ScanAllLibraries(ctx, s.deps.Store, app.ScanAllOptions{
+			SteamRoot: s.deps.SteamRoot,
+			ExtraDirs: s.deps.Settings.ExtraDirs,
+		})
 		if err != nil {
 			s.setBusy("")
 			s.setStatus("Scan failed: " + err.Error())
@@ -520,15 +524,28 @@ func gameTitle(row *GameRow, dir string) string {
 // toRow enriches a library entry into display form, resolving cover art.
 func (s *Session) toRow(ctx context.Context, e app.LibraryEntry) GameRow {
 	row := GameRow{
-		Title:        e.Game.Name,
-		AppID:        e.Game.AppID,
-		InstallDir:   e.Game.InstallDir,
-		InjectionDir: e.InjectionDir,
-		Platform:     "Steam", // v0.1 discovery is Steam-only
-		Status:       e.Status,
-		Actionable:   actionableStatus(e.Status),
-		EAC:          e.EAC,
-		ModTime:      e.ModTime,
+		Title:             e.Game.Name,
+		AppID:             e.Game.AppID,
+		InstallDir:        e.Game.InstallDir,
+		InjectionDir:      e.InjectionDir,
+		Platform:          e.Game.Store.String(),
+		Store:             e.Game.Store,
+		AppName:           e.Game.AppName,
+		ExePath:           e.Game.ExePath,
+		CompatPrefix:      e.Game.CompatPrefix,
+		OptiScalerVersion: e.OptiScalerVersion,
+		Status:            e.Status,
+		Actionable:        actionableStatus(e.Status),
+		EAC:               e.EAC,
+		ModTime:           e.ModTime,
+	}
+	keys := make([]string, 0, len(e.ComponentVersions))
+	for k := range e.ComponentVersions {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		row.Components = append(row.Components, e.ComponentVersions[k])
 	}
 	for _, tech := range e.Tech {
 		row.TechBadges = append(row.TechBadges, badgeForTech(tech))
