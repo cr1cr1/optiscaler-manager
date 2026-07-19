@@ -301,6 +301,30 @@ Append-only milestone and task log. Newest at the bottom.
   line and killed it — relaunch via `setsid`, kill by window id
   (`niri msg action close-window --id`).
 
+## 2026-07-19 — P8: bundle cache, settings, manual add (user requests)
+
+- **Versioned bundle cache**: bundles now live at
+  `$XDG_CACHE_HOME/optiscaler-manager/optiscaler/<version>/` and are reused
+  (hash-checked) before any download; second installs of the same version
+  do zero network IO for the bundle. `OM_CACHE_DIR` overrides; covers moved
+  under the cache root as well. Installer no longer clobbers the
+  artifact-level SHA-256 with the staged-DLL hash when one is supplied.
+- **Settings** (`internal/settings`, persisted `settings.json`): default
+  OptiScaler version (tag or `latest`) and manually added dirs. Session
+  commands `SetDefaultVersion` / `ClearBundleCache`; `app.InstallOpts.
+  Requested` plumbs the configured tag into Resolve and the manifest.
+- **Manual add**: `internal/pickdir` shells the OS directory dialog
+  (zenity → kdialog; `ErrUnavailable` otherwise), `app.ManualEntry` builds
+  the row, session `AddDirectory` dedupes and persists (ExtraDirs survive
+  rescans).
+- **GUI**: Settings sidebar button + modal (version input, clear cache),
+  "Add Game" toolbar button. Dark modal cards — upstream `widgets.Modal`
+  hardcodes a white surface, so `internal/gui` ships a local `modal()`;
+  `widgets.ButtonAccent`/`DefaultBackground` themed at init.
+- Tests: cache hit/miss (zero-download reuse), settings round-trip,
+  SetDefaultVersion persistence + manifest tag, ClearBundleCache, manual
+  add/dedupe/rescan, picker-unavailable path, settings-modal smoke.
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`

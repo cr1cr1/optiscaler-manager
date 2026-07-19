@@ -8,6 +8,28 @@ import (
 	. "go.hasen.dev/shirei/widgets"
 )
 
+// modal is widgets.Modal with a dark card: upstream hardcodes a white
+// surface, which clashes with the theme.
+func modal(width float32, dismiss func(), fn func()) {
+	Popup(func() {
+		var cardID ContainerId
+		var cardFirst bool
+		Container(Attrs(Float(0, 0), FixWidth(WindowSize[0]), FixHeight(WindowSize[1]), FocusTrap, Center, Background(220, 25, 12, 0.45), NoAnimate, InFront), func() {
+			Container(Attrs(FixWidth(width), Gap(10), Pad(20), BackgroundVec(bgPanel), Corners(10), BoxShadow(24)), func() {
+				cardID = CurrentId()
+				cardFirst = FirstRender()
+				fn()
+			})
+			if dismiss != nil && FrameInput.Key == KeyEscape {
+				dismiss()
+			}
+			if dismiss != nil && !cardFirst && FrameInput.Mouse == MouseClick && !IdIsHovered(cardID) {
+				dismiss()
+			}
+		})
+	})
+}
+
 // sidebar is the icon navigation column on the left edge.
 func (m *model) sidebar() {
 	Container(Attrs(FixSize(64, 0), BackgroundVec(bgPanel), Pad(8), Gap(12)), func() {
@@ -36,7 +58,7 @@ func (m *model) openSettings() {
 }
 
 func (m *model) settingsModal() {
-	Modal(480, func() { m.settingsOpen = false }, func() {
+	modal(480, func() { m.settingsOpen = false }, func() {
 		Container(Attrs(Pad(18), Gap(10), BackgroundVec(bgPanel)), func() {
 			txt("Settings")
 			muted("Default OptiScaler version (tag or 'latest')")
@@ -107,7 +129,7 @@ func (m *model) toastOverlay() {
 
 // aboutModal shows version and project info.
 func (m *model) aboutModal() {
-	Modal(420, func() { m.about = false }, func() {
+	modal(420, func() { m.about = false }, func() {
 		Container(Attrs(Pad(18), Gap(8)), func() {
 			txt("optiscaler-manager " + m.cfg.Version)
 			muted("OptiScaler manager for local games — Linux + Steam.")

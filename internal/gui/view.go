@@ -87,7 +87,7 @@ func (m *model) dashboard() {
 		}
 		return
 	}
-	Modal(520, func() {
+	modal(520, func() {
 		if m.sess != nil {
 			m.sess.Select("")
 		}
@@ -122,7 +122,7 @@ func (m *model) dashboard() {
 // confirmModal renders the session's pending consent gate.
 func (m *model) confirmModal() {
 	c := m.state.Confirm
-	Modal(460, func() {
+	modal(460, func() {
 		if m.sess != nil {
 			m.sess.AnswerConfirm(false)
 		}

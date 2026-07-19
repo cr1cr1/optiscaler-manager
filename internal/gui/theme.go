@@ -8,9 +8,11 @@ import (
 )
 
 // Buttons take their text color from ContrastingTextColor(ButtonAccent), so a
-// dark accent yields light text automatically.
+// dark accent yields light text automatically. DefaultBackground is shirei's
+// surface color for modals and popup panels.
 func init() {
 	widgets.ButtonAccent = Vec4{220, 18, 26, 1}
+	widgets.DefaultBackground = Vec4{230, 20, 16, 1}
 }
 
 // Dark theme palette (HSLA), matching the reference client's look.

@@ -32,7 +32,10 @@ internal/
               rollback; uninstall; EAC check
   profile/    curated OptiScaler.ini writer
   covers/     cover art: Steam CDN → store search → placeholder (disk cache)
-  app/        shared orchestration: ScanLibrary, Install, Uninstall, Rollback
+  settings/   persisted preferences (settings.json in the data root)
+  pickdir/    OS directory dialog (zenity → kdialog)
+  app/        shared orchestration: ScanLibrary, Install, Uninstall, Rollback,
+              ManualEntry, versioned bundle cache
   ui/         frontend-agnostic Session: state, commands, events, consent
   gui/        shirei binding over ui.Session (ALL shirei imports live here)
 ```

@@ -78,17 +78,26 @@ Added after v0.1, modeled on the reference client's main window:
   Cached on disk by sanitized appid. (Ecosystem-verified keyless pattern:
   Lutris and Heroic use the same Steam CDN primary; Bottles uses a private
   SteamGridDB proxy, not copyable.)
-- **Chrome**: dark theme, icon sidebar, toolbar (scan/search/view toggle),
-  toast overlay, full-width status bar, About modal.
+- **Bundle cache**: OptiScaler bundles at
+  `$XDG_CACHE_HOME/optiscaler-manager/optiscaler/<version>/` (default
+  `~/.cache/...`), reused before any download (`OM_CACHE_DIR` overrides).
+- **Settings** (persisted `settings.json` in the data root): default
+  OptiScaler version (tag or `latest`), manually added game directories;
+  settings window with version input and clear-cache action.
+- **Manual game add**: OS directory dialog (zenity → kdialog) via
+  `internal/pickdir`; added dirs persist and survive rescans.
+- **Chrome**: dark theme (incl. dark modal cards — upstream Modal is
+  hardcoded white, so gui ships a local `modal()`), icon sidebar, toolbar
+  (scan/add/search/view toggle), toast overlay, status bar, About modal.
 - **`internal/ui` Session**: frontend-agnostic interactive core (state,
   commands, event stream, consent gating). The shirei GUI is a thin binding
   over it; a bubbletea TUI will bind to the same Session (decided, not yet
   built). One-shot CLI keeps using `internal/app` directly.
 
-Still deferred in v0.2: the TUI itself, Add-Manually GUI flow, bulk install,
-edit mode, profiles UI, GPU indicator, SteamGridDB key support, i18n,
-window-state persistence, injection-method picker (dxgi only), native file
-dialogs (shirei has none).
+Still deferred in v0.2: the TUI itself, bulk install, edit mode, profiles
+UI, GPU indicator, SteamGridDB key support, i18n, window-state persistence,
+injection-method picker (dxgi only), native file dialogs inside shirei
+(the OS picker is shelled out instead).
 
 ## Dependencies (settled)
 

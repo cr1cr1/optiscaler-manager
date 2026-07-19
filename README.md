@@ -33,14 +33,23 @@ unless `--force` is passed (GUI asks instead). When the GitHub API is
 rate-limited, stale cached release info is refused unless `--allow-cached` is
 passed.
 
-State (manifests, backups, download cache) lives outside game directories in
+State (manifests, backups) lives outside game directories in
 `$XDG_DATA_HOME/optiscaler-manager` (default `~/.local/share/optiscaler-manager`).
+OptiScaler bundles and cover art are cached in
+`$XDG_CACHE_HOME/optiscaler-manager` (default `~/.cache/optiscaler-manager`) —
+bundles at `optiscaler/<version>/` are reused before any download and can be
+cleared from Settings.
+
+The Settings window (sidebar) holds the default OptiScaler version (`latest`
+or a tag) and the clear-cache action. "Add Game" opens the OS directory
+dialog (zenity or kdialog) to register any game folder; added games persist.
 
 ### Environment variables
 
 | Variable | Effect |
 |----------|--------|
-| `OM_DATA_DIR` | Override the state root (manifests, backups, cache) |
+| `OM_DATA_DIR` | Override the state root (manifests, backups, settings) |
+| `OM_CACHE_DIR` | Override the cache root (bundles, covers) |
 | `OM_STEAM_ROOT` | Scan only this Steam root |
 | `OM_GH_BASE_URL` | Override the GitHub API base URL |
 | `OM_LOG_LEVEL` / `OM_LOG_FORMAT` | zerolog level / console\|json |
