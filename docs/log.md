@@ -180,6 +180,17 @@ Append-only milestone and task log. Newest at the bottom.
 - Final gates: `go test ./...`, `go vet ./...`, `golangci-lint run` — all
   green. v0.1 scope complete: M0–M7 done.
 
+## 2026-07-19 — P1: covers (v0.2 GUI restyle starts)
+
+- `internal/covers`: `Cover(ctx, appID, name)` — Steam CDN
+  (`library_600x900.jpg` by appid) primary, Steam store search (name→appid)
+  fallback, generated dark-tile PNG placeholder on total miss. On-disk cache
+  keyed by sanitized appid (digits only — hostile input can't escape the
+  cache dir); atomic downloads; 32 MiB cap.
+- Chain decided with the user: Steam CDN primary, other services as
+  fallback (Bottles/Heroic source survey pending; store-search is the
+  zero-key fallback the C# client also uses).
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`
