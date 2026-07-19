@@ -206,3 +206,39 @@ func TestScanSteamNoLibraryReadable(t *testing.T) {
 		t.Logf("no libraries error: %v", err)
 	}
 }
+
+func TestScanSteamSkipsNonGames(t *testing.T) {
+	steamRoot := t.TempDir()
+	writeFile(t, filepath.Join(steamRoot, "steamapps", "libraryfolders.vdf"),
+		`"libraryfolders" { "0" { "path" "`+steamRoot+`" } }`)
+
+	manifests := map[string]string{
+		"appmanifest_100.acf":    `"AppState" { "appid" "100" "name" "Game One" "installdir" "GameOne" }`,
+		"appmanifest_228980.acf": `"AppState" { "appid" "228980" "name" "Steamworks Common Redistributables" "installdir" "SteamworksShared" }`,
+		"appmanifest_1391110.acf": `"AppState" { "appid" "1391110" "name" "Steam Linux Runtime 2.0 (soldier)" "installdir" "SteamLinuxRuntime_soldier" }`,
+		"appmanifest_1887720.acf": `"AppState" { "appid" "1887720" "name" "Proton Experimental" "installdir" "ProtonExp" }`,
+		"appmanifest_250820.acf": `"AppState" { "appid" "250820" "name" "SteamVR" "installdir" "SteamVR" }`,
+		"appmanifest_250900.acf": `"AppState" { "appid" "250900" "name" "Wallpaper Engine" "installdir" "Wallpaper" }`,
+	}
+	for name, content := range manifests {
+		writeFile(t, filepath.Join(steamRoot, "steamapps", name), content)
+	}
+	for _, dir := range []string{"GameOne", "SteamworksShared", "SteamLinuxRuntime_soldier", "ProtonExp", "SteamVR", "Wallpaper"} {
+		if err := os.MkdirAll(filepath.Join(steamRoot, "steamapps", "common", dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	games, err := ScanSteam(steamRoot)
+	if err != nil {
+		t.Fatalf("ScanSteam: %v", err)
+	}
+	if len(games) != 1 || games[0].Name != "Game One" {
+		names := []string{}
+		for _, g := range games {
+			names = append(names, g.Name)
+		}
+		t.Fatalf("got %v, want only Game One", names)
+	}
+	t.Log("non-game Steam infrastructure excluded")
+}

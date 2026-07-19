@@ -27,7 +27,7 @@ func (m *model) toolbar(ctx context.Context) {
 		if m.sess != nil && Button(SymIRight, "Scan Games") {
 			m.sess.Scan(ctx)
 		}
-		Container(Attrs(FixSize(320, 34)), func() {
+		Container(Attrs(Grow(1), MinSize(140, 34), MaxSizeVec(Vec2{420, 34})), func() {
 			TextInput(&m.filter)
 		})
 		if m.sess != nil && Button(SymIRight, viewToggleLabel(m.state.Mode)) {

@@ -33,6 +33,8 @@ type model struct {
 	auditGrid bool
 	about     bool
 	cols      int // current grid columns, derived from live width
+	cardW     int // current card width in px, derived from live width
+	cardH     int // current card height in px
 }
 
 func newModel(cfg Config) *model {
@@ -41,6 +43,8 @@ func newModel(cfg Config) *model {
 		sess:      cfg.Session,
 		auditGrid: cfg.AuditGrid,
 		cols:      4,
+		cardW:     190,
+		cardH:     310,
 		state:     ui.State{Mode: ui.ViewGrid, StatusLine: "Ready"},
 	}
 }

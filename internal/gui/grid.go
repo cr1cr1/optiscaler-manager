@@ -8,13 +8,20 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
-// Card geometry (cover is 600×900 aspect = 2:3).
+// Card geometry: cards adapt to the live list width so narrow windows
+// (tiling WMs) never overflow horizontally.
 const (
-	cardWidth  = 190
-	cardHeight = 330
-	coverW     = 170
-	coverH     = 255
+	cardGap    = 10
+	targetCard = 200 // px; cols = width/targetCard
+	coverRatio = 1.5 // 600x900 covers are 2:3
 )
+
+// cardContentH sizes a card so every element fits: badge row, cover,
+// title, tech pills, and the quick-install button, plus gaps.
+func cardContentH(cardW int) int {
+	coverH := int(float32(cardW-12) * coverRatio)
+	return coverH + 118
+}
 
 // chunkRows groups rows into rows-of-cols for the virtualized grid. cols is
 // clamped to ≥1.
@@ -34,7 +41,7 @@ func chunkRows(rows []ui.GameRow, cols int) [][]ui.GameRow {
 }
 
 // gridView is the cover-card grid (the reference client's main view).
-// Cards flow cols-per-row; cols is recomputed from the live width each frame.
+// Columns and card size are recomputed from the live width each frame.
 func (m *model) gridView() {
 	rows := m.visibleRows()
 	cols := m.cols
@@ -44,12 +51,16 @@ func (m *model) gridView() {
 	chunks := chunkRows(rows, cols)
 	VirtualListView("grid", len(chunks),
 		func(i int) any { return i },
-		func(i int, w float32) float32 { return cardHeight },
+		func(i int, w float32) float32 { return float32(m.cardH) + 8 },
 		func(i int, w float32) {
-			if c := int(w) / cardWidth; c >= 1 && c != m.cols {
+			if c := int(w) / targetCard; c >= 1 && c != m.cols {
 				m.cols = c
 			}
-			Container(Attrs(Row, Gap(10), Pad2(0, 6), MinSize(w, cardHeight)), func() {
+			if m.cols > 0 {
+				m.cardW = (int(w) - (m.cols-1)*cardGap) / m.cols
+				m.cardH = cardContentH(m.cardW)
+			}
+			Container(Attrs(Row, Gap(cardGap), Pad2(0, 12), MinSize(w, float32(m.cardH)), Clip), func() {
 				for j := range chunks[i] {
 					m.gameCard(chunks[i][j])
 				}
@@ -60,7 +71,9 @@ func (m *model) gridView() {
 // gameCard renders one cover card: platform pill, installed badge, cover,
 // title, tech pills, and the quick-install toggle.
 func (m *model) gameCard(e ui.GameRow) {
-	Container(Attrs(Pad(6), Gap(4), FixSize(cardWidth, cardHeight), BackgroundVec(bgCard), Corners(6)), func() {
+	cardW, cardH := m.cardW, m.cardH
+	coverW := float32(cardW - 12)
+	Container(Attrs(Pad(6), Gap(4), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(6), Clip), func() {
 		Container(Attrs(Row, Gap(4)), func() {
 			if e.Platform != "" {
 				badgePill(e.Platform, ui.ToneGray)
@@ -76,9 +89,9 @@ func (m *model) gameCard(e ui.GameRow) {
 			}
 		})
 		if e.CoverPath != "" {
-			Image(e.CoverPath, Vec2{coverW, coverH})
+			Image(e.CoverPath, Vec2{coverW, coverW * coverRatio})
 		} else {
-			Container(Attrs(FixSize(coverW, coverH), Background(230, 10, 30, 1)), func() {})
+			Container(Attrs(FixSize(coverW, coverW*coverRatio), Background(230, 10, 30, 1)), func() {})
 		}
 		txt(e.Title)
 		if len(e.TechBadges) > 0 {

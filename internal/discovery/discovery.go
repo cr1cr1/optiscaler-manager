@@ -111,8 +111,46 @@ func ScanSteam(steamRoot string) ([]domain.Game, error) {
 	return games, nil
 }
 
+// nonGameExclusions are Steam-catalog entries that are not games: runtimes,
+// redistributables, tools, and utilities (same classes the reference client
+// excludes). Matched case-insensitively as name substrings.
+var nonGameExclusions = []string{
+	"steamworks common redistributables",
+	"steam linux runtime",
+	"proton ",
+	"proton experimental",
+	"steamvr",
+	"steam play",
+	"steam controller configs",
+	"steamworks shared",
+	"steam.dll",
+	"wallpaper engine",
+	"steam deck",
+	"steam link",
+	"steam sdk",
+}
+
+// excludedAppIDs are infrastructure entries best matched by ID.
+var excludedAppIDs = map[string]bool{
+	"228980": true, // Steamworks Common Redistributables
+}
+
+func isNonGame(appID, name string) bool {
+	if excludedAppIDs[appID] {
+		return true
+	}
+	lower := strings.ToLower(name)
+	for _, pat := range nonGameExclusions {
+		if strings.Contains(lower, pat) {
+			return true
+		}
+	}
+	return false
+}
+
 // readManifest parses one appmanifest and builds the Game, or reports false
-// when the manifest is broken or the install directory is gone.
+// when the manifest is broken, a non-game entry, or the install directory is
+// gone.
 func readManifest(path, lib string) (domain.Game, bool) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -124,6 +162,10 @@ func readManifest(path, lib string) (domain.Game, bool) {
 	appID, name, installDir, err := ParseAppmanifest(f)
 	if err != nil {
 		log.Warn().Err(err).Str("manifest", path).Msg("skipping broken manifest")
+		return domain.Game{}, false
+	}
+	if isNonGame(appID, name) {
+		log.Debug().Str("manifest", path).Str("name", name).Msg("skipping non-game entry")
 		return domain.Game{}, false
 	}
 	dir := filepath.Join(lib, "steamapps", "common", installDir)

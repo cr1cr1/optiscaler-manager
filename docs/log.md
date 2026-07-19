@@ -280,6 +280,27 @@ Append-only milestone and task log. Newest at the bottom.
   docs/architecture.md: package map + data flow with Session. README: v0.2
   status and frontend-abstraction note.
 
+## 2026-07-19 — P7: real-machine GUI hardening (niri/tiling WM)
+
+- First real launch (user-authorized `go run .`, niri screenshots) exposed
+  three defects invisible to headless smoke tests:
+  1. **Non-games in the library**: Steam Linux Runtimes, Proton, Steamworks
+     redistributables, SteamVR, Wallpaper Engine etc. appeared as installable
+     games. Fixed with `discovery.isNonGame` (name-substring exclusion list
+     + appid 228980), TDD `TestScanSteamSkipsNonGames` — the same exclusion
+     classes the reference client ships.
+  2. **Horizontal overflow in narrow tiles**: fixed-size cards and a
+     fixed-width search bled past the window edge. Cards are now adaptive
+     (`cardContentH(cardW)`, cols from live width, `Clip` on rows); search is
+     `Grow(1)` with min/max bounds.
+  3. **Card content clipped**: tech pills and the install button didn't fit
+     the computed card height; height now budgets cover + all rows.
+- Also: dark button theming via `widgets.ButtonAccent`
+  (`ContrastingTextColor` picks light text automatically).
+- Process discipline: `pkill -f "go run ."` matched the shell's own command
+  line and killed it — relaunch via `setsid`, kill by window id
+  (`niri msg action close-window --id`).
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`

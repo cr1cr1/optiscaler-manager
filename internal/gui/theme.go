@@ -2,9 +2,16 @@ package gui
 
 import (
 	. "go.hasen.dev/shirei"
+	"go.hasen.dev/shirei/widgets"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
+
+// Buttons take their text color from ContrastingTextColor(ButtonAccent), so a
+// dark accent yields light text automatically.
+func init() {
+	widgets.ButtonAccent = Vec4{220, 18, 26, 1}
+}
 
 // Dark theme palette (HSLA), matching the reference client's look.
 var (
