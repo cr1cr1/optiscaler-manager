@@ -171,7 +171,12 @@ type InstallOpts struct {
 }
 
 // Install runs resolve → download → transactional install for a game root.
+// Cancellation is honored at every phase boundary (docs/safety.md).
 func Install(ctx context.Context, st *store.Store, client *gh.Client, cacheDir, gameRoot string, opts InstallOpts) (*domain.Manifest, error) {
+	// Cancel boundary (pre-resolve): no network, no writes.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	root, err := canonicalDir(gameRoot)
 	if err != nil {
 		return nil, err
@@ -200,6 +205,11 @@ func Install(ctx context.Context, st *store.Store, client *gh.Client, cacheDir, 
 	bundlePath := filepath.Join(bundleDir, resolved.AssetName)
 	digest, err := fileSHA256(bundlePath)
 	if err != nil {
+		// Cancel boundary (pre-download): the cache missed; refuse to fetch
+		// under a dead context.
+		if cerr := ctx.Err(); cerr != nil {
+			return nil, cerr
+		}
 		bundlePath, digest, err = client.Download(ctx, resolved, bundleDir)
 		if err != nil {
 			return nil, err

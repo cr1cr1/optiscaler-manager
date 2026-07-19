@@ -377,3 +377,29 @@ Append-only milestone and task log. Newest at the bottom.
   vendor/ untouched. Verified: `go test ./...`, `go vet ./...`,
   `golangci-lint run` (0 issues), `GOOS=windows go vet ./internal/launch/`,
   `GOOS=darwin go vet ./internal/launch/`.
+
+## 2026-07-20 — T4: cancellable transactional ops
+
+- Cancellation invariant added to `docs/safety.md` (#6): cancel at any phase
+  boundary ⇒ manifest `failed` (cause recorded) + automatic rollback to
+  pre-op state + zero partial files + `errors.Is(err, context.Canceled)`.
+- `internal/installer`: ctx checks pre-extract, post-extract (staging
+  dropped), per-file in the swap loop, and pre-commit. `cancelInstall`
+  marks failed then rolls back under `context.WithoutCancel` — cleanup is
+  part of the atomic op, so it must finish even with a dead op ctx
+  (WithoutCancel over Background to keep caller values). Leftover-manifest
+  rollback on Install entry likewise detached. `Uninstall` gained per-entry
+  ctx checks and persists progress on cancel (processed entries dropped,
+  unprocessed retained, manifest stays committed) so retry resumes.
+- `internal/app`: pre-resolve and pre-download ctx checks; new `ops.go`
+  (`Op`, `RunOps`) — errgroup with per-op derived ctx, first error wins with
+  game-dir context, siblings cancelled. Added `golang.org/x/sync` (vendored,
+  zero transitive deps).
+- `internal/ui`: per-game cancellation — mutex-guarded
+  `map[gameDir]context.CancelFunc`; doInstall/doUninstall/Rollback derive
+  cancellable ctxs; exported `Session.CancelOp(gameDir) bool`; new
+  `EvOpCancelled`; cancel settles with row back to pre-op status, one
+  "Cancelled" toast/event, no failure spam. Op slot released before
+  terminal events (no stale-slot race on rapid re-trigger).
+- TDD: six new tests red-first (installer ×3, app ×3 incl. RunOps, ui ×1),
+  then green; five pre-existing fault-injection tests untouched and passing.
