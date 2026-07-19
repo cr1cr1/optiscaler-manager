@@ -62,6 +62,27 @@ Append-only milestone and task log. Newest at the bottom.
   dep-upgrade commit (testify + upgraded kong/x/sys) was reverted before
   this milestone was redone by the lead.
 
+## 2026-07-19 — M2d: archive backend + SPIKE GATE
+
+- `internal/archive`: `List`, `ExtractTo` (staging extraction with
+  hostile-input defenses), `SanitizeName`, `HashEntry`, `EntryNames`.
+  Defenses: absolute/UNC/drive-letter/traversal names rejected, backslash
+  trickery normalized, case-folded duplicates rejected, non-regular entries
+  (symlinks/hardlinks) rejected, per-file (1 GiB), total (4 GiB), and
+  entry-count (100k) caps.
+- SPIKE GATE RESULT (real `Optiscaler_0.9.4-final.20260718._MM.7z`, 55 MB,
+  23 entries): **bodgit/sevenzip decodes it fully, including the BCJ2
+  filter** — OptiScaler.dll decompressed to 25,379,632 bytes with stable
+  SHA-256, full extraction into staging clean. Backend = pure-Go sevenzip;
+  the shell-out-7z fallback is NOT needed.
+- Ground-truth correction: the 0.9.4 bundle ships `fakenvapi.dll` (not
+  `nvapi64.dll` as the older C# client expected). Bundle layout: files at
+  archive root + `D3D12_Optiscaler/` + `Licenses/`.
+- Ponytail deviation: no `Backend` interface — a single implementation
+  exists; introduce the interface only if a second backend ever appears.
+- `TestSevenzipExtractsRealOptiScaler094Archive` stays env-gated
+  (`OM_TEST_ARCHIVE`); skips in normal runs.
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`
