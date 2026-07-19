@@ -99,6 +99,59 @@ UI, GPU indicator, SteamGridDB key support, i18n, window-state persistence,
 injection-method picker (dxgi only), native file dialogs inside shirei
 (the OS picker is shelled out instead).
 
+## v0.3 scope (multi-store, versions, launch, TUI, cancel)
+
+Added after v0.2 (waves W3–W5, release work W6). Decisions closed; reopen
+only with new evidence.
+
+- **Multi-store discovery**: Steam, Epic (.item manifests), GOG (registry +
+  `goggame-<id>.info`), macOS `/Applications` .app bundles, and manual
+  recursive roots (settings ExtraDirs). `ScanAll` merges in that order,
+  deduped by canonical install dir. `domain.Game` gains `Store` (enum;
+  `StoreSteam` is the zero value), `AppName`, `ExePath`, `CompatPrefix`.
+- **Windows + macOS scanning**: OS-agnostic parsers are tested on every GOOS;
+  OS probes are build-tagged per platform (Steam roots incl. Windows
+  registry, Epic manifest dirs, GOG Windows registry behind a reader seam,
+  macOS plist parsing, linux Proton compat-prefix display).
+- **Version display**: `internal/pever` parses PE version resources directly
+  (no cgo, hostile-input safe) and maps raw versions to marketing names
+  (DLSS/FSR/XeSS tables); OptiScaler version resolved via a manifest → log →
+  ini evidence chain. Enrichment only on managed installs (committed manifest
+  or OptiScaler.dll present) — no PE parsing for unmanaged games.
+- **Game launching**: per-store per-OS command table in `internal/launch`.
+  Steam: `steam steam://rungameid/<id>` (auto-Proton; Proton selection stays
+  Steam's business — **never** `proton run`). Epic: launcher URL with
+  AppName. GOG: direct exe (DRM-free). Manual: user template with
+  `{exe}`/`{dir}`/`{appid}`/`{args}` placeholders, split without a shell.
+  Detached spawn (Start + Release, never Wait); URL openers get a 10s cap.
+  Fire-and-forget: spawn success proves nothing about the game running.
+- **TUI frontend**: `optiscaler-manager tui` (bubbletea) binds the same
+  `ui.Session`; shared session construction in `cmd/session.go`.
+- **Cancellable ops**: ctx checks at every installer phase boundary; cancel ⇒
+  manifest `failed` + automatic rollback under `context.WithoutCancel`;
+  per-game `Session.CancelOp`; batched ops via errgroup (first error cancels
+  siblings).
+- **GUI polish**: full keyboard nav (Tab/Shift-Tab focus cycle, Enter/Space
+  activation, Esc closes modals), sidebar Exit (flushes settings), responsive
+  grid (1–8 cols, card width capped), version badges on cards, per-card and
+  dashboard Launch buttons, busy-state Cancel button.
+
+### v0.3 known limits
+
+- Cross-GOOS correctness is **compile-gated only**: CI vets windows for the
+  whole tree and vets + test-compiles darwin/windows for
+  `internal/discovery` + `internal/launch`. Cross test binaries cannot
+  execute on Linux runners (no wine/darling), so behavior on Windows/macOS is
+  verified by compile and by linux-executed parser tests, not by running the
+  suite there (W3 decision).
+- Release artifacts are linux/amd64 + windows/amd64. **No macOS builds**:
+  shirei v0.5.2's cocoa backend is cgo + Apple frameworks, which a Linux
+  runner cannot link (needs an Apple SDK). Unlock path is a macos-latest
+  runner; diagnosis lives in `.goreleaser.yml`.
+- Epic launch needs the AppName from the .item manifest; without it the exe
+  fallback fires.
+- Launch is fire-and-forget: no process tracking, no "game is running" state.
+
 ## Dependencies (settled)
 
 - Vendored (`go mod vendor`, `vendor/` committed; `-mod=vendor` stays in CI and

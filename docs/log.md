@@ -606,3 +606,40 @@ Append-only milestone and task log. Newest at the bottom.
 - Verified: `go test ./...` (20 packages ok), `go vet ./...`,
   `golangci-lint run` (0 issues). No changes outside internal/ui,
   internal/gui, and this log.
+
+## 2026-07-20 — W6-T10: v0.3 release matrix, CI cross-GOOS gates, docs wrap
+
+- v0.3 wraps W3–W5: `internal/pever` (PE version parser + marketing maps),
+  `internal/launch` (per-store per-OS command table, detached spawn, never
+  `proton run`), cross-platform multi-store discovery (W3), multi-store scan
+  with per-game versions on rows (W4-T5), session launching with the user
+  template (W4-T6), the bubbletea TUI (W5-T9), and GUI keyboard nav / exit /
+  responsive grid / version badges / launch (W5-T7).
+- **goreleaser**: snapshot run green — artifacts
+  `optiscaler-manager_v0.0.0_linux_amd64.tar.gz` and
+  `optiscaler-manager_v0.0.0_windows_amd64.zip` (plus `sha256sums.txt`).
+  darwin amd64+arm64 stays disabled after an honest diagnosis, recorded in
+  `.goreleaser.yml`: shirei v0.5.2's only macOS backend (vendored
+  cocoabackend) is cgo + Cocoa/QuartzCore/IOSurface; `CGO_ENABLED=0` fails at
+  compile (perf_darwin.go references symbols from the dropped cgo file) and
+  cross-linking cgo from Linux needs an Apple SDK (no osxcross on the host;
+  ubuntu-latest identical). Unlock path: macos-latest release runner. No
+  macOS support is claimed anywhere in the docs.
+- **CI**: new `xplatform` job — `GOOS=windows go vet ./...` (whole tree,
+  CGO-free), `GOOS=darwin go vet` + `GOOS=windows/darwin go test -c` scoped
+  to `internal/discovery` and `internal/launch`. Cross-compiled test binaries
+  cannot execute on Linux runners (no wine/darling), so the gate is
+  compile-only — the W3 decision, now enforced in CI. Existing linux
+  test/vet/lint/goreleaser jobs unchanged.
+- **Docs**: architecture.md gains the v0.3 package map (pever, launch, tui,
+  cmd/session.go, app ops.go, Store enum), a cross-platform-shape section,
+  and the cancellation model; scope.md gains the v0.3 section (multi-store,
+  versions, launch, TUI, cancel, GUI polish) with known limits (compile-gated
+  cross-GOOS, no macOS artifacts, Epic AppName requirement, fire-and-forget
+  launch); safety.md keeps cancel invariant #6 and gains a launch-safety
+  section (detached spawn, shell-free template split, 10s URL-opener cap);
+  README updated to v0.3 (usage, launch keys, template location, status).
+  OKF frontmatter untouched; `TestDocsOKFFrontmatter` green.
+- Verified: `go test ./...`, `go vet ./...`, `GOOS=windows go vet ./...`,
+  `GOOS=darwin go vet` + `go test -c` (discovery, launch), `goreleaser
+  release --snapshot --clean`. No Go source changed; no new dependencies.
