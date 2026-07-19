@@ -11,15 +11,20 @@ import (
 	"path/filepath"
 )
 
+// DefaultLaunchTemplate runs the game exe with its args, nothing else; it
+// mirrors the launch package's built-in manual template.
+const DefaultLaunchTemplate = `"{exe}" {args}`
+
 // Settings are the user-configurable preferences.
 type Settings struct {
 	DefaultVersion string   `json:"default_version"`
+	LaunchTemplate string   `json:"launch_template"`
 	ExtraDirs      []string `json:"extra_dirs,omitempty"`
 }
 
 // Defaults returns the out-of-box settings.
 func Defaults() Settings {
-	return Settings{DefaultVersion: "latest"}
+	return Settings{DefaultVersion: "latest", LaunchTemplate: DefaultLaunchTemplate}
 }
 
 func path(root string) string { return filepath.Join(root, "settings.json") }
@@ -40,6 +45,9 @@ func Load(root string) (Settings, error) {
 	if s.DefaultVersion == "" {
 		s.DefaultVersion = "latest"
 	}
+	if s.LaunchTemplate == "" {
+		s.LaunchTemplate = DefaultLaunchTemplate
+	}
 	return s, nil
 }
 
@@ -47,6 +55,9 @@ func Load(root string) (Settings, error) {
 func Save(root string, s Settings) error {
 	if s.DefaultVersion == "" {
 		s.DefaultVersion = "latest"
+	}
+	if s.LaunchTemplate == "" {
+		s.LaunchTemplate = DefaultLaunchTemplate
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return err

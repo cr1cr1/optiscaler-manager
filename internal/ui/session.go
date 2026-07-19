@@ -15,8 +15,10 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/app"
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
+	"github.com/cr1cr1/optiscaler-manager/internal/discovery"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
+	"github.com/cr1cr1/optiscaler-manager/internal/launch"
 	"github.com/cr1cr1/optiscaler-manager/internal/pickdir"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
@@ -98,6 +100,7 @@ type Deps struct {
 	SteamRoot    string
 	Settings     settings.Settings
 	SettingsRoot string
+	Launcher     *launch.Launcher // nil selects the platform detached-spawn default
 }
 
 // Session is the frontend-agnostic interactive core.
@@ -118,6 +121,12 @@ type Session struct {
 func NewSession(deps Deps) *Session {
 	if deps.Settings.DefaultVersion == "" {
 		deps.Settings.DefaultVersion = "latest"
+	}
+	if deps.Settings.LaunchTemplate == "" {
+		deps.Settings.LaunchTemplate = settings.DefaultLaunchTemplate
+	}
+	if deps.Launcher == nil {
+		deps.Launcher = launch.New(nil, "", nil)
 	}
 	return &Session{
 		deps:      deps,
@@ -152,6 +161,22 @@ func (s *Session) SetDefaultVersion(v string) {
 		return
 	}
 	s.toast("default version: "+v, false)
+}
+
+// SetLaunchTemplate changes the command template manual games launch with
+// (persisted); an empty value resets to the plain `"{exe}" {args}` default.
+func (s *Session) SetLaunchTemplate(tmpl string) {
+	if tmpl == "" {
+		tmpl = settings.DefaultLaunchTemplate
+	}
+	s.mu.Lock()
+	s.deps.Settings.LaunchTemplate = tmpl
+	s.mu.Unlock()
+	if err := settings.Save(s.deps.SettingsRoot, s.deps.Settings); err != nil {
+		s.toast("settings not saved: "+err.Error(), true)
+		return
+	}
+	s.toast("launch template: "+tmpl, false)
 }
 
 // ClearBundleCache deletes all cached OptiScaler bundles.
@@ -405,6 +430,112 @@ func (s *Session) OpenINI(gameDir string) {
 	if err := s.openExternal(filepath.Join(row.InjectionDir, "OptiScaler.ini")); err != nil {
 		s.toast("cannot open editor: "+err.Error(), true)
 	}
+}
+
+// Launch requests a fire-and-forget game launch: it never blocks, never
+// waits on the child, and a successful request proves nothing about the
+// game actually running — hence "Launch requested", never "launched".
+func (s *Session) Launch(gameDir string) {
+	go s.doLaunch(gameDir)
+}
+
+func (s *Session) doLaunch(gameDir string) {
+	row := s.findRow(gameDir)
+	if row == nil {
+		s.launchFailed(fmt.Errorf("unknown game %s", gameDir), gameDir)
+		return
+	}
+	target, err := s.launchTarget(row)
+	if err != nil {
+		s.launchFailed(err, gameDir)
+		return
+	}
+	if _, argv, err := s.deps.Launcher.Command(target); err == nil {
+		log.Info().Str("store", target.Store.String()).Str("game", target.Name).
+			Str("argv0", argv[0]).Msg("launch requested")
+	}
+	if err := s.deps.Launcher.Launch(context.Background(), target); err != nil {
+		s.launchFailed(err, gameDir)
+		return
+	}
+	what := "Launch requested: " + row.Title
+	s.setStatus(what)
+	s.toast(what, false)
+	s.emit(Event{Kind: EvOpDone, Text: what, GameDir: gameDir})
+}
+
+func (s *Session) launchFailed(err error, gameDir string) {
+	s.setStatus("Launch failed: " + err.Error())
+	s.toast("Launch failed: "+err.Error(), true)
+	s.emit(Event{Kind: EvOpFailed, Text: err.Error(), GameDir: gameDir})
+}
+
+// launchTarget maps a row to its launch target; manual games launch through
+// the user's template, and a blank ExePath on an exe-launched store falls
+// back to the discovery exe picking before giving up.
+func (s *Session) launchTarget(row *GameRow) (launch.Target, error) {
+	t := launch.Target{
+		Store:   launchStore(row.Store),
+		Name:    row.Title,
+		AppID:   row.AppID,
+		AppName: row.AppName,
+		ExePath: row.ExePath,
+		Dir:     row.InstallDir,
+	}
+	if t.Store == launch.StoreManual {
+		t.Template = s.Settings().LaunchTemplate
+	}
+	if t.ExePath == "" && (t.Store == launch.StoreManual || t.Store == launch.StoreGOG) {
+		exe, err := resolveGameExe(row.InstallDir)
+		if err != nil {
+			return t, err
+		}
+		t.ExePath = exe
+	}
+	return t, nil
+}
+
+func launchStore(s domain.Store) launch.Store {
+	switch s {
+	case domain.StoreEpic:
+		return launch.StoreEpic
+	case domain.StoreGOG:
+		return launch.StoreGOG
+	case domain.StoreManual:
+		return launch.StoreManual
+	case domain.StoreSteam:
+		return launch.StoreSteam
+	default:
+		return launch.StoreUnknown
+	}
+}
+
+// resolveGameExe reuses the recursive scanner's exe picking for one game
+// directory whose ExePath discovery left blank.
+func resolveGameExe(gameDir string) (string, error) {
+	games, err := discovery.ScanRecursive(context.Background(), filepath.Dir(gameDir))
+	if err != nil {
+		return "", fmt.Errorf("resolve exe for %s: %w", gameDir, err)
+	}
+	want := canonicalDir(gameDir)
+	for _, g := range games {
+		if g.InstallDir == want && g.ExePath != "" {
+			return g.ExePath, nil
+		}
+	}
+	return "", fmt.Errorf("no executable found under %s", gameDir)
+}
+
+// canonicalDir mirrors the scanner's path canonicalization so install dirs
+// compare equal across aliases and symlinks.
+func canonicalDir(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		p = abs
+	}
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		p = resolved
+	}
+	return filepath.Clean(p)
 }
 
 func (s *Session) doInstall(gameDir string, eacOK, cachedOK bool) {
