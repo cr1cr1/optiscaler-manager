@@ -175,7 +175,7 @@ func (c *Client) fetch(ctx context.Context) ([]Release, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gh: releases request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if isRateLimited(resp) {
 		return nil, fmt.Errorf("%w (HTTP %d)", ErrRateLimited, resp.StatusCode)
@@ -258,7 +258,7 @@ func (c *Client) Download(ctx context.Context, asset domain.ResolvedAsset, destD
 	if err != nil {
 		return "", "", fmt.Errorf("gh: download %q: %w", asset.AssetName, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", "", fmt.Errorf("gh: download %q: unexpected HTTP %d", asset.AssetName, resp.StatusCode)
 	}
@@ -270,18 +270,18 @@ func (c *Client) Download(ctx context.Context, asset domain.ResolvedAsset, destD
 	tmpName := tmp.Name()
 	h := sha256.New()
 	if _, err := io.Copy(io.MultiWriter(tmp, h), resp.Body); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 		return "", "", fmt.Errorf("gh: download %q: %w", asset.AssetName, err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return "", "", err
 	}
 
 	final := filepath.Join(destDir, asset.AssetName)
 	if err := os.Rename(tmpName, final); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return "", "", err
 	}
 	return final, hex.EncodeToString(h.Sum(nil)), nil

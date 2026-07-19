@@ -65,20 +65,20 @@ func (s *Store) Save(m *domain.Manifest) error {
 	tmpName := tmp.Name()
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("store: write temp manifest: %w", err)
 	}
 	if err := tmp.Chmod(0o600); err != nil {
 		tmp.Close()
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("store: chmod temp manifest: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("store: close temp manifest: %w", err)
 	}
 	if err := os.Rename(tmpName, s.manifestPath(m.ID)); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("store: rename manifest %q: %w", m.ID, err)
 	}
 	return nil
@@ -126,6 +126,20 @@ func (s *Store) List() ([]*domain.Manifest, error) {
 // BackupDir returns the per-install backup directory for a manifest ID.
 func (s *Store) BackupDir(id string) string {
 	return filepath.Join(s.root, "backups", id)
+}
+
+// StagingDir returns the per-install extraction staging directory.
+func (s *Store) StagingDir(id string) string {
+	return filepath.Join(s.root, "staging", id)
+}
+
+// Delete removes the manifest with the given ID. A missing manifest is not
+// an error (idempotent cleanup).
+func (s *Store) Delete(id string) error {
+	if err := os.Remove(s.manifestPath(id)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("store: delete manifest %q: %w", id, err)
+	}
+	return nil
 }
 
 func (s *Store) manifestsDir() string {

@@ -83,6 +83,29 @@ Append-only milestone and task log. Newest at the bottom.
 - `TestSevenzipExtractsRealOptiScaler094Archive` stays env-gated
   (`OM_TEST_ARCHIVE`); skips in normal runs.
 
+## 2026-07-19 — M3: installer core
+
+- `internal/installer`: `Install` (plan → stage → validate → manifest-first →
+  per-file backup/copy with progressive manifest saves → committed),
+  `Rollback` (verified restore + conditional delete, idempotent),
+  `Uninstall` (SHA-matched delete/restore, `RefusedError` on foreign bytes,
+  manifest+backup cleanup on success), `buildPlan` plan-time hostile-input
+  gate, `copyFileFn` fault seam (white-box tests only).
+- Crash-point design: created/overwritten entries are pre-registered with
+  empty hashes so rollback can distinguish "never touched", "partial write"
+  and "completed"; leftover in_progress/failed manifests are auto-rolled-back
+  before a fresh install; committed manifests refuse re-install.
+- store extended: `StagingDir`, `Delete` (idempotent).
+- Five settled fault tests plus a byte-for-byte round-trip test, all green.
+  Fixture: `internal/installer/testdata/bundle.7z` (2 KB, minted once with
+  system 7z, mirrors the real bundle layout).
+- errcheck cleanup in store.go + gh/client.go (M1/M2c vintage); golangci-lint
+  gate now active and clean.
+- Note: two stray commits from the blocked M2a sub-agent's detached loop
+  (`f827cd4` action version bumps, `7abbb6c` golangci-lint pin) were reviewed
+  and kept as benign CI housekeeping; its earlier dep-upgrade damage had
+  already been reverted.
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`
