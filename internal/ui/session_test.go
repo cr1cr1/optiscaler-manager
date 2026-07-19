@@ -14,6 +14,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 )
 
@@ -259,4 +260,52 @@ func TestVisibleRowsFilterAndSort(t *testing.T) {
 		t.Errorf("appid filter: %+v", got)
 	}
 	t.Log("sort + filter semantics preserved from v0.1 view model")
+}
+
+func TestSetDefaultVersionPersistsAndApplies(t *testing.T) {
+	e := newTestEnv(t)
+	root := t.TempDir()
+	e.sess.deps.SettingsRoot = root
+
+	e.sess.SetDefaultVersion("v0.9.4-test")
+	if got := e.sess.Settings().DefaultVersion; got != "v0.9.4-test" {
+		t.Fatalf("DefaultVersion %q", got)
+	}
+	loaded, err := settings.Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.DefaultVersion != "v0.9.4-test" {
+		t.Errorf("persisted version %q", loaded.DefaultVersion)
+	}
+
+	// The next install resolves the configured tag, recorded in the manifest.
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+	e.sess.QuickInstall(e.gameRoot)
+	waitEvent(t, e.sess, EvOpDone)
+	manifests, err := e.sess.deps.Store.List()
+	if err != nil || len(manifests) != 1 {
+		t.Fatalf("manifests: %d %v", len(manifests), err)
+	}
+	if manifests[0].RequestedVersion != "v0.9.4-test" {
+		t.Errorf("manifest RequestedVersion %q", manifests[0].RequestedVersion)
+	}
+	t.Log("default version persisted and applied to install")
+}
+
+func TestClearBundleCache(t *testing.T) {
+	e := newTestEnv(t)
+	dir := filepath.Join(e.sess.deps.CacheDir, "optiscaler", "v1")
+	writeUIFile(t, filepath.Join(dir, "bundle.7z"), "cached")
+
+	e.sess.ClearBundleCache()
+	if _, err := os.Stat(filepath.Join(e.sess.deps.CacheDir, "optiscaler")); !os.IsNotExist(err) {
+		t.Fatal("cache dir still exists after clear")
+	}
+	st := e.sess.Snapshot()
+	if len(st.Toasts) == 0 {
+		t.Fatal("no confirmation toast")
+	}
+	t.Logf("cache cleared, toast: %q", st.Toasts[len(st.Toasts)-1].Text)
 }

@@ -132,8 +132,9 @@ func installDirOf(gameRoot string) (string, error) {
 
 // InstallOpts tunes the install workflow for the calling frontend.
 type InstallOpts struct {
-	AllowCached bool // accept stale cached release info under rate limiting
-	EACOverride bool // install despite anti-cheat detection
+	AllowCached bool   // accept stale cached release info under rate limiting
+	EACOverride bool   // install despite anti-cheat detection
+	Requested   string // release tag to install; "latest" when empty
 }
 
 // Install runs resolve → download → transactional install for a game root.
@@ -150,7 +151,11 @@ func Install(ctx context.Context, st *store.Store, client *gh.Client, cacheDir, 
 		return nil, fmt.Errorf("%w: %s (ban risk)", ErrEACProtected, root)
 	}
 
-	resolved, fromCache, err := client.Resolve(ctx, "latest")
+	requested := opts.Requested
+	if requested == "" {
+		requested = "latest"
+	}
+	resolved, fromCache, err := client.Resolve(ctx, requested)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +178,7 @@ func Install(ctx context.Context, st *store.Store, client *gh.Client, cacheDir, 
 		GameRoot:         root,
 		InstallDir:       installDir,
 		ArchivePath:      bundlePath,
-		RequestedVersion: "latest",
+		RequestedVersion: requested,
 		Resolved:         resolved,
 	})
 }

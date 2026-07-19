@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 )
 
@@ -86,11 +88,13 @@ type State struct {
 
 // Deps wires the session to the lower layers.
 type Deps struct {
-	Store     *store.Store
-	GH        *gh.Client
-	Covers    *covers.Covers
-	CacheDir  string
-	SteamRoot string
+	Store        *store.Store
+	GH           *gh.Client
+	Covers       *covers.Covers
+	CacheDir     string
+	SteamRoot    string
+	Settings     settings.Settings
+	SettingsRoot string
 }
 
 // Session is the frontend-agnostic interactive core.
@@ -107,6 +111,9 @@ type Session struct {
 
 // NewSession starts a session. The library is empty until Scan is called.
 func NewSession(deps Deps) *Session {
+	if deps.Settings.DefaultVersion == "" {
+		deps.Settings.DefaultVersion = "latest"
+	}
 	return &Session{
 		deps:   deps,
 		events: make(chan Event, 64),
@@ -116,6 +123,38 @@ func NewSession(deps Deps) *Session {
 			return exec.Command("xdg-open", path).Start()
 		},
 	}
+}
+
+// Settings returns the current user settings.
+func (s *Session) Settings() settings.Settings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deps.Settings
+}
+
+// SetDefaultVersion changes the release tag installs resolve to (persisted).
+func (s *Session) SetDefaultVersion(v string) {
+	if v == "" {
+		v = "latest"
+	}
+	s.mu.Lock()
+	s.deps.Settings.DefaultVersion = v
+	s.mu.Unlock()
+	if err := settings.Save(s.deps.SettingsRoot, s.deps.Settings); err != nil {
+		s.toast("settings not saved: "+err.Error(), true)
+		return
+	}
+	s.toast("default version: "+v, false)
+}
+
+// ClearBundleCache deletes all cached OptiScaler bundles.
+func (s *Session) ClearBundleCache() {
+	dir := filepath.Join(s.deps.CacheDir, "optiscaler")
+	if err := os.RemoveAll(dir); err != nil {
+		s.toast("clear cache: "+err.Error(), true)
+		return
+	}
+	s.toast("OptiScaler cache cleared", false)
 }
 
 // Events returns the notification stream. Frontends drain it (GUI: each
@@ -278,7 +317,7 @@ func (s *Session) doInstall(gameDir string, eacOK, cachedOK bool) {
 	}
 	s.opStarted("Installing…")
 	_, err := app.Install(context.Background(), s.deps.Store, s.deps.GH, s.deps.CacheDir, gameDir,
-		app.InstallOpts{AllowCached: cachedOK, EACOverride: eacOK})
+		app.InstallOpts{AllowCached: cachedOK, EACOverride: eacOK, Requested: s.deps.Settings.DefaultVersion})
 	if errors.Is(err, app.ErrStaleCache) {
 		s.opAborted()
 		s.setConfirm(&Confirmation{
