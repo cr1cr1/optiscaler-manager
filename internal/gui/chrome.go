@@ -34,17 +34,20 @@ func modal(width float32, dismiss func(), fn func()) {
 func (m *model) sidebar() {
 	Container(Attrs(FixSize(64, 0), BackgroundVec(bgPanel), Pad(8), Gap(12)), func() {
 		Label("✦", FontSize(22), TextColorVec(toneColor(2)))
-		if Button(0, "Games") {
+		if focusableButton(0, "Games") {
 			m.about = false
 			m.settingsOpen = false
 		}
-		if Button(0, "Settings") {
+		if focusableButton(0, "Settings") {
 			m.about = false
 			m.openSettings()
 		}
-		if Button(0, "About") {
+		if focusableButton(0, "About") {
 			m.settingsOpen = false
 			m.about = true
+		}
+		if focusableButton(0, "Exit") {
+			m.exit()
 		}
 	})
 }
@@ -66,15 +69,15 @@ func (m *model) settingsModal() {
 			if m.sess == nil {
 				return
 			}
-			if Button(SymIRight, "Apply") {
-				m.sess.SetDefaultVersion(m.versionBuf)
-			}
-			if Button(SymIRight, "Clear OptiScaler cache") {
-				m.sess.ClearBundleCache()
-			}
-			if Button(SymILeft, "Close") {
-				m.settingsOpen = false
-			}
+		if focusableButton(SymIRight, "Apply") {
+			m.sess.SetDefaultVersion(m.versionBuf)
+		}
+		if focusableButton(SymIRight, "Clear OptiScaler cache") {
+			m.sess.ClearBundleCache()
+		}
+		if focusableButton(SymILeft, "Close") {
+			m.settingsOpen = false
+		}
 		})
 	})
 }
@@ -82,16 +85,16 @@ func (m *model) settingsModal() {
 // toolbar is the top action bar: scan, search, view switch.
 func (m *model) toolbar(ctx context.Context) {
 	Container(Attrs(Expand, Row, CrossMid, Gap(10), Pad2(8, 4)), func() {
-		if m.sess != nil && Button(SymIRight, "Scan Games") {
+		if m.sess != nil && focusableButton(SymIRight, "Scan Games") {
 			m.sess.Scan(ctx)
 		}
-		if m.sess != nil && Button(SymIPlus, "Add Game") {
+		if m.sess != nil && focusableButton(SymIPlus, "Add Game") {
 			m.sess.PickAndAddDirectory(ctx)
 		}
 		Container(Attrs(Grow(1), MinSize(140, 34), MaxSizeVec(Vec2{420, 34})), func() {
 			TextInput(&m.filter)
 		})
-		if m.sess != nil && Button(SymIRight, viewToggleLabel(m.state.Mode)) {
+		if m.sess != nil && focusableButton(SymIRight, viewToggleLabel(m.state.Mode)) {
 			m.sess.ToggleView()
 		}
 		Filler(1)
@@ -134,9 +137,9 @@ func (m *model) aboutModal() {
 			txt("optiscaler-manager " + m.cfg.Version)
 			muted("OptiScaler manager for local games — Linux + Steam.")
 			muted("GUI: go-shirei (pinned v0.5.2)")
-			if Button(SymILeft, "Close") {
-				m.about = false
-			}
+		if focusableButton(SymILeft, "Close") {
+			m.about = false
+		}
 		})
 	})
 }

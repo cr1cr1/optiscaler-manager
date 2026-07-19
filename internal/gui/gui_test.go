@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	. "go.hasen.dev/shirei"
+
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
@@ -18,7 +20,8 @@ import (
 )
 
 // guiFakes builds a session against the same fakes as the ui package tests.
-func guiFakes(t *testing.T) (*ui.Session, string) {
+// Optional dep mutators let a test inject seams (e.g. a capturing launcher).
+func guiFakes(t *testing.T, opts ...func(*ui.Deps)) (*ui.Session, string) {
 	t.Helper()
 	var srv *httptest.Server
 	mux := http.NewServeMux()
@@ -44,13 +47,17 @@ func guiFakes(t *testing.T) (*ui.Session, string) {
 	writeGUIFile(t, filepath.Join(bin, "gameone.exe"), "GAME")
 	writeGUIFile(t, filepath.Join(bin, "nvngx_dlss.dll"), "DLSS")
 
-	sess := ui.NewSession(ui.Deps{
+	deps := ui.Deps{
 		Store:     store.New(root),
 		GH:        gh.NewWithBaseURL(nil, filepath.Join(root, "cache"), srv.URL),
 		Covers:    covers.NewWithBase(nil, filepath.Join(root, "covers"), srv.URL+"/cdn/%s", srv.URL+"/search/"),
 		CacheDir:  filepath.Join(root, "cache"),
 		SteamRoot: steamRoot,
-	})
+	}
+	for _, o := range opts {
+		o(&deps)
+	}
+	sess := ui.NewSession(deps)
 	return sess, gameRoot
 }
 
@@ -94,6 +101,41 @@ func TestGUIFilterSyncsToSession(t *testing.T) {
 	if got := sess.Snapshot().Query; got != "cyber" {
 		t.Errorf("session query %q, want cyber", got)
 	}
+}
+
+func TestEscClosesModal(t *testing.T) {
+	sess, gameRoot := guiFakes(t)
+	writeGUIFile(t, filepath.Join(gameRoot, "start_protected_game.exe"), "EAC")
+	m := newModel(Config{Session: sess})
+
+	sess.Scan(context.Background())
+	deadline := time.Now().Add(15 * time.Second)
+	for len(sess.VisibleRows()) == 0 && time.Now().Before(deadline) {
+		select {
+		case <-sess.Events():
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	sess.QuickInstall(gameRoot) // EAC gate: stops at the confirmation modal
+	for m.state.Confirm == nil && time.Now().Before(deadline) {
+		select {
+		case <-sess.Events():
+			m.drain()
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	if m.state.Confirm == nil {
+		t.Fatal("EAC install did not raise the confirmation modal")
+	}
+
+	headlessFrames(t, 1000, 700)
+	keyFrame(KeyCodeNone, 0, m.rootView) // open frame
+	keyFrame(KeyEscape, 0, m.rootView)   // universal close gesture
+	m.drain()
+	if got := sess.Snapshot().Confirm; got != nil {
+		t.Errorf("confirm modal still pending after Esc: %+v", got)
+	}
+	t.Log("Esc dismissed the EAC confirm modal")
 }
 
 func TestRenderToPNGSmoke(t *testing.T) {

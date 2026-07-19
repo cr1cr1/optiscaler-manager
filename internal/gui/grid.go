@@ -4,23 +4,26 @@ import (
 	. "go.hasen.dev/shirei"
 	. "go.hasen.dev/shirei/widgets"
 
-	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
 // Card geometry: cards adapt to the live list width so narrow windows
-// (tiling WMs) never overflow horizontally.
+// (tiling WMs) never overflow horizontally; ultrawide windows cap columns
+// and card width instead of stretching cards absurdly.
 const (
 	cardGap    = 10
 	targetCard = 200 // px; cols = width/targetCard
 	coverRatio = 1.5 // 600x900 covers are 2:3
+	maxCols    = 8
+	maxCardW   = 320
+	rowPadH    = 12 // horizontal padding each side of a grid row
 )
 
 // cardContentH sizes a card so every element fits: badge row, cover,
-// title, tech pills, and the quick-install button, plus gaps.
+// title, version pills, tech pills, and the button row, plus gaps.
 func cardContentH(cardW int) int {
 	coverH := int(float32(cardW-12) * coverRatio)
-	return coverH + 118
+	return coverH + 140
 }
 
 // chunkRows groups rows into rows-of-cols for the virtualized grid. cols is
@@ -40,6 +43,26 @@ func chunkRows(rows []ui.GameRow, cols int) [][]ui.GameRow {
 	return chunks
 }
 
+// fitCards derives columns and card size from the live row width: at least
+// one column, at most maxCols, and cards never wider than maxCardW (rows
+// stay left-aligned on ultrawide windows).
+func (m *model) fitCards(w int) {
+	inner := w - 2*rowPadH
+	cols := inner / targetCard
+	if cols < 1 {
+		cols = 1
+	}
+	if cols > maxCols {
+		cols = maxCols
+	}
+	m.cols = cols
+	m.cardW = (inner - (cols-1)*cardGap) / cols
+	if m.cardW > maxCardW {
+		m.cardW = maxCardW
+	}
+	m.cardH = cardContentH(m.cardW)
+}
+
 // gridView is the cover-card grid (the reference client's main view).
 // Columns and card size are recomputed from the live width each frame.
 func (m *model) gridView() {
@@ -53,14 +76,8 @@ func (m *model) gridView() {
 		func(i int) any { return i },
 		func(i int, w float32) float32 { return float32(m.cardH) + 8 },
 		func(i int, w float32) {
-			if c := int(w) / targetCard; c >= 1 && c != m.cols {
-				m.cols = c
-			}
-			if m.cols > 0 {
-				m.cardW = (int(w) - (m.cols-1)*cardGap) / m.cols
-				m.cardH = cardContentH(m.cardW)
-			}
-			Container(Attrs(Row, Gap(cardGap), Pad2(0, 12), MinSize(w, float32(m.cardH)), Clip), func() {
+			m.fitCards(int(w))
+			Container(Attrs(Row, Gap(cardGap), Pad2(0, rowPadH), MinSize(w, float32(m.cardH)), Clip), func() {
 				for j := range chunks[i] {
 					m.gameCard(chunks[i][j])
 				}
@@ -68,8 +85,8 @@ func (m *model) gridView() {
 		})
 }
 
-// gameCard renders one cover card: platform pill, installed badge, cover,
-// title, tech pills, and the quick-install toggle.
+// gameCard renders one cover card: platform pill, status badges, cover,
+// title, version pills, tech pills, and the install/launch buttons.
 func (m *model) gameCard(e ui.GameRow) {
 	cardW, cardH := m.cardW, m.cardH
 	coverW := float32(cardW - 12)
@@ -77,9 +94,6 @@ func (m *model) gameCard(e ui.GameRow) {
 		Container(Attrs(Row, Gap(4)), func() {
 			if e.Platform != "" {
 				badgePill(e.Platform, ui.ToneGray)
-			}
-			if e.Status == domain.StatusCommitted {
-				badgePill("✦ OptiScaler", ui.TonePurple)
 			}
 			if e.EAC {
 				badgePill("EAC", ui.ToneRed)
@@ -94,6 +108,13 @@ func (m *model) gameCard(e ui.GameRow) {
 			Container(Attrs(FixSize(coverW, coverW*coverRatio), Background(230, 10, 30, 1)), func() {})
 		}
 		txt(e.Title)
+		if pills := versionPills(&e); len(pills) > 0 {
+			Container(Attrs(Row, Gap(4)), func() {
+				for _, p := range pills {
+					badgePill(p.Label, p.Tone)
+				}
+			})
+		}
 		if len(e.TechBadges) > 0 {
 			Container(Attrs(Row, Gap(4)), func() {
 				for _, b := range e.TechBadges {
@@ -102,9 +123,14 @@ func (m *model) gameCard(e ui.GameRow) {
 			})
 		}
 		if m.sess != nil {
-			if Button(SymIRight, quickLabel(&e)) {
-				m.sess.QuickInstall(e.InstallDir)
-			}
+			Container(Attrs(Row, Gap(4)), func() {
+				if focusableButton(SymIRight, quickLabel(&e)) {
+					m.sess.QuickInstall(e.InstallDir)
+				}
+				if launchable(&e) && focusableButton(0, "Launch") {
+					m.launchGame(e)
+				}
+			})
 		}
 		if PressAction() && m.sess != nil {
 			m.sess.Select(e.InstallDir)
