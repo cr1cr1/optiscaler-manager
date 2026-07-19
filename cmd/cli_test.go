@@ -13,6 +13,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
+	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
 )
 
 func fakeSteam(t *testing.T) (steamRoot, gameRoot string) {
@@ -70,7 +71,15 @@ func fakeGitHub(t *testing.T) *httptest.Server {
 }
 
 func TestScanCommandListsGames(t *testing.T) {
-	steamRoot, _ := fakeSteam(t)
+	steamRoot, gameRoot := fakeSteam(t)
+	// Managed install evidence: OptiScaler.dll + manifest version + a real
+	// PE-versioned DLSS DLL, so the scan surfaces per-game versions.
+	writeCmdTestFile(t, filepath.Join(gameRoot, "bin", "OptiScaler.dll"), "OPT")
+	writeCmdTestFile(t, filepath.Join(gameRoot, "bin", "manifest.json"), `{"name":"OptiScaler","version":"0.9.4"}`)
+	if err := os.WriteFile(filepath.Join(gameRoot, "bin", "nvngx_dlss.dll"),
+		testutil.FixedVersionPE(3, 7, 10, 0), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	d, out := testDeps(t, nil)
 
 	cmd := &ScanCmd{SteamRoot: steamRoot}
@@ -79,7 +88,7 @@ func TestScanCommandListsGames(t *testing.T) {
 	}
 	got := out.String()
 	t.Logf("scan output:\n%s", got)
-	for _, want := range []string{"Game One", "100", "DLSS"} {
+	for _, want := range []string{"Game One", "100", "Steam", "DLSS", "OptiScaler 0.9.4", "DLSS 3.7.10"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("scan output missing %q", want)
 		}

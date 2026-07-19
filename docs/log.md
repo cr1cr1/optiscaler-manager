@@ -440,3 +440,33 @@ Append-only milestone and task log. Newest at the bottom.
   `go vet` + `go test -c` compile green for discovery+domain. Deviation:
   cross-GOOS test binaries cannot execute on this host (no wine/darling;
   binfmt_misc registers only mono CLR) — compile-verified instead.
+
+## 2026-07-20 — W4-T5: multi-store scan with per-game versions
+
+- TDD: three app tests (multi-store scan via `ScanAll`, component versions
+  from fixture PE DLLs, OptiScaler manifest/log/ini version chain), two ui
+  row tests (platform from store, compat prefix + versions on rows), and the
+  cmd scan golden test extended for the store/version columns — all red
+  first, then green.
+- `internal/app`: additive `ScanAllLibraries(ctx, st, ScanAllOptions{
+  SteamRoot, ExtraDirs})` over `discovery.ScanAll` (SteamRoots from the
+  steamRoot override, RecursiveRoots from settings ExtraDirs);
+  `ScanLibrary` kept unchanged for existing callers. `LibraryEntry` gains
+  `OptiScalerVersion` + `ComponentVersions` ("dlss"/"fsr"/"xess" → marketing
+  name). `ManualEntry` now tags games `StoreManual`.
+- Version enrichment is guarded to managed installs (committed manifest or
+  `OptiScaler.dll` in the resolved injection dir) — no PE parsing for
+  unmanaged games. Per-DLL: `classify.DirFiles` (new; full paths, reuses the
+  existing classification table) → `pever.FileVersion` →
+  `pever.MarketingName`; parse errors skip the component at debug level.
+- `internal/ui`: `GameRow` gains `Store/AppName/ExePath/CompatPrefix`
+  (T6 launch consumes these) plus `OptiScalerVersion` and sorted
+  `Components`; `Platform` now derives from `Game.Store.String()` (hardcoded
+  "Steam" removed). `Session.Scan` runs the multi-store scan with settings
+  ExtraDirs as recursive roots.
+- CLI `scan`: one line per game, now with store and a versions column
+  (`OptiScaler 0.9.4, DLSS 3.7.10` or `-`); reads ExtraDirs from settings.
+- New `internal/testutil` package: shared synthetic-PE fixture builder used
+  by app and cmd tests (no production dependency).
+- Verified: `go test ./...` (18 packages ok), `go vet ./...`,
+  `golangci-lint run` (0 issues).

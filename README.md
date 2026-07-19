@@ -21,7 +21,7 @@ model, and the milestone plan.
 ```
 optiscaler-manager                  # launch the GUI
 optiscaler-manager gui --audit-grid # raw sortable table view
-optiscaler-manager scan             # list installed Steam games + upscalers
+optiscaler-manager scan             # list installed games (all stores) + upscalers/versions
 optiscaler-manager install <path>   # install OptiScaler into a game directory
 optiscaler-manager uninstall <path> # SHA-verified removal
 optiscaler-manager rollback <path>  # restore after an interrupted/failed install

@@ -45,13 +45,42 @@ func match(name string) (domain.Kind, bool) {
 	return 0, false
 }
 
+// File is a detected upscaler DLL with its full path, for consumers that
+// need file contents (PE version parsing).
+type File struct {
+	Kind domain.Kind
+	Path string
+}
+
 // Dir walks dir recursively (skipping noisy dirs like .git) and returns the
 // detected upscaler components, deduplicated by (Kind, DLL) and sorted.
 // DLL is the base filename as found on disk.
 func Dir(dir string) []domain.Component {
 	seen := map[domain.Component]struct{}{}
 	var out []domain.Component
-	_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+	for _, f := range DirFiles(dir) {
+		c := domain.Component{Kind: f.Kind, DLL: filepath.Base(f.Path)}
+		if _, dup := seen[c]; dup {
+			continue
+		}
+		seen[c] = struct{}{}
+		out = append(out, c)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].DLL < out[j].DLL
+	})
+	return out
+}
+
+// DirFiles walks dir like Dir but reports every detected DLL with its full
+// path, deduplicated by path and sorted for determinism.
+func DirFiles(dir string) []File {
+	seen := map[string]struct{}{}
+	var out []File
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -68,19 +97,13 @@ func Dir(dir string) []domain.Component {
 		if !ok {
 			return nil
 		}
-		c := domain.Component{Kind: kind, DLL: d.Name()}
-		if _, dup := seen[c]; dup {
+		if _, dup := seen[path]; dup {
 			return nil
 		}
-		seen[c] = struct{}{}
-		out = append(out, c)
+		seen[path] = struct{}{}
+		out = append(out, File{Kind: kind, Path: path})
 		return nil
 	})
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Kind != out[j].Kind {
-			return out[i].Kind < out[j].Kind
-		}
-		return out[i].DLL < out[j].DLL
-	})
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out
 }
