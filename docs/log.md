@@ -191,6 +191,26 @@ Append-only milestone and task log. Newest at the bottom.
   fallback (Bottles/Heroic source survey pending; store-search is the
   zero-key fallback the C# client also uses).
 
+## 2026-07-19 — P2: ui Session core (frontend-agnostic)
+
+- `internal/ui`: the abstraction the TUI/CLI will share. `Session` holds
+  all interactive state (`State{Rows, Query, Mode, Selected, Busy,
+  StatusLine, Confirm, Toasts}`) and exposes async commands (`Scan`,
+  `QuickInstall`, `Install`, `Uninstall`, `Rollback`, `SetQuery`,
+  `ToggleView`, `Select`, `AnswerConfirm`, `OpenINI`) plus a buffered event
+  stream (`Events()`) and `Snapshot()` for rendering.
+- `GameRow` is display-ready: title, badges (`Badge{Label, Tone}` — tones
+  mapped per frontend), status, actionable, EAC, cover path. `sortRows` /
+  `filterRows` moved here from the v0.1 GUI view model (dedup in P3).
+- Consent model: EAC and stale-cache installs PAUSE with a `Confirmation`
+  and cannot proceed until `AnswerConfirm(true)` — the frontend renders the
+  prompt, the core enforces the gate (settled safety rule).
+- Supporting seams: `app.ErrStaleCache` sentinel, `covers.NewWithBase`.
+- Tests (all against fakes, zero real network): scan populates rows, quick
+  install toggles both directions, EAC blocks until consent, stale cache
+  requires consent, toast lifecycle + expiry, open-ini opener call,
+  sort/filter semantics. `-race` clean.
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`

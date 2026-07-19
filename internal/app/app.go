@@ -24,6 +24,11 @@ import (
 // launcher and the caller did not pass InstallOpts.EACOverride.
 var ErrEACProtected = errors.New("game is EAC-protected")
 
+// ErrStaleCache is returned by Install when the GitHub API is rate-limited
+// and only stale cached release info is available, and the caller did not
+// pass InstallOpts.AllowCached.
+var ErrStaleCache = errors.New("github API rate-limited; refusing stale cached release info")
+
 // LibraryEntry is one row of the game library: the discovered game enriched
 // with upscaler tech, anti-cheat flag, install status, and directory mtime.
 type LibraryEntry struct {
@@ -147,7 +152,7 @@ func Install(ctx context.Context, st *store.Store, client *gh.Client, cacheDir, 
 		return nil, err
 	}
 	if fromCache && !opts.AllowCached {
-		return nil, fmt.Errorf("GitHub API rate-limited; refusing stale cached release info")
+		return nil, ErrStaleCache
 	}
 
 	bundlePath, digest, err := client.Download(ctx, resolved, cacheDir)

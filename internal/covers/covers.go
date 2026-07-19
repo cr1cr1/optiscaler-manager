@@ -41,6 +41,15 @@ func New(httpClient *http.Client, cacheDir string) *Covers {
 	return &Covers{http: httpClient, cacheDir: cacheDir, cdnBase: steamCDN, searchBase: steamSearch}
 }
 
+// NewWithBase is New with explicit service base URLs (tests, mirrors).
+// cdnBase must contain one %s verb for the appid.
+func NewWithBase(httpClient *http.Client, cacheDir, cdnBase, searchBase string) *Covers {
+	c := New(httpClient, cacheDir)
+	c.cdnBase = cdnBase
+	c.searchBase = searchBase
+	return c
+}
+
 // Cover returns the local path of the game's cover image, downloading and
 // caching it if needed. On any miss it returns the shared placeholder (never
 // an error for a missing cover — art is decorative).
