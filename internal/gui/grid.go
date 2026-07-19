@@ -1,8 +1,6 @@
 package gui
 
 import (
-	"strings"
-
 	. "go.hasen.dev/shirei"
 	. "go.hasen.dev/shirei/widgets"
 
@@ -62,16 +60,19 @@ func (m *model) gridView() {
 // gameCard renders one cover card: platform pill, installed badge, cover,
 // title, tech pills, and the quick-install toggle.
 func (m *model) gameCard(e ui.GameRow) {
-	Container(Attrs(Pad(6), Gap(4), FixSize(cardWidth, cardHeight), Background(235, 12, 18, 0.85), Corners(6)), func() {
-		Container(Attrs(Row, Gap(6)), func() {
+	Container(Attrs(Pad(6), Gap(4), FixSize(cardWidth, cardHeight), BackgroundVec(bgCard), Corners(6)), func() {
+		Container(Attrs(Row, Gap(4)), func() {
 			if e.Platform != "" {
-				Label(e.Platform)
+				badgePill(e.Platform, ui.ToneGray)
 			}
 			if e.Status == domain.StatusCommitted {
-				Label("✦ OptiScaler")
+				badgePill("✦ OptiScaler", ui.TonePurple)
 			}
 			if e.EAC {
-				Label("EAC")
+				badgePill("EAC", ui.ToneRed)
+			}
+			if e.Actionable {
+				badgePill(string(e.Status), ui.ToneRed)
 			}
 		})
 		if e.CoverPath != "" {
@@ -79,13 +80,13 @@ func (m *model) gameCard(e ui.GameRow) {
 		} else {
 			Container(Attrs(FixSize(coverW, coverH), Background(230, 10, 30, 1)), func() {})
 		}
-		Label(e.Title)
+		txt(e.Title)
 		if len(e.TechBadges) > 0 {
-			var tech []string
-			for _, b := range e.TechBadges {
-				tech = append(tech, b.Label)
-			}
-			Label(strings.Join(tech, " "))
+			Container(Attrs(Row, Gap(4)), func() {
+				for _, b := range e.TechBadges {
+					badgePill(b.Label, b.Tone)
+				}
+			})
 		}
 		if m.sess != nil {
 			if Button(SymIRight, quickLabel(&e)) {

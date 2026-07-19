@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"strings"
 
 	. "go.hasen.dev/shirei"
@@ -14,32 +15,26 @@ import (
 func (m *model) rootView() {
 	m.drain()
 	m.syncFilter()
-	Container(Attrs(Viewport, Background(220, 10, 97, 1)), func() {
-		Container(Attrs(Pad(14), Gap(10)), func() {
-			Container(Attrs(Row, CrossMid, Gap(10)), func() {
-				Label("optiscaler-manager")
-				if m.state.Busy != "" {
-					Label(m.state.Busy)
-				}
-				Label(m.state.StatusLine)
-				if m.sess != nil && Button(SymIRight, viewToggleLabel(m.state.Mode)) {
-					m.sess.ToggleView()
-				}
-			})
-			TextInput(&m.filter)
-			m.toastStrip()
+	Container(Attrs(Viewport, Row, BackgroundVec(bgApp)), func() {
+		m.sidebar()
+		Container(Attrs(Grow(1), Expand, Gap(0)), func() {
+			m.toolbar(context.Background())
+			// The virtualized views must sit directly inside the expanding
+			// column: they size to the remaining space and render nothing
+			// inside auto-sized wrappers (upstream demos do the same).
+			if m.auditGrid {
+				m.auditTable()
+			} else if m.state.Mode == ui.ViewList {
+				m.actionList()
+			} else {
+				m.gridView()
+			}
+			m.statusBar()
 		})
-		// The virtualized views must be direct Viewport children: they size
-		// themselves to the remaining window space and render nothing inside
-		// auto-sized wrapper columns (upstream demos do the same).
-		if m.auditGrid {
-			m.auditTable()
-		} else if m.state.Mode == ui.ViewList {
-			m.actionList()
-		} else {
-			m.gridView()
-		}
-		if m.state.Confirm != nil {
+		m.toastOverlay()
+		if m.about {
+			m.aboutModal()
+		} else if m.state.Confirm != nil {
 			m.confirmModal()
 		} else if m.state.Selected != "" {
 			m.dashboard()
@@ -55,23 +50,24 @@ func (m *model) actionList() {
 		func(i int, w float32) float32 { return 30 },
 		func(i int, w float32) {
 			e := rows[i]
-			Container(Attrs(Row, CrossMid, Gap(10), Pad2(3, 6), MinSize(w, 30)), func() {
-				badge := ""
-				if e.Actionable {
-					badge = " [" + string(e.Status) + "]"
-				} else if e.Status == domain.StatusCommitted {
-					badge = " [installed]"
-				}
-				if e.EAC {
-					badge += " [EAC]"
-				}
-				Label(e.Title + badge)
+			Container(Attrs(Row, CrossMid, Gap(10), Pad2(3, 12), MinSize(w, 30)), func() {
+				Container(Attrs(Row, Gap(4)), func() {
+					if e.Actionable {
+						badgePill(string(e.Status), ui.ToneRed)
+					} else if e.Status == domain.StatusCommitted {
+						badgePill("✦ OptiScaler", ui.TonePurple)
+					}
+					if e.EAC {
+						badgePill("EAC", ui.ToneRed)
+					}
+				})
+				txt(e.Title)
 				var tech []string
 				for _, b := range e.TechBadges {
 					tech = append(tech, b.Label)
 				}
 				if len(tech) > 0 {
-					Label(strings.Join(tech, ","))
+					muted(strings.Join(tech, ","))
 				}
 				if PressAction() && m.sess != nil {
 					m.sess.Select(e.InstallDir)
@@ -94,12 +90,12 @@ func (m *model) dashboard() {
 			m.sess.Select("")
 		}
 	}, func() {
-		Container(Attrs(Pad(18), Gap(8)), func() {
-			Label(e.Title)
-			Label(e.InstallDir)
-			Label("Status: " + statusLabel(e))
+		Container(Attrs(Pad(18), Gap(8), BackgroundVec(bgPanel)), func() {
+			txt(e.Title)
+			muted(e.InstallDir)
+			txt("Status: " + statusLabel(e))
 			if m.state.Busy != "" {
-				Label("Working…")
+				muted("Working…")
 				return
 			}
 			if m.sess == nil {
@@ -129,8 +125,8 @@ func (m *model) confirmModal() {
 			m.sess.AnswerConfirm(false)
 		}
 	}, func() {
-		Container(Attrs(Pad(18), Gap(8)), func() {
-			Label(c.Message)
+		Container(Attrs(Pad(18), Gap(8), BackgroundVec(bgPanel)), func() {
+			txt(c.Message)
 			if m.sess == nil {
 				return
 			}
@@ -144,26 +140,15 @@ func (m *model) confirmModal() {
 	})
 }
 
-// toastStrip renders active session toasts under the list.
-func (m *model) toastStrip() {
-	for _, t := range m.state.Toasts {
-		prefix := ""
-		if t.Warn {
-			prefix = "! "
-		}
-		Label(prefix + t.Text)
-	}
-}
-
 // auditTable is the raw, sortable dump behind --audit-grid.
 func (m *model) auditTable() {
 	Table("audit", 26,
 		[]TableColumn[ui.GameRow]{
-			{Label: "Name", Render: func(r ui.GameRow) { Label(r.Title) },
+			{Label: "Name", Render: func(r ui.GameRow) { txt(r.Title) },
 				Less: func(a, b ui.GameRow) bool { return a.Title < b.Title }},
-			{Label: "AppID", Width: 90, Render: func(r ui.GameRow) { Label(r.AppID) }},
-			{Label: "Status", Width: 110, Render: func(r ui.GameRow) { Label(statusLabel(&r)) }},
-			{Label: "Path", Render: func(r ui.GameRow) { Label(r.InstallDir) }},
+			{Label: "AppID", Width: 90, Render: func(r ui.GameRow) { txt(r.AppID) }},
+			{Label: "Status", Width: 110, Render: func(r ui.GameRow) { txt(statusLabel(&r)) }},
+			{Label: "Path", Render: func(r ui.GameRow) { muted(r.InstallDir) }},
 		},
 		m.visibleRows(),
 		func(r ui.GameRow) any { return r.InstallDir },

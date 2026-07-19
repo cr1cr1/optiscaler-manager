@@ -249,6 +249,23 @@ Append-only milestone and task log. Newest at the bottom.
 - Tests: `TestChunkRows`, `TestQuickInstallButtonLabelByStatus`,
   `TestGridSmoke`, `TestGridToggleRendersListMode`, `TestToggleView` (ui).
 
+## 2026-07-19 — P5: chrome (dark theme, sidebar, toolbar, toasts, status bar)
+
+- `internal/gui/theme.go`: dark HSLA palette (bg app/panel/card, main/muted/
+  warn text), `txt`/`muted` helpers, `badgePill` with per-tone colors
+  (DLSS green, FSR red, XeSS blue, installed purple, platform gray).
+- `internal/gui/chrome.go`: icon sidebar (logo, Games, About → version
+  modal), toolbar (Scan Games → `Session.Scan`, search, view toggle, busy
+  text), full-width status bar (status line + game count), toast overlay
+  (Float/Z, bottom-right, warn styling).
+- Layout semantics discovered (bites hard, now documented): shirei's
+  `Expand` fills the parent's CROSS axis only; in a Row that's height, not
+  width. Full-width inner columns inside a Row need `Grow(1)+Expand`;
+  full-width bars inside a column need `Expand`. Bare Row containers
+  shrink-wrap to content.
+- Visual QA: iterated `RenderToPNG` frames against the reference screenshot
+  until sidebar, grid, pills, toasts, and status bar all render correctly.
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`

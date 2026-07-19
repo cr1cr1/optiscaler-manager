@@ -23,5 +23,5 @@ func (c *GUICmd) Run(d *Deps) error {
 		Covers:   covers.New(nil, filepath.Join(filepath.Dir(d.CacheDir), "covers")),
 		CacheDir: d.CacheDir,
 	})
-	return gui.Run(context.Background(), gui.Config{Session: sess, AuditGrid: c.AuditGrid})
+	return gui.Run(context.Background(), gui.Config{Session: sess, AuditGrid: c.AuditGrid, Version: d.Version})
 }

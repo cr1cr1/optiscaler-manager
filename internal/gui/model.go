@@ -20,6 +20,7 @@ var renderToPNG = RenderToPNG
 type Config struct {
 	Session   *ui.Session
 	AuditGrid bool
+	Version   string
 }
 
 // model is the shirei-side binding state: the latest session snapshot plus
@@ -30,6 +31,7 @@ type model struct {
 	state     ui.State
 	filter    string
 	auditGrid bool
+	about     bool
 	cols      int // current grid columns, derived from live width
 }
 
