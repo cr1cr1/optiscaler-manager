@@ -13,6 +13,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/archive"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/profile"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 )
 
@@ -136,6 +137,10 @@ func Install(ctx context.Context, st *store.Store, req Request) (*domain.Manifes
 		}
 	}
 
+	if err := applyCuratedINI(st, m); err != nil {
+		return fail(ctx, st, m, err)
+	}
+
 	m.Status = domain.StatusCommitted
 	if err := st.Save(m); err != nil {
 		return fail(ctx, st, m, err)
@@ -219,6 +224,49 @@ func trackCreatedDirs(m *domain.Manifest, dir, installDir string) {
 		}
 		dir = filepath.Dir(dir)
 	}
+}
+
+// applyCuratedINI replaces the bundle's OptiScaler.ini with the curated
+// safe-defaults profile and refreshes the manifest entry to match.
+func applyCuratedINI(st *store.Store, m *domain.Manifest) error {
+	iniPath := filepath.Join(m.InstallDir, "OptiScaler.ini")
+	tmp, err := os.CreateTemp(m.InstallDir, ".optiscaler-*.ini")
+	if err != nil {
+		return fmt.Errorf("stage curated ini: %w", err)
+	}
+	if err := profile.WriteDefaultINI(tmp); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return fmt.Errorf("write curated ini: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return fmt.Errorf("write curated ini: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), iniPath); err != nil {
+		_ = os.Remove(tmp.Name())
+		return fmt.Errorf("install curated ini: %w", err)
+	}
+
+	digest, err := hashFile(iniPath)
+	if err != nil {
+		return err
+	}
+	for i := range m.Created {
+		if m.Created[i].Path == iniPath {
+			m.Created[i].SHA256 = digest
+			m.Ops = append(m.Ops, domain.OpEntry{Op: "profile", Path: iniPath})
+			return st.Save(m)
+		}
+	}
+	for i := range m.Overwritten {
+		if m.Overwritten[i].Path == iniPath {
+			m.Overwritten[i].InstalledSHA256 = digest
+			m.Ops = append(m.Ops, domain.OpEntry{Op: "profile", Path: iniPath})
+			return st.Save(m)
+		}
+	}
+	return fmt.Errorf("curated ini %s not tracked in manifest", iniPath)
 }
 
 // fail marks the manifest failed and persists it before returning the error.

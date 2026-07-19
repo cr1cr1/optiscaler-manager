@@ -106,6 +106,18 @@ Append-only milestone and task log. Newest at the bottom.
   and kept as benign CI housekeeping; its earlier dep-upgrade damage had
   already been reverted.
 
+## 2026-07-19 — M4: profile + EAC
+
+- `internal/profile`: `WriteDefaultINI` — curated minimal safe-defaults ini
+  (upscalers + FG all `auto`), deterministic output.
+- Install integration: after the file plan completes, the bundle's
+  OptiScaler.ini is atomically replaced with the curated ini and the
+  manifest entry hash is refreshed (`profile` op).
+- `installer.EACProtected`: detects `start_protected_game.exe` in the game
+  root; the GUI/CLI must warn before installing into such games.
+- Tests: `TestDefaultINISafeDefaults`, `TestInstallWritesCuratedINI`,
+  `TestEACProtectedDetectsStartProtectedGame`. Lint clean.
+
 ## 2026-07-19 — M1: domain types + external manifest store
 
 - TDD: wrote `TestManifestJSONRoundTrip` and `TestStoreSaveLoadListManifests`
