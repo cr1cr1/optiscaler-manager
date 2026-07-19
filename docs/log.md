@@ -344,3 +344,36 @@ Append-only milestone and task log. Newest at the bottom.
   (`$XDG_DATA_HOME/optiscaler-manager`, fallback `~/.local/share/...`).
 - Stdlib only; no new dependencies, vendor/ untouched. Verified with
   `go test ./...` and `go vet ./...`, also under `GOFLAGS=-mod=vendor`.
+
+## 2026-07-20 — W3-T2: per-store per-OS game launch (internal/launch)
+
+- TDD: wrote `launch_test.go` first (red: `no non-test Go files`), then
+  implemented to green. Test ids: `TestCommandTable_AllStoresAllOS`
+  (steam/gog/epic/manual × linux/windows/darwin, exact argv),
+  `TestCommandFallbackChain` (steam → flatpak → xdg-open; rundll32 on
+  windows), `TestTemplateSplitAndPlaceholders`, `TestTemplateNoShellExpansion`,
+  `TestLaunchCapturesArgvViaInjectedRunner`, `TestLaunchURLTimeout`, plus
+  `TestCommandErrors` for the sentinel wrap paths.
+- `Command(t)` is the pure, table-testable core; `Launch` builds and fires
+  via an injected `Runner`. Steam linux: `steam steam://rungameid/<id>`
+  (native `-applaunch` when args), flatpak and xdg-open fallbacks use the
+  `steam://run/<id>//<args>/` URL form for args; steam windows falls back to
+  `rundll32 url.dll,FileProtocolHandler`; darwin uses `open`. GOG is direct
+  exe on all OS (DRM-free), Galaxy `/command=runGame` form on windows when
+  only AppID+Dir known. Epic launches via
+  `com.epicgames.launcher://apps/<AppName>?action=launch&silent=true`
+  (AppName from the .item manifest), exe fallback when AppName empty.
+  Manual expands `{exe}`/`{dir}`/`{appid}`/`{args}` in the user template
+  (default `"{exe}" {args}`), split on double-quote grouping only — no
+  shell, no metachar expansion; umu-run appears only if the user wrote it.
+- Build-tagged spawners: `spawn_linux.go` (`Setsid`), `spawn_windows.go`
+  (`CREATE_NEW_PROCESS_GROUP|DETACHED_PROCESS`, consts local),
+  `spawn_darwin.go` (plain). Games: `Start` + `Process.Release`, never
+  Wait; Dir set; stdio nil. URL openers (xdg-open/open/rundll32): 10s
+  context cap and waited so failures surface. Logs say "launch requested",
+  never "launched" — spawn success ≠ game running.
+- Sentinels `ErrNoStore`/`ErrMissingExe`/`ErrMissingAppID`/
+  `ErrMissingAppName`, wrapped with `%w`. Stdlib + zerolog only; go.mod and
+  vendor/ untouched. Verified: `go test ./...`, `go vet ./...`,
+  `golangci-lint run` (0 issues), `GOOS=windows go vet ./internal/launch/`,
+  `GOOS=darwin go vet ./internal/launch/`.
