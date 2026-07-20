@@ -6,20 +6,54 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
-// Model is the bubbletea model bound to one ui.Session.
+// screen identifies the active top-level screen (tab bar order).
+type screen int
+
+const (
+	screenGames screen = iota
+	screenDetail
+	screenSettings
+	screenHelp
+)
+
+// inputMode identifies which text input is currently capturing keys.
+type inputMode int
+
+const (
+	inputNone inputMode = iota
+	inputFilter
+	inputAddDir
+	inputEditVersion
+	inputEditTemplate
+)
+
+// Model is the bubbletea model bound to one ui.Session: one flat model with
+// per-screen update/view handlers.
 type Model struct {
-	sess   *ui.Session
-	cursor int  // index into the session's visible rows
-	filter bool // '/' filter input mode active
-	help   bool // '?'/f1 help line visible
+	sess *ui.Session
+
+	screen       screen
+	cursor       int // games row cursor
+	dirCursor    int // settings directory cursor
+	detailDir    string
+	width        int
+	height       int
+	gamesVP      viewport.Model
+	detailVP     viewport.Model
+	input        textinput.Model
+	mode         inputMode
+	spin         spinner.Model
+	confirmRmDir string // directory pending inline remove confirmation
 }
 
 // eventMsg carries one session event into the update loop.
@@ -27,17 +61,24 @@ type eventMsg ui.Event
 
 // New builds the TUI model over sess.
 func New(sess *ui.Session) Model {
-	return Model{sess: sess}
+	ti := textinput.New()
+	return Model{
+		sess:  sess,
+		input: ti,
+		spin:  spinner.New(spinner.WithSpinner(spinner.Dot)),
+	}
 }
 
-// Init kicks the initial library scan and subscribes to session events.
+// Init boots the library cache-first (warm cache hydrates rows without a
+// scan; a cold cache falls through to one) and subscribes to session events.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		func() tea.Msg {
-			m.sess.Scan(context.Background())
+			m.sess.Start(context.Background())
 			return nil
 		},
 		waitEvent(m.sess.Events()),
+		m.spin.Tick,
 	)
 }
 
@@ -49,25 +90,48 @@ func waitEvent(events <-chan ui.Event) tea.Cmd {
 	}
 }
 
-// Update routes session events and keypresses.
+// Update routes session events, terminal resizes, spinner ticks, and keys.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case eventMsg:
 		_ = msg // the event is only a poke; View re-reads the snapshot
-		if n := len(m.sess.VisibleRows()); n > 0 && m.cursor >= n {
-			m.cursor = n - 1
-		}
+		m.clamp()
 		return m, waitEvent(m.sess.Events())
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		return m, nil
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spin, cmd = m.spin.Update(msg)
+		return m, cmd
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
 	return m, nil
 }
 
+// clamp keeps both cursors inside their (possibly shrunken) lists.
+func (m *Model) clamp() {
+	if n := len(m.sess.VisibleRows()); n == 0 {
+		m.cursor = 0
+	} else if m.cursor >= n {
+		m.cursor = n - 1
+	}
+	if n := len(m.sess.Settings().ExtraDirs); n == 0 {
+		m.dirCursor = 0
+	} else if m.dirCursor >= n {
+		m.dirCursor = n - 1
+	}
+}
+
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	snap := m.sess.Snapshot()
 
-	// A pending confirmation is modal: only its answers are accepted.
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
+
+	// A pending session confirmation is modal: only its answers are accepted.
 	if snap.Confirm != nil {
 		switch msg.String() {
 		case "y", "Y":
@@ -78,28 +142,65 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if m.filter {
-		switch msg.Type {
-		case tea.KeyEsc:
-			m.filter = false
-			m.sess.SetQuery("")
-		case tea.KeyEnter:
-			m.filter = false
-		case tea.KeyBackspace:
-			if q := []rune(snap.Query); len(q) > 0 {
-				m.sess.SetQuery(string(q[:len(q)-1]))
-			}
-		case tea.KeyRunes:
-			m.sess.SetQuery(snap.Query + string(msg.Runes))
+	// The settings remove-directory confirmation is modal too.
+	if m.confirmRmDir != "" {
+		switch msg.String() {
+		case "y", "Y":
+			m.sess.RemoveDirectory(m.confirmRmDir)
+			m.confirmRmDir = ""
+		case "n", "N", "esc":
+			m.confirmRmDir = ""
 		}
-		m.cursor = 0
 		return m, nil
 	}
 
-	rows := m.sess.VisibleRows()
+	// An open text input captures all keys until committed or cancelled.
+	if m.mode != inputNone {
+		switch msg.Type {
+		case tea.KeyEsc:
+			m.cancelInput()
+			return m, nil
+		case tea.KeyEnter:
+			m.commitInput()
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		if m.mode == inputFilter {
+			m.sess.SetQuery(m.input.Value())
+			m.cursor = 0
+		}
+		return m, cmd
+	}
+
 	switch msg.String() {
 	case "q":
 		return m, tea.Quit
+	case "1":
+		m.screen = screenGames
+		return m, nil
+	case "2":
+		m.screen = screenSettings
+		return m, nil
+	case "3":
+		m.screen = screenHelp
+		return m, nil
+	}
+
+	switch m.screen {
+	case screenGames:
+		return m.gamesKey(msg)
+	case screenDetail:
+		return m.detailKey(msg)
+	case screenSettings:
+		return m.settingsKey(msg)
+	}
+	return m, nil
+}
+
+func (m Model) gamesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	rows := m.sess.VisibleRows()
+	switch msg.String() {
 	case "j", "down":
 		if m.cursor < len(rows)-1 {
 			m.cursor++
@@ -109,6 +210,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor--
 		}
 	case "enter":
+		if dir := selectedDir(rows, m.cursor); dir != "" {
+			m.detailDir = dir
+			m.screen = screenDetail
+		}
+	case "i":
 		if dir := selectedDir(rows, m.cursor); dir != "" {
 			m.sess.QuickInstall(dir)
 		}
@@ -121,11 +227,113 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sess.CancelOp(dir)
 		}
 	case "/":
-		m.filter = true
-	case "?", "f1":
-		m.help = !m.help
+		m.openInput(inputFilter, "/ ", m.sess.Snapshot().Query)
+	case "R":
+		m.sess.Scan(context.Background())
+	case "s":
+		if m.sess.Snapshot().Sort == ui.SortName {
+			m.sess.SetSort(ui.SortDefault)
+		} else {
+			m.sess.SetSort(ui.SortName)
+		}
 	}
 	return m, nil
+}
+
+func (m Model) detailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	dir := m.detailDir
+	switch msg.String() {
+	case "esc", "enter":
+		m.screen = screenGames
+	case "i":
+		m.sess.QuickInstall(dir)
+	case "l":
+		m.sess.Launch(dir)
+	case "c":
+		m.sess.CancelOp(dir)
+	case "r":
+		if row := m.detailRow(); row != nil && row.Actionable {
+			m.sess.Rollback(dir)
+		}
+	case "o":
+		if row := m.detailRow(); row != nil && row.Status == "committed" {
+			m.sess.OpenINI(dir)
+		}
+	}
+	return m, nil
+}
+
+func (m Model) settingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	dirs := m.sess.Settings().ExtraDirs
+	switch msg.String() {
+	case "j", "down":
+		if m.dirCursor < len(dirs)-1 {
+			m.dirCursor++
+		}
+	case "k", "up":
+		if m.dirCursor > 0 {
+			m.dirCursor--
+		}
+	case "e":
+		m.openInput(inputEditVersion, "default version: ", m.sess.Settings().DefaultVersion)
+	case "t":
+		m.openInput(inputEditTemplate, "launch template: ", m.sess.Settings().LaunchTemplate)
+	case "a":
+		m.openInput(inputAddDir, "add dir: ", "")
+	case "d":
+		if m.dirCursor < len(dirs) {
+			m.confirmRmDir = dirs[m.dirCursor]
+		}
+	case "x":
+		m.sess.ClearBundleCache()
+	}
+	return m, nil
+}
+
+// detailRow re-reads the selected game's row from the snapshot.
+func (m Model) detailRow() *ui.GameRow {
+	for i, r := range m.sess.Snapshot().Rows {
+		if r.InstallDir == m.detailDir {
+			row := m.sess.Snapshot().Rows[i]
+			return &row
+		}
+	}
+	return nil
+}
+
+func (m *Model) openInput(mode inputMode, prompt, initial string) {
+	m.mode = mode
+	m.input.Prompt = prompt
+	m.input.SetValue(initial)
+	m.input.Focus()
+}
+
+func (m *Model) cancelInput() {
+	if m.mode == inputFilter {
+		m.sess.SetQuery("")
+	}
+	m.mode = inputNone
+	m.input.SetValue("")
+	m.input.Blur()
+}
+
+func (m *Model) commitInput() {
+	v := strings.TrimSpace(m.input.Value())
+	switch m.mode {
+	case inputFilter:
+		// the query already narrowed live; Enter only closes the input
+	case inputAddDir:
+		if v != "" {
+			m.sess.AddDirectory(v) // invalid paths toast through the session
+		}
+	case inputEditVersion:
+		m.sess.SetDefaultVersion(v)
+	case inputEditTemplate:
+		m.sess.SetLaunchTemplate(v)
+	}
+	m.mode = inputNone
+	m.input.SetValue("")
+	m.input.Blur()
 }
 
 func selectedDir(rows []ui.GameRow, cursor int) string {
@@ -133,76 +341,4 @@ func selectedDir(rows []ui.GameRow, cursor int) string {
 		return ""
 	}
 	return rows[cursor].InstallDir
-}
-
-// View renders the current session snapshot.
-func (m Model) View() string {
-	snap := m.sess.Snapshot()
-	rows := m.sess.VisibleRows()
-	var b strings.Builder
-
-	b.WriteString("OptiScaler Manager — TUI\n")
-	switch {
-	case m.filter:
-		fmt.Fprintf(&b, "/%s\n", snap.Query)
-	case snap.Query != "":
-		fmt.Fprintf(&b, "filter: %s\n", snap.Query)
-	}
-	b.WriteString("\n")
-
-	if len(rows) == 0 {
-		b.WriteString("(no matches)\n")
-	}
-	for i, r := range rows {
-		marker := "  "
-		if i == m.cursor {
-			marker = "> "
-		}
-		fmt.Fprintf(&b, "%s%s\n", marker, rowLine(r))
-	}
-
-	if snap.Confirm != nil {
-		b.WriteString("\n")
-		fmt.Fprintf(&b, "! %s\n", snap.Confirm.Message)
-		b.WriteString("  proceed? [y/N]\n")
-	}
-
-	b.WriteString("\n")
-	if m.help {
-		b.WriteString("j/k move · enter install/uninstall · l launch · c cancel · / filter · ? help · q quit\n")
-	}
-
-	status := snap.StatusLine
-	if snap.Busy != "" {
-		status = snap.Busy
-	}
-	fmt.Fprintf(&b, "%s\n", status)
-	if n := len(snap.Toasts); n > 0 {
-		fmt.Fprintf(&b, "%s\n", snap.Toasts[n-1].Text)
-	}
-	return b.String()
-}
-
-// rowLine renders one game row as plain text: title, store, tech badges,
-// component/OptiScaler versions, and install status.
-func rowLine(r ui.GameRow) string {
-	var b strings.Builder
-	b.WriteString(r.Title)
-	fmt.Fprintf(&b, "  %s", r.Platform)
-	for _, badge := range r.TechBadges {
-		fmt.Fprintf(&b, " [%s]", badge.Label)
-	}
-	versions := append([]string(nil), r.Components...)
-	if r.OptiScalerVersion != "" {
-		versions = append([]string{"OptiScaler " + r.OptiScalerVersion}, versions...)
-	}
-	if len(versions) > 0 {
-		fmt.Fprintf(&b, "  %s", strings.Join(versions, ", "))
-	}
-	status := string(r.Status)
-	if status == "" {
-		status = "not installed"
-	}
-	fmt.Fprintf(&b, "  %s", status)
-	return b.String()
 }

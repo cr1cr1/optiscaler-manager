@@ -221,14 +221,14 @@ func TestTUIFilter(t *testing.T) {
 	}
 }
 
-// TestTUIInstallRoundTrip presses enter on the selected row: the session op
+// TestTUIInstallRoundTrip presses i on the selected row: the session op
 // runs end-to-end (files on disk) and the status line reports the install.
 func TestTUIInstallRoundTrip(t *testing.T) {
 	e := newTestEnv(t, nil)
 	tm := startTUI(t, e.sess)
 
 	waitFrame(t, tm, "Game One")
-	sendKey(tm, tea.KeyEnter)
+	tm.Type("i")
 	waitFrame(t, tm, "Installed Game One")
 
 	if _, err := os.Stat(filepath.Join(e.bin, "dxgi.dll")); err != nil {
@@ -260,14 +260,14 @@ func TestTUIQuitsOnQ(t *testing.T) {
 }
 
 // TestTUIConfirmEACPrompt: installing an EAC game surfaces the confirm
-// dialog; accepting it with 'y' lets the install proceed.
+// modal; accepting it with 'y' lets the install proceed.
 func TestTUIConfirmEACPrompt(t *testing.T) {
 	e := newTestEnv(t, nil)
 	writeFile(t, filepath.Join(e.gameRoot, "start_protected_game.exe"), "EAC")
 	tm := startTUI(t, e.sess)
 
 	waitFrame(t, tm, "Game One")
-	sendKey(tm, tea.KeyEnter)
+	tm.Type("i")
 	waitFrame(t, tm, "Easy Anti-Cheat")
 	if _, err := os.Stat(filepath.Join(e.bin, "dxgi.dll")); !os.IsNotExist(err) {
 		t.Fatal("install proceeded before the EAC prompt was answered")
@@ -282,8 +282,8 @@ func TestTUIConfirmEACPrompt(t *testing.T) {
 	_ = tm.Quit()
 	frame := finalFrame(t, tm)
 	t.Logf("frame after EAC consent:\n%s", frame)
-	if strings.Contains(frame, "[y/N]") {
-		t.Errorf("confirm dialog still rendered after answering:\n%s", frame)
+	if strings.Contains(frame, "[y] proceed") {
+		t.Errorf("confirm modal still rendered after answering:\n%s", frame)
 	}
 }
 
