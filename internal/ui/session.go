@@ -568,10 +568,11 @@ func (s *Session) Rollback(gameDir string) {
 			// reconcile converge on external (exactly like the uninstall
 			// path, which deletes its manifest). A later manual Rollback
 			// re-run refuses cleanly via ErrNotManaged.
-			if id, _, err := app.ManifestIDFor(gameDir); err == nil {
-				if err := s.deps.Store.Delete(id); err != nil {
-					log.Warn().Err(err).Str("id", id).Msg("rollback: drop rolled_back manifest")
-				}
+			id, _, err := app.ManifestIDFor(gameDir)
+			if err != nil {
+				log.Warn().Err(err).Str("dir", gameDir).Msg("rollback: resolve manifest id")
+			} else if err := s.deps.Store.Delete(id); err != nil {
+				log.Warn().Err(err).Str("id", id).Msg("rollback: drop rolled_back manifest")
 			}
 		}
 		s.setRowStatus(gameDir, status)
