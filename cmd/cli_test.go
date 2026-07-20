@@ -95,6 +95,31 @@ func TestScanCommandListsGames(t *testing.T) {
 	}
 }
 
+// TestScanCommandShowsExternalInstall: an unmanaged game dir carrying an
+// OptiScaler-branded dxgi.dll (no manager manifest) must render as an
+// "[external]" row with the PE-derived OptiScaler version.
+func TestScanCommandShowsExternalInstall(t *testing.T) {
+	steamRoot, gameRoot := fakeSteam(t)
+	if err := os.WriteFile(filepath.Join(gameRoot, "bin", "dxgi.dll"),
+		testutil.StringInfoPE(true, map[string]string{"ProductName": "OptiScaler"},
+			[4]uint16{0, 9, 4, 123}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d, out := testDeps(t, nil)
+
+	cmd := &ScanCmd{SteamRoot: steamRoot}
+	if err := cmd.Run(d); err != nil {
+		t.Fatalf("ScanCmd.Run: %v", err)
+	}
+	got := out.String()
+	t.Logf("scan output:\n%s", got)
+	for _, want := range []string{"Game One", "[external]", "OptiScaler 0.9.4.123"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("scan output missing %q", want)
+		}
+	}
+}
+
 func TestInstallCommandRunsTransaction(t *testing.T) {
 	srv := fakeGitHub(t)
 	client := gh.NewWithBaseURL(nil, t.TempDir(), srv.URL)
