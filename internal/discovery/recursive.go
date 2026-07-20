@@ -10,7 +10,12 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 )
+
+// maxExeTitleRead caps the bounded read used for PE title extraction;
+// executables larger than this keep their folder name.
+const maxExeTitleRead = 128 << 20
 
 // recursiveSkipTokens are substring tokens (case-insensitive) of binaries
 // that are never the game executable: uninstallers, installers, crash
@@ -70,13 +75,31 @@ func ScanRecursive(ctx context.Context, root string) ([]domain.Game, error) {
 		}
 		games = append(games, domain.Game{
 			AppID:      "manual_" + e.Name(),
-			Name:       e.Name(),
+			Name:       gameTitle(exe, e.Name()),
 			InstallDir: dir,
 			Store:      domain.StoreManual,
 			ExePath:    exe,
 		})
 	}
 	return games, nil
+}
+
+// gameTitle prefers the PE StringFileInfo title of the main executable over
+// the folder name; unreadable or title-less executables keep the folder
+// name.
+func gameTitle(exe, folder string) string {
+	if exe == "" {
+		return folder
+	}
+	data, err := pever.ReadBounded(exe, maxExeTitleRead)
+	if err != nil {
+		log.Debug().Err(err).Str("exe", exe).Msg("recursive scan: exe unreadable for title")
+		return folder
+	}
+	if title := pever.ExtractTitle(data); title != "" {
+		return title
+	}
+	return folder
 }
 
 type exeCandidate struct {

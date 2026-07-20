@@ -7,9 +7,10 @@ import (
 	"strings"
 )
 
-// fileCandidate accepts regular files with any execute bit set, excluding
-// shared libraries, Windows DLLs, and desktop entries. Returns the file size
-// for ranking.
+// fileCandidate accepts regular files with any execute bit set or a .exe
+// suffix (game binaries shipped without the unix exec bit still qualify),
+// excluding shared libraries, Windows DLLs, and desktop entries. Returns
+// the file size for ranking.
 func fileCandidate(path string, d fs.DirEntry) (bool, int64) {
 	lower := strings.ToLower(d.Name())
 	if strings.HasSuffix(lower, ".dll") || strings.HasSuffix(lower, ".desktop") ||
@@ -23,7 +24,7 @@ func fileCandidate(path string, d fs.DirEntry) (bool, int64) {
 	if err != nil {
 		return false, 0
 	}
-	if info.Mode()&0o111 == 0 {
+	if info.Mode()&0o111 == 0 && !strings.HasSuffix(lower, ".exe") {
 		return false, 0
 	}
 	return true, info.Size()
