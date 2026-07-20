@@ -113,6 +113,7 @@ type Session struct {
 	st        State
 	now       func() time.Time
 	opCancels map[string]context.CancelFunc // in-flight op per game dir
+	cacheMu   sync.Mutex                    // serializes games-cache writes
 
 	openExternal func(path string) error
 	pickDir      func(ctx context.Context) (string, error)
@@ -290,6 +291,7 @@ func (s *Session) Scan(ctx context.Context) {
 		s.st.StatusLine = fmt.Sprintf("%d games", len(rows))
 		s.st.Busy = ""
 		s.mu.Unlock()
+		s.persistCache()
 		s.emit(Event{Kind: EvScanDone, Text: fmt.Sprintf("%d games", len(rows))})
 	}()
 }
@@ -380,6 +382,7 @@ func (s *Session) AddDirectory(dir string) {
 		s.toast(entry.Game.Name+" already in library", false)
 		return
 	}
+	s.persistCache()
 	s.toast("added "+entry.Game.Name, false)
 	s.emit(Event{Kind: EvScanDone, Text: "directory added"})
 }
@@ -729,15 +732,35 @@ func (s *Session) findRow(dir string) *GameRow {
 
 func (s *Session) setRowStatus(dir string, status domain.Status) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	changed := false
 	for i := range s.st.Rows {
 		if s.st.Rows[i].InstallDir == dir {
 			s.st.Rows[i].Status = status
 			s.st.Rows[i].Actionable = actionableStatus(status)
 			sortRows(s.st.Rows)
-			return
+			changed = true
+			break
 		}
 	}
+	s.mu.Unlock()
+	if changed {
+		s.persistCache()
+	}
+}
+
+// persistCache snapshots the current rows into the games cache (games.json
+// in the data root). Serialized so concurrent scan/op writers cannot
+// interleave; the last settled state wins.
+func (s *Session) persistCache() {
+	if s.deps.SettingsRoot == "" {
+		return
+	}
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	s.mu.Lock()
+	rows := append([]GameRow(nil), s.st.Rows...)
+	s.mu.Unlock()
+	saveGamesCache(s.deps.SettingsRoot, rows)
 }
 
 func (s *Session) setBusy(b string) {
