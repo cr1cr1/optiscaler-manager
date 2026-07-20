@@ -43,7 +43,7 @@ func TestFirstRunZeroConfigScanToInstalled(t *testing.T) {
 		e.sess.deps.CacheDir, e.sess.deps.SettingsRoot)
 
 	// 1. Zero-config scan (no settings modal, no version pick).
-	e.sess.Scan(context.Background())
+	e.sess.Start(context.Background())
 	scanEv := waitScanDone(t, e.sess)
 	st := e.sess.Snapshot()
 	if len(st.Rows) != 1 {
@@ -85,7 +85,7 @@ func TestFirstRunEACInlinePrompt(t *testing.T) {
 	e.sess.deps.SettingsRoot = t.TempDir()
 	writeUIFile(t, filepath.Join(e.gameRoot, "start_protected_game.exe"), "EAC")
 
-	e.sess.Scan(context.Background())
+	e.sess.Start(context.Background())
 	waitScanDone(t, e.sess)
 	row := e.sess.Snapshot().Rows[0]
 	if !row.EAC {
@@ -139,7 +139,7 @@ func TestFirstRunEmptyLibraryScanSucceeds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	e.sess.Scan(context.Background())
+	e.sess.Start(context.Background())
 	ev := waitScanDone(t, e.sess)
 	st := e.sess.Snapshot()
 	if len(st.Rows) != 0 {
