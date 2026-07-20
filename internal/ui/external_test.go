@@ -125,6 +125,36 @@ func TestDoUninstallNotManagedCleanToast(t *testing.T) {
 	assertNoRawFailureToast(t, e.sess)
 }
 
+// TestReconcileKeepsCachedExternalRow: a warm games cache holding an
+// external row must survive Start's manifest-based reconcile — manifests
+// override only where they exist, so an unmanaged row keeps its derived
+// external status instead of dropping to "".
+func TestReconcileKeepsCachedExternalRow(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	saveGamesCache(e.sess.deps.SettingsRoot, []GameRow{{
+		Title:        "Game One",
+		AppID:        "100",
+		InstallDir:   e.gameRoot,
+		InjectionDir: e.bin,
+		Platform:     domain.StoreSteam.String(),
+		Store:        domain.StoreSteam,
+		Status:       domain.StatusExternal,
+	}})
+
+	e.sess.Start(context.Background()) // warm cache: reconciles, never scans
+	st := e.sess.Snapshot()
+	if st.StatusLine != "1 games (cached)" {
+		t.Fatalf("StatusLine = %q, want warm-cache boot (no scan)", st.StatusLine)
+	}
+	if len(st.Rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(st.Rows))
+	}
+	if st.Rows[0].Status != domain.StatusExternal {
+		t.Errorf("cached external row reconciled to %q, want %q", st.Rows[0].Status, domain.StatusExternal)
+	}
+}
+
 // TestAdoptRoundTripRestoresExternalBytes is the keystone: an external
 // OptiScaler install (marker dxgi.dll, no manifest) is adopted by
 // QuickInstall — which must back it up — then uninstalled, which must
