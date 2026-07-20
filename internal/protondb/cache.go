@@ -9,10 +9,14 @@ import (
 	"time"
 )
 
-// cachedSummary is the persisted summary with its fetch time.
+// cachedSummary is the persisted summary with its fetch time. NotFound
+// marks a negative entry: ProtonDB answered 404 for the appid, a stable
+// answer cached for the same TTL so unknown appids are not re-fetched
+// every scan.
 type cachedSummary struct {
 	Summary   Summary   `json:"summary"`
 	FetchedAt time.Time `json:"fetched_at"`
+	NotFound  bool      `json:"not_found,omitempty"`
 }
 
 // cooldownState is the persisted cooldown file, recording the last 429/5xx
@@ -84,4 +88,16 @@ func (c *Client) writeCache(appid string, sum Summary) error {
 		return fmt.Errorf("protondb: write summary cache: %w", err)
 	}
 	return nil
+}
+
+// writeNegative persists a 404 answer for appid.
+func (c *Client) writeNegative(appid string) {
+	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
+		return
+	}
+	data, err := json.Marshal(cachedSummary{FetchedAt: c.now(), NotFound: true})
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(cacheFile(c.cacheDir, appid), data, 0o644)
 }

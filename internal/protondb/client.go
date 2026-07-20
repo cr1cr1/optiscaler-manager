@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -37,6 +38,11 @@ const (
 	// minSpacing is the minimum gap between live requests (politeness;
 	// the endpoint publishes no rate limit).
 	minSpacing = 250 * time.Millisecond
+
+	// maxBodyBytes caps a response body before decoding (1 MiB is orders
+	// of magnitude past a real summary; the cap bounds memory use against
+	// a hostile or broken endpoint).
+	maxBodyBytes = 1 << 20
 
 	defaultBaseURL = "https://www.protondb.com"
 	summariesPath  = "/api/v1/reports/summaries/"
@@ -96,32 +102,40 @@ func NewWithBaseURL(httpClient *http.Client, cacheDir, baseURL, version string) 
 	return c
 }
 
-// Summary returns the report summary for appid. fromCache reports that the
-// summary came from the disk cache (fresh within the 7d TTL, or stale as a
-// last resort inside the post-429/5xx cooldown).
-func (c *Client) Summary(ctx context.Context, appid string) (sum Summary, fromCache bool, err error) {
+// Summary returns the report summary for appid. live reports that a live
+// HTTP request was performed; cache hits — positive summaries, cached 404
+// negatives, and stale entries served inside the post-429/5xx cooldown —
+// answer without one. A cached negative within the TTL returns ErrNotFound
+// exactly like the live 404 did.
+func (c *Client) Summary(ctx context.Context, appid string) (sum Summary, live bool, err error) {
 	if strings.TrimSpace(appid) == "" {
 		return Summary{}, false, errors.New("protondb: empty appid")
 	}
 	if hit, ok := c.readCache(appid); ok && c.now().Sub(hit.FetchedAt) < cacheTTL {
-		return hit.Summary, true, nil
+		if hit.NotFound {
+			return Summary{}, false, fmt.Errorf("%w %s (cached 404)", ErrNotFound, appid)
+		}
+		return hit.Summary, false, nil
 	}
 	if c.inCooldown() {
 		if hit, ok := c.readCache(appid); ok {
-			return hit.Summary, true, nil
+			if hit.NotFound {
+				return Summary{}, false, fmt.Errorf("%w %s (cached 404)", ErrNotFound, appid)
+			}
+			return hit.Summary, false, nil
 		}
 		return Summary{}, false, fmt.Errorf("%w (cooldown active, no cached summary)", ErrRateLimited)
 	}
 	sum, err = c.fetch(ctx, appid)
 	if err != nil {
 		if errors.Is(err, ErrRateLimited) {
-			if hit, ok := c.readCache(appid); ok {
+			if hit, ok := c.readCache(appid); ok && !hit.NotFound {
 				return hit.Summary, true, nil
 			}
 		}
-		return Summary{}, false, err
+		return Summary{}, true, err
 	}
-	return sum, false, nil
+	return sum, true, nil
 }
 
 // fetch performs the live request, pacing it, recording a cooldown on
@@ -143,8 +157,11 @@ func (c *Client) fetch(ctx context.Context, appid string) (Summary, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Status first: unknown appids answer 404 with an HTML body.
+	// Status first: unknown appids answer 404 with an HTML body. The
+	// answer is stable, so it is cached (7d TTL like successes) and
+	// later calls return the cached ErrNotFound without a live request.
 	if resp.StatusCode == http.StatusNotFound {
+		c.writeNegative(appid)
 		return Summary{}, fmt.Errorf("%w %s (HTTP 404)", ErrNotFound, appid)
 	}
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
@@ -161,7 +178,7 @@ func (c *Client) fetch(ctx context.Context, appid string) (Summary, error) {
 	}
 
 	var sum Summary
-	if err := json.NewDecoder(resp.Body).Decode(&sum); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBodyBytes)).Decode(&sum); err != nil {
 		return Summary{}, fmt.Errorf("protondb: decode summary %s: %w", appid, err)
 	}
 	if err := c.writeCache(appid, sum); err != nil {

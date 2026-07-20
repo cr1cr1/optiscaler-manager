@@ -27,6 +27,57 @@ func newTestClient(t *testing.T, srv *httptest.Server) *Client {
 	return NewWithBaseURL(srv.Client(), t.TempDir(), srv.URL, "0.5.0")
 }
 
+// TestSummary_Negative404Cached: a 404 (unknown appid) is a stable answer,
+// so it is cached like a success within the same TTL: the second call within
+// the TTL returns ErrNotFound without touching the server.
+func TestSummary_Negative404Cached(t *testing.T) {
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>404 Not Found</body></html>`)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	for i := 0; i < 2; i++ {
+		_, live, err := c.Summary(context.Background(), "9999999")
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("call %d err = %v, want ErrNotFound", i+1, err)
+		}
+		if want := i == 0; live != want {
+			t.Errorf("call %d live = %v, want %v (cached 404 must not re-request)", i+1, live, want)
+		}
+	}
+	if got := hits.Load(); got != 1 {
+		t.Errorf("server hits = %d, want 1 (the negative answer is cached)", got)
+	}
+	t.Logf("two calls, %d server hit; second 404 served from cache", hits.Load())
+}
+
+// TestSummary_RejectsHugeBody: the response body is capped (1 MiB) before
+// decoding, so a hostile or broken endpoint streaming megabytes surfaces as
+// a decode error instead of an unbounded read.
+func TestSummary_RejectsHugeBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"tier":"gold","pad":"`)
+		for i := 0; i < 5<<20; i++ {
+			_, _ = w.Write([]byte{'x'})
+		}
+		_, _ = fmt.Fprint(w, `"}`)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	_, _, err := c.Summary(context.Background(), "1245620")
+	if err == nil {
+		t.Fatal("expected an error on a >1MiB body, got nil (body cap missing?)")
+	}
+	t.Logf("huge body rejected: %v", err)
+}
+
 func TestSummary_ParsesTierConfidence(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/reports/summaries/1245620.json" {
@@ -38,12 +89,12 @@ func TestSummary_ParsesTierConfidence(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv)
-	sum, fromCache, err := c.Summary(context.Background(), "1245620")
+	sum, live, err := c.Summary(context.Background(), "1245620")
 	if err != nil {
 		t.Fatalf("Summary: %v", err)
 	}
-	if fromCache {
-		t.Error("fromCache = true on fresh fetch, want false")
+	if !live {
+		t.Error("live = false on fresh fetch, want true (no cache entry existed)")
 	}
 	if sum.Tier != "gold" || sum.Confidence != "strong" {
 		t.Errorf("got tier=%q confidence=%q, want gold/strong", sum.Tier, sum.Confidence)
@@ -124,15 +175,15 @@ func TestSummary_UsesCacheWithinTTL(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv)
-	if _, fromCache, err := c.Summary(context.Background(), "1245620"); err != nil || fromCache {
-		t.Fatalf("first call: fromCache=%v err=%v, want false/nil", fromCache, err)
+	if _, live, err := c.Summary(context.Background(), "1245620"); err != nil || !live {
+		t.Fatalf("first call: live=%v err=%v, want true/nil", live, err)
 	}
-	sum, fromCache, err := c.Summary(context.Background(), "1245620")
+	sum, live, err := c.Summary(context.Background(), "1245620")
 	if err != nil {
 		t.Fatalf("second call: %v", err)
 	}
-	if !fromCache {
-		t.Error("second call fromCache = false, want true (7d TTL cache)")
+	if live {
+		t.Error("second call live = true, want false (7d TTL cache hit)")
 	}
 	if sum.Tier != "gold" {
 		t.Errorf("cached tier = %q, want gold", sum.Tier)
@@ -160,8 +211,8 @@ func TestSummary_RefetchesAfterTTL(t *testing.T) {
 		t.Fatalf("first call: %v", err)
 	}
 	now = now.Add(cacheTTL + time.Hour)
-	if _, fromCache, err := c.Summary(context.Background(), "1245620"); err != nil || fromCache {
-		t.Fatalf("second call after TTL: fromCache=%v err=%v, want false/nil", fromCache, err)
+	if _, live, err := c.Summary(context.Background(), "1245620"); err != nil || !live {
+		t.Fatalf("second call after TTL: live=%v err=%v, want true/nil", live, err)
 	}
 	if got := hits.Load(); got != 2 {
 		t.Errorf("server hits = %d, want 2 (expired cache must refetch)", got)
