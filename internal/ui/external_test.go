@@ -233,6 +233,7 @@ func TestAdoptRoundTripRestoresExternalBytes(t *testing.T) {
 // because the disk once more holds a working external install.
 func TestAdoptFailRollbackReturnsExternal(t *testing.T) {
 	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir() // warm-cache leg needs persistence
 	marker := writeExternalMarker(t, e.bin)
 	markerSHA := sha256.Sum256(marker)
 	dxgi := filepath.Join(e.bin, "dxgi.dll")
@@ -290,6 +291,28 @@ func TestAdoptFailRollbackReturnsExternal(t *testing.T) {
 			row.Status, domain.StatusExternal)
 	}
 	t.Log("(4) rollback restored marker bytes and the row is external again")
+
+	// 5. Rescan: the rollback's idempotent job is done, so no rolled_back
+	// manifest may pin the row — the enrich probe must keep it external.
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+	row = e.sess.Snapshot().Rows[0]
+	if row.Status != domain.StatusExternal {
+		t.Fatalf("(5) row status = %q after rescan, want %q (rolled_back manifest still pinning the row)",
+			row.Status, domain.StatusExternal)
+	}
+	t.Log("(5) rescan keeps the row external")
+
+	// 6. Warm-cache restart: manifest-based reconcile must keep external.
+	e.sess.Start(context.Background())
+	st := e.sess.Snapshot()
+	if st.StatusLine != "1 games (cached)" {
+		t.Fatalf("(6) StatusLine = %q, want warm-cache boot", st.StatusLine)
+	}
+	if len(st.Rows) != 1 || st.Rows[0].Status != domain.StatusExternal {
+		t.Fatalf("(6) warm-cache row status = %+v, want %q", st.Rows, domain.StatusExternal)
+	}
+	t.Log("(6) warm-cache reconcile keeps the row external")
 }
 
 // TestRollbackNotManagedCleanToast: when Rollback targets a game the store

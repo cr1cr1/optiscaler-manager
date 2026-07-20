@@ -563,6 +563,16 @@ func (s *Session) Rollback(gameDir string) {
 		status := domain.StatusRolledBack
 		if row := s.findRow(gameDir); row != nil && redetectExternal(row.InjectionDir) == domain.StatusExternal {
 			status = domain.StatusExternal
+			// The rollback's idempotent job is done: drop the rolled_back
+			// manifest so the next scan's enrich probe and the warm-cache
+			// reconcile converge on external (exactly like the uninstall
+			// path, which deletes its manifest). A later manual Rollback
+			// re-run refuses cleanly via ErrNotManaged.
+			if id, _, err := app.ManifestIDFor(gameDir); err == nil {
+				if err := s.deps.Store.Delete(id); err != nil {
+					log.Warn().Err(err).Str("id", id).Msg("rollback: drop rolled_back manifest")
+				}
+			}
 		}
 		s.setRowStatus(gameDir, status)
 		s.opDone("Rolled back "+dir, gameDir)
