@@ -20,11 +20,16 @@ type Settings struct {
 	DefaultVersion string   `json:"default_version"`
 	LaunchTemplate string   `json:"launch_template"`
 	ExtraDirs      []string `json:"extra_dirs,omitempty"`
+	// OnlineLookups gates ProtonDB/Steam game-info enrichment during
+	// scans. It defaults to true: the bool zero value is false, so Load
+	// decodes through a pointer to tell "missing key" (legacy file →
+	// true) apart from an explicit false.
+	OnlineLookups bool `json:"online_lookups"`
 }
 
 // Defaults returns the out-of-box settings.
 func Defaults() Settings {
-	return Settings{DefaultVersion: "latest", LaunchTemplate: DefaultLaunchTemplate}
+	return Settings{DefaultVersion: "latest", LaunchTemplate: DefaultLaunchTemplate, OnlineLookups: true}
 }
 
 func path(root string) string { return filepath.Join(root, "settings.json") }
@@ -38,9 +43,25 @@ func Load(root string) (Settings, error) {
 	if err != nil {
 		return Defaults(), fmt.Errorf("settings: read: %w", err)
 	}
-	var s Settings
-	if err := json.Unmarshal(data, &s); err != nil {
+	// Decode through a pointer for OnlineLookups so a legacy file without
+	// the key defaults to true while an explicit false stays false.
+	var raw struct {
+		DefaultVersion string   `json:"default_version"`
+		LaunchTemplate string   `json:"launch_template"`
+		ExtraDirs      []string `json:"extra_dirs,omitempty"`
+		OnlineLookups  *bool    `json:"online_lookups"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return Defaults(), fmt.Errorf("settings: parse: %w", err)
+	}
+	s := Settings{
+		DefaultVersion: raw.DefaultVersion,
+		LaunchTemplate: raw.LaunchTemplate,
+		ExtraDirs:      raw.ExtraDirs,
+		OnlineLookups:  true,
+	}
+	if raw.OnlineLookups != nil {
+		s.OnlineLookups = *raw.OnlineLookups
 	}
 	if s.DefaultVersion == "" {
 		s.DefaultVersion = "latest"

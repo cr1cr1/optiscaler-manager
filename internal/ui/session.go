@@ -215,6 +215,24 @@ func (s *Session) SetDefaultVersion(v string) {
 	s.toast("default version: "+v, false)
 }
 
+// SetOnlineLookups toggles ProtonDB/Steam game-info enrichment during
+// scans (persisted); frontends render it as the online-lookups switch.
+func (s *Session) SetOnlineLookups(v bool) {
+	s.mu.Lock()
+	s.deps.Settings.OnlineLookups = v
+	snap := s.deps.Settings
+	s.mu.Unlock()
+	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
+		s.toast("settings not saved: "+err.Error(), true)
+		return
+	}
+	if v {
+		s.toast("online lookups: on", false)
+	} else {
+		s.toast("online lookups: off", false)
+	}
+}
+
 // SetLaunchTemplate changes the command template manual games launch with
 // (persisted); an empty value resets to the plain `"{exe}" {args}` default.
 func (s *Session) SetLaunchTemplate(tmpl string) {
