@@ -895,4 +895,10 @@ fixed forward to unconditional PASS:
 
 ## v0.5 review gate — 2026-07-20
 
-- Review-gate placeholder: pending the v0.5 five-lane review.
+- Review gate (5 lanes): PASS. R1 goal PASS; R2 QA PASS (34/34 scenarios
+  incl. live-scan progress probes in both frontends); R3 quality FAIL→PASS
+  (MAJOR: remove-during-add zombie row → CancelOp + ExtraDirs re-verify
+  (0e4c3fa); MAJOR: lookup starvation → negative caching 7d/30d + budget
+  counts live requests only (9c3957d, 63e5c96, 199d970); MINOR: TUI
+  settings height clamp (ed72b1a)); R4 security PASS (LOW; appid digit
+  validation + 1 MiB body caps applied); R5 context PASS.
