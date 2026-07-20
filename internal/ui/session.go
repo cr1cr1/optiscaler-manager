@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -85,6 +86,7 @@ type State struct {
 	Rows       []GameRow
 	Query      string
 	Mode       ViewMode
+	Sort       SortMode
 	Selected   string
 	Busy       string // op description, "" when idle
 	StatusLine string
@@ -113,6 +115,7 @@ type Session struct {
 	st        State
 	now       func() time.Time
 	opCancels map[string]context.CancelFunc // in-flight op per game dir
+	cacheMu   sync.Mutex                    // serializes games-cache writes
 
 	openExternal func(path string) error
 	pickDir      func(ctx context.Context) (string, error)
@@ -226,17 +229,32 @@ func (s *Session) Snapshot() State {
 	return out
 }
 
-// VisibleRows returns the rows after the current query filter.
+// VisibleRows returns the rows after the current query filter and sort.
 func (s *Session) VisibleRows() []GameRow {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return filterRows(append([]GameRow(nil), s.st.Rows...), s.st.Query)
+	rows := filterRows(append([]GameRow(nil), s.st.Rows...), s.st.Query)
+	if s.st.Sort == SortName {
+		sort.SliceStable(rows, func(i, j int) bool { return rows[i].Title < rows[j].Title })
+	}
+	return rows
 }
 
 // SetQuery updates the search filter (cheap, synchronous).
 func (s *Session) SetQuery(q string) {
 	s.mu.Lock()
 	s.st.Query = q
+	s.mu.Unlock()
+}
+
+// SetSort selects the row ordering VisibleRows applies; out-of-range modes
+// reset to SortDefault. Cheap and synchronous like SetQuery.
+func (s *Session) SetSort(mode SortMode) {
+	if mode != SortName {
+		mode = SortDefault
+	}
+	s.mu.Lock()
+	s.st.Sort = mode
 	s.mu.Unlock()
 }
 
@@ -256,6 +274,55 @@ func (s *Session) Select(dir string) {
 	s.mu.Lock()
 	s.st.Selected = dir
 	s.mu.Unlock()
+}
+
+// Start boots the library: a warm games cache hydrates the rows
+// synchronously (status reconciled from store manifests — no PE parsing, no
+// reclassification) and no scan runs; a missing or unusable cache falls
+// through to Scan. Safe to call once at frontend boot.
+func (s *Session) Start(ctx context.Context) {
+	rows := loadGamesCache(s.deps.SettingsRoot)
+	if len(rows) == 0 {
+		s.Scan(ctx)
+		return
+	}
+	s.reconcileStatuses(rows)
+	sortRows(rows)
+	s.mu.Lock()
+	s.st.Rows = rows
+	s.st.StatusLine = fmt.Sprintf("%d games (cached)", len(rows))
+	s.st.Busy = ""
+	s.mu.Unlock()
+}
+
+// reconcileStatuses overrides cached row status from store manifests keyed
+// by canonical install dir (and game root), so installs that settled while
+// the manager was not running show their real state.
+func (s *Session) reconcileStatuses(rows []GameRow) {
+	if s.deps.Store == nil {
+		return
+	}
+	manifests, err := s.deps.Store.List()
+	if err != nil {
+		log.Warn().Err(err).Msg("games cache: status reconcile skipped")
+		return
+	}
+	byDir := map[string]domain.Status{}
+	byRoot := map[string]domain.Status{}
+	for _, m := range manifests {
+		byDir[m.InstallDir] = m.Status
+		byRoot[m.GameRoot] = m.Status
+	}
+	for i := range rows {
+		st, ok := byDir[rows[i].InjectionDir]
+		if !ok {
+			st, ok = byRoot[rows[i].InstallDir]
+		}
+		if ok {
+			rows[i].Status = st
+			rows[i].Actionable = actionableStatus(st)
+		}
+	}
 }
 
 // Scan refreshes the library asynchronously.
@@ -290,6 +357,7 @@ func (s *Session) Scan(ctx context.Context) {
 		s.st.StatusLine = fmt.Sprintf("%d games", len(rows))
 		s.st.Busy = ""
 		s.mu.Unlock()
+		s.persistCache()
 		s.emit(Event{Kind: EvScanDone, Text: fmt.Sprintf("%d games", len(rows))})
 	}()
 }
@@ -380,8 +448,50 @@ func (s *Session) AddDirectory(dir string) {
 		s.toast(entry.Game.Name+" already in library", false)
 		return
 	}
+	s.persistCache()
 	s.toast("added "+entry.Game.Name, false)
 	s.emit(Event{Kind: EvScanDone, Text: "directory added"})
+}
+
+// RemoveDirectory unregisters a manually added directory: its row and any
+// nested games scanned under it are dropped, settings persist without it,
+// and the games cache is rewritten. Directories not in ExtraDirs are a
+// silent no-op (no write, no event).
+func (s *Session) RemoveDirectory(dir string) {
+	root := canonicalDir(dir)
+	s.mu.Lock()
+	present := false
+	kept := s.deps.Settings.ExtraDirs[:0]
+	for _, d := range s.deps.Settings.ExtraDirs {
+		if d == root {
+			present = true
+			continue
+		}
+		kept = append(kept, d)
+	}
+	if !present {
+		s.mu.Unlock()
+		return
+	}
+	s.deps.Settings.ExtraDirs = kept
+	prefix := root + string(os.PathSeparator)
+	rows := s.st.Rows[:0]
+	for _, r := range s.st.Rows {
+		if r.InstallDir == root || strings.HasPrefix(r.InstallDir, prefix) {
+			continue
+		}
+		rows = append(rows, r)
+	}
+	s.st.Rows = rows
+	snap := s.deps.Settings
+	s.mu.Unlock()
+	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
+		s.toast("settings not saved: "+err.Error(), true)
+		return
+	}
+	s.persistCache()
+	s.toast("removed "+filepath.Base(root), false)
+	s.emit(Event{Kind: EvScanDone, Text: "directory removed"})
 }
 
 // PickAndAddDirectory opens the OS directory picker and adds the choice.
@@ -729,15 +839,35 @@ func (s *Session) findRow(dir string) *GameRow {
 
 func (s *Session) setRowStatus(dir string, status domain.Status) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	changed := false
 	for i := range s.st.Rows {
 		if s.st.Rows[i].InstallDir == dir {
 			s.st.Rows[i].Status = status
 			s.st.Rows[i].Actionable = actionableStatus(status)
 			sortRows(s.st.Rows)
-			return
+			changed = true
+			break
 		}
 	}
+	s.mu.Unlock()
+	if changed {
+		s.persistCache()
+	}
+}
+
+// persistCache snapshots the current rows into the games cache (games.json
+// in the data root). Serialized so concurrent scan/op writers cannot
+// interleave; the last settled state wins.
+func (s *Session) persistCache() {
+	if s.deps.SettingsRoot == "" {
+		return
+	}
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	s.mu.Lock()
+	rows := append([]GameRow(nil), s.st.Rows...)
+	s.mu.Unlock()
+	saveGamesCache(s.deps.SettingsRoot, rows)
 }
 
 func (s *Session) setBusy(b string) {
