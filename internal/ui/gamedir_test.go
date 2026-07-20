@@ -5,9 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
+	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
 )
 
 // containerFixture returns a library root holding two game subdirectories
@@ -247,5 +249,35 @@ func TestAddDirectory_GameDir_RowAppears(t *testing.T) {
 	}
 	if len(loaded.ExtraDirs) != 1 || loaded.ExtraDirs[0] != canonicalDir(game) {
 		t.Fatalf("persisted ExtraDirs = %v", loaded.ExtraDirs)
+	}
+}
+
+// TestAddDirectory_PlaceholderReplacedByPETitle: the synchronous placeholder
+// row carries the folder title; once enrichment settles ("directory added"
+// event) the same row carries the main executable's PE ProductName.
+func TestAddDirectory_PlaceholderReplacedByPETitle(t *testing.T) {
+	e := newSlowCoversEnv(t, time.Second)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	custom := filepath.Join(t.TempDir(), "ShinyFolder")
+	pe := testutil.StringInfoPE(true, map[string]string{"ProductName": "Shiny PE Title"}, [4]uint16{})
+	writeUIFile(t, filepath.Join(custom, "shiny.exe"), string(pe))
+
+	e.sess.AddDirectory(custom)
+
+	r, ok := rowDirs(e.sess.Snapshot().Rows)[canonicalDir(custom)]
+	if !ok {
+		t.Fatal("placeholder row missing right after AddDirectory")
+	}
+	if r.Title != "ShinyFolder" {
+		t.Errorf("placeholder title = %q, want folder title %q", r.Title, "ShinyFolder")
+	}
+
+	waitEventText(t, e.sess, EvScanDone, "directory added")
+	r, ok = rowDirs(e.sess.Snapshot().Rows)[canonicalDir(custom)]
+	if !ok {
+		t.Fatal("row missing after enrichment settled")
+	}
+	if r.Title != "Shiny PE Title" {
+		t.Errorf("enriched title = %q, want PE ProductName %q", r.Title, "Shiny PE Title")
 	}
 }

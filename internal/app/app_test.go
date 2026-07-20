@@ -427,3 +427,48 @@ func TestManualEntry_UnmanagedStillExternal(t *testing.T) {
 		t.Error("OptiScalerVersion empty; want the PE FileVersion fallback")
 	}
 }
+
+// TestManualName_PEProductNameBeatsFolder pins the manual-entry title
+// priority chain: the main executable's PE StringFileInfo ProductName wins
+// over the folder name (AppID stays folder-derived).
+func TestManualName_PEProductNameBeatsFolder(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "FolderName")
+	exe := filepath.Join(dir, "game.exe")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, peWithProductName("My Cool Game"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e, err := ManualEntry(dir, nil)
+	if err != nil {
+		t.Fatalf("ManualEntry: %v", err)
+	}
+	if e.Game.Name != "My Cool Game" {
+		t.Errorf("Name = %q, want PE ProductName %q", e.Game.Name, "My Cool Game")
+	}
+	if e.Game.AppID != "custom_FolderName" {
+		t.Errorf("AppID = %q, want folder-derived %q", e.Game.AppID, "custom_FolderName")
+	}
+}
+
+// TestManualName_FolderFallbackWhenNoPETitle pins the other end of the
+// title priority chain: an executable without a usable PE title keeps the
+// folder name.
+func TestManualName_FolderFallbackWhenNoPETitle(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "PlainFolder")
+	exe := filepath.Join(dir, "game.exe")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, []byte("GAME"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e, err := ManualEntry(dir, nil)
+	if err != nil {
+		t.Fatalf("ManualEntry: %v", err)
+	}
+	if e.Game.Name != "PlainFolder" {
+		t.Errorf("Name = %q, want folder fallback %q", e.Game.Name, "PlainFolder")
+	}
+}
