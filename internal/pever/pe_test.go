@@ -354,3 +354,90 @@ func TestScanStringFileInfoKey_CustomKey(t *testing.T) {
 		t.Errorf("missing key: scanStringFileInfoKey = %q, want %q", got, "")
 	}
 }
+
+// --- TitleFromFile (ReaderAt, no whole-file read, no size cap) -----------
+
+// writePEWithResourceAt writes a PE whose .rsrc raw pointer is patched to
+// resOff and whose resource payload lands there, so tests control how far
+// into the file the resource section sits.
+func writePEWithResourceAt(t *testing.T, resData []byte, resOff int64) string {
+	t.Helper()
+	pe := buildPE(false, resData)
+	// PE32 layout from buildPE: section table at 0x138, PointerToRawData at +20.
+	const ptrRawDataField = 0x138 + 20
+	binary.LittleEndian.PutUint32(pe[ptrRawDataField:], uint32(resOff))
+	p := filepath.Join(t.TempDir(), "game.exe")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.WriteAt(pe, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteAt(resData, resOff); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestTitleFromFile_ExtractsTitle(t *testing.T) {
+	res := concatStringStructs(
+		stringInfoString("CompanyName", "Acme"),
+		stringInfoString("ProductName", "My Cool Game"),
+	)
+	if got := TitleFromFile(writeTempPE(t, buildPE(false, res))); got != "My Cool Game" {
+		t.Errorf("TitleFromFile = %q, want %q", got, "My Cool Game")
+	}
+}
+
+// The resource section can sit far past the header window: titles must be
+// found without slurping the whole image.
+func TestTitleFromFile_ResourceBeyondHeaderWindow(t *testing.T) {
+	res := stringInfoString("ProductName", "Far Away Title")
+	if got := TitleFromFile(writePEWithResourceAt(t, res, 1<<20)); got != "Far Away Title" {
+		t.Errorf("TitleFromFile = %q, want %q", got, "Far Away Title")
+	}
+}
+
+// AAA game exes exceed the old 128MiB whole-file cap (the user's
+// Dead Space.exe is 423MB): a >128MiB exe must still yield its title.
+func TestTitleFromFile_HugeFileNotSizeCapped(t *testing.T) {
+	res := stringInfoString("ProductName", "Huge Game Title")
+	p := writePEWithResourceAt(t, res, 150<<20)
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Size() <= 128<<20 {
+		t.Fatalf("fixture too small: %d bytes", fi.Size())
+	}
+	if got := TitleFromFile(p); got != "Huge Game Title" {
+		t.Errorf("TitleFromFile = %q, want %q", got, "Huge Game Title")
+	}
+}
+
+func TestTitleFromFile_NotPEOrMissing(t *testing.T) {
+	if got := TitleFromFile(filepath.Join(t.TempDir(), "missing.exe")); got != "" {
+		t.Errorf("missing file: TitleFromFile = %q, want %q", got, "")
+	}
+	p := writeTempPE(t, []byte("not a pe at all"))
+	if got := TitleFromFile(p); got != "" {
+		t.Errorf("non-PE: TitleFromFile = %q, want %q", got, "")
+	}
+}
+
+// Unreal's generic bootstrap ships ProductName "BootstrapPackagedGame" in
+// every packaged game — a placeholder, not a title (the user saw Tempest
+// Rising and Empire of the Ants row under that name).
+func TestTitleFromResource_RejectsBootstrapPackagedGame(t *testing.T) {
+	for _, v := range []string{"BootstrapPackagedGame", "bootstrappackagedgame", "BOOTSTRAPPACKAGEDGAME"} {
+		res := stringInfoString("ProductName", v)
+		if got := ExtractTitle(buildPE(true, res)); got != "" {
+			t.Errorf("ExtractTitle(%q) = %q, want %q", v, got, "")
+		}
+		if got := TitleFromFile(writeTempPE(t, buildPE(false, res))); got != "" {
+			t.Errorf("TitleFromFile(%q) = %q, want %q", v, got, "")
+		}
+	}
+}

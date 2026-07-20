@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"strings"
 	"unicode/utf16"
 )
@@ -51,6 +52,25 @@ type section struct {
 // resource (DataDirectory[2]) region, clipped to the file. Every offset is
 // bounds-checked; any structural anomaly returns ErrNotPE.
 func resourceBytes(data []byte) ([]byte, error) {
+	off, size, err := resourceRange(data)
+	if err != nil {
+		return nil, err
+	}
+	end := off + size
+	if end > len(data) {
+		end = len(data)
+	}
+	if end <= off {
+		return nil, ErrNoVersionInfo
+	}
+	return data[off:end], nil
+}
+
+// resourceRange is resourceBytes for callers that read windows of a larger
+// file: it returns the resource region's file offset and declared size
+// without slicing data. data must hold the complete PE header block (DOS
+// header, PE signature, COFF + optional headers, section table).
+func resourceRange(data []byte) (off, size int, err error) {
 	u16 := func(off int) (uint16, bool) {
 		if off < 0 || off+2 > len(data) {
 			return 0, false
@@ -66,33 +86,33 @@ func resourceBytes(data []byte) ([]byte, error) {
 
 	mz, ok := u16(0)
 	if !ok || mz != 0x5A4D { // "MZ"
-		return nil, ErrNotPE
+		return 0, 0, ErrNotPE
 	}
 	lfanew, ok := u32(0x3C)
 	if !ok {
-		return nil, ErrNotPE
+		return 0, 0, ErrNotPE
 	}
 	pe := int(lfanew)
 	sig, ok := u32(pe)
 	if !ok || sig != 0x00004550 { // "PE\0\0"
-		return nil, ErrNotPE
+		return 0, 0, ErrNotPE
 	}
 	coff := pe + 4
 	numSections, ok := u16(coff + 2)
 	if !ok || numSections == 0 || numSections > maxSections {
-		return nil, ErrNotPE
+		return 0, 0, ErrNotPE
 	}
 	optSize, ok := u16(coff + 16)
 	if !ok {
-		return nil, ErrNotPE
+		return 0, 0, ErrNotPE
 	}
 	opt := coff + 20
 	if opt+int(optSize) > len(data) {
-		return nil, ErrNotPE
+		return 0, 0, ErrNotPE
 	}
 	magic, ok := u16(opt)
 	if !ok {
-		return nil, ErrNotPE
+		return 0, 0, ErrNotPE
 	}
 	var ddBase int
 	switch magic {
@@ -101,16 +121,16 @@ func resourceBytes(data []byte) ([]byte, error) {
 	case optMagicPE32Plus:
 		ddBase = opt + 112
 	default:
-		return nil, ErrNotPE
+		return 0, 0, ErrNotPE
 	}
 	resDD := ddBase + dirEntryResource*8
 	if resDD+8 > opt+int(optSize) {
-		return nil, ErrNoVersionInfo // optional header has no resource entry
+		return 0, 0, ErrNoVersionInfo // optional header has no resource entry
 	}
 	resRVA, _ := u32(resDD)
 	resSize, _ := u32(resDD + 4)
 	if resRVA == 0 || resSize == 0 {
-		return nil, ErrNoVersionInfo
+		return 0, 0, ErrNoVersionInfo
 	}
 
 	secTab := opt + int(optSize)
@@ -118,7 +138,7 @@ func resourceBytes(data []byte) ([]byte, error) {
 	for i := 0; i < int(numSections); i++ {
 		sh := secTab + i*40
 		if sh+40 > len(data) {
-			return nil, ErrNotPE
+			return 0, 0, ErrNotPE
 		}
 		va, _ := u32(sh + 12)
 		rawSize, _ := u32(sh + 16)
@@ -126,18 +146,11 @@ func resourceBytes(data []byte) ([]byte, error) {
 		sections = append(sections, section{va, rawSize, rawPtr})
 	}
 
-	off, ok := rvaToOffset(sections, resRVA)
+	roff, ok := rvaToOffset(sections, resRVA)
 	if !ok {
-		return nil, ErrNoVersionInfo
+		return 0, 0, ErrNoVersionInfo
 	}
-	end := int(off) + int(resSize)
-	if end > len(data) {
-		end = len(data)
-	}
-	if end <= int(off) {
-		return nil, ErrNoVersionInfo
-	}
-	return data[int(off):end], nil
+	return int(roff), int(resSize), nil
 }
 
 func rvaToOffset(sections []section, rva uint32) (uint32, bool) {
@@ -225,13 +238,48 @@ func scanStringFileInfoKey(res []byte, key string) string {
 // ExtractTitle returns a human-readable game title from a PE image's
 // StringFileInfo: ProductName wins, FileDescription is the fallback.
 // Placeholder values (empty, a "todo" prefix, <...> wrappers, all-digit
-// strings, or the CompanyName repeated) are rejected; "" means no usable
-// title.
+// strings, the Unreal bootstrap name, or the CompanyName repeated) are
+// rejected; "" means no usable title.
 func ExtractTitle(data []byte) (title string) {
 	res, err := resourceBytes(data)
 	if err != nil {
 		return ""
 	}
+	return titleFromResource(res)
+}
+
+// headerWindow is how much of a PE file TitleFromFile reads for the header
+// block (DOS stub, PE/COFF/optional headers, section table); real images
+// keep these within the first few kilobytes.
+const headerWindow = 64 << 10
+
+// TitleFromFile is ExtractTitle for a path, reading only the header window
+// and the resource region (each bounded) instead of the whole file: game
+// exes of any size yield their title. "" means no usable title.
+func TitleFromFile(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	window := make([]byte, headerWindow)
+	n, _ := f.ReadAt(window, 0) // short read for small files is fine
+	off, size, err := resourceRange(window[:n])
+	if err != nil {
+		return ""
+	}
+	if size > maxVersionScan {
+		size = maxVersionScan
+	}
+	buf := make([]byte, size)
+	m, _ := f.ReadAt(buf, int64(off))
+	return titleFromResource(buf[:m])
+}
+
+// titleFromResource scans resource-section bytes for a usable title:
+// ProductName, then FileDescription, with CompanyName for the
+// self-referential placeholder check.
+func titleFromResource(res []byte) string {
 	if len(res) > maxVersionScan {
 		res = res[:maxVersionScan]
 	}
@@ -256,18 +304,23 @@ func usableTitle(v, company string) string {
 	if len(v) >= 2 && v[0] == '<' && v[len(v)-1] == '>' {
 		return ""
 	}
-	allDigit := true
-	for i := 0; i < len(v); i++ {
-		if v[i] < '0' || v[i] > '9' {
-			allDigit = false
-			break
-		}
+	if allDigit(v) {
+		return ""
 	}
-	if allDigit {
+	if strings.EqualFold(v, "bootstrappackagedgame") {
 		return ""
 	}
 	if company != "" && v == company {
 		return ""
 	}
 	return v
+}
+
+func allDigit(v string) bool {
+	for i := 0; i < len(v); i++ {
+		if v[i] < '0' || v[i] > '9' {
+			return false
+		}
+	}
+	return len(v) > 0
 }
