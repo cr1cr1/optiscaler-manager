@@ -119,6 +119,13 @@ func FindMainExe(ctx context.Context, gameDir string) (string, error) {
 // findMainExe walks gameDir (depth ≤ maxExeDepth) and returns the best game
 // executable candidate, or "" when none qualifies.
 func findMainExe(ctx context.Context, gameDir string) (string, error) {
+	return findMainExeWithin(ctx, gameDir, maxExeDepth)
+}
+
+// findMainExeWithin is findMainExe with a caller-chosen depth cap, so the
+// game-dir predicate can ask shallower questions with identical candidacy,
+// skip-token, and ranking rules.
+func findMainExeWithin(ctx context.Context, gameDir string, maxDepth int) (string, error) {
 	folder := strings.ToLower(filepath.Base(gameDir))
 	var best *exeCandidate
 	err := filepath.WalkDir(gameDir, func(path string, d fs.DirEntry, err error) error {
@@ -135,7 +142,7 @@ func findMainExe(ctx context.Context, gameDir string) (string, error) {
 			if strings.HasPrefix(d.Name(), ".") {
 				return filepath.SkipDir
 			}
-			if depthOf(gameDir, path) > maxExeDepth {
+			if depthOf(gameDir, path) > maxDepth {
 				return filepath.SkipDir
 			}
 			if ok, skip := dirCandidate(path); ok {
