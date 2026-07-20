@@ -4,13 +4,17 @@ package discovery
 
 import (
 	"io/fs"
+	"os"
 	"strings"
 )
 
-// fileCandidate accepts regular files with any execute bit set or a .exe
-// suffix (game binaries shipped without the unix exec bit still qualify),
-// excluding shared libraries, Windows DLLs, and desktop entries. Returns
-// the file size for ranking.
+// fileCandidate accepts regular files that are real executables: a Windows
+// PE ("MZ") or an ELF binary, by magic bytes. The extension/exec-bit gate
+// runs first (cheap), then the first 4 bytes are sniffed — an execute bit
+// alone proves nothing on mounts where every file has one (shader caches,
+// appmanifests and scripts were being picked as "game executables").
+// Shared libraries, Windows DLLs, and desktop entries stay excluded.
+// Returns the file size for ranking.
 func fileCandidate(path string, d fs.DirEntry) (bool, int64) {
 	lower := strings.ToLower(d.Name())
 	if strings.HasSuffix(lower, ".dll") || strings.HasSuffix(lower, ".desktop") ||
@@ -27,7 +31,26 @@ func fileCandidate(path string, d fs.DirEntry) (bool, int64) {
 	if info.Mode()&0o111 == 0 && !strings.HasSuffix(lower, ".exe") {
 		return false, 0
 	}
+	if !isBinaryMagic(path) {
+		return false, 0
+	}
 	return true, info.Size()
+}
+
+// isBinaryMagic reports whether the file at path starts with the PE ("MZ")
+// or ELF magic. Unreadable files are not candidates.
+func isBinaryMagic(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	var magic [4]byte
+	if _, err := f.ReadAt(magic[:], 0); err != nil {
+		return false
+	}
+	return magic[0] == 'M' && magic[1] == 'Z' ||
+		magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F'
 }
 
 // dirCandidate never matches on unix-likes: only regular files are game

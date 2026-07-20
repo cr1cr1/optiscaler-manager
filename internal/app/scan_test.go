@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -18,6 +19,9 @@ func writeScanFile(t *testing.T, path string, content []byte) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	if strings.HasSuffix(strings.ToLower(path), ".exe") && !bytes.HasPrefix(content, []byte("MZ")) {
+		content = append([]byte("MZ"), content...)
 	}
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatal(err)
@@ -54,7 +58,7 @@ func mkManualGame(t *testing.T, root, name string) string {
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}
-	writeScanFile(t, bin, []byte("GAME"))
+	writeScanFile(t, bin, []byte("MZGAME"))
 	if runtime.GOOS != "windows" && runtime.GOOS != "darwin" {
 		if err := os.Chmod(bin, 0o755); err != nil {
 			t.Fatal(err)

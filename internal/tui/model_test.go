@@ -100,6 +100,9 @@ func writeFile(t *testing.T, path, content string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if strings.HasSuffix(strings.ToLower(path), ".exe") && !strings.HasPrefix(content, "MZ") {
+		content = "MZ" + content
+	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -530,7 +533,7 @@ func TestTUISettingsAddDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A real exe makes the dir a game (v0.7): empty dirs are refused.
-	if err := os.WriteFile(filepath.Join(newDir, "game.exe"), []byte("GAME"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(newDir, "game.exe"), []byte("MZGAME"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	e := newTestEnv(t, nil)

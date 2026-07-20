@@ -8,6 +8,7 @@ import (
 )
 
 // writeSized writes a file of exactly size bytes, creating parent dirs.
+// The MZ magic prefix keeps the file a valid exe candidate (magic sniff).
 func writeSized(t *testing.T, path string, size int64) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -18,6 +19,9 @@ func writeSized(t *testing.T, path string, size int64) {
 		t.Fatalf("create %s: %v", path, err)
 	}
 	defer func() { _ = f.Close() }()
+	if _, err := f.WriteString("MZ"); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
 	if err := f.Truncate(size); err != nil {
 		t.Fatalf("truncate %s: %v", path, err)
 	}
