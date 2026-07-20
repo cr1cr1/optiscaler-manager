@@ -20,13 +20,16 @@ func (m *model) rootView() {
 			m.toolbar()
 			// The virtualized views must sit directly inside the expanding
 			// column: they size to the remaining space and render nothing
-			// inside auto-sized wrappers (upstream demos do the same).
-			if m.auditGrid {
-				m.auditTable()
-			} else if m.state.Mode == ui.ViewList {
-				m.actionList()
+			// inside auto-sized wrappers (upstream demos do the same). With
+			// the detail panel open the column nests inside a Row that keeps
+			// it expanding beside the fixed-width panel.
+			if m.state.Selected != "" && !m.auditGrid {
+				Container(Attrs(Row, Grow(1), Expand), func() {
+					Container(Attrs(Grow(1), Expand), m.contentView)
+					m.detailPanel()
+				})
 			} else {
-				m.gridView()
+				m.contentView()
 			}
 			m.statusBar()
 		})
@@ -37,11 +40,20 @@ func (m *model) rootView() {
 			m.settingsModal()
 		} else if m.state.Confirm != nil {
 			m.confirmModal()
-		} else if m.state.Selected != "" {
-			m.dashboard()
 		}
 		m.handleGlobalKeys()
 	})
+}
+
+// contentView is the active library view (grid, list, or audit table).
+func (m *model) contentView() {
+	if m.auditGrid {
+		m.auditTable()
+	} else if m.state.Mode == ui.ViewList {
+		m.actionList()
+	} else {
+		m.gridView()
+	}
 }
 
 // handleGlobalKeys runs at the very end of the frame so focused widgets get
@@ -133,8 +145,10 @@ func (m *model) actionList() {
 		})
 }
 
-// dashboard is the per-game modal with status and actions.
-func (m *model) dashboard() {
+// detailPanel is the right-docked per-game panel that replaces the old
+// dashboard modal: the grid stays visible beside it. Escape (global keys)
+// and the close button both dismiss it.
+func (m *model) detailPanel() {
 	e := m.selectedRow()
 	if e == nil {
 		if m.sess != nil {
@@ -142,49 +156,71 @@ func (m *model) dashboard() {
 		}
 		return
 	}
-	modal(520, func() {
-		if m.sess != nil {
-			m.sess.Select("")
-		}
-	}, func() {
-		Container(Attrs(Pad(18), Gap(8), BackgroundVec(bgPanel)), func() {
-			txt(e.Title)
-			muted(e.InstallDir)
-			txt("Status: " + statusLabel(e))
-			if pills := versionPills(e); len(pills) > 0 {
-				Container(Attrs(Row, Gap(4)), func() {
-					for _, p := range pills {
-						badgePill(p.Label, p.Tone)
-					}
-				})
-			}
-			if m.state.Busy != "" {
-				muted("Working…")
-				if m.sess != nil && m.sess.OpBusy(e.InstallDir) && focusableButton(SymILeft, "Cancel") {
-					m.sess.CancelOp(e.InstallDir)
-				}
-				return
-			}
-			if m.sess == nil {
-				return
-			}
-			if focusableButton(SymIRight, quickLabel(e)) {
-				m.sess.QuickInstall(e.InstallDir)
-			}
-			if launchable(e) && focusableButton(0, "Launch") {
-				m.launchGame(*e)
-			}
-			if e.Actionable && focusableButton(SymIRight, "Rollback") {
-				m.sess.Rollback(e.InstallDir)
-			}
-			if e.Status == domain.StatusCommitted && focusableButton(SymIRight, "Open OptiScaler.ini in editor") {
-				m.sess.OpenINI(e.InstallDir)
-			}
-			if focusableButton(SymILeft, "Close") {
+	Container(Attrs(FixWidth(detailPanelW), Expand, BackgroundVec(bgPanel), Pad(sp16), Gap(sp12), Viewport, Clip), func() {
+		Container(Attrs(Row, CrossMid, Gap(sp8)), func() {
+			Label(e.Title, FontSize(16), TextColorVec(txtMain), FontWeight(WeightBold))
+			Filler(1)
+			if m.sess != nil && focusableButton(TypCancel, "Close") {
 				m.sess.Select("")
 			}
 		})
+		if e.CoverPath != "" {
+			Image(e.CoverPath, Vec2{160, 160 * coverRatio})
+		} else {
+			coverPlaceholder(e.Title, 160, 160*coverRatio)
+		}
+		muted(e.InstallDir)
+		Container(Attrs(Row, Gap(sp4), CrossMid), func() {
+			txt("Status:")
+			badgePill(statusLabel(e), statusTone(e))
+		})
+		if pills := versionPills(e); len(pills) > 0 {
+			Container(Attrs(Row, Gap(sp4)), func() {
+				for _, p := range pills {
+					badgePill(p.Label, p.Tone)
+				}
+			})
+		}
+		if m.sess == nil {
+			return
+		}
+		if m.sess.OpBusy(e.InstallDir) {
+			Container(Attrs(Row, Gap(sp8), CrossMid), func() {
+				spinnerGlyph()
+				muted("Working…")
+			})
+			if focusableButton(SymILeft, "Cancel") {
+				m.sess.CancelOp(e.InstallDir)
+			}
+			return
+		}
+		if focusableButton(SymIRight, quickLabel(e)) {
+			m.sess.QuickInstall(e.InstallDir)
+		}
+		if launchable(e) && focusableButton(SymPlay, "Launch") {
+			m.launchGame(*e)
+		}
+		if e.Actionable && focusableButton(SymUndo, "Rollback") {
+			m.sess.Rollback(e.InstallDir)
+		}
+		if e.Status == domain.StatusCommitted && focusableButton(SymIRight, "Open OptiScaler.ini in editor") {
+			m.sess.OpenINI(e.InstallDir)
+		}
+		ScrollBars()
 	})
+}
+
+// statusTone colors the detail panel's status pill: committed green,
+// actionable red, everything else neutral.
+func statusTone(e *ui.GameRow) ui.Tone {
+	switch {
+	case e.Actionable:
+		return ui.ToneRed
+	case e.Status == domain.StatusCommitted:
+		return ui.ToneGreen
+	default:
+		return ui.ToneGray
+	}
 }
 
 // confirmModal renders the session's pending consent gate.
