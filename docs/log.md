@@ -1109,3 +1109,39 @@ forward to unconditional PASS:
 - Docs: README scanning/add-directory sections, scope.md v0.7 + known
   limits, architecture.md classification section + package map, plan.md
   v0.7 milestone, index.md release line.
+
+## 2026-07-21 — v0.7 T3: review-gate fix-forward (scan serialization, cache v2, symlink classify, TUI freeze)
+
+- `Session.Scan` serializes: a `scanning` flag + `scanPending` bit replace
+  the goroutine-per-call shape. A container added mid-scan previously raced
+  the in-flight scan — the rescan surfaced the children, then the earlier
+  scan settled last and its keep-block wiped them until the next manual
+  rescan (R3 MAJOR). A Scan landing mid-scan now sets the pending bit (no
+  goroutine, no events); the running scan re-runs once on settle, success
+  or failure, on a fresh snapshot. Only scans that actually run emit
+  EvScanStarted/EvScanDone. RED→GREEN:
+  `TestScanSerialization_ContainerAddDuringBootScan` (red: children wiped),
+  `TestScanSerialization_PendingRunsOnce` (red: 3/3 starts). `race_test.go`
+  moves from exact completion counting (nondeterministic under coalescing)
+  to a marker-scan liveness assertion + `scanIdle` quiescence.
+- Games-cache schema bumped to v2: v0.6 (v1) caches carry stale container
+  self-rows and now load as empty, so the first v0.7 boot falls through to
+  a real scan (R1). RED→GREEN:
+  `TestStart_StaleSchemaCacheFallsThroughToScan` (red: warm boot accepted
+  the v1 cache). Frontend test fixtures mirroring the schema bumped
+  (`internal/tui` seedGamesCache, `internal/gui` boot cacheJSON —
+  test-only literals).
+- `gameyChildren` resolves a symlink child with `EvalSymlinks` before the
+  per-child walk: WalkDir never descends a symlink root, so symlinked game
+  subdirs counted as non-gamey (parent misclassified empty) while
+  ScanRecursive, canonicalizing first, scanned them (R4). RED→GREEN:
+  `TestClassifyGameDir_SymlinkedGameChild`,
+  `TestClassifyGameDir_SingleSymlinkedChild`.
+- TUI add-dir commit returns a `tea.Cmd` instead of calling
+  `AddDirectory` inline on the bubbletea update loop (session
+  classification is synchronous) (R4). Structural RED (compile) → GREEN:
+  `TestCommitInputAddDirDeferred`.
+- Docs: scope.md v0.7 known limits (depth-2/3 self-row boundary, nested
+  containers surfacing one game per intermediate dir per scan, v1 cache
+  invalidation); ScanRecursive documents exe-less-subdir skipping;
+  depthOf documents depth 1 as an immediate subdirectory.

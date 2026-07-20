@@ -34,8 +34,9 @@ const maxExeDepth = 3
 // resolves its main executable by descending at most maxExeDepth levels.
 // Candidates named like uninstallers/installers/crash handlers are skipped;
 // ranking prefers a name match to the game folder, then larger size, then
-// 64-bit-looking names. Games are deduplicated by canonical install
-// directory, so rescanning a root is idempotent.
+// 64-bit-looking names. Subdirectories that yield no executable are skipped
+// (logged at debug, never an error). Games are deduplicated by canonical
+// install directory, so rescanning a root is idempotent.
 func ScanRecursive(ctx context.Context, root string) ([]domain.Game, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -174,8 +175,8 @@ func findMainExeWithin(ctx context.Context, gameDir string, maxDepth int) (strin
 }
 
 // depthOf returns how many directory levels path sits below root (a file
-// directly inside root is depth 0 when path is that file's parent dir; a
-// subdirectory "a/b/c" is depth 3).
+// directly inside root is depth 0 when path is that file's parent dir;
+// depth 1 is an immediate subdirectory; "a/b/c" is depth 3).
 func depthOf(root, path string) int {
 	rel, err := filepath.Rel(root, path)
 	if err != nil || rel == "." {

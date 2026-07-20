@@ -354,6 +354,17 @@ closed; reopen only with new evidence.
 - Classification in `Scan` re-walks each extra root (bounded stats only)
   on top of the recursive scan's own walk; the duplication is deliberate
   to keep the gate independent of scanner internals.
+- A container holding exactly one game whose exe sits at depth ≤ 2 from
+  the container root may classify as a game (getting a self-row) — the
+  heuristic boundary is depth 2 vs 3, and a shallow one-game container is
+  structurally indistinguishable from an engine-layout game dir.
+- Nested containers (e.g. adding a Steam root, whose games live at
+  `steamapps/common/<game>`) surface only one game per intermediate
+  directory per scan: each intermediate level is treated as that scan's
+  single gamey child, so full surfacing takes repeated rescans.
+- Warm caches written by v0.6 (schema v1) are invalidated by the v0.7
+  schema bump (v2): the first v0.7 boot falls through to a real scan
+  instead of resurrecting stale container self-rows.
 
 ## Dependencies (settled)
 
