@@ -171,17 +171,25 @@ func (m *model) gameCard(e ui.GameRow) {
 				}
 			})
 		}
+		var btnRowID ContainerId
 		if m.sess != nil {
 			Container(Attrs(Row, Gap(sp4)), func() {
 				if focusableButton(SymIRight, quickLabel(&e)) {
 					m.sess.QuickInstall(e.InstallDir)
 				}
+				m.cardBtnRect = GetScreenRectOf(GetLastId())
 				if launchable(&e) && focusableButton(0, "Launch") {
 					m.launchGame(e)
 				}
 			})
+			btnRowID = GetLastId()
 		}
-		if PressAction() && m.sess != nil {
+		// shirei has a single global active node: on mouse-down over a button the
+		// card's PressAction is built last and would steal activation, swallowing
+		// the button and opening the detail panel instead. While the pointer is
+		// over the button row the card skips its own press gesture entirely.
+		overButtons := btnRowID != nil && IdIsHovered(btnRowID)
+		if !overButtons && PressAction() && m.sess != nil {
 			m.sess.Select(e.InstallDir)
 		}
 	})
