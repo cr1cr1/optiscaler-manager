@@ -28,6 +28,7 @@ var (
 	styleWarn      = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 	styleOK        = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 	styleBusy      = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+	styleInfo      = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
 	styleTitle     = lipgloss.NewStyle().Bold(true)
 	styleModal     = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -337,6 +338,8 @@ func (m Model) gameRowLine(r ui.GameRow, tw, w int, selected bool) string {
 			statusCell = styleWarn.Render(status)
 		case "in_progress":
 			statusCell = styleBusy.Render(status)
+		case "external":
+			statusCell = styleInfo.Render(status)
 		default:
 			statusCell = styleMuted.Render(status)
 		}
@@ -411,7 +414,11 @@ func (m Model) detailView(w, contentH int) string {
 			fmt.Fprintf(&b, "Proton: %s\n", row.CompatPrefix)
 		}
 		b.WriteString("\n" + styleHeader.Render("Actions") + "\n")
-		b.WriteString("  i  install/uninstall\n")
+		install := "  i  install/uninstall"
+		if row.Status == "external" {
+			install = "  i  adopt (install over external)"
+		}
+		b.WriteString(install + "\n")
 		b.WriteString("  l  launch\n")
 		b.WriteString("  c  cancel operation\n")
 		rollback := "  r  rollback"
@@ -419,7 +426,7 @@ func (m Model) detailView(w, contentH int) string {
 			rollback = styleDimmedAction.Render(rollback + " (interrupted installs only)")
 		}
 		openINI := "  o  open INI"
-		if row.Status != "committed" {
+		if !row.CanOpenINI() {
 			openINI = styleDimmedAction.Render(openINI + " (installed games only)")
 		}
 		b.WriteString(rollback + "\n" + openINI + "\n")

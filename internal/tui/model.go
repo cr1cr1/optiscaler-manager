@@ -264,7 +264,7 @@ func (m Model) detailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sess.Rollback(dir)
 		}
 	case "o":
-		if row := m.detailRow(); row != nil && row.Status == "committed" {
+		if row := m.detailRow(); row != nil && row.CanOpenINI() {
 			m.sess.OpenINI(dir)
 		}
 	}

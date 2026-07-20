@@ -902,3 +902,20 @@ fixed forward to unconditional PASS:
   counts live requests only (9c3957d, 63e5c96, 199d970); MINOR: TUI
   settings height clamp (ed72b1a)); R4 security PASS (LOW; appid digit
   validation + 1 MiB body caps applied); R5 context PASS.
+
+## 2026-07-20 — v0.6 T6: TUI — external-install status rendering
+
+- `gameRowLine`: explicit `external` case wearing a new `styleInfo` accent
+  (bright cyan) — distinct from committed green, warn red, busy yellow, and
+  muted gray.
+- Detail view: open INI gating now uses `GameRow.CanOpenINI()` (committed or
+  external) instead of the `"committed"` string literal; external rows show
+  the adopt hint `i  adopt (install over external)` instead of
+  `install/uninstall`.
+- Detail `o` key gates on `CanOpenINI()`, so external installs open their
+  on-disk `OptiScaler.ini` from the TUI.
+- TDD red→green: `TestGameRowLineExternalStatus`,
+  `TestDetailViewOpenININotDimmedForExternal`,
+  `TestDetailViewAdoptHintForExternal`,
+  `TestDetailKeyOpenINIAllowedForExternal` (opener seam probed with a fake
+  `xdg-open` earlier in PATH).

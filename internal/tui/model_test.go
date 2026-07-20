@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/x/exp/teatest"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
+	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
 	"github.com/cr1cr1/optiscaler-manager/internal/launch"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
@@ -258,6 +259,70 @@ func TestTUIQuitsOnQ(t *testing.T) {
 		t.Fatalf("final model type %T, want tui.Model", tm.FinalModel(t))
 	}
 	t.Logf("quit cleanly; final status line %q", m.View())
+}
+
+// TestDetailKeyOpenINIAllowedForExternal: pressing o on the detail screen of
+// an external row (CanOpenINI true) reaches the opener seam — a fake
+// xdg-open earlier in PATH records every path handed to the platform opener;
+// a never-installed row stays gated off.
+func TestDetailKeyOpenINIAllowedForExternal(t *testing.T) {
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "opened.log")
+	xdg := filepath.Join(binDir, "xdg-open")
+	writeFile(t, xdg, "#!/bin/sh\nprintf '%s\n' \"$1\" >> \"$XDG_OPEN_LOG\"\n")
+	if err := os.Chmod(xdg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("XDG_OPEN_LOG", logPath)
+
+	opened := func() string {
+		data, err := os.ReadFile(logPath)
+		if err != nil {
+			return ""
+		}
+		return string(data)
+	}
+	oKey := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}}
+
+	externalDetail := func(t *testing.T, status domain.Status, withINI bool) (Model, string) {
+		t.Helper()
+		settingsDir := t.TempDir()
+		e := newTestEnv(t, func(d *ui.Deps) { d.SettingsRoot = settingsDir })
+		iniDir := ""
+		if withINI {
+			iniDir = e.bin
+			writeFile(t, filepath.Join(e.bin, "OptiScaler.ini"), "[Upscalers]\n")
+		}
+		seedGamesCache(t, settingsDir, []ui.GameRow{{
+			Title:        "Game One",
+			AppID:        "100",
+			InstallDir:   e.gameRoot,
+			InjectionDir: iniDir,
+			Platform:     "Steam",
+			Status:       status,
+		}})
+		e.sess.Start(context.Background())
+		return Model{sess: e.sess, screen: screenDetail, detailDir: e.gameRoot}, e.bin
+	}
+
+	t.Run("external row opens", func(t *testing.T) {
+		m, bin := externalDetail(t, domain.StatusExternal, true)
+		m.detailKey(oKey)
+		pollUntil(t, "opener seam invoked for an external row", func() bool {
+			return strings.Contains(opened(), filepath.Join(bin, "OptiScaler.ini"))
+		})
+	})
+
+	t.Run("never-installed row stays gated", func(t *testing.T) {
+		m, _ := externalDetail(t, "", false)
+		before := opened()
+		m.detailKey(oKey)
+		time.Sleep(100 * time.Millisecond)
+		if got := opened(); got != before {
+			t.Errorf("opener seam invoked for a never-installed row; opened log %q", got)
+		}
+	})
 }
 
 // TestTUIConfirmEACPrompt: installing an EAC game surfaces the confirm

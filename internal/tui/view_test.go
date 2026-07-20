@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
@@ -22,6 +24,183 @@ func forceANSI(t *testing.T) {
 	prev := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+}
+
+// sgrBefore returns the last SGR sequence in s that starts before the first
+// occurrence of substr ("" when none precedes it) — the style a rendered
+// segment actually wears.
+func sgrBefore(s, substr string) string {
+	idx := strings.Index(s, substr)
+	if idx < 0 {
+		return ""
+	}
+	last := ""
+	for _, m := range sgrRE.FindAllStringIndex(s, -1) {
+		if m[0] >= idx {
+			break
+		}
+		last = s[m[0]:m[1]]
+	}
+	return last
+}
+
+// detailModelFor boots a session warm from a one-row games cache and binds
+// a detail-screen model to that row.
+func detailModelFor(t *testing.T, row ui.GameRow) Model {
+	t.Helper()
+	settingsDir := t.TempDir()
+	e := newTestEnv(t, func(d *ui.Deps) { d.SettingsRoot = settingsDir })
+	seedGamesCache(t, settingsDir, []ui.GameRow{row})
+	e.sess.Start(context.Background())
+	return Model{sess: e.sess, screen: screenDetail, detailDir: row.InstallDir}
+}
+
+// TestGameRowLineExternalStatus: an external install (OptiScaler on disk,
+// not manager-made) renders its status with a distinct accent — not the
+// committed green, warn red, busy yellow, or muted gray — while keeping the
+// row ANSI-safe and exactly one table width wide.
+func TestGameRowLineExternalStatus(t *testing.T) {
+	forceANSI(t)
+
+	e := newTestEnv(t, nil)
+	m := Model{sess: e.sess}
+	row := ui.GameRow{
+		Title:    "External Game",
+		Platform: "Steam",
+		Status:   domain.StatusExternal,
+	}
+
+	line := m.gameRowLine(row, 20, 80, false)
+	t.Logf("rendered external row: %q", line)
+
+	if rest := sgrRE.ReplaceAllString(line, ""); strings.Contains(rest, "\x1b") {
+		t.Errorf("truncated escape sequence in rendered row: %q", line)
+	}
+	if !strings.Contains(sgrRE.ReplaceAllString(line, ""), "external") {
+		t.Errorf("external status text missing: %q", line)
+	}
+
+	opens, resets := 0, 0
+	for _, seq := range sgrRE.FindAllString(line, -1) {
+		if seq == "\x1b[0m" {
+			resets++
+		} else {
+			opens++
+		}
+	}
+	if opens != resets {
+		t.Errorf("unbalanced SGR in rendered row: %d opens, %d resets: %q", opens, resets, line)
+	}
+
+	want := 20 + colPlatform + colBadges + colVersion + colStatus
+	if w := lipgloss.Width(line); w != want {
+		t.Errorf("row width = %d cells, want %d: %q", w, want, line)
+	}
+
+	// The accent must be distinct from every existing status style.
+	seq := sgrBefore(line, "external")
+	banned := []string{"",
+		sgrRE.FindString(styleOK.Render("x")),
+		sgrRE.FindString(styleWarn.Render("x")),
+		sgrRE.FindString(styleBusy.Render("x")),
+		sgrRE.FindString(styleMuted.Render("x")),
+	}
+	for _, b := range banned {
+		if seq == b {
+			t.Errorf("external status styled with %q; want a distinct accent (not committed/warn/busy/muted)", seq)
+		}
+	}
+}
+
+// TestDetailViewOpenININotDimmedForExternal: the open-INI action stays live
+// for external installs (CanOpenINI covers committed and external) and keeps
+// its dimmed gating only for rows with no usable ini.
+func TestDetailViewOpenININotDimmedForExternal(t *testing.T) {
+	forceANSI(t)
+	dimSeq := sgrRE.FindString(styleDimmedAction.Render("x"))
+
+	base := ui.GameRow{
+		Title:        "Game One",
+		AppID:        "100",
+		InstallDir:   "/games/one",
+		InjectionDir: "/games/one/bin",
+		Platform:     "Steam",
+	}
+
+	t.Run("external", func(t *testing.T) {
+		row := base
+		row.Status = domain.StatusExternal
+		out := detailModelFor(t, row).detailView(100, 40)
+		t.Logf("external detail view:\n%s", out)
+
+		plain := sgrRE.ReplaceAllString(out, "")
+		if !strings.Contains(plain, "open INI") {
+			t.Fatalf("open INI action missing: %q", plain)
+		}
+		if got := sgrBefore(out, "open INI"); got == dimSeq {
+			t.Errorf("open INI dimmed for an external row (seq %q); external installs have a usable ini", got)
+		}
+		if strings.Contains(plain, "(installed games only)") {
+			t.Errorf("external row shows the gated-action suffix: %q", plain)
+		}
+	})
+
+	t.Run("not installed stays dimmed", func(t *testing.T) {
+		row := base
+		row.InjectionDir = ""
+		out := detailModelFor(t, row).detailView(100, 40)
+		t.Logf("not-installed detail view:\n%s", out)
+
+		plain := sgrRE.ReplaceAllString(out, "")
+		if got := sgrBefore(out, "open INI"); got != dimSeq {
+			t.Errorf("open INI not dimmed for a never-installed row (seq %q, want %q)", got, dimSeq)
+		}
+		if !strings.Contains(plain, "(installed games only)") {
+			t.Errorf("gated-action suffix missing for a never-installed row: %q", plain)
+		}
+	})
+}
+
+// TestDetailViewAdoptHintForExternal: installing over an external install is
+// an adoption, so the i action says so; committed rows keep the
+// install/uninstall wording.
+func TestDetailViewAdoptHintForExternal(t *testing.T) {
+	base := ui.GameRow{
+		Title:        "Game One",
+		AppID:        "100",
+		InstallDir:   "/games/one",
+		InjectionDir: "/games/one/bin",
+		Platform:     "Steam",
+	}
+
+	t.Run("external", func(t *testing.T) {
+		row := base
+		row.Status = domain.StatusExternal
+		out := detailModelFor(t, row).detailView(100, 40)
+		plain := sgrRE.ReplaceAllString(out, "")
+		t.Logf("external detail actions:\n%s", plain)
+
+		if !strings.Contains(plain, "adopt (install over external)") {
+			t.Errorf("adopt hint missing for an external row: %q", plain)
+		}
+		if strings.Contains(plain, "install/uninstall") {
+			t.Errorf("external rows must not promise uninstall of a foreign install: %q", plain)
+		}
+	})
+
+	t.Run("committed keeps install/uninstall", func(t *testing.T) {
+		row := base
+		row.Status = domain.StatusCommitted
+		out := detailModelFor(t, row).detailView(100, 40)
+		plain := sgrRE.ReplaceAllString(out, "")
+
+		if !strings.Contains(plain, "install/uninstall") {
+			t.Errorf("committed row lost the install/uninstall action: %q", plain)
+		}
+		if strings.Contains(plain, "adopt") {
+			t.Errorf("committed row shows the adopt hint: %q", plain)
+		}
+	})
 }
 
 // TestGameRowLineBadgesANSIIntact renders a row whose styled tech badges
