@@ -133,9 +133,9 @@ func (m *model) gameCard(e ui.GameRow) {
 			ModAttrs(func(a *AttrSet) {
 				a.BorderWidth = 1.5
 				a.BorderColor = accent
-				a.Shadow.Blur = 16
-				a.Shadow.Alpha = 0.3
-				a.Shadow.Offset[1] = 2
+				a.Blur = 16
+				a.Alpha = 0.3
+				a.Offset[1] = 2
 			})
 		} else if m.hoveredDir == e.InstallDir {
 			m.hoveredDir = ""

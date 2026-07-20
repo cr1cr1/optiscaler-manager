@@ -58,18 +58,11 @@ var (
 	txtWarn     = Vec4{20, 80, 65, 1}
 )
 
-// elevateCard lifts a surface with a soft, low-contrast drop shadow.
-func elevateCard(a *AttrSet) {
-	a.Shadow.Blur = 18
-	a.Shadow.Alpha = 0.35
-	a.Shadow.Offset[1] = 4
-}
-
 // elevateOverlay is the stronger lift for modals, toasts, and popups.
 func elevateOverlay(a *AttrSet) {
-	a.Shadow.Blur = 28
-	a.Shadow.Alpha = 0.5
-	a.Shadow.Offset[1] = 6
+	a.Blur = 28
+	a.Alpha = 0.5
+	a.Offset[1] = 6
 }
 
 // scrollBars renders themed (muted gray-blue) scrollbars for the current
