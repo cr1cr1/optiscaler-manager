@@ -20,6 +20,11 @@ const (
 	StatusCommitted  Status = "committed"
 	StatusFailed     Status = "failed"
 	StatusRolledBack Status = "rolled_back"
+
+	// StatusExternal marks an OptiScaler installation detected on disk that
+	// this manager did not perform. It is derived at scan time and is NEVER
+	// persisted to store manifests — the persisted set stays the four above.
+	StatusExternal Status = "external"
 )
 
 // OpEntry is one planned or executed file operation. Op is one of

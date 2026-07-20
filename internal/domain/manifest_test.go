@@ -71,3 +71,15 @@ func TestManifestJSONRoundTrip(t *testing.T) {
 	t.Logf("round trip preserved %d ops, %d overwritten, %d created, %d created dirs",
 		len(decoded.Ops), len(decoded.Overwritten), len(decoded.Created), len(decoded.CreatedDirs))
 }
+
+func TestPersistedStatusSet(t *testing.T) {
+	persisted := []domain.Status{domain.StatusInProgress, domain.StatusCommitted, domain.StatusFailed, domain.StatusRolledBack}
+	for _, s := range persisted {
+		if s == domain.StatusExternal {
+			t.Errorf("StatusExternal must never collide with persisted status %q", s)
+		}
+	}
+	if domain.StatusExternal == "" {
+		t.Error("StatusExternal must be a non-empty derived status")
+	}
+}
