@@ -52,6 +52,7 @@ type Model struct {
 	height       int
 	gamesVP      viewport.Model
 	detailVP     viewport.Model
+	settingsVP   viewport.Model
 	input        textinput.Model
 	mode         inputMode
 	spin         spinner.Model

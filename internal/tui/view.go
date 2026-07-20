@@ -104,7 +104,7 @@ func (m Model) View() string {
 		case screenDetail:
 			body = m.detailView(w, contentH)
 		case screenSettings:
-			body = m.settingsView(w)
+			body = m.settingsView(w, contentH)
 		case screenHelp:
 			body = helpView()
 		case screenAbout:
@@ -433,9 +433,11 @@ func (m Model) detailView(w, contentH int) string {
 	return vp.View()
 }
 
-// settingsView renders the version/template settings and the scan-directory
-// list with its inline add/remove affordances.
-func (m Model) settingsView(w int) string {
+// settingsView renders the version/template settings above the scan-directory
+// list; the list scrolls inside a viewport clamped to contentH (with the
+// directory cursor kept visible) so the frame never exceeds the terminal
+// height.
+func (m Model) settingsView(w, contentH int) string {
 	s := m.sess.Settings()
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("Default OptiScaler version:"), s.DefaultVersion)
@@ -445,21 +447,34 @@ func (m Model) settingsView(w int) string {
 		online = "on"
 	}
 	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("online game info:"), online)
-	b.WriteString("\n" + styleHeader.Render("Scan directories") + "\n")
+	b.WriteString("\n" + styleHeader.Render("Scan directories"))
+	header := b.String()
+
+	lines := make([]string, 0, len(s.ExtraDirs)+2)
 	if len(s.ExtraDirs) == 0 {
-		b.WriteString(styleMuted.Render("  none yet — press a to add one") + "\n")
+		lines = append(lines, styleMuted.Render("  none yet — press a to add one"))
 	}
 	for i, d := range s.ExtraDirs {
 		line := "  " + trunc(d, w-4)
 		if i == m.dirCursor {
 			line = styleSelected.Render(lipgloss.NewStyle().Width(w).Render("> " + trunc(d, w-4)))
 		}
-		b.WriteString(line + "\n")
+		lines = append(lines, line)
 	}
 	if m.confirmRmDir != "" {
-		b.WriteString("\n" + styleWarn.Render(fmt.Sprintf("remove %s? [y/n] (other keys are disabled until answered)", m.confirmRmDir)))
+		lines = append(lines, "",
+			styleWarn.Render(fmt.Sprintf("remove %s? [y/n] (other keys are disabled until answered)", m.confirmRmDir)))
 	}
-	return strings.TrimRight(b.String(), "\n")
+
+	vp := m.settingsVP
+	vp.Width = w
+	vp.Height = contentH - lipgloss.Height(header)
+	if vp.Height < 1 {
+		vp.Height = 1
+	}
+	vp.SetContent(strings.Join(lines, "\n"))
+	keepCursorVisible(&vp, m.dirCursor)
+	return header + "\n" + vp.View()
 }
 
 // helpView renders the key reference screen.

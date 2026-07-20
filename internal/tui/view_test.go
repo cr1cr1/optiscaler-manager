@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -137,6 +138,29 @@ func TestProgressViewRendersPhaseBarAndPercent(t *testing.T) {
 		if !strings.Contains(plain, want) {
 			t.Errorf("progress line lacks %q: %q", want, plain)
 		}
+	}
+}
+
+// TestTUISettingsViewRespectsContentHeight: with more scan directories than
+// the terminal has rows, the settings body must be clamped to contentH so
+// the full frame stays exactly h lines — an oversized frame makes
+// bubbletea's renderer drop the top line (the tab bar).
+func TestTUISettingsViewRespectsContentHeight(t *testing.T) {
+	dirs := make([]string, 0, 40)
+	for i := 1; i <= 40; i++ {
+		dirs = append(dirs, fmt.Sprintf("/games/dir%02d", i))
+	}
+	e := newTestEnv(t, func(d *ui.Deps) { d.Settings.ExtraDirs = dirs })
+	m := Model{sess: e.sess, screen: screenSettings, width: 80, height: 24}
+
+	frame := m.View()
+	lines := strings.Split(frame, "\n")
+	t.Logf("settings frame (%d lines):\n%s", len(lines), frame)
+	if len(lines) != 24 {
+		t.Errorf("frame has %d lines, want exactly 24", len(lines))
+	}
+	if !strings.Contains(lines[0], "1 Games") {
+		t.Errorf("first line lacks the tab bar: %q", lines[0])
 	}
 }
 
