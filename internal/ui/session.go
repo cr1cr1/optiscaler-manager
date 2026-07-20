@@ -259,6 +259,55 @@ func (s *Session) Select(dir string) {
 	s.mu.Unlock()
 }
 
+// Start boots the library: a warm games cache hydrates the rows
+// synchronously (status reconciled from store manifests — no PE parsing, no
+// reclassification) and no scan runs; a missing or unusable cache falls
+// through to Scan. Safe to call once at frontend boot.
+func (s *Session) Start(ctx context.Context) {
+	rows := loadGamesCache(s.deps.SettingsRoot)
+	if len(rows) == 0 {
+		s.Scan(ctx)
+		return
+	}
+	s.reconcileStatuses(rows)
+	sortRows(rows)
+	s.mu.Lock()
+	s.st.Rows = rows
+	s.st.StatusLine = fmt.Sprintf("%d games (cached)", len(rows))
+	s.st.Busy = ""
+	s.mu.Unlock()
+}
+
+// reconcileStatuses overrides cached row status from store manifests keyed
+// by canonical install dir (and game root), so installs that settled while
+// the manager was not running show their real state.
+func (s *Session) reconcileStatuses(rows []GameRow) {
+	if s.deps.Store == nil {
+		return
+	}
+	manifests, err := s.deps.Store.List()
+	if err != nil {
+		log.Warn().Err(err).Msg("games cache: status reconcile skipped")
+		return
+	}
+	byDir := map[string]domain.Status{}
+	byRoot := map[string]domain.Status{}
+	for _, m := range manifests {
+		byDir[m.InstallDir] = m.Status
+		byRoot[m.GameRoot] = m.Status
+	}
+	for i := range rows {
+		st, ok := byDir[rows[i].InjectionDir]
+		if !ok {
+			st, ok = byRoot[rows[i].InstallDir]
+		}
+		if ok {
+			rows[i].Status = st
+			rows[i].Actionable = actionableStatus(st)
+		}
+	}
+}
+
 // Scan refreshes the library asynchronously.
 func (s *Session) Scan(ctx context.Context) {
 	go func() {
