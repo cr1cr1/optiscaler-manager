@@ -2,6 +2,7 @@ package gui
 
 import (
 	"strings"
+	"time"
 
 	. "go.hasen.dev/shirei"
 	"go.hasen.dev/shirei/widgets"
@@ -15,6 +16,12 @@ import (
 // not focusable). Enter or Space while focused activates the button, and the
 // key is consumed so no later widget in the frame can double-fire.
 func focusableButton(icon rune, label string) bool {
+	return focusableButtonExt(label, widgets.ButtonAttrs{Icon: icon})
+}
+
+// focusableButtonExt is focusableButton with full ButtonAttrs control
+// (disabled state, accent, sizing).
+func focusableButtonExt(label string, attrs widgets.ButtonAttrs) bool {
 	var activated bool
 	Container(Attrs(Focusable, Corners(6)), func() {
 		CycleFocusOnTab()
@@ -28,11 +35,63 @@ func focusableButton(icon rune, label string) bool {
 				activated = true
 			}
 		}
-		if widgets.Button(icon, label) {
+		if widgets.ButtonExt(label, attrs) {
 			activated = true
 		}
 	})
 	return activated
+}
+
+// spinnerFrames is the hand-rolled busy indicator cycle (shirei has no
+// spinner widget).
+var spinnerFrames = []string{"◐", "◓", "◑", "◒"}
+
+type spinnerState struct {
+	idx  int
+	last time.Time
+}
+
+// spinnerGlyph renders the cycling busy glyph, advancing every 150ms while
+// it is on screen.
+func spinnerGlyph() {
+	st := UseWithInit("spinner", func() *spinnerState { return &spinnerState{last: time.Now()} })
+	if time.Since(st.last) >= 150*time.Millisecond {
+		st.idx = (st.idx + 1) % len(spinnerFrames)
+		st.last = time.Now()
+	}
+	Label(spinnerFrames[st.idx], FontSize(13), TextColorVec(txtMain))
+	RequestNextFrame()
+}
+
+// viewSwitch is the grid/list segmented toggle with icon segments.
+func (m *model) viewSwitch() {
+	Container(Attrs(Row, Corners(radiusM), Clip, BorderWidth(1), BorderColorVec(border)), func() {
+		m.viewSegment(widgets.SymGrid, "Grid", ui.ViewGrid)
+		m.viewSegment(widgets.SymList, "List", ui.ViewList)
+	})
+}
+
+// viewSegment is one half of the view switch; activating it flips the view
+// mode through the session.
+func (m *model) viewSegment(icon rune, label string, mode ui.ViewMode) {
+	selected := m.state.Mode == mode
+	fg := txtMuted
+	if selected {
+		fg = txtMain
+	}
+	Container(Attrs(Row, CrossMid, Gap(sp4), Pad2(sp4, sp8)), func() {
+		switch {
+		case selected:
+			ModAttrs(BackgroundVec(accent))
+		case IsHovered():
+			ModAttrs(BackgroundVec(bgRaised))
+		}
+		widgets.Icon(icon, FontSize(13), TextColorVec(fg))
+		Label(label, FontSize(12), TextColorVec(fg))
+		if PressAction() && m.sess != nil && !selected {
+			m.sess.ToggleView()
+		}
+	})
 }
 
 // versionPills is the install-version badge set for a row: the OptiScaler

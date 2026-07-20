@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"context"
 	"strings"
 
 	. "go.hasen.dev/shirei"
@@ -18,7 +17,7 @@ func (m *model) rootView() {
 	Container(Attrs(Viewport, Row, BackgroundVec(bgApp)), func() {
 		m.sidebar()
 		Container(Attrs(Grow(1), Expand, Gap(0)), func() {
-			m.toolbar(context.Background())
+			m.toolbar()
 			// The virtualized views must sit directly inside the expanding
 			// column: they size to the remaining space and render nothing
 			// inside auto-sized wrappers (upstream demos do the same).
@@ -235,11 +234,4 @@ func quickLabel(e *ui.GameRow) string {
 		return "Uninstall"
 	}
 	return "Install"
-}
-
-func viewToggleLabel(mode ui.ViewMode) string {
-	if mode == ui.ViewGrid {
-		return "View: grid"
-	}
-	return "View: list"
 }

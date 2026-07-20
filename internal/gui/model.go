@@ -116,6 +116,13 @@ func (m *model) selectedRow() *ui.GameRow {
 	return nil
 }
 
+// setSort forwards the toolbar sort choice to the session.
+func (m *model) setSort(mode ui.SortMode) {
+	if m.sess != nil {
+		m.sess.SetSort(mode)
+	}
+}
+
 // settingsDirs is the settings-modal directory list: the session's ExtraDirs.
 func (m *model) settingsDirs() []string {
 	if m.sess == nil {

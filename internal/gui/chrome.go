@@ -1,11 +1,12 @@
 package gui
 
 import (
-	"context"
 	"fmt"
 
 	. "go.hasen.dev/shirei"
 	. "go.hasen.dev/shirei/widgets"
+
+	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
 // modal is widgets.Modal with a dark card: upstream hardcodes a white
@@ -143,26 +144,56 @@ func (m *model) settingsDirsSection() {
 	}
 }
 
-// toolbar is the top action bar: scan, search, view switch.
-func (m *model) toolbar(ctx context.Context) {
+// toolbar is the top action bar: scan, add, search, sort, view switch.
+func (m *model) toolbar() {
 	Container(Attrs(Expand, Row, CrossMid, Gap(sp8), Pad2(sp8, sp4)), func() {
-		if m.sess != nil && focusableButton(SymIRight, "Scan Games") {
-			m.sess.Scan(ctx)
+		if m.sess != nil {
+			busy := m.state.Busy != ""
+			if focusableButtonExt("Scan", ButtonAttrs{Icon: SymRefresh, Disabled: busy}) && !busy {
+				m.sess.Scan(m.ctx)
+			}
+			if busy {
+				spinnerGlyph()
+			}
 		}
 		if m.sess != nil && focusableButton(SymIPlus, "Add Game") {
-			m.sess.PickAndAddDirectory(ctx)
+			m.sess.PickAndAddDirectory(m.ctx)
 		}
 		Container(Attrs(Grow(1), MinSize(140, 34), MaxSizeVec(Vec2{420, 34})), func() {
-			TextInput(&m.filter)
+			TextInputExt(&m.filter, searchInputAttrs())
 		})
-		if m.sess != nil && focusableButton(SymIRight, viewToggleLabel(m.state.Mode)) {
-			m.sess.ToggleView()
+		if m.sess != nil {
+			MenuButtonExt("Sort: "+sortLabel(m.state.Sort), ButtonAttrs{Icon: TypArrowSortedDown}, func() {
+				if MenuItem(SymStar, "Default (actionable first)") {
+					m.setSort(ui.SortDefault)
+				}
+				if MenuItem(0, "Name (A–Z)") {
+					m.setSort(ui.SortName)
+				}
+			})
+			m.viewSwitch()
 		}
 		Filler(1)
 		if m.state.Busy != "" {
 			muted(m.state.Busy)
 		}
 	})
+}
+
+// searchInputAttrs styles the library search field.
+func searchInputAttrs() TextInputAttrs {
+	a := DefaultTextInputAttrs()
+	a.NoAutoFocus = true
+	a.Accent = accent
+	return a
+}
+
+// sortLabel is the toolbar caption for the active sort mode.
+func sortLabel(mode ui.SortMode) string {
+	if mode == ui.SortName {
+		return "Name"
+	}
+	return "Default"
 }
 
 // statusBar is the bottom strip with the current status line.
