@@ -25,7 +25,9 @@ cmd/
   install.go uninstall.go   headless install/uninstall <path>
 internal/
   domain/     Game (Store enum, AppName, ExePath, CompatPrefix), Release,
-              Component, Kind, InstallStatus, Manifest, entries
+              Component, Kind, InstallStatus, Manifest, entries; Status
+              state machine: 4 persisted (in_progress/committed/failed/
+              rolled_back) + 1 derived (external, scan-time only)
   store/      manifest + backup persistence (external root)
   discovery/  multi-store scan. OS-agnostic parsers (Steam VDF, Epic .item,
               GOG goggame info, recursive roots, plist) test on every GOOS;
@@ -37,7 +39,9 @@ internal/
   classify/   upscaler kind+DLL detection (Dir, DirFiles)
   pever/      hostile-input PE version-resource parser (no cgo): FileVersion,
               MarketingName (vendored DLSS/FSR/XeSS version→name maps),
-              OptiScalerVersion (manifest → log → ini evidence chain)
+              OptiScalerVersion (manifest → log → ini evidence chain),
+              DetectOptiScaler (external-install probe: injection-name
+              candidates matched by PE version-info identity, bounded reads)
   gh/         GitHub releases: glob asset match, cooldown cache
   archive/    7z extraction with hostile-input defenses (sevenzip)
   installer/  transaction core: stage → validate → backup → copy → manifest;
@@ -112,6 +116,35 @@ corrupt, stale-schema, or empty cache falls through to `Scan`. The cache is
 rewritten after every scan, `AddDirectory`/`RemoveDirectory`, and op settle
 (status change), serialized so concurrent writers cannot interleave.
 Explicit rescans stay user-initiated (GUI Scan button, TUI `R`).
+
+## External install detection (v0.6)
+
+The enrich phase derives one more status. A game with no store manifest may
+still carry an OptiScaler dropped in by hand; `app.ScanAllLibraries` probes
+such unmanaged rows with `pever.DetectOptiScaler(injectionDir)`. The probe
+stats the injection-name candidates (dxgi.dll, OptiScaler.dll, winmm.dll,
+dbghelp.dll, version.dll, wininet.dll, winhttp.dll, d3d12.dll) and accepts a
+candidate only when its PE StringFileInfo (ProductName, CompanyName, or
+OriginalFilename) contains "optiscaler" — identity by version info, not
+filename, so renamed shims count and DXVK's dxgi.dll does not. Reads are
+bounded (size cap + LimitReader, same hardening as the rest of pever), the
+probe runs inside the scan goroutine, and manifests stay authoritative:
+managed games are never probed. A match yields the derived status
+`domain.StatusExternal` with a version from the manifest.json →
+OptiScaler.log → PE FileVersion chain; component versions are suppressed for
+external rows (those DLLs are OptiScaler's, not the game's).
+
+The status model is 4 persisted + 1 derived: `in_progress`, `committed`,
+`failed`, `rolled_back` are written to store manifests; `external` exists
+only at scan time and in the `games.json` cache (warm-cache reconcile keeps
+external rows; manifests override only where they exist). Session semantics:
+QuickInstall on an external row is an adopt — the installer backs the
+external files up SHA-verified, so uninstall/rollback restores them
+byte-identically and the post-uninstall re-detect (`pever.DetectOptiScaler`
+on the row's injection dir) surfaces the row as external again. Uninstall of
+a never-managed external row is refused up front with a clean toast (the
+`app.ErrNotManaged` sentinel never leaks raw). `GameRow.CanOpenINI()`
+(committed or external) gates Open INI in both frontends.
 
 ## Scan phases, progress, and online lookups (v0.5)
 

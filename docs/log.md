@@ -903,8 +903,88 @@ fixed forward to unconditional PASS:
   settings height clamp (ed72b1a)); R4 security PASS (LOW; appid digit
   validation + 1 MiB body caps applied); R5 context PASS.
 
+## 2026-07-20 — v0.6 T1: pever.DetectOptiScaler + StringInfoPE fixture
+
+- Merge `4246426` (`75fbd13` feat + `26bb971` test fixture).
+- `internal/pever/detect.go`: `DetectOptiScaler(dir)` scans the
+  injection-name candidates in order (dxgi.dll, OptiScaler.dll, winmm.dll,
+  dbghelp.dll, version.dll, wininet.dll, winhttp.dll, d3d12.dll); a
+  candidate matches when ProductName, CompanyName, or OriginalFilename
+  contains "optiscaler" (case-insensitive). OriginalFilename survives
+  renames, so a shim renamed to dxgi.dll still identifies; non-matching
+  candidates (e.g. a DXVK dxgi.dll), non-PE files, oversized files, and
+  unreadable paths are skipped without stopping the scan.
+- Version evidence chain: OptiScaler's own `manifest.json` →
+  `OptiScaler.log` banner → the matched candidate's PE version resource
+  (one `resourceBytes` pass serves identity and the PE fallback) →
+  "" (installed, version unknown). Reads bounded via `ReadBounded`.
+- `internal/testutil`: `StringInfoPE` synthetic-PE fixture builder mints
+  branded DLLs for tests across packages (no production dependency).
+- TDD red→green throughout.
+
+## 2026-07-20 — v0.6 T2: domain.StatusExternal
+
+- Commit `1684c73`.
+- `internal/domain/manifest.go`: `StatusExternal Status = "external"` —
+  marks an OptiScaler installation detected on disk that this manager did
+  not perform. Derived at scan time and NEVER persisted to store manifests;
+  the persisted state machine stays the four statuses (in_progress,
+  committed, failed, rolled_back). Round-trip test pins the persisted set.
+
+## 2026-07-20 — v0.6 T3: app — external detection in enrich + ErrNotManaged
+
+- Merge `db49233` (`b2c6cc3` enrich probe + `da5301f` sentinel).
+- `internal/app`: unmanaged rows (no store manifest, resolvable injection
+  dir) are probed with `pever.DetectOptiScaler` during scan enrich — the
+  probe runs inside the scan goroutine with bounded reads; manifests stay
+  authoritative for managed games. Matches get `StatusExternal` and the
+  chain-recovered version. `enrichVersions` skips external rows: component
+  versions are suppressed (those DLLs belong to OptiScaler's bundle, not
+  the game).
+- New sentinel `app.ErrNotManaged` for uninstall/rollback against a game
+  the store holds no manifest for — the raw store error must never reach a
+  toast (consumed by the session in T4).
+
+## 2026-07-20 — v0.6 T4: ui — external adopt/refuse/re-detect flows + CanOpenINI
+
+- Merge `0efe1b4` (`9d89fdf` CanOpenINI + external test suite, `d91fd1f`
+  refuse uninstall, `8fa6593` re-detect after uninstall, `68a2f18`
+  warm-cache reconcile lock). Keystone SHAs: `9d89fdf` (suite + keystone
+  test) and `8fa6593` (post-uninstall re-detect completing the round trip).
+- `GameRow.CanOpenINI()` (new predicate): committed or external — external
+  installs carry a real on-disk OptiScaler.ini.
+- Uninstall of a never-managed external row is refused up front with the
+  clean toast "not installed by this manager — adopt first or remove
+  manually": no op registered, store untouched, external files exactly as
+  found, no raw sentinel leak. The same toast covers the manifest-vanished
+  race (`app.ErrNotManaged`).
+- After a managed uninstall, `pever.DetectOptiScaler` re-runs on the row's
+  injection dir: a restored external install settles the row back to
+  external instead of bare uninstalled.
+- Warm-cache reconcile keeps cached external rows: manifests override only
+  where they exist, so `games.json` carries the derived status until the
+  next rescan.
+- **Keystone** (`TestAdoptRoundTripRestoresExternalBytes`): external marker
+  dxgi.dll → scan shows external → QuickInstall adopts (SHA-verified backup,
+  committed, bundle dxgi.dll) → uninstall restores the marker bytes
+  byte-identically (SHA-256 compared) → re-detect shows external again.
+
+## 2026-07-20 — v0.6 T5: GUI — external status rendering
+
+- Merge `da6cd16` (`8ceb4ac`).
+- Quick action caption on external rows reads "Adopt" (`quickLabel`;
+  committed stays Uninstall). Status pill "external" in blue via
+  `statusTone`; version pills render "✦ OptiScaler <v> · external" (blue),
+  or "✦ OptiScaler · external" when the version is unknown. Badge pills
+  shared by list rows and grid cards via `statusPill`.
+- Detail panel OpenINI gated on `GameRow.CanOpenINI` (committed or
+  external).
+- TDD: RED captured per-test (compile-error scaffolding stage), then GREEN;
+  `internal/gui/external_test.go` (177 lines).
+
 ## 2026-07-20 — v0.6 T6: TUI — external-install status rendering
 
+- Merge `9cfb942` (`3e5f08b`).
 - `gameRowLine`: explicit `external` case wearing a new `styleInfo` accent
   (bright cyan) — distinct from committed green, warn red, busy yellow, and
   muted gray.
@@ -919,3 +999,36 @@ fixed forward to unconditional PASS:
   `TestDetailViewAdoptHintForExternal`,
   `TestDetailKeyOpenINIAllowedForExternal` (opener seam probed with a fake
   `xdg-open` earlier in PATH).
+
+## 2026-07-20 — v0.6 T7: CLI — external scan output characterization
+
+- Merge `5ba7444` (`6f01f0b`).
+- `TestScanCommandShowsExternalInstall` pins the CLI scan rendering of an
+  unmanaged OptiScaler install: an OptiScaler-branded dxgi.dll with no
+  manager manifest surfaces as `[external]` with the PE FileVersion in the
+  versions column. Characterization test — `cmd/scan.go` already renders any
+  non-empty status and OptiScalerVersion; no production change.
+
+## 2026-07-20 — v0.6 T8: docs wrap
+
+- README: status → v0.6 (external detection feature paragraph), scanning
+  section gains the external-detection rule (PE-identity probe, async in the
+  scan goroutine, bounded reads, unmanaged-only, component versions
+  suppressed, cached until rescan), usage notes gain Adopt-vs-Install
+  semantics, the never-managed uninstall refusal, and adopt
+  backup/restore behavior.
+- scope.md: v0.6 section (detection rule + evidence chain, bounded/
+  unmanaged-only/async probe, derived status, adopt/refuse/restore) with
+  known limits (PE-branded DLL required — ini/log remnants alone don't
+  count; status cached until rescan; injection dir must resolve; component
+  versions suppressed).
+- architecture.md: pever/domain package-map lines, and an external-install
+  detection section (enrich-phase probe, 4 persisted + 1 derived status
+  model, adopt/restore/re-detect session semantics).
+- plan.md: v0.6 milestone recorded complete (T1–T9); index.md release line
+  → v0.6. No Go source changed; OKF frontmatter untouched.
+
+## v0.6 review gate (T9) — placeholder
+
+- Pending. Five-lane review (goal / QA / quality / security / context) to
+  run over the v0.6 range; results to be recorded here.

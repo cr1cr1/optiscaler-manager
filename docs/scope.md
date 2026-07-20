@@ -262,6 +262,54 @@ evidence.
 - The vendor patch does not survive `go mod vendor`; it must be reapplied
   (the `TestVendorCSDPatchPresent` guard fails loudly when it is missing).
 
+## v0.6 scope (external OptiScaler detection + adopt)
+
+Delivered 2026-07-20 (tasks T1–T7; T8 docs, T9 review gate). Decisions
+closed; reopen only with new evidence.
+
+- **External detection**: games scanned without a manager manifest are
+  probed for a pre-existing OptiScaler install. `pever.DetectOptiScaler`
+  checks the injection-name candidates (dxgi.dll, OptiScaler.dll, winmm.dll,
+  dbghelp.dll, version.dll, wininet.dll, winhttp.dll, d3d12.dll) and
+  identifies OptiScaler by PE version-info identity — ProductName,
+  CompanyName, or OriginalFilename containing "optiscaler"
+  (case-insensitive). OriginalFilename survives renames, so a shim renamed
+  to dxgi.dll is still recognized and a DXVK dxgi.dll is not a false
+  positive. Version evidence chain: OptiScaler's own `manifest.json` →
+  `OptiScaler.log` banner → the matched DLL's PE FileVersion.
+- **Bounded, unmanaged-only, async**: the probe runs inside the scan
+  goroutine (no blocking on UI paths) with bounded reads, and only on
+  unmanaged games — a store manifest stays authoritative where one exists.
+  Component versions are suppressed for external rows: those DLLs belong to
+  OptiScaler's bundle, not the game.
+- **Derived status `external`**: `domain.StatusExternal` is computed at scan
+  time and NEVER persisted to store manifests — the persisted state machine
+  stays the four statuses. It renders in the GUI ("external", blue pill),
+  the TUI (accent), and CLI scan output (`[external]`); the `games.json`
+  cache carries it until the next rescan (warm-cache reconcile keeps
+  external rows).
+- **Adopt / refuse / restore**: QuickInstall on an external row reads
+  "Adopt" — installing over the external files backs them up SHA-verified
+  and makes the game managed. Uninstall or rollback then RESTORES the
+  external files (keystone-tested: byte-identical restore, status returns to
+  external). Uninstall of a never-managed external install is refused with a
+  clean toast ("not installed by this manager — adopt first or remove
+  manually"); no op is registered, no raw store sentinel leaks. After a
+  managed uninstall, detection re-runs so a restored external install shows
+  correctly. Open INI works on external installs (`GameRow.CanOpenINI`).
+
+### v0.6 known limits
+
+- Detection requires a PE-branded injection DLL in the injection dir: stale
+  `OptiScaler.ini`/`OptiScaler.log` remnants alone do not count as an
+  external install.
+- The external status is derived at scan time and cached in `games.json`
+  until the next rescan; external installs added or removed while the
+  manager is not running surface only after a rescan.
+- Detection only runs for games with a resolvable injection dir.
+- Component versions stay hidden for external rows (see above) even when the
+  external bundle's component DLLs are present.
+
 ## Dependencies (settled)
 
 - Vendored (`go mod vendor`, `vendor/` committed; `-mod=vendor` stays in CI and

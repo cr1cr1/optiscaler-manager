@@ -12,14 +12,28 @@ The GUI is a thin [go-shirei](https://github.com/hasenj/go-shirei) binding
 over a frontend-agnostic session core (`internal/ui`); the `tui` subcommand
 is a second, terminal frontend on the same session.
 
-Status: v0.5. This release extracts real game titles from PE version info
+Status: v0.6. This release detects **pre-existing OptiScaler installations**
+on scanned games — manual installs dropped in by hand, with no manager
+manifest. During a scan, unmanaged games are probed for an OptiScaler-branded
+injection DLL (dxgi.dll, OptiScaler.dll, winmm.dll, dbghelp.dll, version.dll,
+wininet.dll, winhttp.dll, d3d12.dll); identity comes from PE version info
+(ProductName/CompanyName/OriginalFilename containing "optiscaler"), so renamed
+injection files are still recognized, and the version is recovered from
+OptiScaler's own manifest.json → OptiScaler.log banner → the DLL's PE
+FileVersion. Matches get a derived **external** status (never written to
+manifests) shown in the GUI (blue pill), the TUI (accent), and CLI scan
+output. External installs are first-class: installing over one (the button
+reads **Adopt**) backs the external files up SHA-verified and makes the game
+managed, so a later uninstall or rollback restores the original external
+files byte-identically; uninstalling a never-managed external install is
+refused with a clear toast. v0.5 extracted real game titles from PE version info
 (ProductName → FileDescription, folder-name fallback) so Windows exes get
 proper names even on Linux, resolves ProtonDB compatibility tiers
 (platinum/gold/silver/bronze/borked) through a title → Steam appid → tier
-lookup with per-scan budgets and TTL disk caches, adds scan progress
+lookup with per-scan budgets and TTL disk caches, added scan progress
 reporting (phases discover/enrich/covers/lookup, shown as a progress bar in
-the GUI and a progress line in the TUI), makes AddDirectory and
-ClearBundleCache non-blocking, and fixes the TUI tab bar (a one-line
+the GUI and a progress line in the TUI), made AddDirectory and
+ClearBundleCache non-blocking, and fixed the TUI tab bar (a one-line
 overflow made bubbletea drop it, hiding the Settings screen). GUI polish:
 card buttons fire without opening the detail panel (only card-body clicks
 open it), the detail panel is proportional (30% of the window, clamped
@@ -61,6 +75,13 @@ get real titles even on Linux, and Linux scans also accept `.exe` files
 without the execute bit;
 the grid shows each game's store, installed OptiScaler version, detected
 upscaler versions (DLSS/FSR/XeSS marketing names), and ProtonDB tier.
+Scans also detect OptiScaler installs this manager did not make: unmanaged
+games are probed (in the background scan goroutine, with bounded reads — no
+blocking on UI paths) for an OptiScaler-branded injection DLL, identified by
+PE version info rather than filename so renamed shims still count. Matches
+surface as status **external**; their component versions stay hidden (those
+DLLs belong to OptiScaler's bundle, not the game), and the external status
+is cached in `games.json` until the next rescan.
 Adding a directory is non-blocking: a placeholder row appears instantly and
 is enriched in the background. Launch a game from its
 card or the detail panel button (GUI) or the `l` key (TUI): Steam games go through
@@ -90,6 +111,15 @@ Installing into an EAC-protected game (`start_protected_game.exe`) is refused
 unless `--force` is passed (GUI asks instead). When the GitHub API is
 rate-limited, stale cached release info is refused unless `--allow-cached` is
 passed.
+
+For games with an **external** OptiScaler install (detected, not managed),
+the install action reads **Adopt**: installing over the external files backs
+them up SHA-verified first, so the game becomes managed without losing the
+hand-installed setup — a later uninstall or rollback restores those external
+files byte-identically and the game shows as external again. Uninstall of a
+never-managed external install is refused outright ("not installed by this
+manager — adopt first or remove manually"), because no SHA-verified removal
+is possible without a manifest. Open INI works on external installs.
 
 State (manifests, backups, `settings.json`, the `games.json` library cache)
 lives outside game directories in

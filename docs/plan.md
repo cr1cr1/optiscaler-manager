@@ -112,6 +112,26 @@ detail in `docs/log.md`.
   (key 4, version plumbed from cmd), footer screen-switch hints, scan
   progress line, tier in badges/detail, settings `o` toggle.
 
+## v0.6 milestone (complete, 2026-07-20)
+
+External OptiScaler detection and adopt flows. Scope recorded in
+`docs/scope.md`, architecture in `docs/architecture.md`, task detail in
+`docs/log.md`.
+
+- **T1**: `pever.DetectOptiScaler` — injection-name candidates matched by PE
+  version-info identity; `testutil.StringInfoPE` synthetic-PE fixture.
+- **T2**: `domain.StatusExternal` — derived status, never persisted.
+- **T3**: app enrich probes unmanaged rows (bounded, async in the scan
+  goroutine); component versions suppressed for external rows;
+  `app.ErrNotManaged` sentinel.
+- **T4**: session adopt/refuse/re-detect flows + `GameRow.CanOpenINI`;
+  keystone adopt→uninstall→byte-identical-restore test.
+- **T5**: GUI rendering — Adopt action, blue external badges, OpenINI gate.
+- **T6**: TUI rendering — accent external status, adopt hint, open INI.
+- **T7**: CLI scan output characterization for external installs.
+- **T8**: docs wrap (this section, README, scope, architecture, log).
+- **T9**: review gate — placeholder, pending.
+
 ## Risks
 
 1. BCJ2/sevenzip failure → early spike, fallback ready.
