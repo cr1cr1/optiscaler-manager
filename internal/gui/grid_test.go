@@ -12,6 +12,19 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
+func TestPlaceholderCoverDetection(t *testing.T) {
+	if !isPlaceholderCover(filepath.Join("cache", "covers", "_placeholder.png")) {
+		t.Error("covers-package placeholder not detected")
+	}
+	if isPlaceholderCover(filepath.Join("cache", "covers", "1091500.img")) {
+		t.Error("real cover misdetected as placeholder")
+	}
+	if isPlaceholderCover("") {
+		t.Error("empty path misdetected as placeholder")
+	}
+	t.Log("placeholder covers fall back to the gradient tile, real covers render")
+}
+
 func TestChunkRows(t *testing.T) {
 	rows := make([]ui.GameRow, 7)
 	for i := range rows {

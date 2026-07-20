@@ -164,11 +164,7 @@ func (m *model) detailPanel() {
 				m.sess.Select("")
 			}
 		})
-		if e.CoverPath != "" {
-			Image(e.CoverPath, Vec2{160, 160 * coverRatio})
-		} else {
-			coverPlaceholder(e.Title, 160, 160*coverRatio)
-		}
+		m.coverArt(*e, 160, 160*coverRatio)
 		muted(e.InstallDir)
 		Container(Attrs(Row, Gap(sp4), CrossMid), func() {
 			txt("Status:")

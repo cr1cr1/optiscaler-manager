@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"path/filepath"
 	"strings"
 
 	. "go.hasen.dev/shirei"
@@ -137,11 +138,7 @@ func (m *model) gameCard(e ui.GameRow) {
 				spinnerGlyph()
 			}
 		})
-		if e.CoverPath != "" {
-			Image(e.CoverPath, Vec2{coverW, coverW * coverRatio})
-		} else {
-			coverPlaceholder(e.Title, coverW, coverW*coverRatio)
-		}
+		m.coverArt(e, coverW, coverW*coverRatio)
 		txt(e.Title)
 		if pills := versionPills(&e); len(pills) > 0 {
 			Container(Attrs(Row, Gap(sp4)), func() {
@@ -171,6 +168,23 @@ func (m *model) gameCard(e ui.GameRow) {
 			m.sess.Select(e.InstallDir)
 		}
 	})
+}
+
+// coverArt renders the game's cover scaled into the cover box. The covers
+// package hands back a tiny dark placeholder file when a game has no art;
+// that counts as "no cover" and gets the gradient placeholder instead.
+func (m *model) coverArt(e ui.GameRow, w, h float32) {
+	if e.CoverPath != "" && !isPlaceholderCover(e.CoverPath) {
+		Image(e.CoverPath, Vec2{w, h})
+		return
+	}
+	coverPlaceholder(e.Title, w, h)
+}
+
+// isPlaceholderCover reports whether path is the covers package's generated
+// no-art placeholder.
+func isPlaceholderCover(path string) bool {
+	return filepath.Base(path) == "_placeholder.png"
 }
 
 // coverPlaceholder renders a deterministic gradient tile for games without
