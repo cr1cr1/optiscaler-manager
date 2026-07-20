@@ -29,11 +29,13 @@ var csdEnabled = true
 // starts an interactive move when dragged. It's installed as shirei.DecorationFn,
 // so the core draws it above the app's content transparently — the app does
 // nothing. Runs only while CSD is active.
+//
+// PATCHED by optiscaler-manager (v0.5): dark-themed CSD — reapply after `go mod vendor` (see docs/vendor-patches.md)
 func drawTitlebar() {
-	Container(Attrs(Row, Expand, FixHeight(titlebarHeight), Background(0, 0, 88, 1),
-		Grad(0, 0, -5, 0), CrossAlign(AlignMiddle), Pad2(0, 8), Gap(8)), func() {
+	Container(Attrs(Row, Expand, FixHeight(titlebarHeight), Background(230, 25, 11, 1),
+		Grad(0, 0, -4, 0), CrossAlign(AlignMiddle), Pad2(0, 8), Gap(8)), func() {
 		startDrag := IsClicked() // mouse pressed somewhere on the bar this frame
-		Label(winTitle, FontSize(14), TextColor(0, 0, 25, 1))
+		Label(winTitle, FontSize(14), TextColor(220, 15, 92, 1))
 		widgets.Filler(1)
 		if closeButton() {
 			quit = true
@@ -53,7 +55,7 @@ func closeButton() bool {
 		if IsClicked() {
 			clicked = true
 		}
-		Label("×", FontSize(20), TextColor(0, 0, 25, 1))
+		Label("×", FontSize(20), TextColor(220, 15, 92, 1))
 	})
 	return clicked
 }
