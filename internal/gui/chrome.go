@@ -95,17 +95,17 @@ func (m *model) settingsModal() {
 		Container(Attrs(Expand, Gap(sp16), BackgroundVec(bgPanel)), func() {
 			Label("Settings", FontSize(18), TextColorVec(txtMain), FontWeight(WeightBold))
 
-		Container(Attrs(Expand, Gap(sp4)), func() {
-			sectionTitle("General")
-			muted("Default OptiScaler version (tag or 'latest')")
-			themedInput(&m.versionBuf, "latest", 0, MinSize(260, 34), MaxSizeVec(Vec2{460, 34}))
-			if m.sess != nil {
-				focusableToggle(&m.onlineBuf, "Online game info (Steam/ProtonDB)")
-				if m.onlineBuf != m.sess.Settings().OnlineLookups {
-					m.sess.SetOnlineLookups(m.onlineBuf)
+			Container(Attrs(Expand, Gap(sp4)), func() {
+				sectionTitle("General")
+				muted("Default OptiScaler version (tag or 'latest')")
+				themedInput(&m.versionBuf, "latest", 0, MinSize(260, 34), MaxSizeVec(Vec2{460, 34}))
+				if m.sess != nil {
+					focusableToggle(&m.onlineBuf, "Online game info (Steam/ProtonDB)")
+					if m.onlineBuf != m.sess.Settings().OnlineLookups {
+						m.sess.SetOnlineLookups(m.onlineBuf)
+					}
 				}
-			}
-		})
+			})
 
 			Container(Attrs(Expand, Gap(sp4)), func() {
 				sectionTitle("Scan Directories")
