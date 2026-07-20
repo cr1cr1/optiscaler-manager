@@ -14,8 +14,10 @@ import (
 // any breaking change to the cached row shape or semantics (2: v0.7 made
 // container scan-roots row-less, so v0.6 caches carry stale self-rows; 3:
 // v0.7.1 made containers transparent at every level, so v0.7 caches carry
-// phantom container rows).
-const cacheSchemaVersion = 3
+// phantom container rows; 4: v0.7.2 removed platform/junk rows — steam
+// client dirs, steamapps plumbing, engine/redist folders — and changed
+// title resolution, so v0.7.1 caches carry rows the new scanner rejects).
+const cacheSchemaVersion = 4
 
 // gamesCache is the persisted games list: display-ready rows written on
 // every library change and read once at Start so a warm boot skips the scan.

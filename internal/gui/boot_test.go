@@ -19,7 +19,7 @@ func TestGUIStartCachedShowsCachedRows(t *testing.T) {
 		d.SettingsRoot = root
 		d.Settings = settings.Defaults()
 	})
-	cacheJSON := `{"version":3,"rows":[{"Title":"Cached Game","InstallDir":"/games/cached","Platform":"Manual"}]}`
+	cacheJSON := `{"version":4,"rows":[{"Title":"Cached Game","InstallDir":"/games/cached","Platform":"Manual"}]}`
 	if err := os.WriteFile(filepath.Join(root, "games.json"), []byte(cacheJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}

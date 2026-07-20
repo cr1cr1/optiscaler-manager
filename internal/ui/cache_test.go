@@ -411,33 +411,38 @@ func TestSetSortOrdersVisibleRows(t *testing.T) {
 	t.Log("sort modes: name alphabetical, default actionable-first, invalid = default")
 }
 
-// TestStart_V2CacheFallsThroughToScan: games.json files written by the
-// rejected v0.7 (schema version 2) carry phantom container rows ("Steam",
-// "Games") whose semantics v0.7.1 changed. The v3 schema invalidates them:
-// a v2 cache loads as empty and Start falls through to a real scan.
-func TestStart_V2CacheFallsThroughToScan(t *testing.T) {
-	e := newTestEnv(t)
-	e.sess.deps.SettingsRoot = t.TempDir()
-	stale := []GameRow{{
-		Title:      "Game A Real Title",
-		AppID:      "manual_Steam",
-		InstallDir: filepath.Join(t.TempDir(), "Steam"),
-	}}
-	data, err := json.Marshal(gamesCache{Version: 2, Rows: stale})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(e.sess.deps.SettingsRoot, "games.json"), data, 0o644); err != nil {
-		t.Fatal(err)
-	}
+// TestStart_PreV4CacheFallsThroughToScan: games.json files written before
+// schema v4 carry rows produced by rejected scanner semantics — v0.7's
+// phantom container rows (v2) and v0.7.1's platform/junk rows (v3:
+// "Steam", "steamapps", redist/tooling dirs). Every older schema loads as
+// empty and Start falls through to a real scan.
+func TestStart_PreV4CacheFallsThroughToScan(t *testing.T) {
+	for _, version := range []int{1, 2, 3} {
+		t.Run(string(rune('0'+version)), func(t *testing.T) {
+			e := newTestEnv(t)
+			e.sess.deps.SettingsRoot = t.TempDir()
+			stale := []GameRow{{
+				Title:      "Game A Real Title",
+				AppID:      "manual_Steam",
+				InstallDir: filepath.Join(t.TempDir(), "Steam"),
+			}}
+			data, err := json.Marshal(gamesCache{Version: version, Rows: stale})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(e.sess.deps.SettingsRoot, "games.json"), data, 0o644); err != nil {
+				t.Fatal(err)
+			}
 
-	e.sess.Start(context.Background())
-	waitEvent(t, e.sess, EvScanDone) // stale v2 cache rejected: a real scan ran
+			e.sess.Start(context.Background())
+			waitEvent(t, e.sess, EvScanDone) // stale cache rejected: a real scan ran
 
-	for _, r := range e.sess.Snapshot().Rows {
-		if r.InstallDir == stale[0].InstallDir {
-			t.Fatalf("stale v2 container row survived warm boot: %+v", r)
-		}
+			for _, r := range e.sess.Snapshot().Rows {
+				if r.InstallDir == stale[0].InstallDir {
+					t.Fatalf("stale v%d container row survived warm boot: %+v", version, r)
+				}
+			}
+		})
 	}
-	t.Log("v2 cache invalidated by schema v3; Start fell through to scan")
+	t.Log("pre-v4 caches invalidated; Start fell through to scan")
 }
