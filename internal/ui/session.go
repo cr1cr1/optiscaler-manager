@@ -966,8 +966,19 @@ func (s *Session) doInstall(gameDir string, eacOK, cachedOK bool) {
 	s.opDone("Installed "+gameTitle(row, gameDir), gameDir)
 }
 
+// errNotManagedToast is the user-facing refusal when an uninstall targets an
+// install this manager never made (external, or its manifest vanished): the
+// store holds no manifest, so no SHA-verified removal is possible and the
+// raw store sentinel must never leak into a toast.
+const errNotManagedToast = "not installed by this manager — adopt first or remove manually"
+
 func (s *Session) doUninstall(gameDir string) {
-	pre := preOpStatus(s.findRow(gameDir))
+	row := s.findRow(gameDir)
+	if row != nil && row.Status == domain.StatusExternal {
+		s.toast(errNotManagedToast, true)
+		return
+	}
+	pre := preOpStatus(row)
 	ctx, ok := s.registerOp(gameDir)
 	if !ok {
 		s.toast("operation already in progress for this game", true)
@@ -978,6 +989,10 @@ func (s *Session) doUninstall(gameDir string) {
 	s.finishOp(gameDir)
 	if errors.Is(err, context.Canceled) {
 		s.opCancelled(gameDir, pre)
+		return
+	}
+	if errors.Is(err, app.ErrNotManaged) {
+		s.opRefused(errNotManagedToast, gameDir)
 		return
 	}
 	if err != nil {
@@ -1168,6 +1183,15 @@ func (s *Session) opFailed(err error) {
 	s.setStatus("Failed: " + err.Error())
 	s.toast("Failed: "+err.Error(), true)
 	s.emit(Event{Kind: EvOpFailed, Text: err.Error()})
+}
+
+// opRefused settles an op the store rejected as not manager-installed: busy
+// clears and one clean warning toast/event surfaces — never the raw sentinel.
+func (s *Session) opRefused(msg, gameDir string) {
+	s.setBusy("")
+	s.setStatus(msg)
+	s.toast(msg, true)
+	s.emit(Event{Kind: EvOpFailed, Text: msg, GameDir: gameDir})
 }
 
 // opAborted clears the busy state without a completion toast (used when an
