@@ -155,11 +155,14 @@ func openExternal(path string) error {
 	}
 }
 
-// Settings returns the current user settings.
+// Settings returns a snapshot of the current user settings; the ExtraDirs
+// slice is deep-copied so callers may iterate it while mutators run.
 func (s *Session) Settings() settings.Settings {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.deps.Settings
+	out := s.deps.Settings
+	out.ExtraDirs = append([]string(nil), out.ExtraDirs...)
+	return out
 }
 
 // SetDefaultVersion changes the release tag installs resolve to (persisted).
@@ -461,7 +464,7 @@ func (s *Session) RemoveDirectory(dir string) {
 	root := canonicalDir(dir)
 	s.mu.Lock()
 	present := false
-	kept := s.deps.Settings.ExtraDirs[:0]
+	kept := make([]string, 0, len(s.deps.Settings.ExtraDirs))
 	for _, d := range s.deps.Settings.ExtraDirs {
 		if d == root {
 			present = true
