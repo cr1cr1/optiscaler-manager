@@ -25,5 +25,5 @@ func (c *TUICmd) Run(d *Deps) error {
 		defer f.Close()
 		log.Logger = zerolog.New(f).With().Timestamp().Logger()
 	}
-	return tui.Run(context.Background(), newSession(d))
+	return tui.Run(context.Background(), newSession(d), d.Version)
 }
