@@ -31,6 +31,9 @@ func (m *model) rootView() {
 			} else {
 				m.contentView()
 			}
+			// Bottom breathing room: rows clip at the list viewport edge,
+			// so the last visible row must not sit flush against the bar.
+			Element(Attrs(FixHeight(sp8)))
 			m.statusBar()
 		})
 		m.toastOverlay()

@@ -13,6 +13,9 @@ import (
 func init() {
 	widgets.ButtonAccent = accent
 	widgets.DefaultBackground = Vec4{230, 20, 16, 1}
+	// Virtualized lists draw their own scrollbars with this fallback accent;
+	// the default is an off-palette bright cyan.
+	widgets.DefaultAccent = scrolAccent
 }
 
 // Spacing scale: every padding, gap, and offset derives from these tokens.
