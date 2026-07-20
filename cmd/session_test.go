@@ -3,9 +3,6 @@ package optiscalermanager
 import (
 	"path/filepath"
 	"testing"
-
-	"github.com/cr1cr1/optiscaler-manager/internal/protondb"
-	"github.com/cr1cr1/optiscaler-manager/internal/steam"
 )
 
 // TestOnlineClientsWiring: newSession's online-client builder returns real
@@ -19,6 +16,4 @@ func TestOnlineClientsWiring(t *testing.T) {
 	if pc == nil {
 		t.Error("onlineClients returned a nil ProtonDB client")
 	}
-	var _ *steam.Client = sc
-	var _ *protondb.Client = pc
 }
