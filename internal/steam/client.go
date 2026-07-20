@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -40,6 +41,11 @@ const (
 	// minSpacing is the minimum gap between live requests (politeness;
 	// the endpoint publishes no rate limit).
 	minSpacing = 250 * time.Millisecond
+
+	// maxBodyBytes caps a response body before decoding (1 MiB is orders
+	// of magnitude past a real result page; the cap bounds memory use
+	// against a hostile or broken endpoint).
+	maxBodyBytes = 1 << 20
 
 	defaultBaseURL = "https://steamcommunity.com"
 	searchPath     = "/actions/SearchApps/"
@@ -91,31 +97,40 @@ func NewWithBaseURL(httpClient *http.Client, cacheDir, baseURL, version string) 
 // SearchApps resolves a game title to a Steam appid and the matched store
 // name. Fresh cached mappings (30d TTL) are served without a network call;
 // inside the post-429/5xx cooldown a stale cached mapping is served as a
-// last resort.
-func (c *Client) SearchApps(ctx context.Context, title string) (appid, name string, err error) {
+// last resort. live reports that a live HTTP request was performed; cache
+// hits — positive mappings and cached no-match negatives — answer without
+// one, and a cached negative within the TTL returns ErrNoMatch exactly
+// like the live search did.
+func (c *Client) SearchApps(ctx context.Context, title string) (appid, name string, live bool, err error) {
 	query := strings.TrimSpace(title)
 	if query == "" {
-		return "", "", errors.New("steam: empty title")
+		return "", "", false, errors.New("steam: empty title")
 	}
 	if hit, ok := c.readCache(query); ok && c.now().Sub(hit.FetchedAt) < cacheTTL {
-		return hit.AppID, hit.Name, nil
+		if hit.NoMatch {
+			return "", "", false, fmt.Errorf("%w for %q (cached)", ErrNoMatch, query)
+		}
+		return hit.AppID, hit.Name, false, nil
 	}
 	if c.inCooldown() {
 		if hit, ok := c.readCache(query); ok {
-			return hit.AppID, hit.Name, nil
+			if hit.NoMatch {
+				return "", "", false, fmt.Errorf("%w for %q (cached)", ErrNoMatch, query)
+			}
+			return hit.AppID, hit.Name, false, nil
 		}
-		return "", "", fmt.Errorf("%w (cooldown active, no cached result)", ErrRateLimited)
+		return "", "", false, fmt.Errorf("%w (cooldown active, no cached result)", ErrRateLimited)
 	}
 	res, err := c.fetch(ctx, query)
 	if err != nil {
 		if errors.Is(err, ErrRateLimited) {
-			if hit, ok := c.readCache(query); ok {
-				return hit.AppID, hit.Name, nil
+			if hit, ok := c.readCache(query); ok && !hit.NoMatch {
+				return hit.AppID, hit.Name, true, nil
 			}
 		}
-		return "", "", err
+		return "", "", true, err
 	}
-	return res.AppID, res.Name, nil
+	return res.AppID, res.Name, true, nil
 }
 
 // searchResult mirrors the SearchApps JSON fields actually used.
@@ -151,14 +166,19 @@ func (c *Client) fetch(ctx context.Context, query string) (searchResult, error) 
 	}
 
 	var results []searchResult
-	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBodyBytes)).Decode(&results); err != nil {
 		return searchResult{}, fmt.Errorf("steam: decode search results for %q: %w", query, err)
 	}
+	// A no-match answer is stable, so it is cached (30d TTL like
+	// successes) and later searches return the cached ErrNoMatch without
+	// a live request.
 	if len(results) == 0 {
+		c.writeNegative(query)
 		return searchResult{}, fmt.Errorf("%w for %q (empty results)", ErrNoMatch, query)
 	}
 	first := results[0]
 	if !plausible(query, first.Name) {
+		c.writeNegative(query)
 		return searchResult{}, fmt.Errorf("%w for %q (first result %q implausible)", ErrNoMatch, query, first.Name)
 	}
 	if err := c.writeCache(query, first); err != nil {

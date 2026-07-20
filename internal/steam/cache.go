@@ -11,11 +11,15 @@ import (
 	"time"
 )
 
-// cachedSearch is the persisted title → appid mapping with its fetch time.
+// cachedSearch is the persisted title → appid mapping with its fetch
+// time. NoMatch marks a negative entry: the search yielded no plausible
+// match, a stable answer cached for the same TTL so unresolvable titles
+// are not re-fetched every scan.
 type cachedSearch struct {
 	AppID     string    `json:"appid"`
 	Name      string    `json:"name"`
 	FetchedAt time.Time `json:"fetched_at"`
+	NoMatch   bool      `json:"no_match,omitempty"`
 }
 
 // cooldownState is the persisted cooldown file, recording the last 429/5xx
@@ -85,4 +89,16 @@ func (c *Client) writeCache(query string, res searchResult) error {
 		return fmt.Errorf("steam: write search cache: %w", err)
 	}
 	return nil
+}
+
+// writeNegative persists a no-match answer for query.
+func (c *Client) writeNegative(query string) {
+	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
+		return
+	}
+	data, err := json.Marshal(cachedSearch{FetchedAt: c.now(), NoMatch: true})
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(cacheFile(c.cacheDir, query), data, 0o644)
 }

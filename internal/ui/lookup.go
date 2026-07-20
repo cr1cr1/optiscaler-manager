@@ -66,7 +66,7 @@ func (s *Session) enrichRow(ctx context.Context, row *GameRow, st *steam.Client,
 		if strings.TrimSpace(row.Title) == "" {
 			return
 		}
-		id, _, err := st.SearchApps(ctx, row.Title)
+		id, _, _, err := st.SearchApps(ctx, row.Title)
 		if err != nil {
 			log.Debug().Err(err).Str("title", row.Title).Msg("lookup: steam search failed")
 			return

@@ -32,9 +32,12 @@ func TestSearchApps_ParsesResults(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv)
-	appid, name, err := c.SearchApps(context.Background(), "elden ring")
+	appid, name, live, err := c.SearchApps(context.Background(), "elden ring")
 	if err != nil {
 		t.Fatalf("SearchApps: %v", err)
+	}
+	if !live {
+		t.Error("live = false on fresh fetch, want true (no cache entry existed)")
 	}
 	if appid != "1245620" {
 		t.Errorf("appid = %q, want %q (first result wins)", appid, "1245620")
@@ -56,7 +59,7 @@ func TestSearchApps_RejectsImplausibleMatch(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv)
-	_, _, err := c.SearchApps(context.Background(), "zzz nothing")
+	_, _, _, err := c.SearchApps(context.Background(), "zzz nothing")
 	if !errors.Is(err, ErrNoMatch) {
 		t.Errorf("err = %v, want ErrNoMatch (result name %q is not a plausible match for the query)", err, "Something Else")
 	}
@@ -71,7 +74,7 @@ func TestSearchApps_EmptyResultsIsNoMatch(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv)
-	_, _, err := c.SearchApps(context.Background(), "anything")
+	_, _, _, err := c.SearchApps(context.Background(), "anything")
 	if !errors.Is(err, ErrNoMatch) {
 		t.Errorf("err = %v, want ErrNoMatch on an empty result array", err)
 	}
@@ -89,7 +92,7 @@ func TestSearchApps_UsesCacheWithinTTL(t *testing.T) {
 
 	c := newTestClient(t, srv)
 	for i := 0; i < 2; i++ {
-		if _, _, err := c.SearchApps(context.Background(), "elden ring"); err != nil {
+		if _, _, _, err := c.SearchApps(context.Background(), "elden ring"); err != nil {
 			t.Fatalf("call %d: %v", i+1, err)
 		}
 	}
@@ -112,17 +115,68 @@ func TestSearchApps_RefetchesAfterTTL(t *testing.T) {
 	now := time.Now()
 	c.now = func() time.Time { return now }
 
-	if _, _, err := c.SearchApps(context.Background(), "elden ring"); err != nil {
+	if _, _, _, err := c.SearchApps(context.Background(), "elden ring"); err != nil {
 		t.Fatalf("first call: %v", err)
 	}
 	now = now.Add(cacheTTL + time.Hour)
-	if _, _, err := c.SearchApps(context.Background(), "elden ring"); err != nil {
+	if _, _, _, err := c.SearchApps(context.Background(), "elden ring"); err != nil {
 		t.Fatalf("second call after TTL: %v", err)
 	}
 	if got := hits.Load(); got != 2 {
 		t.Errorf("server hits = %d, want 2 (expired cache must refetch)", got)
 	}
 	t.Logf("cache expired after TTL: %d server hits", hits.Load())
+}
+
+// TestSearchApps_NoMatchCached: a search with no plausible match is a
+// stable answer, so it is cached like a success within the same TTL: the
+// second call within the TTL returns ErrNoMatch without touching the
+// server.
+func TestSearchApps_NoMatchCached(t *testing.T) {
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `[]`)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	for i := 0; i < 2; i++ {
+		_, _, live, err := c.SearchApps(context.Background(), "obscure nonsteam thing")
+		if !errors.Is(err, ErrNoMatch) {
+			t.Fatalf("call %d err = %v, want ErrNoMatch", i+1, err)
+		}
+		if want := i == 0; live != want {
+			t.Errorf("call %d live = %v, want %v (cached no-match must not re-request)", i+1, live, want)
+		}
+	}
+	if got := hits.Load(); got != 1 {
+		t.Errorf("server hits = %d, want 1 (the negative answer is cached)", got)
+	}
+	t.Logf("two calls, %d server hit; second no-match served from cache", hits.Load())
+}
+
+// TestSearchApps_RejectsHugeBody: the response body is capped (1 MiB)
+// before decoding, so a hostile or broken endpoint streaming megabytes
+// surfaces as a decode error instead of an unbounded read.
+func TestSearchApps_RejectsHugeBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `[{"appid":"1","name":"x","pad":"`)
+		for i := 0; i < 5<<20; i++ {
+			_, _ = w.Write([]byte{'x'})
+		}
+		_, _ = fmt.Fprint(w, `"}]`)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	_, _, _, err := c.SearchApps(context.Background(), "elden ring")
+	if err == nil {
+		t.Fatal("expected an error on a >1MiB body, got nil (body cap missing?)")
+	}
+	t.Logf("huge body rejected: %v", err)
 }
 
 func TestSearchApps_SetsUserAgent(t *testing.T) {
@@ -135,7 +189,7 @@ func TestSearchApps_SetsUserAgent(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv)
-	if _, _, err := c.SearchApps(context.Background(), "elden ring"); err != nil {
+	if _, _, _, err := c.SearchApps(context.Background(), "elden ring"); err != nil {
 		t.Fatalf("SearchApps: %v", err)
 	}
 	if want := "optiscaler-manager/0.5.0"; gotUA != want {
@@ -153,11 +207,11 @@ func TestSearchApps_CooldownAfter429(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv)
-	_, _, err := c.SearchApps(context.Background(), "elden ring")
+	_, _, _, err := c.SearchApps(context.Background(), "elden ring")
 	if !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("first call err = %v, want ErrRateLimited on HTTP 429", err)
 	}
-	_, _, err = c.SearchApps(context.Background(), "elden ring")
+	_, _, _, err = c.SearchApps(context.Background(), "elden ring")
 	if !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("second call err = %v, want ErrRateLimited inside cooldown", err)
 	}
