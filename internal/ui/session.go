@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -85,6 +86,7 @@ type State struct {
 	Rows       []GameRow
 	Query      string
 	Mode       ViewMode
+	Sort       SortMode
 	Selected   string
 	Busy       string // op description, "" when idle
 	StatusLine string
@@ -227,17 +229,32 @@ func (s *Session) Snapshot() State {
 	return out
 }
 
-// VisibleRows returns the rows after the current query filter.
+// VisibleRows returns the rows after the current query filter and sort.
 func (s *Session) VisibleRows() []GameRow {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return filterRows(append([]GameRow(nil), s.st.Rows...), s.st.Query)
+	rows := filterRows(append([]GameRow(nil), s.st.Rows...), s.st.Query)
+	if s.st.Sort == SortName {
+		sort.SliceStable(rows, func(i, j int) bool { return rows[i].Title < rows[j].Title })
+	}
+	return rows
 }
 
 // SetQuery updates the search filter (cheap, synchronous).
 func (s *Session) SetQuery(q string) {
 	s.mu.Lock()
 	s.st.Query = q
+	s.mu.Unlock()
+}
+
+// SetSort selects the row ordering VisibleRows applies; out-of-range modes
+// reset to SortDefault. Cheap and synchronous like SetQuery.
+func (s *Session) SetSort(mode SortMode) {
+	if mode != SortName {
+		mode = SortDefault
+	}
+	s.mu.Lock()
+	s.st.Sort = mode
 	s.mu.Unlock()
 }
 
@@ -434,6 +451,47 @@ func (s *Session) AddDirectory(dir string) {
 	s.persistCache()
 	s.toast("added "+entry.Game.Name, false)
 	s.emit(Event{Kind: EvScanDone, Text: "directory added"})
+}
+
+// RemoveDirectory unregisters a manually added directory: its row and any
+// nested games scanned under it are dropped, settings persist without it,
+// and the games cache is rewritten. Directories not in ExtraDirs are a
+// silent no-op (no write, no event).
+func (s *Session) RemoveDirectory(dir string) {
+	root := canonicalDir(dir)
+	s.mu.Lock()
+	present := false
+	kept := s.deps.Settings.ExtraDirs[:0]
+	for _, d := range s.deps.Settings.ExtraDirs {
+		if d == root {
+			present = true
+			continue
+		}
+		kept = append(kept, d)
+	}
+	if !present {
+		s.mu.Unlock()
+		return
+	}
+	s.deps.Settings.ExtraDirs = kept
+	prefix := root + string(os.PathSeparator)
+	rows := s.st.Rows[:0]
+	for _, r := range s.st.Rows {
+		if r.InstallDir == root || strings.HasPrefix(r.InstallDir, prefix) {
+			continue
+		}
+		rows = append(rows, r)
+	}
+	s.st.Rows = rows
+	snap := s.deps.Settings
+	s.mu.Unlock()
+	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
+		s.toast("settings not saved: "+err.Error(), true)
+		return
+	}
+	s.persistCache()
+	s.toast("removed "+filepath.Base(root), false)
+	s.emit(Event{Kind: EvScanDone, Text: "directory removed"})
 }
 
 // PickAndAddDirectory opens the OS directory picker and adds the choice.

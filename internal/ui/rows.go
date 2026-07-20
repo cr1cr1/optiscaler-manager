@@ -51,6 +51,16 @@ type GameRow struct {
 	Components        []string     // marketing names, e.g. ["DLSS 3.7.10","FSR 3.1.4"]
 }
 
+// SortMode selects the row ordering VisibleRows applies.
+type SortMode int
+
+const (
+	// SortDefault orders actionable installs first, then recent, then title.
+	SortDefault SortMode = iota
+	// SortName orders alphabetically by title.
+	SortName
+)
+
 // badgeForTech maps a classified upscaler kind to its display badge.
 func badgeForTech(kind string) Badge {
 	switch {

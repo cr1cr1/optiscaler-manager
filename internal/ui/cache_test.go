@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 )
 
 // writeGamesCache seeds the games-list cache at root with rows.
@@ -239,4 +240,139 @@ func TestCacheCorruptOrMissingYieldsEmpty(t *testing.T) {
 		}
 	}
 	t.Logf("corrupt cache fell through to scan: %q", ev.Text)
+}
+
+// drainEvents empties the event buffer so the next waitEvent observes only
+// events emitted after this call.
+func drainEvents(s *Session) {
+	for {
+		select {
+		case <-s.Events():
+		default:
+			return
+		}
+	}
+}
+
+// TestRemoveDirectoryRemovesRowsSettingsAndCache: removing a manual root
+// drops its own row AND nested games scanned under it, persists the shorter
+// ExtraDirs, rewrites the cache, and settles with an EvScanDone event.
+func TestRemoveDirectoryRemovesRowsSettingsAndCache(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	d1 := filepath.Join(t.TempDir(), "D1")
+	writeUIFile(t, filepath.Join(d1, "game.exe"), "GAME")
+	writeUIFile(t, filepath.Join(d1, "sub", "sub.exe"), "GAME")
+	d2 := filepath.Join(t.TempDir(), "D2")
+	writeUIFile(t, filepath.Join(d2, "game.exe"), "GAME")
+
+	e.sess.AddDirectory(d1)
+	e.sess.AddDirectory(d2)
+	drainEvents(e.sess)
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+
+	c1, c2 := canonicalDir(d1), canonicalDir(d2)
+	nested := filepath.Join(c1, "sub")
+	has := func(dir string) bool {
+		for _, r := range e.sess.Snapshot().Rows {
+			if r.InstallDir == dir {
+				return true
+			}
+		}
+		return false
+	}
+	if !has(c1) || !has(nested) || !has(c2) {
+		t.Fatalf("precondition rows missing: d1=%v nested=%v d2=%v", has(c1), has(nested), has(c2))
+	}
+
+	e.sess.RemoveDirectory(d1)
+
+	loaded, err := settings.Load(e.sess.deps.SettingsRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.ExtraDirs) != 1 || loaded.ExtraDirs[0] != c2 {
+		t.Fatalf("ExtraDirs after removal: %v, want [%s]", loaded.ExtraDirs, c2)
+	}
+	st := e.sess.Snapshot()
+	if has(c1) || has(nested) {
+		t.Fatalf("rows for removed dir survived: %+v", st.Rows)
+	}
+	if !has(c2) {
+		t.Fatalf("unrelated dir row lost: %+v", st.Rows)
+	}
+	c := readGamesCache(t, e.sess.deps.SettingsRoot)
+	if len(c.Rows) != len(st.Rows) {
+		t.Fatalf("cache rows %d, session rows %d", len(c.Rows), len(st.Rows))
+	}
+	for _, r := range c.Rows {
+		if r.InstallDir == c1 || r.InstallDir == nested {
+			t.Fatalf("removed dir still cached: %+v", r)
+		}
+	}
+	ev := waitEvent(t, e.sess, EvScanDone)
+	t.Logf("directory removed: %q, ExtraDirs=%v, rows=%d", ev.Text, loaded.ExtraDirs, len(st.Rows))
+}
+
+// TestRemoveDirectoryAbsentIsNoOp: removing a dir that was never added
+// writes nothing, emits nothing, and panics nowhere.
+func TestRemoveDirectoryAbsentIsNoOp(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+
+	e.sess.RemoveDirectory(filepath.Join(t.TempDir(), "never-added"))
+
+	if _, err := os.Stat(filepath.Join(e.sess.deps.SettingsRoot, "settings.json")); !os.IsNotExist(err) {
+		t.Fatal("settings written for an absent directory")
+	}
+	if got := len(e.sess.Snapshot().Rows); got != 0 {
+		t.Fatalf("rows changed by no-op removal: %d", got)
+	}
+	select {
+	case ev := <-e.sess.Events():
+		t.Fatalf("event from no-op removal: %v %q", ev.Kind, ev.Text)
+	case <-time.After(300 * time.Millisecond):
+	}
+	t.Log("absent directory removal is a silent no-op")
+}
+
+// TestSetSortOrdersVisibleRows: SortName orders alphabetically, SortDefault
+// restores actionable-first, and an out-of-range mode is SortDefault.
+func TestSetSortOrdersVisibleRows(t *testing.T) {
+	now := time.Now()
+	s := NewSession(Deps{})
+	s.st.Rows = []GameRow{
+		{Title: "Bravo", Status: domain.StatusFailed, Actionable: true, ModTime: now},
+		{Title: "Alpha", ModTime: now},
+		{Title: "Charlie", ModTime: now},
+	}
+	titles := func() []string {
+		var out []string
+		for _, r := range s.VisibleRows() {
+			out = append(out, r.Title)
+		}
+		return out
+	}
+	want := func(got []string, want ...string) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("visible %v, want %v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("visible %v, want %v", got, want)
+			}
+		}
+	}
+
+	want(titles(), "Bravo", "Alpha", "Charlie") // actionable first
+	s.SetSort(SortName)
+	want(titles(), "Alpha", "Bravo", "Charlie")
+	s.SetSort(SortDefault)
+	want(titles(), "Bravo", "Alpha", "Charlie")
+	s.SetSort(SortName)
+	s.SetSort(SortMode(99)) // invalid resets to default
+	want(titles(), "Bravo", "Alpha", "Charlie")
+	t.Log("sort modes: name alphabetical, default actionable-first, invalid = default")
 }
