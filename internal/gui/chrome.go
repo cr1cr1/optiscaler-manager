@@ -34,6 +34,7 @@ func modal(width float32, dismiss func(), fn func()) {
 // sidebar is the icon navigation column on the left edge: glyph above a
 // short label, with the active section highlighted in the accent color.
 func (m *model) sidebar() {
+	m.sidebarRects = m.sidebarRects[:0]
 	Container(Attrs(FixSize(sidebarW, 0), BackgroundVec(bgPanel), Pad(sp8), Gap(sp12)), func() {
 		Label("✦", FontSize(22), TextColorVec(toneColor(2)))
 		m.sidebarItem(SymHome, "Games", !m.about && !m.settingsOpen, func() {
@@ -60,7 +61,8 @@ func (m *model) sidebarItem(icon rune, label string, active bool, action func())
 	if active {
 		fg = accentHov
 	}
-	Container(Attrs(Center, Gap(2), Pad2(sp4, 2), Corners(radiusS)), func() {
+	Container(Attrs(Center, Expand, Gap(2), Pad2(sp4, 2), Corners(radiusS)), func() {
+		m.sidebarRects = append(m.sidebarRects, GetScreenRectOf(CurrentId()))
 		if !active && IsHovered() {
 			ModAttrs(BackgroundVec(bgRaised))
 		}

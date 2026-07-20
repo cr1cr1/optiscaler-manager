@@ -41,6 +41,7 @@ type model struct {
 	hoveredDir   string         // install dir of the card under the mouse, "" when none
 	cardRect     Rect           // screen rect of the last rendered card (hover test seam)
 	cardBtnRect  Rect           // screen rect of the card's first button (click routing test seam)
+	sidebarRects []Rect         // screen rects of the sidebar nav items (uniformity test seam)
 	listSegRect  Rect           // screen rect of the List view-switch segment (click test seam)
 	cols         int            // current grid columns, derived from live width
 	cardW        int            // current card width in px, derived from live width
