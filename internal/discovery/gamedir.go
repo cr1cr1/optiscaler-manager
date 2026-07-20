@@ -103,12 +103,21 @@ const maxClassifyDepth = 6
 // about what counts as a game binary.
 //
 // Classification rules:
-//   - an exe directly inside dir → GameDirGame;
+//   - an engine-named root is Empty (Proton folders, compatdata trees,
+//     and other plumbing added directly hold no games of their own);
+//   - a platform install (steam.exe and Steam.dll side by side) is always
+//     a Container, even with a top-level exe and no game-bearing child —
+//     the exe is the launcher, not a game;
+//   - any child that is itself a container → GameDirContainer: the dir is
+//     a library root, and even an exe of its own does not make it a game
+//     (that exe is platform/collection tooling, like a Steam client's
+//     steam.exe next to SteamApps);
+//   - an exe directly inside dir → GameDirGame (a game child does not
+//     change that — the both-case rows the dir and the child);
+//   - any child that is itself a game → GameDirContainer;
 //   - an exe at depth ≤ maxExeDepth with no game-bearing or
 //     container-bearing child in between → GameDirGame (the exe is this
 //     dir's own, e.g. bin/game.exe or Binaries/Win64/game.exe);
-//   - any child that is itself a game (and not an engine folder by name) or
-//     itself a container → GameDirContainer (the dir is a library root);
 //   - otherwise → GameDirEmpty.
 //
 // The engine-folder name list is what separates "bin" (this game's
@@ -116,7 +125,11 @@ const maxClassifyDepth = 6
 // root. Directories already visited through other paths (symlink loops)
 // are evaluated once.
 func ClassifyGameDir(ctx context.Context, dir string) (GameDirKind, error) {
-	return classifyGameDir(ctx, canonicalPath(dir), 0, map[string]bool{})
+	dir = canonicalPath(dir)
+	if engineFolderName(filepath.Base(dir)) {
+		return GameDirEmpty, nil
+	}
+	return classifyGameDir(ctx, dir, 0, map[string]bool{})
 }
 
 func classifyGameDir(ctx context.Context, dir string, depth int, seen map[string]bool) (GameDirKind, error) {
@@ -127,17 +140,6 @@ func classifyGameDir(ctx context.Context, dir string, depth int, seen map[string
 		return GameDirEmpty, nil
 	}
 	seen[dir] = true
-	own, err := findMainExeWithin(ctx, dir, 0)
-	if err != nil {
-		return GameDirEmpty, err
-	}
-	if own != "" {
-		return GameDirGame, nil
-	}
-	deep, err := findMainExeWithin(ctx, dir, maxExeDepth)
-	if err != nil {
-		return GameDirEmpty, err
-	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		// An unreadable directory proves nothing either way; treat it like
@@ -145,7 +147,13 @@ func classifyGameDir(ctx context.Context, dir string, depth int, seen map[string
 		log.Debug().Err(err).Str("dir", dir).Msg("classify: unreadable directory")
 		return GameDirEmpty, nil
 	}
-	gameChildren, containerChildren := 0, 0
+	if isPlatformInstall(entries) {
+		return GameDirContainer, nil
+	}
+	own, err := findMainExeWithin(ctx, dir, 0)
+	if err != nil {
+		return GameDirEmpty, err
+	}
 	for _, e := range entries {
 		if err := ctx.Err(); err != nil {
 			return GameDirEmpty, err
@@ -162,23 +170,42 @@ func classifyGameDir(ctx context.Context, dir string, depth int, seen map[string
 			return GameDirEmpty, err
 		}
 		switch kind {
-		case GameDirGame:
-			gameChildren++
 		case GameDirContainer:
-			containerChildren++
-		}
-		if gameChildren+containerChildren > 0 {
-			break // one game-bearing descendant already decides Container
+			return GameDirContainer, nil // a library child decides, own exe or not
+		case GameDirGame:
+			if own == "" {
+				return GameDirContainer, nil
+			}
+			// With an exe of our own the dir rows anyway (both-case); only
+			// a container child could still outrank it, so keep looking.
 		}
 	}
-	switch {
-	case gameChildren+containerChildren > 0:
-		return GameDirContainer, nil
-	case deep != "":
+	if own != "" {
 		return GameDirGame, nil
-	default:
-		return GameDirEmpty, nil
 	}
+	deep, err := findMainExeWithin(ctx, dir, maxExeDepth)
+	if err != nil {
+		return GameDirEmpty, err
+	}
+	if deep != "" {
+		return GameDirGame, nil
+	}
+	return GameDirEmpty, nil
+}
+
+// isPlatformInstall reports whether entries mark a platform client install
+// (a Steam client directory): the launcher exe next to its runtime DLL.
+func isPlatformInstall(entries []fs.DirEntry) bool {
+	exe, dll := false, false
+	for _, e := range entries {
+		switch strings.ToLower(e.Name()) {
+		case "steam.exe":
+			exe = true
+		case "steam.dll":
+			dll = true
+		}
+	}
+	return exe && dll
 }
 
 // dirChild resolves e (a directory entry of dir) to the child path to

@@ -43,6 +43,12 @@ const maxExeDepth = 3
 // idempotent.
 func ScanRecursive(ctx context.Context, root string) ([]domain.Game, error) {
 	root = canonicalPath(root)
+	if engineFolderName(filepath.Base(root)) {
+		// Plumbing added directly (a Proton folder, a compatdata tree)
+		// holds no games of its own; refuse it like an empty directory.
+		log.Debug().Str("dir", root).Msg("recursive scan: engine-named root, nothing to scan")
+		return nil, nil
+	}
 	kind, err := ClassifyGameDir(ctx, root)
 	if err != nil {
 		return nil, err
