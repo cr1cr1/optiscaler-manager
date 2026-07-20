@@ -225,6 +225,96 @@ func TestAdoptRoundTripRestoresExternalBytes(t *testing.T) {
 	t.Logf("(5) row external again — round trip closed")
 }
 
+// TestAdoptFailRollbackReturnsExternal is the keystone rollback leg: an
+// external OptiScaler install (marker dxgi.dll) is adopted, the install
+// fails mid-swap (a directory blocks the fakenvapi.dll destination after
+// the external dxgi.dll was backed up), and Rollback must restore the exact
+// marker bytes AND surface the row as external again — not rolled_back,
+// because the disk once more holds a working external install.
+func TestAdoptFailRollbackReturnsExternal(t *testing.T) {
+	e := newTestEnv(t)
+	marker := writeExternalMarker(t, e.bin)
+	markerSHA := sha256.Sum256(marker)
+	dxgi := filepath.Join(e.bin, "dxgi.dll")
+
+	// 1. Scan → row Status external.
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+	row := e.sess.Snapshot().Rows[0]
+	if row.Status != domain.StatusExternal {
+		t.Fatalf("(1) row status = %q, want %q", row.Status, domain.StatusExternal)
+	}
+
+	// 2. Fault injection: a directory named fakenvapi.dll blocks that bundle
+	// destination. The plan copies OptiScaler.dll → dxgi.dll first (backing
+	// the marker up SHA-verified), so the swap fails with a failed manifest
+	// and a restorable backup.
+	if err := os.MkdirAll(filepath.Join(e.bin, "fakenvapi.dll"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e.sess.QuickInstall(row.InstallDir)
+	waitEvent(t, e.sess, EvOpFailed)
+	manifests, err := e.sess.deps.Store.List()
+	if err != nil || len(manifests) != 1 {
+		t.Fatalf("(2) failed adopt left %d manifests (err %v), want 1", len(manifests), err)
+	}
+	if manifests[0].Status != domain.StatusFailed {
+		t.Fatalf("(2) manifest status = %q, want %q", manifests[0].Status, domain.StatusFailed)
+	}
+	swapped, err := os.ReadFile(dxgi)
+	if err != nil {
+		t.Fatalf("(2) dxgi.dll missing mid-failure: %v", err)
+	}
+	if sha256.Sum256(swapped) == markerSHA {
+		t.Fatal("(2) fault injection did not fire: dxgi.dll still holds the marker")
+	}
+	t.Logf("(2) adopt failed mid-swap: manifest failed, dxgi.dll holds bundle bytes")
+
+	// 3. Rollback restores the SHA-verified backup: exact marker bytes.
+	e.sess.Rollback(row.InstallDir)
+	waitEvent(t, e.sess, EvOpDone)
+	restored, err := os.ReadFile(dxgi)
+	if err != nil {
+		t.Fatalf("(3) external dxgi.dll not restored by rollback: %v", err)
+	}
+	if got := sha256.Sum256(restored); got != markerSHA {
+		t.Fatalf("(3) restored dxgi.dll sha256=%s, want marker %s",
+			hex.EncodeToString(got[:]), hex.EncodeToString(markerSHA[:]))
+	}
+
+	// 4. Post-rollback re-detect: the restored external install shows as
+	// external, not as a bare rolled_back row.
+	row = e.sess.Snapshot().Rows[0]
+	if row.Status != domain.StatusExternal {
+		t.Fatalf("(4) row status = %q after rollback restored the external install, want %q",
+			row.Status, domain.StatusExternal)
+	}
+	t.Log("(4) rollback restored marker bytes and the row is external again")
+}
+
+// TestRollbackNotManagedCleanToast: when Rollback targets a game the store
+// has no manifest for, the raw ErrNotManaged sentinel must never reach the
+// user — the same clean refusal toast as uninstall surfaces instead.
+func TestRollbackNotManagedCleanToast(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+	row := e.sess.Snapshot().Rows[0]
+	if row.Status != "" {
+		t.Fatalf("row status = %q, want uninstalled", row.Status)
+	}
+
+	e.sess.Rollback(row.InstallDir)
+	toast := waitToast(t, e.sess, notManagedRefusal)
+	if !toast.Warn {
+		t.Errorf("refusal toast Warn = false, want true: %+v", toast)
+	}
+	if e.sess.OpBusy(row.InstallDir) {
+		t.Error("OpBusy true after the op settled")
+	}
+	assertNoRawFailureToast(t, e.sess)
+}
+
 // TestCanOpenINI: the OptiScaler.ini affordance opens for every install that
 // has one on disk — manager-committed AND external (detected, unmanaged) —
 // and stays closed for every state without a usable install.

@@ -549,11 +549,22 @@ func (s *Session) Rollback(gameDir string) {
 			s.opCancelled(gameDir, pre)
 			return
 		}
+		if errors.Is(err, app.ErrNotManaged) {
+			s.opRefused(errNotManagedToast, gameDir)
+			return
+		}
 		if err != nil {
 			s.opFailed(err)
 			return
 		}
-		s.setRowStatus(gameDir, domain.StatusRolledBack)
+		// Rollback restores whatever the adopt-time backup held — possibly a
+		// pre-existing external install. Re-probe like doUninstall: external
+		// when a branded injection DLL is back, rolled_back otherwise.
+		status := domain.StatusRolledBack
+		if row := s.findRow(gameDir); row != nil && redetectExternal(row.InjectionDir) == domain.StatusExternal {
+			status = domain.StatusExternal
+		}
+		s.setRowStatus(gameDir, status)
 		s.opDone("Rolled back "+dir, gameDir)
 	}()
 }
@@ -1003,14 +1014,25 @@ func (s *Session) doUninstall(gameDir string) {
 	// Uninstall restores whatever the adopt-time backup held — possibly a
 	// pre-existing external install. One bounded probe keeps the row honest:
 	// external when a branded injection DLL is back, "" when the dir is clean.
-	status := domain.Status("")
-	if row != nil && row.InjectionDir != "" {
-		if found, _ := pever.DetectOptiScaler(row.InjectionDir); found {
-			status = domain.StatusExternal
-		}
+	var injectionDir string
+	if row != nil {
+		injectionDir = row.InjectionDir
 	}
-	s.setRowStatus(gameDir, status)
+	s.setRowStatus(gameDir, redetectExternal(injectionDir))
 	s.opDone("Uninstalled "+gameTitle(s.findRow(gameDir), gameDir), gameDir)
+}
+
+// redetectExternal runs the bounded post-op probe shared by uninstall and
+// rollback: external when a branded injection DLL is (back) in injectionDir,
+// "" otherwise. An empty injectionDir probes nothing.
+func redetectExternal(injectionDir string) domain.Status {
+	if injectionDir == "" {
+		return ""
+	}
+	if found, _ := pever.DetectOptiScaler(injectionDir); found {
+		return domain.StatusExternal
+	}
+	return ""
 }
 
 func preOpStatus(row *GameRow) domain.Status {
