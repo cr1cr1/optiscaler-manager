@@ -24,6 +24,7 @@ const (
 	screenDetail
 	screenSettings
 	screenHelp
+	screenAbout
 )
 
 // inputMode identifies which text input is currently capturing keys.
@@ -40,7 +41,8 @@ const (
 // Model is the bubbletea model bound to one ui.Session: one flat model with
 // per-screen update/view handlers.
 type Model struct {
-	sess *ui.Session
+	sess    *ui.Session
+	version string // build version, rendered on the About screen
 
 	screen       screen
 	cursor       int // games row cursor
@@ -59,13 +61,15 @@ type Model struct {
 // eventMsg carries one session event into the update loop.
 type eventMsg ui.Event
 
-// New builds the TUI model over sess.
-func New(sess *ui.Session) Model {
+// New builds the TUI model over sess; version is the build version shown on
+// the About screen ("" renders as "dev").
+func New(sess *ui.Session, version string) Model {
 	ti := textinput.New()
 	return Model{
-		sess:  sess,
-		input: ti,
-		spin:  spinner.New(spinner.WithSpinner(spinner.Dot)),
+		sess:    sess,
+		version: version,
+		input:   ti,
+		spin:    spinner.New(spinner.WithSpinner(spinner.Dot)),
 	}
 }
 
@@ -185,6 +189,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "3":
 		m.screen = screenHelp
 		return m, nil
+	case "4":
+		m.screen = screenAbout
+		return m, nil
 	}
 
 	switch m.screen {
@@ -284,6 +291,8 @@ func (m Model) settingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.dirCursor < len(dirs) {
 			m.confirmRmDir = dirs[m.dirCursor]
 		}
+	case "o":
+		m.sess.SetOnlineLookups(!m.sess.Settings().OnlineLookups)
 	case "x":
 		m.sess.ClearBundleCache()
 	}

@@ -126,3 +126,26 @@ func TestDetailRowMatchesSnapshotRow(t *testing.T) {
 		t.Errorf("detailRow with unknown dir = %+v, want nil", row)
 	}
 }
+
+// TestProgressViewRendersPhaseBarAndPercent: mid-scan progress renders the
+// phase label, done/total counters, a rune bar, and the percentage.
+func TestProgressViewRendersPhaseBarAndPercent(t *testing.T) {
+	line := progressView(&ui.ScanProgress{Phase: "enrich", Done: 6, Total: 10})
+	t.Logf("progress line: %q", line)
+	plain := sgrRE.ReplaceAllString(line, "")
+	for _, want := range []string{"enrich", "6/10", "[██████----]", "60%"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("progress line lacks %q: %q", want, plain)
+		}
+	}
+}
+
+// TestProgressViewZeroTotalNoPanic: a zero total (unknown phase size) renders
+// an empty bar at 0% instead of dividing by zero.
+func TestProgressViewZeroTotalNoPanic(t *testing.T) {
+	line := progressView(&ui.ScanProgress{Phase: "discover", Done: 0, Total: 0})
+	plain := sgrRE.ReplaceAllString(line, "")
+	if !strings.Contains(plain, "[----------]") || !strings.Contains(plain, "0%") {
+		t.Errorf("zero-total progress line wrong: %q", plain)
+	}
+}

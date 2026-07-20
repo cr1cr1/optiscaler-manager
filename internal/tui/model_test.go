@@ -21,6 +21,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
 	"github.com/cr1cr1/optiscaler-manager/internal/launch"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -111,7 +112,7 @@ func startTUI(t *testing.T, sess *ui.Session) *teatest.TestModel {
 
 func startTUISize(t *testing.T, sess *ui.Session, w, h int) *teatest.TestModel {
 	t.Helper()
-	tm := teatest.NewTestModel(t, New(sess), teatest.WithInitialTermSize(w, h))
+	tm := teatest.NewTestModel(t, New(sess, "v0.0.0-test"), teatest.WithInitialTermSize(w, h))
 	t.Cleanup(func() { _ = tm.Quit() })
 	return tm
 }
@@ -632,5 +633,155 @@ func TestTUIEmptyLibraryGuidance(t *testing.T) {
 	t.Logf("empty-library frame:\n%s", frame)
 	if !strings.Contains(frame, "no games yet") {
 		t.Errorf("empty-state guidance missing:\n%s", frame)
+	}
+}
+
+// TestTUIFooterShowsScreenHintsOnGames: the games footer advertises the
+// number-key screen switches (2 settings, 3 help, 4 about); without them the
+// tab bar was the only discoverability cue and users never found Settings.
+func TestTUIFooterShowsScreenHintsOnGames(t *testing.T) {
+	e := newTestEnv(t, nil)
+	tm := startTUI(t, e.sess)
+
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("Game One")) &&
+			bytes.Contains(b, []byte("2 settings")) &&
+			bytes.Contains(b, []byte("3 help")) &&
+			bytes.Contains(b, []byte("4 about"))
+	}, teatest.WithDuration(15*time.Second), teatest.WithCheckInterval(10*time.Millisecond))
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("games frame with footer hints:\n%s", frame)
+	for _, want := range []string{"2 settings", "3 help", "4 about"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("games footer lacks screen hint %q:\n%s", want, frame)
+		}
+	}
+}
+
+// TestTUIAboutScreen: key 4 opens the About screen, which shows the injected
+// version and the TUI stack line (answers "are you using bubbletea?" on
+// screen).
+func TestTUIAboutScreen(t *testing.T) {
+	e := newTestEnv(t, nil)
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	tm.Type("4")
+	waitFrame(t, tm, "v0.0.0-test")
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("about frame:\n%s", frame)
+	for _, want := range []string{"optiscaler-manager v0.0.0-test", "bubbletea"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("about frame lacks %q:\n%s", want, frame)
+		}
+	}
+}
+
+// TestTUIAboutInTabBarAndHelp: the tab bar carries the "4 About" entry and
+// the Help screen's Global line lists the 4 about binding.
+func TestTUIAboutInTabBarAndHelp(t *testing.T) {
+	e := newTestEnv(t, nil)
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "4 About")
+	tm.Type("3")
+	waitFrame(t, tm, "Keyboard reference")
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("help frame:\n%s", frame)
+	if !strings.Contains(frame, "4 about") {
+		t.Errorf("help Global line lacks the about binding:\n%s", frame)
+	}
+}
+
+// TestTUIInputModeShowsEscHint: every text-input mode renders an escape hint
+// next to the input so users are never trapped (filter and settings add-dir
+// shown; the other editors share the same footer path).
+func TestTUIInputModeShowsEscHint(t *testing.T) {
+	e := newTestEnv(t, nil)
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	tm.Type("/")
+	waitFrame(t, tm, "esc cancel")
+	sendKey(tm, tea.KeyEsc)
+
+	tm.Type("2")
+	waitFrame(t, tm, "Scan directories")
+	tm.Type("a")
+	waitFrame(t, tm, "add dir:")
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("add-dir input frame:\n%s", frame)
+	if !strings.Contains(frame, "esc cancel") {
+		t.Errorf("input mode lacks the escape hint:\n%s", frame)
+	}
+}
+
+// TestTUITierDisplay: a row carrying a ProtonDB tier shows it in the games
+// table (as a badge) and in the detail view, alongside the Steam AppID.
+func TestTUITierDisplay(t *testing.T) {
+	settingsDir := t.TempDir()
+	e := newTestEnv(t, func(d *ui.Deps) { d.SettingsRoot = settingsDir })
+	seedGamesCache(t, settingsDir, []ui.GameRow{{
+		Title:      "Tiered Game",
+		AppID:      "555",
+		InstallDir: "/phantom/tiered",
+		Platform:   "Steam",
+		SteamAppID: "555",
+		ProtonTier: "gold",
+	}})
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "gold")
+	sendKey(tm, tea.KeyEnter)
+	waitFrame(t, tm, "ProtonDB")
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("tiered detail frame:\n%s", frame)
+	for _, want := range []string{"gold", "ProtonDB", "Steam AppID"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("tiered detail frame lacks %q:\n%s", want, frame)
+		}
+	}
+}
+
+// TestTUIOnlineLookupsToggle: the settings screen shows the online-lookups
+// state and o toggles it through the session.
+func TestTUIOnlineLookupsToggle(t *testing.T) {
+	e := newTestEnv(t, func(d *ui.Deps) { d.Settings = settings.Defaults() })
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	tm.Type("2")
+	waitFrame(t, tm, "online game info: on")
+	tm.Type("o")
+
+	pollUntil(t, "OnlineLookups toggled off", func() bool {
+		return !e.sess.Settings().OnlineLookups
+	})
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("settings frame after toggle:\n%s", frame)
+	if !strings.Contains(frame, "online game info: off") {
+		t.Errorf("settings frame does not show the toggled state:\n%s", frame)
+	}
+}
+
+// TestNewCarriesVersionIntoModel: tui.New plumbs the build version into the
+// model so the About screen can render it.
+func TestNewCarriesVersionIntoModel(t *testing.T) {
+	e := newTestEnv(t, nil)
+	m := New(e.sess, "v9.9.9-test")
+	if m.version != "v9.9.9-test" {
+		t.Errorf("Model.version = %q, want %q", m.version, "v9.9.9-test")
 	}
 }

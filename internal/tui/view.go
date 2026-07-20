@@ -22,8 +22,8 @@ const (
 var (
 	styleMuted     = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	styleHeader    = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Bold(true)
-	styleTabActive = lipgloss.NewStyle().Bold(true).Reverse(true)
-	styleTab       = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	styleTabActive = lipgloss.NewStyle().Bold(true).Reverse(true).Foreground(lipgloss.Color("12"))
+	styleTab       = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
 	styleSelected  = lipgloss.NewStyle().Reverse(true)
 	styleWarn      = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 	styleOK        = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
@@ -35,6 +35,11 @@ var (
 			Padding(1, 3)
 	styleDimmedAction = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 )
+
+// switchHints is the pinned footer segment advertising the number-key screen
+// switches; it is never truncated so screen discovery survives narrow
+// terminals.
+const switchHints = "1 games · 2 settings · 3 help · 4 about"
 
 // toneColor maps a ui badge tone hint to this frontend's palette.
 func toneColor(t ui.Tone) lipgloss.Color {
@@ -82,7 +87,11 @@ func (m Model) View() string {
 	}
 
 	toasts := toastLines(snap.Toasts, w)
-	contentH := h - 3 - len(toasts) // tab bar + hints + status
+	chrome := 3 // tab bar + hints + status
+	if snap.Progress != nil {
+		chrome++ // scan progress line
+	}
+	contentH := h - chrome - len(toasts)
 	if contentH < 3 {
 		contentH = 3
 	}
@@ -98,6 +107,8 @@ func (m Model) View() string {
 			body = m.settingsView(w)
 		case screenHelp:
 			body = helpView()
+		case screenAbout:
+			body = m.aboutView()
 		default:
 			body = m.gamesView(snap, w, contentH)
 		}
@@ -108,11 +119,17 @@ func (m Model) View() string {
 
 	parts := []string{tabBar(m.screen), body}
 	parts = append(parts, toasts...)
+	if snap.Progress != nil {
+		parts = append(parts, progressView(snap.Progress))
+	}
 	parts = append(parts, footer, status)
-	return strings.Join(parts, "\n") + "\n"
+	// Exactly h lines: a trailing newline would push the frame to h+1 and
+	// bubbletea's renderer drops the top line (the tab bar) in that case.
+	return strings.Join(parts, "\n")
 }
 
-// tabBar renders the screen switcher; the active tab is highlighted.
+// tabBar renders the screen switcher; the active tab is accented, inactive
+// tabs stay legible, and a dim separator marks the tab strip as a control.
 func tabBar(active screen) string {
 	tabs := []struct {
 		scr   screen
@@ -121,6 +138,7 @@ func tabBar(active screen) string {
 		{screenGames, "1 Games"},
 		{screenSettings, "2 Settings"},
 		{screenHelp, "3 Help"},
+		{screenAbout, "4 About"},
 	}
 	out := make([]string, 0, len(tabs))
 	for _, t := range tabs {
@@ -130,7 +148,7 @@ func tabBar(active screen) string {
 			out = append(out, styleTab.Render(" "+t.label+" "))
 		}
 	}
-	return strings.Join(out, "  ")
+	return strings.Join(out, styleMuted.Render(" · "))
 }
 
 // toastLines renders up to the last three toasts; warnings are colored.
@@ -167,28 +185,50 @@ func (m Model) statusView(snap ui.State, w int) string {
 	return lipgloss.NewStyle().MaxWidth(w).Render(left)
 }
 
-// footerView renders the open text input or the per-screen key hints.
+// progressView renders one scan-progress tick as a single line: phase
+// label, done/total counters, a fixed-width rune bar, and the percentage.
+func progressView(p *ui.ScanProgress) string {
+	const barW = 10
+	filled, pct := 0, 0
+	if p.Total > 0 {
+		filled = p.Done * barW / p.Total
+		pct = p.Done * 100 / p.Total
+	}
+	bar := strings.Repeat("█", filled) + strings.Repeat("-", barW-filled)
+	return styleBusy.Render(p.Phase) +
+		styleMuted.Render(fmt.Sprintf(" %d/%d ", p.Done, p.Total)) +
+		"[" + bar + "]" +
+		styleMuted.Render(fmt.Sprintf(" %d%%", pct))
+}
+
+// footerView renders the open text input (with its escape hint) or the
+// per-screen key hints with the screen-switch hints pinned on the right.
 func (m Model) footerView(w int) string {
 	if m.mode != inputNone {
-		return m.input.View()
+		return m.input.View() + styleMuted.Render("  (esc cancel · enter accept)")
 	}
 	var hints string
 	switch m.screen {
 	case screenDetail:
 		hints = "i install · l launch · c cancel · r rollback · o open INI · esc back"
 	case screenSettings:
-		hints = "e version · t template · a add · d remove · x clear cache · 1 games"
-	case screenHelp:
-		hints = "1 games · 2 settings · q quit"
+		hints = "e version · t template · a add · d remove · o online info · x clear cache"
+	case screenHelp, screenAbout:
+		hints = "q quit"
 	default:
 		hints = "enter detail · i install · l launch · / filter · R rescan · s sort · q quit"
 	}
-	return styleMuted.Render(trunc(hints, w))
+	lw := w - lipgloss.Width(switchHints) - 3
+	if lw < 0 {
+		lw = 0
+	}
+	return styleMuted.Render(trunc(hints, lw) + " │ " + switchHints)
 }
 
 // confirmBox renders the pending session confirmation as a centered modal.
 func confirmBox(c *ui.Confirmation) string {
-	return styleModal.Render(c.Message + "\n\n" + "[y] proceed  [n] cancel")
+	return styleModal.Render(c.Message + "\n\n" + "[y] proceed  [n] cancel" +
+		"\n" + "(other keys are disabled until answered)")
 }
 
 // gamesView renders the games table: a fixed column header above a viewport
@@ -301,15 +341,34 @@ func (m Model) gameRowLine(r ui.GameRow, tw, w int, selected bool) string {
 			statusCell = styleMuted.Render(status)
 		}
 	}
+	badges := r.TechBadges
+	if r.ProtonTier != "" {
+		badges = append(append([]ui.Badge(nil), badges...), ui.Badge{Label: r.ProtonTier, Tone: tierTone(r.ProtonTier)})
+	}
 	line := cell(r.Title, tw) +
 		cell(r.Platform, colPlatform) +
-		badgesCell(r.TechBadges, colBadges) +
+		badgesCell(badges, colBadges) +
 		cell(version, colVersion) +
 		lipgloss.NewStyle().Width(colStatus).Render(statusCell)
 	if selected {
 		return styleSelected.Render(lipgloss.NewStyle().Width(w).Render(line))
 	}
 	return line
+}
+
+// tierTone maps a ProtonDB tier to a badge tone: better tiers read greener,
+// borked reads red, unknown-ish tiers stay gray.
+func tierTone(tier string) ui.Tone {
+	switch tier {
+	case "platinum", "gold":
+		return ui.ToneGreen
+	case "silver":
+		return ui.ToneBlue
+	case "borked":
+		return ui.ToneRed
+	default:
+		return ui.ToneGray
+	}
 }
 
 // detailView renders the selected game's metadata panel and its actions.
@@ -342,6 +401,12 @@ func (m Model) detailView(w, contentH int) string {
 		fmt.Fprintf(&b, "OptiScaler: %s\n", version)
 		fmt.Fprintf(&b, "Components: %s\n", components)
 		fmt.Fprintf(&b, "Status: %s · EAC: %s\n", status, eac)
+		if row.ProtonTier != "" {
+			fmt.Fprintf(&b, "ProtonDB: %s\n", row.ProtonTier)
+		}
+		if row.SteamAppID != "" {
+			fmt.Fprintf(&b, "Steam AppID: %s\n", row.SteamAppID)
+		}
 		if row.CompatPrefix != "" {
 			fmt.Fprintf(&b, "Proton: %s\n", row.CompatPrefix)
 		}
@@ -375,6 +440,11 @@ func (m Model) settingsView(w int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("Default OptiScaler version:"), s.DefaultVersion)
 	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("Launch template:"), trunc(s.LaunchTemplate, w-18))
+	online := "off"
+	if s.OnlineLookups {
+		online = "on"
+	}
+	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("online game info:"), online)
 	b.WriteString("\n" + styleHeader.Render("Scan directories") + "\n")
 	if len(s.ExtraDirs) == 0 {
 		b.WriteString(styleMuted.Render("  none yet — press a to add one") + "\n")
@@ -387,7 +457,7 @@ func (m Model) settingsView(w int) string {
 		b.WriteString(line + "\n")
 	}
 	if m.confirmRmDir != "" {
-		b.WriteString("\n" + styleWarn.Render(fmt.Sprintf("remove %s? [y/n]", m.confirmRmDir)))
+		b.WriteString("\n" + styleWarn.Render(fmt.Sprintf("remove %s? [y/n] (other keys are disabled until answered)", m.confirmRmDir)))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -395,12 +465,24 @@ func (m Model) settingsView(w int) string {
 // helpView renders the key reference screen.
 func helpView() string {
 	return styleHeader.Render("Keyboard reference") + "\n\n" + strings.Join([]string{
-		"Global    1 games · 2 settings · 3 help · q / ctrl+c quit",
+		"Global    1 games · 2 settings · 3 help · 4 about · q / ctrl+c quit",
 		"Games     j/k move · enter detail · i install/uninstall · l launch · c cancel",
 		"          / filter · R rescan · s sort",
 		"Detail    i install · l launch · c cancel · r rollback · o open INI · esc back",
 		"Settings  e edit version · t edit template · a add dir · d remove dir",
-		"          x clear bundle cache",
+		"          o toggle online game info · x clear bundle cache",
 		"Confirm   y proceed · n cancel",
 	}, "\n")
+}
+
+// aboutView renders the version, the project tagline (mirroring the GUI
+// about modal), and the TUI stack line.
+func (m Model) aboutView() string {
+	version := m.version
+	if version == "" {
+		version = "dev"
+	}
+	return styleTitle.Render("optiscaler-manager "+version) + "\n" +
+		styleMuted.Render("OptiScaler manager for local games — Linux + Steam.") + "\n\n" +
+		styleMuted.Render("TUI: bubbletea v1.3.10 · bubbles v1.0.0 · lipgloss")
 }
