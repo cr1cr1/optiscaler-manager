@@ -125,8 +125,8 @@ func (m *model) actionList() {
 					ModAttrs(BackgroundVec(bgRaised))
 				}
 				Container(Attrs(Row, Gap(sp4)), func() {
-					if e.Actionable {
-						badgePill(string(e.Status), ui.ToneRed)
+					if b, ok := statusPill(&e); ok {
+						badgePill(b.Label, b.Tone)
 					} else if e.Status == domain.StatusCommitted {
 						badgePill("✦ OptiScaler", ui.TonePurple)
 					}
@@ -161,6 +161,7 @@ func (m *model) detailPanel() {
 		return
 	}
 	panelW := detailPanelWidth(WindowSize[0])
+	m.openINIRect = Rect{}
 	// Viewport on a Row child absorbs leftover main-axis space, defeating
 	// FixWidth — the scrollable column nests inside the fixed-width shell.
 	Container(Attrs(FixWidth(panelW), Expand, BackgroundVec(bgPanel)), func() {
@@ -224,8 +225,13 @@ func (m *model) detailPanel() {
 			if e.Actionable && focusableButton(SymUndo, "Rollback") {
 				m.sess.Rollback(e.InstallDir)
 			}
-			if e.Status == domain.StatusCommitted && focusableButton(SymIRight, "Open OptiScaler.ini in editor") {
-				m.sess.OpenINI(e.InstallDir)
+			if e.CanOpenINI() {
+				Container(Attrs(Row), func() {
+					m.openINIRect = GetScreenRectOf(CurrentId())
+					if focusableButton(SymIRight, "Open OptiScaler.ini in editor") {
+						m.sess.OpenINI(e.InstallDir)
+					}
+				})
 			}
 			scrollBars()
 		})
@@ -242,16 +248,32 @@ func detailField(label, value string) {
 }
 
 // statusTone colors the detail panel's status pill: committed green,
-// actionable red, everything else neutral.
+// actionable red, external (on-disk but unmanaged) blue, the rest neutral.
 func statusTone(e *ui.GameRow) ui.Tone {
 	switch {
 	case e.Actionable:
 		return ui.ToneRed
 	case e.Status == domain.StatusCommitted:
 		return ui.ToneGreen
+	case e.Status == domain.StatusExternal:
+		return ui.ToneBlue
 	default:
 		return ui.ToneGray
 	}
+}
+
+// statusPill is the alert-style status badge shared by the list rows and the
+// grid card chrome: actionable rows flag their failed/pending state red,
+// external installs get the blue status pill. ok=false for rows with nothing
+// to flag (the list view draws its own committed marker instead).
+func statusPill(e *ui.GameRow) (ui.Badge, bool) {
+	switch {
+	case e.Actionable:
+		return ui.Badge{Label: string(e.Status), Tone: ui.ToneRed}, true
+	case e.Status == domain.StatusExternal:
+		return ui.Badge{Label: statusLabel(e), Tone: statusTone(e)}, true
+	}
+	return ui.Badge{}, false
 }
 
 // confirmModal renders the session's pending consent gate.
@@ -349,8 +371,11 @@ func statusLabel(e *ui.GameRow) string {
 
 // quickLabel is the toggle caption matching the reference client.
 func quickLabel(e *ui.GameRow) string {
-	if e.Status == domain.StatusCommitted {
+	switch e.Status {
+	case domain.StatusCommitted:
 		return "Uninstall"
+	case domain.StatusExternal:
+		return "Adopt"
 	}
 	return "Install"
 }

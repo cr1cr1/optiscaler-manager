@@ -149,8 +149,8 @@ func (m *model) gameCard(e ui.GameRow) {
 			if e.EAC {
 				badgePill("EAC", ui.ToneRed)
 			}
-			if e.Actionable {
-				badgePill(string(e.Status), ui.ToneRed)
+			if b, ok := statusPill(&e); ok {
+				badgePill(b.Label, b.Tone)
 			}
 			m.protonTierPill(e.ProtonTier)
 			if m.sess != nil && m.sess.OpBusy(e.InstallDir) {

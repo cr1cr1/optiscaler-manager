@@ -48,6 +48,7 @@ type model struct {
 	tierPillRect      Rect           // screen rect of the card's ProtonDB tier pill (tier badge test seam)
 	detailPanelRect   Rect           // screen rect of the detail panel shell (panel width test seam)
 	listSegRect       Rect           // screen rect of the List view-switch segment (click test seam)
+	openINIRect       Rect           // screen rect of the detail panel's OpenINI button (visibility test seam)
 	cols              int            // current grid columns, derived from live width
 	cardW             int            // current card width in px, derived from live width
 	cardH             int            // current card height in px

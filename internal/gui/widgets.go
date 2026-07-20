@@ -196,13 +196,20 @@ func shortenPath(p string, max int) string {
 }
 
 // versionPills is the install-version badge set for a row: the OptiScaler
-// pill (versioned when the installed version is known), one pill per
-// component version, and a Proton marker for prefixed games.
+// pill (versioned when the installed version is known, blue and
+// external-marked for unmanaged on-disk installs), one pill per component
+// version, and a Proton marker for prefixed games.
 func versionPills(e *ui.GameRow) []ui.Badge {
 	var out []ui.Badge
-	if e.OptiScalerVersion != "" {
+	external := e.Status == domain.StatusExternal
+	switch {
+	case e.OptiScalerVersion != "" && external:
+		out = append(out, ui.Badge{Label: "✦ OptiScaler " + e.OptiScalerVersion + " · external", Tone: ui.ToneBlue})
+	case e.OptiScalerVersion != "":
 		out = append(out, ui.Badge{Label: "✦ OptiScaler " + e.OptiScalerVersion, Tone: ui.TonePurple})
-	} else if e.Status == domain.StatusCommitted {
+	case external:
+		out = append(out, ui.Badge{Label: "✦ OptiScaler · external", Tone: ui.ToneBlue})
+	case e.Status == domain.StatusCommitted:
 		out = append(out, ui.Badge{Label: "✦ OptiScaler", Tone: ui.TonePurple})
 	}
 	for _, c := range e.Components {
