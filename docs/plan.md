@@ -87,6 +87,31 @@ task detail in `docs/log.md`.
 - **Fix**: `settings.Save` is a no-op on an empty root (sessions without a
   state dir must not fail or spam callers).
 
+## v0.5 milestone (complete, 2026-07-20)
+
+PE game titles, ProtonDB tiers via online lookups, scan progress, async
+AddDirectory/ClearBundleCache, GUI fixes (card click routing, proportional
+detail panel, uniform sidebar nav, dark Wayland CSD via vendor patch), TUI
+fixes (tab-bar rendering, About screen, footer hints). Scope recorded in
+`docs/scope.md`, vendor patch procedure in `docs/vendor-patches.md`, task
+detail in `docs/log.md`.
+
+- **W1 (core)**: PE title extraction (ProductName → FileDescription →
+  folder fallback) for manual/recursive games; Linux scans accept `.exe`
+  without the exec bit; async AddDirectory with placeholder row;
+  `State.Progress` scan-phase reporting.
+- **W2 (enrichment)**: `internal/steam` + `internal/protondb` online
+  clients, lookup scan phase with per-scan budget (8), TTL disk caches,
+  429 cooldown, offline degradation, `online_lookups` setting (default
+  true).
+- **W3a (GUI)**: sidebar nav uniform width, card-button click routing,
+  proportional detail panel, dark Wayland CSD vendor patch, scan progress
+  bar, ProtonDB tier pills, online-lookups Settings toggle.
+- **W3b (TUI)**: tab-bar clipping root cause fixed (View emitted h+1 lines;
+  bubbletea drops line 0 on oversized frames — now exactly h), About screen
+  (key 4, version plumbed from cmd), footer screen-switch hints, scan
+  progress line, tier in badges/detail, settings `o` toggle.
+
 ## Risks
 
 1. BCJ2/sevenzip failure → early spike, fallback ready.

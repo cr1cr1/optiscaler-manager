@@ -211,6 +211,57 @@ evidence.
 - macOS remains blocked exactly as in v0.3 (shirei cocoa backend needs an
   Apple SDK); no macOS support is claimed.
 
+## v0.5 scope (PE titles, ProtonDB tiers, progress, async ops, TUI fixes)
+
+Delivered 2026-07-20 (waves W1–W3). Decisions closed; reopen only with new
+evidence.
+
+- **PE game titles**: manual/recursive games get their title from PE
+  version info (`ProductName` → `FileDescription` → folder-name fallback),
+  so Windows exes get real titles even when scanning on Linux. Linux
+  recursive scans also accept `.exe` files without the execute bit
+  (previously-missed games now appear).
+- **Online lookups**: a new scan phase resolves manual games title → Steam
+  appid (`steamcommunity.com/actions/SearchApps`, new `internal/steam`
+  client) → ProtonDB tier (`protondb.com` summaries API, new
+  `internal/protondb` client); numeric-appid (Steam-library) rows get the
+  tier directly. Per-scan budget of 8 lookups, TTL disk caches (30 days
+  search / 7 days summaries), 429 cooldown, silent offline degradation.
+  Gated by `online_lookups` in settings.json (default **true**; GUI
+  Settings toggle "Online game info (Steam/ProtonDB)", TUI settings `o`).
+- **Scan progress**: `State.Progress` reports the phase
+  (discover/enrich/covers/lookup) with Done/Total; the GUI renders a
+  progress bar under the toolbar, the TUI a progress line with phase, bar,
+  and percent.
+- **Async ops**: `AddDirectory` and `ClearBundleCache` are non-blocking.
+  AddDirectory shows a placeholder row instantly, then enriches it in a
+  goroutine; a duplicate add while one is in flight is rejected.
+- **GUI fixes**: sidebar nav items are uniform width (Expand); card buttons
+  fire their action without opening the detail panel — only card-body
+  clicks open details; the detail panel is proportional (30% of the
+  window, clamped 300–480px); ProtonDB tier pills (platinum/gold/silver/
+  bronze/borked/pending) on cards and the detail panel; dark Wayland CSD
+  titlebar via a vendor patch (`docs/vendor-patches.md`).
+- **TUI fixes**: the tab bar renders again — the root cause of "no access
+  to Settings" was View emitting h+1 lines, which made bubbletea's
+  renderer drop line 0; View now emits exactly h lines. Every screen
+  footer shows screen-switch hints (1 games · 2 settings · 3 help ·
+  4 about); new About screen (key 4) with the build version plumbed from
+  cmd and the stack line; escape hints in input modes and confirm modals;
+  ProtonDB tier in the games table badges and detail.
+
+### v0.5 known limits
+
+- The dark CSD titlebar is **Wayland-only**; on X11 the window manager
+  draws the decorations.
+- ProtonDB tiers shown between scans are cached values; they refresh on
+  the next scan, subject to the disk-cache TTLs.
+- With online lookups enabled, game titles are sent to steamcommunity.com
+  and appids to protondb.com. Disable the toggle (or `online_lookups`) for
+  a fully offline scan.
+- The vendor patch does not survive `go mod vendor`; it must be reapplied
+  (the `TestVendorCSDPatchPresent` guard fails loudly when it is missing).
+
 ## Dependencies (settled)
 
 - Vendored (`go mod vendor`, `vendor/` committed; `-mod=vendor` stays in CI and

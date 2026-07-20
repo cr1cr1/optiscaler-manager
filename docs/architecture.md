@@ -45,6 +45,10 @@ internal/
               (cleanup under context.WithoutCancel)
   profile/    curated OptiScaler.ini writer
   covers/     cover art: Steam CDN → store search → placeholder (disk cache)
+  steam/      title → appid lookup (steamcommunity.com SearchApps; 30d TTL
+              disk cache, no auth)
+  protondb/   appid → compatibility tier (protondb.com summaries API; 7d
+              TTL disk cache, 429 cooldown)
   settings/   persisted preferences (settings.json in the data root)
   pickdir/    OS directory dialog (zenity → kdialog)
   launch/     per-store per-OS command table (pure Command fn) + detached
@@ -108,6 +112,25 @@ corrupt, stale-schema, or empty cache falls through to `Scan`. The cache is
 rewritten after every scan, `AddDirectory`/`RemoveDirectory`, and op settle
 (status change), serialized so concurrent writers cannot interleave.
 Explicit rescans stay user-initiated (GUI Scan button, TUI `R`).
+
+## Scan phases, progress, and online lookups (v0.5)
+
+A scan runs as a pipeline of phases — discover → enrich → covers → lookup —
+and reports `State.Progress{Phase, Done, Total}` as it goes (`EvScanProgress`
+events); the GUI draws a progress bar under the toolbar, the TUI a progress
+line. The lookup phase is online and optional: `internal/steam` resolves a
+manual game's title to a Steam appid and `internal/protondb` resolves the
+appid to a compatibility tier (Steam-library rows skip the search and query
+the tier directly). It runs under a per-scan budget (8 rows), TTL disk
+caches, and a 429 cooldown, degrades silently when offline, and is gated by
+`online_lookups` (default true) — with either client nil or the setting off,
+the phase is skipped entirely.
+
+`AddDirectory` is asynchronous by design: the session validates the path,
+persists settings, and inserts a placeholder row synchronously, then a
+goroutine walks, classifies, covers, and online-enriches the directory and
+replaces the placeholder. A duplicate add while one is in flight is
+rejected. `ClearBundleCache` likewise runs off the frame goroutine.
 
 ## Data flow
 

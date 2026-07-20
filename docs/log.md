@@ -833,3 +833,66 @@ fixed forward to unconditional PASS:
 - **R4 security**: PASS (severity NONE). Data root is the trust boundary; no
   shell invocation anywhere; 0600 temp-file perms; supply chain verified.
 - **R5 context**: PASS. Docs/README/keymaps in sync; no missed requirements.
+
+## 2026-07-20 — v0.5 W1: core — PE titles, exec-bit fix, async AddDirectory, scan progress
+
+- Manual/recursive games get their title from PE version info: `ProductName`
+  wins, then `FileDescription`, then the folder-name fallback. Windows exes
+  now carry real titles even when scanned on Linux.
+- Linux recursive scans accept `.exe` files without the execute bit
+  (`discovery/recursive_unix.go`) — previously-missed games now appear.
+- `Session.AddDirectory` is non-blocking: validate → persist settings →
+  insert a placeholder row synchronously, then walk/classify/cover in a
+  goroutine that replaces the placeholder. A duplicate add while one is in
+  flight is rejected. `ClearBundleCache` is likewise async.
+- Scan reports progress through `State.Progress{Phase, Done, Total}` with
+  phases discover/enrich/covers/lookup and `EvScanProgress` events; both
+  frontends render it.
+
+## 2026-07-20 — v0.5 W2: enrichment — steam/protondb online lookups
+
+- `internal/steam` (new): title → appid via
+  `steamcommunity.com/actions/SearchApps`, no auth, 30-day TTL disk cache.
+- `internal/protondb` (new): appid → tier via the protondb.com summaries
+  API, 7-day TTL disk cache, 429 cooldown.
+- The lookup scan phase resolves manual rows title → appid → tier; numeric
+  appid (Steam-library) rows get the tier directly. Per-scan budget of 8
+  lookups, silent degradation when offline. Rows gain `SteamAppID` and
+  `ProtonTier`.
+- Gated by `online_lookups` in settings.json (default true; legacy files
+  without the key decode as enabled). `Session.SetOnlineLookups` persists
+  the toggle. Cover fetches gained a 10s HTTP timeout.
+
+## 2026-07-20 — v0.5 W3a: GUI — sidebar, click routing, panel, CSD, progress, tier, toggle
+
+- Sidebar nav items are uniform width (Expand).
+- Card buttons fire their action without opening the detail panel; only
+  card-body clicks open details (click routing fix).
+- Detail panel is proportional: 30% of the window width, clamped 300–480px
+  (`detailPanelWidth` in theme.go).
+- Dark Wayland CSD titlebar via a vendor patch at
+  `vendor/go.hasen.dev/shirei/waylandbackend/waylanddecor_linux.go` (marker
+  `PATCHED by optiscaler-manager (v0.5)`), guarded by
+  `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent`); procedure in
+  `docs/vendor-patches.md`. Wayland-only; X11 keeps WM decorations.
+- Scan progress bar under the toolbar (phase + Done/Total).
+- ProtonDB tier pills (platinum/gold/silver/bronze/borked/pending) on cards
+  and the detail panel.
+- Settings gains the "Online game info (Steam/ProtonDB)" toggle.
+
+## 2026-07-20 — v0.5 W3b: TUI — tab-bar root cause, About screen, hints, progress, tier
+
+- **Root cause of "no access to Settings"**: the tab bar never rendered.
+  View emitted h+1 lines, and bubbletea's renderer drops line 0 (the tab
+  bar) on oversized frames. Fixed: View now emits exactly h lines.
+- Every screen footer shows the screen-switch hints
+  `1 games · 2 settings · 3 help · 4 about`.
+- New About screen (key 4): build version plumbed from cmd plus the stack
+  line `TUI: bubbletea v1.3.10 · bubbles v1.0.0 · lipgloss`.
+- Escape hints in input modes and confirm modals; scan progress line
+  (phase + bar + percent); ProtonDB tier in the games table badges and the
+  detail screen; settings `o` toggles online game info.
+
+## v0.5 review gate — 2026-07-20
+
+- Review-gate placeholder: pending the v0.5 five-lane review.
