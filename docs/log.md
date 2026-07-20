@@ -812,3 +812,24 @@ Append-only milestone and task log. Newest at the bottom.
   section (cache-first boot, manifest status reconcile, persist triggers).
 - plan.md: v0.4 milestone recorded complete; index.md release line → v0.4.
 - No Go source changed; OKF frontmatter untouched.
+
+## v0.4 review gate (T5) — 2026-07-20
+
+Five-lane review of the whole v0.4 range; two lanes failed round 1 and were
+fixed forward to unconditional PASS:
+
+- **R1 goal**: FAIL → PASS. Blocker: settings modal used shirei's hardcoded
+  light TextInputExt in the dark UI. Fixed by extracting the shared
+  `themedInput` widget (`869e409`).
+- **R2 QA**: PASS. 30 scenarios (P0 14/14) incl. restart persistence,
+  remove-dir-during-inflight-install, real-bundle `OM_TEST_ARCHIVE` run,
+  GUI/TUI artifact inspection.
+- **R3 quality**: FAIL → PASS. CRITICAL: `RemoveDirectory` `[:0]` in-place
+  filter raced concurrent `Scan` (`-race`-proven) — fixed with deep-copied
+  `Settings()` snapshots + allocation + `TestSessionRemoveDirectoryVsScan`
+  (`c311571`). MAJOR: TUI `trunc` sliced ANSI escapes — fixed with
+  badge-aware truncation (`c9f6af0`); `detailRow` double-snapshot fixed
+  (`a4cd33f`).
+- **R4 security**: PASS (severity NONE). Data root is the trust boundary; no
+  shell invocation anywhere; 0600 temp-file perms; supply chain verified.
+- **R5 context**: PASS. Docs/README/keymaps in sync; no missed requirements.
