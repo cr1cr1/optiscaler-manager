@@ -29,12 +29,14 @@ type Config struct {
 type model struct {
 	cfg          Config
 	sess         *ui.Session
+	ctx          context.Context // boot/launch context; Background in tests
 	state        ui.State
 	filter       string
 	auditGrid    bool
 	about        bool
 	settingsOpen bool
 	versionBuf   string
+	templateBuf  string
 	cols         int            // current grid columns, derived from live width
 	cardW        int            // current card width in px, derived from live width
 	cardH        int            // current card height in px
@@ -45,6 +47,7 @@ func newModel(cfg Config) *model {
 	return &model{
 		cfg:       cfg,
 		sess:      cfg.Session,
+		ctx:       context.Background(),
 		auditGrid: cfg.AuditGrid,
 		cols:      4,
 		cardW:     190,
@@ -58,6 +61,7 @@ func newModel(cfg Config) *model {
 func Run(ctx context.Context, cfg Config) error {
 	shireiapp.SetupWindow("optiscaler-manager", 1100, 700)
 	m := newModel(cfg)
+	m.ctx = ctx
 	m.boot(ctx)
 	shireiapp.Run(m.rootView)
 	return nil
@@ -112,12 +116,35 @@ func (m *model) selectedRow() *ui.GameRow {
 	return nil
 }
 
+// settingsDirs is the settings-modal directory list: the session's ExtraDirs.
+func (m *model) settingsDirs() []string {
+	if m.sess == nil {
+		return nil
+	}
+	return m.sess.Settings().ExtraDirs
+}
+
+// applySettings persists the settings-modal buffers through the session.
+func (m *model) applySettings() {
+	if m.sess == nil {
+		return
+	}
+	m.sess.SetDefaultVersion(m.versionBuf)
+	m.sess.SetLaunchTemplate(m.templateBuf)
+}
+
 // exit flushes a pending settings-modal edit through the session's
 // persistence path, then quits via the injected seam (shirei has no
 // app.Quit, so production exits the process).
 func (m *model) exit() {
-	if m.sess != nil && m.versionBuf != "" && m.versionBuf != m.sess.Settings().DefaultVersion {
-		m.sess.SetDefaultVersion(m.versionBuf)
+	if m.sess != nil {
+		cur := m.sess.Settings()
+		if m.versionBuf != "" && m.versionBuf != cur.DefaultVersion {
+			m.sess.SetDefaultVersion(m.versionBuf)
+		}
+		if m.templateBuf != "" && m.templateBuf != cur.LaunchTemplate {
+			m.sess.SetLaunchTemplate(m.templateBuf)
+		}
 	}
 	m.exitNow(0)
 }

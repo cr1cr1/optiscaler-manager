@@ -55,31 +55,92 @@ func (m *model) sidebar() {
 // openSettings primes the settings modal from the session.
 func (m *model) openSettings() {
 	if m.sess != nil {
-		m.versionBuf = m.sess.Settings().DefaultVersion
+		s := m.sess.Settings()
+		m.versionBuf = s.DefaultVersion
+		m.templateBuf = s.LaunchTemplate
 	}
 	m.settingsOpen = true
 }
 
+// sectionTitle heads a settings group.
+func sectionTitle(s string) {
+	Label(s, FontSize(13), TextColorVec(txtMain), FontWeight(WeightBold))
+}
+
 func (m *model) settingsModal() {
 	modal(settingsModalW, func() { m.settingsOpen = false }, func() {
-		Container(Attrs(Gap(sp12), BackgroundVec(bgPanel)), func() {
-			txt("Settings")
-			muted("Default OptiScaler version (tag or 'latest')")
-			TextInput(&m.versionBuf)
-			if m.sess == nil {
-				return
-			}
-			if focusableButton(SymIRight, "Apply") {
-				m.sess.SetDefaultVersion(m.versionBuf)
-			}
-			if focusableButton(SymIRight, "Clear OptiScaler cache") {
-				m.sess.ClearBundleCache()
+		Container(Attrs(Gap(sp16), BackgroundVec(bgPanel)), func() {
+			Label("Settings", FontSize(18), TextColorVec(txtMain), FontWeight(WeightBold))
+
+			Container(Attrs(Gap(sp4)), func() {
+				sectionTitle("General")
+				muted("Default OptiScaler version (tag or 'latest')")
+				TextInputExt(&m.versionBuf, settingsInputAttrs())
+			})
+
+			Container(Attrs(Gap(sp4)), func() {
+				sectionTitle("Scan Directories")
+				m.settingsDirsSection()
+			})
+
+			Container(Attrs(Gap(sp4)), func() {
+				sectionTitle("Launch Template")
+				muted("Command template for manually added games; {exe} and {args} are substituted")
+				TextInputExt(&m.templateBuf, settingsInputAttrs())
+			})
+
+			if m.sess != nil {
+				Container(Attrs(Row, Gap(sp8)), func() {
+					if focusableButton(SymIRight, "Apply") {
+						m.applySettings()
+					}
+					if focusableButton(SymIRight, "Clear OptiScaler cache") {
+						m.sess.ClearBundleCache()
+					}
+				})
 			}
 			if focusableButton(SymILeft, "Close") {
 				m.settingsOpen = false
 			}
 		})
 	})
+}
+
+// settingsInputAttrs is the shared settings-field style: no auto-focus grab
+// (the modal opens on demand), theme accent underline, bounded width.
+func settingsInputAttrs() TextInputAttrs {
+	a := DefaultTextInputAttrs()
+	a.NoAutoFocus = true
+	a.Accent = accent
+	a.MinWidth = 260
+	a.MaxWidth = 460
+	return a
+}
+
+// settingsDirsSection lists the session's extra scan directories with a
+// per-row remove button and the add-directory picker entry point.
+func (m *model) settingsDirsSection() {
+	dirs := m.settingsDirs()
+	if len(dirs) == 0 {
+		muted("No extra directories — Steam library folders are always scanned")
+	}
+	if len(dirs) > 0 {
+		Container(Attrs(Expand, MaxHeight(160), Viewport, Clip, Gap(sp4)), func() {
+			for _, d := range dirs {
+				Container(Attrs(Row, CrossMid, Gap(sp8), Pad2(2, sp4), Corners(radiusS), BackgroundVec(bgCard)), func() {
+					Label(d, TextColorVec(txtMain), FontSize(12))
+					Filler(1)
+					if m.sess != nil && focusableButton(TypCancel, "Remove") {
+						m.sess.RemoveDirectory(d)
+					}
+				})
+			}
+			ScrollBars()
+		})
+	}
+	if m.sess != nil && focusableButton(SymIPlus, "Add directory…") {
+		m.sess.PickAndAddDirectory(m.ctx)
+	}
 }
 
 // toolbar is the top action bar: scan, search, view switch.
