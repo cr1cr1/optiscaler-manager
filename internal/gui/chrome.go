@@ -89,21 +89,21 @@ func sectionTitle(s string) {
 
 func (m *model) settingsModal() {
 	modal(settingsModalW, func() { m.settingsOpen = false }, func() {
-		Container(Attrs(Gap(sp16), BackgroundVec(bgPanel)), func() {
+		Container(Attrs(Expand, Gap(sp16), BackgroundVec(bgPanel)), func() {
 			Label("Settings", FontSize(18), TextColorVec(txtMain), FontWeight(WeightBold))
 
-			Container(Attrs(Gap(sp4)), func() {
+			Container(Attrs(Expand, Gap(sp4)), func() {
 				sectionTitle("General")
 				muted("Default OptiScaler version (tag or 'latest')")
 				TextInputExt(&m.versionBuf, settingsInputAttrs())
 			})
 
-			Container(Attrs(Gap(sp4)), func() {
+			Container(Attrs(Expand, Gap(sp4)), func() {
 				sectionTitle("Scan Directories")
 				m.settingsDirsSection()
 			})
 
-			Container(Attrs(Gap(sp4)), func() {
+			Container(Attrs(Expand, Gap(sp4)), func() {
 				sectionTitle("Launch Template")
 				muted("Command template for manually added games; {exe} and {args} are substituted")
 				TextInputExt(&m.templateBuf, settingsInputAttrs())
@@ -153,7 +153,7 @@ func (m *model) settingsDirsSection() {
 		}
 		Container(Attrs(Expand, FixHeight(h), Viewport, Clip, Gap(sp4)), func() {
 			for _, d := range dirs {
-				Container(Attrs(Row, CrossMid, Gap(sp8), Pad2(2, sp4), Corners(radiusS), BackgroundVec(bgCard), Clip), func() {
+				Container(Attrs(Row, Expand, CrossMid, Gap(sp8), Pad2(2, sp4), Corners(radiusS), BackgroundVec(bgCard), Clip), func() {
 					Label(shortenPath(d, 44), TextColorVec(txtMain), FontSize(12))
 					Filler(1)
 					if m.sess != nil && focusableButton(TypCancel, "Remove") {
