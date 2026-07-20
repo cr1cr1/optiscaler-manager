@@ -108,17 +108,27 @@ func gameyChildren(ctx context.Context, dir string) (int, error) {
 		if strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
+		child := filepath.Join(dir, e.Name())
 		if e.IsDir() {
 			// plain directory
 		} else if e.Type()&fs.ModeSymlink != 0 {
-			st, err := os.Stat(filepath.Join(dir, e.Name()))
+			st, err := os.Stat(child)
 			if err != nil || !st.IsDir() {
 				continue
 			}
+			// Resolve the link: findMainExeWithin walks with WalkDir, which
+			// does not descend a symlink root, so the unresolved path would
+			// count as non-gamey while ScanRecursive (canonicalizing first)
+			// scans the target.
+			resolved, err := filepath.EvalSymlinks(child)
+			if err != nil {
+				continue
+			}
+			child = resolved
 		} else {
 			continue
 		}
-		exe, err := findMainExeWithin(ctx, filepath.Join(dir, e.Name()), maxExeDepth)
+		exe, err := findMainExeWithin(ctx, child, maxExeDepth)
 		if err != nil {
 			return gamey, err
 		}

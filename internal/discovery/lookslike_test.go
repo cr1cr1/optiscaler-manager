@@ -112,6 +112,47 @@ func TestLooksLikeGameDir_DotDirsAndBrokenSymlinks_Ignored(t *testing.T) {
 	assertKind(t, dir, GameDirEmpty)
 }
 
+// TestClassifyGameDir_SymlinkedGameChild: a symlink child pointing at a real
+// game dir must count as gamey — ScanRecursive canonicalizes the link and
+// scans the target, so the classifier must agree the parent is a container,
+// not an empty directory.
+func TestClassifyGameDir_SymlinkedGameChild(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges on Windows")
+	}
+	target := filepath.Join(t.TempDir(), "RealGame")
+	mkGameBin(t, filepath.Join(target, "bin", "realgame"), 1<<20)
+
+	dir := filepath.Join(t.TempDir(), "Games")
+	writeFile(t, filepath.Join(dir, "Notes", "readme.txt"), "hello")
+	if err := os.Symlink(target, filepath.Join(dir, "LinkedGame")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	assertKind(t, dir, GameDirContainer)
+}
+
+// TestClassifyGameDir_SingleSymlinkedChild: a lone symlink child whose
+// target is a game dir, with no exe of the parent's own, classifies as a
+// container (the parent is not itself the game).
+func TestClassifyGameDir_SingleSymlinkedChild(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges on Windows")
+	}
+	target := filepath.Join(t.TempDir(), "OnlyGame")
+	mkGameBin(t, filepath.Join(target, "bin", "x64", "onlygame"), 1<<20)
+
+	dir := filepath.Join(t.TempDir(), "Games")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, "LinkedGame")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	assertKind(t, dir, GameDirContainer)
+}
+
 func assertKind(t *testing.T, dir string, want GameDirKind) {
 	t.Helper()
 	got, err := ClassifyGameDir(context.Background(), dir)
