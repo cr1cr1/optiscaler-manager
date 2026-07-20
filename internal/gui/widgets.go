@@ -63,10 +63,8 @@ func spinnerGlyph() {
 	RequestNextFrame()
 }
 
-// searchInput is the themed library filter field: shirei's TextInputExt is
-// hardcoded light-on-white with no theme hook, so the toolbar uses this
-// minimal dark input instead (append/backspace editing, Esc clears and
-// blurs). Disabled while the library is empty.
+// searchInput is the themed library filter field. Disabled while the
+// library is empty.
 func (m *model) searchInput() {
 	if m.libraryEmpty() {
 		Container(Attrs(Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(sp8, sp12), Grow(1), MinSize(140, 34), MaxSizeVec(Vec2{420, 34}), Clip, Trans(0.4)), func() {
@@ -77,37 +75,51 @@ func (m *model) searchInput() {
 		})
 		return
 	}
-	Container(Attrs(Focusable, Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(sp8, sp12), Grow(1), MinSize(140, 34), MaxSizeVec(Vec2{420, 34}), Clip), func() {
+	themedInput(&m.filter, "Search…", widgets.SymSearch, Grow(1), MinSize(140, 34), MaxSizeVec(Vec2{420, 34}))
+}
+
+// themedInput is the dark single-line text field: shirei's TextInputExt is
+// hardcoded light-on-white with no theme hook, so themed screens use this
+// minimal input instead. Editing is append/backspace on the bound buffer,
+// Esc clears and blurs, Enter is consumed so it cannot leak to global key
+// handlers. It never grabs focus on its own (FocusOnClick + the Tab cycle
+// only), so modals open with nothing focused. The icon is optional (0 for
+// none); sizing attrs set the field's extent.
+func themedInput(buf *string, hint string, icon rune, sizing ...AttrsFn) {
+	box := Attrs(Focusable, Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(sp8, sp12), Clip)
+	Container(AttrsWith(box, sizing...), func() {
 		CycleFocusOnTab()
 		FocusOnClick()
 		if HasFocus() {
 			ModAttrs(func(a *AttrSet) { a.BorderColor = accent })
-			m.filter += FrameInput.Text
+			*buf += FrameInput.Text
 			switch FrameInput.Key {
 			case KeyDeleteBackward:
-				if r := []rune(m.filter); len(r) > 0 {
-					m.filter = string(r[:len(r)-1])
+				if r := []rune(*buf); len(r) > 0 {
+					*buf = string(r[:len(r)-1])
 				}
 				FrameInput.Key = KeyCodeNone
 			case KeyEscape:
-				m.filter = ""
+				*buf = ""
 				Blur()
 				FrameInput.Key = KeyCodeNone
 			case KeyEnter:
-				FrameInput.Key = KeyCodeNone // typing must not open the detail panel
+				FrameInput.Key = KeyCodeNone
 			}
 		}
 		Container(Attrs(Row, Gap(sp8), CrossMid), func() {
-			widgets.Icon(widgets.SymSearch, FontSize(13), TextColorVec(txtMuted))
+			if icon != 0 {
+				widgets.Icon(icon, FontSize(13), TextColorVec(txtMuted))
+			}
 			switch {
-			case m.filter != "" && HasFocus():
-				Label(m.filter+"|", FontSize(13), TextColorVec(txtMain))
-			case m.filter != "":
-				Label(m.filter, FontSize(13), TextColorVec(txtMain))
+			case *buf != "" && HasFocus():
+				Label(*buf+"|", FontSize(13), TextColorVec(txtMain))
+			case *buf != "":
+				Label(*buf, FontSize(13), TextColorVec(txtMain))
 			case HasFocus():
 				Label("|", FontSize(13), TextColorVec(txtMuted))
 			default:
-				Label("Search…", FontSize(13), TextColorVec(txtMuted))
+				Label(hint, FontSize(13), TextColorVec(txtMuted))
 			}
 		})
 	})

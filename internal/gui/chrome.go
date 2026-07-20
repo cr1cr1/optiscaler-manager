@@ -95,7 +95,7 @@ func (m *model) settingsModal() {
 			Container(Attrs(Expand, Gap(sp4)), func() {
 				sectionTitle("General")
 				muted("Default OptiScaler version (tag or 'latest')")
-				TextInputExt(&m.versionBuf, settingsInputAttrs())
+				themedInput(&m.versionBuf, "latest", 0, MinSize(260, 34), MaxSizeVec(Vec2{460, 34}))
 			})
 
 			Container(Attrs(Expand, Gap(sp4)), func() {
@@ -106,7 +106,7 @@ func (m *model) settingsModal() {
 			Container(Attrs(Expand, Gap(sp4)), func() {
 				sectionTitle("Launch Template")
 				muted("Command template for manually added games; {exe} and {args} are substituted")
-				TextInputExt(&m.templateBuf, settingsInputAttrs())
+				themedInput(&m.templateBuf, `"{exe}" {args}`, 0, MinSize(260, 34), MaxSizeVec(Vec2{460, 34}))
 			})
 
 			if m.sess != nil {
@@ -124,17 +124,6 @@ func (m *model) settingsModal() {
 			}
 		})
 	})
-}
-
-// settingsInputAttrs is the shared settings-field style: no auto-focus grab
-// (the modal opens on demand), theme accent underline, bounded width.
-func settingsInputAttrs() TextInputAttrs {
-	a := DefaultTextInputAttrs()
-	a.NoAutoFocus = true
-	a.Accent = accent
-	a.MinWidth = 260
-	a.MaxWidth = 460
-	return a
 }
 
 // settingsDirsSection lists the session's extra scan directories with a
