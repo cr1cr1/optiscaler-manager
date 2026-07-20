@@ -166,8 +166,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cancelInput()
 			return m, nil
 		case tea.KeyEnter:
-			m.commitInput()
-			return m, nil
+			return m, m.commitInput()
 		}
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
@@ -328,14 +327,20 @@ func (m *Model) cancelInput() {
 	m.input.Blur()
 }
 
-func (m *Model) commitInput() {
+func (m *Model) commitInput() tea.Cmd {
 	v := strings.TrimSpace(m.input.Value())
+	var cmd tea.Cmd
 	switch m.mode {
 	case inputFilter:
 		// the query already narrowed live; Enter only closes the input
 	case inputAddDir:
 		if v != "" {
-			m.sess.AddDirectory(v) // invalid paths toast through the session
+			// AddDirectory classifies synchronously; run it as a command so
+			// the update loop never blocks on the filesystem.
+			cmd = func() tea.Msg {
+				m.sess.AddDirectory(v) // invalid paths toast through the session
+				return nil
+			}
 		}
 	case inputEditVersion:
 		m.sess.SetDefaultVersion(v)
@@ -345,6 +350,7 @@ func (m *Model) commitInput() {
 	m.mode = inputNone
 	m.input.SetValue("")
 	m.input.Blur()
+	return cmd
 }
 
 func selectedDir(rows []ui.GameRow, cursor int) string {

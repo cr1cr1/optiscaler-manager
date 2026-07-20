@@ -561,6 +561,34 @@ func TestTUISettingsAddDirectory(t *testing.T) {
 	}
 }
 
+// TestCommitInputAddDirDeferred: committing the add-dir input must not run
+// AddDirectory on the update loop (session classification is synchronous) —
+// commitInput returns a tea.Cmd the runtime executes off the loop.
+func TestCommitInputAddDirDeferred(t *testing.T) {
+	e := newTestEnv(t, nil)
+	m := New(e.sess, "test")
+	m.openInput(inputAddDir, "add dir: ", "")
+	m.input.SetValue(filepath.Join(t.TempDir(), "missing"))
+
+	cmd := m.commitInput()
+	if cmd == nil {
+		t.Fatal("commitInput returned nil cmd for a non-empty add-dir input")
+	}
+	if got := len(e.sess.Snapshot().Toasts); got != 0 {
+		t.Fatalf("AddDirectory ran inline on the update loop: %d toasts", got)
+	}
+
+	cmd() // what the bubbletea runtime does with the returned command
+	deadline := time.Now().Add(5 * time.Second)
+	for len(e.sess.Snapshot().Toasts) == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if len(e.sess.Snapshot().Toasts) == 0 {
+		t.Fatal("deferred AddDirectory never toasted the missing path")
+	}
+	t.Log("add-dir commit deferred into a tea.Cmd")
+}
+
 // TestTUISettingsTemplateEdit: t opens the launch-template editor prefilled
 // with the current value; Enter persists through the session setter.
 func TestTUISettingsTemplateEdit(t *testing.T) {
