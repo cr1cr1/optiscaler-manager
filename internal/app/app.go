@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -92,6 +93,12 @@ var ErrStaleCache = errors.New("github API rate-limited; refusing stale cached r
 // ErrNoGames is returned by ScanAllLibraries when discovery finds zero
 // games. Frontends treat it as a settled empty library, never a failure.
 var ErrNoGames = errors.New("no games found")
+
+// ErrNotManaged is returned by Uninstall/Rollback when the store holds no
+// manifest for the game: it was never installed by this manager (or was
+// already removed) and its files must be handled by hand. Frontends match
+// with errors.Is.
+var ErrNotManaged = errors.New("not installed by this manager")
 
 // LibraryEntry is one row of the game library: the discovered game enriched
 // with upscaler tech, anti-cheat flag, install status, and directory mtime.
@@ -365,10 +372,26 @@ func ManifestIDFor(gameRoot string) (id, installDir string, err error) {
 	return id, dir, nil
 }
 
+// requireManaged maps a missing store manifest to ErrNotManaged (with
+// install-dir context) so frontends can tell "not ours" apart from real
+// store failures; other load errors pass through unchanged.
+func requireManaged(st *store.Store, id, dir string) error {
+	if _, err := st.Load(id); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("%w: %s", ErrNotManaged, dir)
+		}
+		return err
+	}
+	return nil
+}
+
 // Uninstall reverses the committed install for a game root.
 func Uninstall(ctx context.Context, st *store.Store, gameRoot string) (string, error) {
 	id, dir, err := ManifestIDFor(gameRoot)
 	if err != nil {
+		return "", err
+	}
+	if err := requireManaged(st, id, dir); err != nil {
 		return "", err
 	}
 	if err := installer.Uninstall(ctx, st, id); err != nil {
@@ -381,6 +404,9 @@ func Uninstall(ctx context.Context, st *store.Store, gameRoot string) (string, e
 func Rollback(ctx context.Context, st *store.Store, gameRoot string) (string, error) {
 	id, dir, err := ManifestIDFor(gameRoot)
 	if err != nil {
+		return "", err
+	}
+	if err := requireManaged(st, id, dir); err != nil {
 		return "", err
 	}
 	if err := installer.Rollback(ctx, st, id); err != nil {

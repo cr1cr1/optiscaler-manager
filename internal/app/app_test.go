@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
@@ -138,6 +140,46 @@ func TestInstallDownloadsWhenCacheMissing(t *testing.T) {
 		t.Errorf("sha changed between installs")
 	}
 	t.Log("download-once-then-cache verified")
+}
+
+// TestUninstallNotManaged: a game the store has no manifest for fails with
+// the exported sentinel (errors.Is), wrapped with install-dir context,
+// instead of the raw store.Load error.
+func TestUninstallNotManaged(t *testing.T) {
+	f := newAppFakes(t)
+	_, err := Uninstall(context.Background(), f.st, f.gameRoot)
+	if !errors.Is(err, ErrNotManaged) {
+		t.Fatalf("Uninstall err = %v, want errors.Is(err, ErrNotManaged)", err)
+	}
+	if !strings.Contains(err.Error(), f.bin) {
+		t.Errorf("error %q lacks install dir %q", err, f.bin)
+	}
+}
+
+// TestRollbackNotManaged: Rollback maps a missing manifest to the same
+// sentinel as Uninstall.
+func TestRollbackNotManaged(t *testing.T) {
+	f := newAppFakes(t)
+	_, err := Rollback(context.Background(), f.st, f.gameRoot)
+	if !errors.Is(err, ErrNotManaged) {
+		t.Fatalf("Rollback err = %v, want errors.Is(err, ErrNotManaged)", err)
+	}
+}
+
+// TestUninstallManagedUnaffected: a committed install uninstalls cleanly;
+// once the manifest is gone, a repeat uninstall reports not-managed.
+func TestUninstallManagedUnaffected(t *testing.T) {
+	f := newAppFakes(t)
+	f.seedCache(t)
+	if _, err := Install(context.Background(), f.st, f.client, f.cacheDir, f.gameRoot, InstallOpts{}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if _, err := Uninstall(context.Background(), f.st, f.gameRoot); err != nil {
+		t.Fatalf("Uninstall of managed game: %v", err)
+	}
+	if _, err := Uninstall(context.Background(), f.st, f.gameRoot); !errors.Is(err, ErrNotManaged) {
+		t.Fatalf("second Uninstall err = %v, want errors.Is(err, ErrNotManaged)", err)
+	}
 }
 
 var _ = domain.StatusCommitted
