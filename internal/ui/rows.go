@@ -77,6 +77,14 @@ func badgeForTech(kind string) Badge {
 	}
 }
 
+// CanOpenINI reports whether the row has an OptiScaler install whose ini is
+// worth opening: a manager-committed install or an external one detected on
+// disk. Failed, in-progress, rolled-back, and never-installed rows have no
+// usable ini, so the affordance stays closed for them.
+func (r GameRow) CanOpenINI() bool {
+	return r.Status == domain.StatusCommitted || r.Status == domain.StatusExternal
+}
+
 // actionableStatus marks installs that need attention (interrupted, failed).
 func actionableStatus(s domain.Status) bool {
 	return s == domain.StatusFailed || s == domain.StatusInProgress
