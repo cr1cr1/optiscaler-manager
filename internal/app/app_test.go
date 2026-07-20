@@ -141,3 +141,106 @@ func TestInstallDownloadsWhenCacheMissing(t *testing.T) {
 }
 
 var _ = domain.StatusCommitted
+
+// --- synthetic PE fixture (mirrors internal/pever/pe_test.go) -------------
+
+func utf16leFixture(s string) []byte {
+	out := make([]byte, 0, len(s)*2)
+	for _, r := range s {
+		if r > 0xFFFF {
+			r = 0xFFFD
+		}
+		out = append(out, byte(r), byte(r>>8))
+	}
+	return out
+}
+
+func stringInfoFixture(key, value string) []byte {
+	kb := utf16leFixture(key)
+	vb := utf16leFixture(value)
+	valWords := len(vb)/2 + 1
+	valOff := (6 + len(kb) + 2 + 3) &^ 3
+	structLen := valOff + len(vb) + 2
+	b := make([]byte, structLen)
+	b[0], b[1] = byte(structLen), byte(structLen>>8)
+	b[2], b[3] = byte(valWords), byte(valWords>>8)
+	b[4], b[5] = 1, 0 // wType = text
+	copy(b[6:], kb)
+	copy(b[valOff:], vb)
+	return b
+}
+
+// peWithProductName builds a minimal PE32+ image whose StringFileInfo
+// carries the given ProductName.
+func peWithProductName(name string) []byte {
+	resData := stringInfoFixture("ProductName", name)
+	const (
+		eLfanew    = 0x40
+		sectVA     = 0x1000
+		sectRawOff = 0x200
+		optSize    = 0xF0
+	)
+	b := make([]byte, sectRawOff+len(resData))
+	put32 := func(off int, v uint32) {
+		b[off], b[off+1], b[off+2], b[off+3] = byte(v), byte(v>>8), byte(v>>16), byte(v>>24)
+	}
+	b[0], b[1] = 'M', 'Z'
+	b[0x3C] = eLfanew
+	copy(b[eLfanew:], "PE\x00\x00")
+	coff := eLfanew + 4
+	b[coff+2], b[coff+3] = 1, 0 // NumberOfSections
+	b[coff+16], b[coff+17] = optSize, 0
+	opt := coff + 20
+	b[opt], b[opt+1] = 0x0B, 0x02 // PE32+ magic
+	put32(opt+112+2*8, sectVA)    // resource data-directory entry
+	put32(opt+112+2*8+4, uint32(len(resData)))
+	sec := opt + optSize
+	copy(b[sec:], ".rsrc\x00\x00\x00")
+	put32(sec+8, uint32(len(resData)))
+	put32(sec+12, sectVA)
+	put32(sec+16, uint32(len(resData)))
+	put32(sec+20, sectRawOff)
+	copy(b[sectRawOff:], resData)
+	return b
+}
+
+func TestManualEntry_TitleFromExe(t *testing.T) {
+	t.Run("PE ProductName wins over folder name", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "FolderName")
+		exe := filepath.Join(dir, "game.exe")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(exe, peWithProductName("My Cool Game"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		e, err := ManualEntry(dir)
+		if err != nil {
+			t.Fatalf("ManualEntry: %v", err)
+		}
+		if e.Game.Name != "My Cool Game" {
+			t.Errorf("Name = %q, want %q", e.Game.Name, "My Cool Game")
+		}
+		if e.Game.AppID != "custom_FolderName" {
+			t.Errorf("AppID = %q, want folder-derived %q", e.Game.AppID, "custom_FolderName")
+		}
+	})
+
+	t.Run("exe without version info keeps folder name", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "PlainFolder")
+		exe := filepath.Join(dir, "game.exe")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(exe, []byte("GAME"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		e, err := ManualEntry(dir)
+		if err != nil {
+			t.Fatalf("ManualEntry: %v", err)
+		}
+		if e.Game.Name != "PlainFolder" {
+			t.Errorf("Name = %q, want %q", e.Game.Name, "PlainFolder")
+		}
+	})
+}

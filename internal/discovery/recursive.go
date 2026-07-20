@@ -109,6 +109,13 @@ type exeCandidate struct {
 	is64      bool
 }
 
+// FindMainExe resolves the best game executable candidate under gameDir
+// (depth ≤ maxExeDepth), or "" when none qualifies. It is the single-game
+// form of the recursive scanner's exe picking.
+func FindMainExe(ctx context.Context, gameDir string) (string, error) {
+	return findMainExe(ctx, gameDir)
+}
+
 // findMainExe walks gameDir (depth ≤ maxExeDepth) and returns the best game
 // executable candidate, or "" when none qualifies.
 func findMainExe(ctx context.Context, gameDir string) (string, error) {
