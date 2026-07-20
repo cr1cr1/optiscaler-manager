@@ -256,7 +256,7 @@ func (m Model) gameRowLine(r ui.GameRow, tw, w int, selected bool) string {
 	if status == "" {
 		status = "not installed"
 	}
-	statusCell := status
+	var statusCell string
 	if m.sess.OpBusy(r.InstallDir) {
 		statusCell = m.spin.View() + " working"
 	} else {
