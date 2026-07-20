@@ -42,16 +42,17 @@ const (
 
 // Dark theme palette (HSLA), matching the reference client's look.
 var (
-	bgApp     = Vec4{230, 25, 11, 1}
-	bgPanel   = Vec4{230, 20, 16, 1}
-	bgCard    = Vec4{230, 18, 20, 1}
-	bgRaised  = Vec4{230, 16, 25, 1}
-	border    = Vec4{230, 12, 32, 1}
-	accent    = Vec4{220, 18, 26, 1}
-	accentHov = Vec4{220, 22, 34, 1}
-	txtMain   = Vec4{220, 15, 92, 1}
-	txtMuted  = Vec4{220, 10, 62, 1}
-	txtWarn   = Vec4{20, 80, 65, 1}
+	bgApp       = Vec4{230, 25, 11, 1}
+	bgPanel     = Vec4{230, 20, 16, 1}
+	bgCard      = Vec4{230, 18, 20, 1}
+	bgRaised    = Vec4{230, 16, 25, 1}
+	border      = Vec4{230, 12, 32, 1}
+	accent      = Vec4{220, 18, 26, 1}
+	accentHov   = Vec4{220, 22, 34, 1}
+	scrolAccent = Vec4{220, 10, 45, 1}
+	txtMain     = Vec4{220, 15, 92, 1}
+	txtMuted    = Vec4{220, 10, 62, 1}
+	txtWarn     = Vec4{20, 80, 65, 1}
 )
 
 // elevateCard lifts a surface with a soft, low-contrast drop shadow.
@@ -67,6 +68,10 @@ func elevateOverlay(a *AttrSet) {
 	a.Shadow.Alpha = 0.5
 	a.Shadow.Offset[1] = 6
 }
+
+// scrollBars renders themed (muted gray-blue) scrollbars for the current
+// scrolling container; the default accent is an off-palette bright cyan.
+func scrollBars() { widgets.ScrollBarsExt(widgets.ScrollBarsAttrs{Accent: scrolAccent}) }
 
 // txt and muted are the standard body texts.
 func txt(s string)   { Label(s, TextColorVec(txtMain)) }

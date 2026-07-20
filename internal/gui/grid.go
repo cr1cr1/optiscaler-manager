@@ -77,6 +77,10 @@ func (m *model) fitCards(w int) {
 	m.cardH = cardContentH(m.cardW)
 }
 
+// gridItemCount adds a trailing spacer row to the chunk count so the last
+// card row never renders flush against the viewport edge.
+func gridItemCount(chunks int) int { return chunks + 1 }
+
 // gridView is the cover-card grid (the reference client's main view).
 // Columns and card size are recomputed from the live width each frame.
 func (m *model) gridView() {
@@ -90,10 +94,23 @@ func (m *model) gridView() {
 		cols = 1
 	}
 	chunks := chunkRows(rows, cols)
-	VirtualListView("grid", len(chunks),
-		func(i int) any { return i },
-		func(i int, w float32) float32 { return float32(m.cardH) + 8 },
+	VirtualListView("grid", gridItemCount(len(chunks)),
+		func(i int) any {
+			if i == len(chunks) {
+				return "spacer"
+			}
+			return i
+		},
+		func(i int, w float32) float32 {
+			if i == len(chunks) {
+				return sp24
+			}
+			return float32(m.cardH) + 8
+		},
 		func(i int, w float32) {
+			if i == len(chunks) {
+				return
+			}
 			m.fitCards(int(w))
 			Container(Attrs(Row, Gap(cardGap), Pad2(0, rowPadH), MinSize(w, float32(m.cardH)), Clip), func() {
 				for j := range chunks[i] {

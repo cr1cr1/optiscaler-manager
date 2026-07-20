@@ -169,6 +169,9 @@ func (m *model) detailPanel() {
 		Container(Attrs(Row, Gap(sp4), CrossMid), func() {
 			txt("Status:")
 			badgePill(statusLabel(e), statusTone(e))
+			if e.EAC {
+				badgePill("EAC", ui.ToneRed)
+			}
 		})
 		if pills := versionPills(e); len(pills) > 0 {
 			Container(Attrs(Row, Gap(sp4)), func() {
@@ -177,6 +180,14 @@ func (m *model) detailPanel() {
 				}
 			})
 		}
+		Container(Attrs(Gap(2)), func() {
+			if e.Platform != "" {
+				detailField("Platform", e.Platform)
+			}
+			if e.AppID != "" {
+				detailField("AppID", e.AppID)
+			}
+		})
 		if m.sess == nil {
 			return
 		}
@@ -202,7 +213,16 @@ func (m *model) detailPanel() {
 		if e.Status == domain.StatusCommitted && focusableButton(SymIRight, "Open OptiScaler.ini in editor") {
 			m.sess.OpenINI(e.InstallDir)
 		}
-		ScrollBars()
+		scrollBars()
+	})
+}
+
+// detailField is one label/value metadata row in the detail panel.
+func detailField(label, value string) {
+	Container(Attrs(Row, Gap(sp8)), func() {
+		Label(label, FontSize(12), TextColorVec(txtMuted))
+		Filler(1)
+		Label(value, FontSize(12), TextColorVec(txtMain))
 	})
 }
 
