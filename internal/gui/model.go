@@ -39,6 +39,7 @@ type model struct {
 	templateBuf  string
 	selIdx       int            // keyboard-driven selection index into visible rows
 	hoveredDir   string         // install dir of the card under the mouse, "" when none
+	cardRect     Rect           // screen rect of the last rendered card (hover test seam)
 	cols         int            // current grid columns, derived from live width
 	cardW        int            // current card width in px, derived from live width
 	cardH        int            // current card height in px

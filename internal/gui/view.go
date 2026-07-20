@@ -104,8 +104,11 @@ func (m *model) actionList() {
 		func(i int, w float32) float32 { return 30 },
 		func(i int, w float32) {
 			e := rows[i]
-			Container(Attrs(Row, CrossMid, Gap(10), Pad2(3, 12), MinSize(w, 30)), func() {
-				Container(Attrs(Row, Gap(4)), func() {
+			Container(Attrs(Row, CrossMid, Gap(sp12), Pad2(3, sp12), MinSize(w, 30), Corners(radiusS)), func() {
+				if IsHovered() {
+					ModAttrs(BackgroundVec(bgRaised))
+				}
+				Container(Attrs(Row, Gap(sp4)), func() {
 					if e.Actionable {
 						badgePill(string(e.Status), ui.ToneRed)
 					} else if e.Status == domain.StatusCommitted {

@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"strings"
+
 	. "go.hasen.dev/shirei"
 	. "go.hasen.dev/shirei/widgets"
 
@@ -101,12 +103,27 @@ func (m *model) gridView() {
 }
 
 // gameCard renders one cover card: platform pill, status badges, cover,
-// title, version pills, tech pills, and the install/launch buttons.
+// title, version pills, tech pills, and the install/launch buttons. Hover
+// lifts the card with an accent border and a soft shadow and records the
+// hovered game on the model.
 func (m *model) gameCard(e ui.GameRow) {
 	cardW, cardH := m.cardW, m.cardH
 	coverW := float32(cardW - 2*cardPad)
 	Container(Attrs(Pad(cardPad), Gap(sp4), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(radiusM), Clip), func() {
-		Container(Attrs(Row, Gap(4)), func() {
+		if IsHovered() {
+			m.hoveredDir = e.InstallDir
+			ModAttrs(func(a *AttrSet) {
+				a.BorderWidth = 1.5
+				a.BorderColor = accent
+				a.Shadow.Blur = 16
+				a.Shadow.Alpha = 0.3
+				a.Shadow.Offset[1] = 2
+			})
+		} else if m.hoveredDir == e.InstallDir {
+			m.hoveredDir = ""
+		}
+		m.cardRect = GetScreenRectOf(CurrentId())
+		Container(Attrs(Row, Gap(sp4)), func() {
 			if e.Platform != "" {
 				badgePill(e.Platform, ui.ToneGray)
 			}
@@ -116,29 +133,32 @@ func (m *model) gameCard(e ui.GameRow) {
 			if e.Actionable {
 				badgePill(string(e.Status), ui.ToneRed)
 			}
+			if m.sess != nil && m.sess.OpBusy(e.InstallDir) {
+				spinnerGlyph()
+			}
 		})
 		if e.CoverPath != "" {
 			Image(e.CoverPath, Vec2{coverW, coverW * coverRatio})
 		} else {
-			Container(Attrs(FixSize(coverW, coverW*coverRatio), Background(230, 10, 30, 1)), func() {})
+			coverPlaceholder(e.Title, coverW, coverW*coverRatio)
 		}
 		txt(e.Title)
 		if pills := versionPills(&e); len(pills) > 0 {
-			Container(Attrs(Row, Gap(4)), func() {
+			Container(Attrs(Row, Gap(sp4)), func() {
 				for _, p := range pills {
 					badgePill(p.Label, p.Tone)
 				}
 			})
 		}
 		if len(e.TechBadges) > 0 {
-			Container(Attrs(Row, Gap(4)), func() {
+			Container(Attrs(Row, Gap(sp4)), func() {
 				for _, b := range e.TechBadges {
 					badgePill(b.Label, b.Tone)
 				}
 			})
 		}
 		if m.sess != nil {
-			Container(Attrs(Row, Gap(4)), func() {
+			Container(Attrs(Row, Gap(sp4)), func() {
 				if focusableButton(SymIRight, quickLabel(&e)) {
 					m.sess.QuickInstall(e.InstallDir)
 				}
@@ -151,4 +171,35 @@ func (m *model) gameCard(e ui.GameRow) {
 			m.sess.Select(e.InstallDir)
 		}
 	})
+}
+
+// coverPlaceholder renders a deterministic gradient tile for games without
+// cover art: the hue comes from a title hash, with a centered image glyph
+// and the title initial.
+func coverPlaceholder(title string, w, h float32) {
+	hue := float32(fnv32(title) % 360)
+	Container(Attrs(FixSize(w, h), Background(hue, 32, 26, 1), GradVec(Vec4{0, 12, 24, 0}), Corners(radiusS), Center, Gap(sp4)), func() {
+		Icon(TypImage, FontSize(28), TextColor(hue, 25, 72, 1))
+		if initial := titleInitial(title); initial != "" {
+			Label(initial, FontSize(15), TextColor(hue, 20, 85, 1), FontWeight(WeightBold))
+		}
+	})
+}
+
+// fnv32 hashes a title so each game's placeholder lands on a stable hue.
+func fnv32(s string) uint32 {
+	h := uint32(2166136261)
+	for i := 0; i < len(s); i++ {
+		h ^= uint32(s[i])
+		h *= 16777619
+	}
+	return h
+}
+
+// titleInitial is the uppercased first letter of a game title.
+func titleInitial(s string) string {
+	for _, r := range s {
+		return strings.ToUpper(string(r))
+	}
+	return ""
 }
