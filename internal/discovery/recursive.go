@@ -30,20 +30,61 @@ var recursiveSkipTokens = []string{
 // recursive scan descends looking for the main executable.
 const maxExeDepth = 3
 
-// ScanRecursive treats each subdirectory of root as one installed game and
-// resolves its main executable by descending at most maxExeDepth levels.
-// Candidates named like uninstallers/installers/crash handlers are skipped;
-// ranking prefers a name match to the game folder, then larger size, then
-// 64-bit-looking names. Subdirectories that yield no executable are skipped
-// (logged at debug, never an error). Games are deduplicated by canonical
-// install directory, so rescanning a root is idempotent.
+// ScanRecursive resolves the games under root. When root itself is a game
+// (yields a main executable) it gets its own row; either way its children
+// are then evaluated with the same game/container/empty rules as
+// AddDirectory (see ClassifyGameDir): children that are games produce rows
+// (engine folders like bin/Binaries/Win64 never do — they hold the parent's
+// own binaries), containers are recursed into transparently (never rows),
+// and exe-less children are skipped. Candidates named like
+// uninstallers/installers/crash handlers are skipped; ranking prefers a name
+// match to the game folder, then larger size, then 64-bit-looking names.
+// Games are deduplicated by canonical install directory, so rescanning is
+// idempotent.
 func ScanRecursive(ctx context.Context, root string) ([]domain.Game, error) {
-	entries, err := os.ReadDir(root)
+	root = canonicalPath(root)
+	kind, err := ClassifyGameDir(ctx, root)
 	if err != nil {
 		return nil, err
 	}
 	var games []domain.Game
-	seen := map[string]bool{}
+	if kind == GameDirGame {
+		exe, err := findMainExe(ctx, root)
+		if err != nil {
+			return nil, err
+		}
+		games = append(games, domain.Game{
+			AppID:      "manual_" + filepath.Base(root),
+			Name:       gameTitle(exe, filepath.Base(root)),
+			InstallDir: root,
+			Store:      domain.StoreManual,
+			ExePath:    exe,
+		})
+	}
+	sub, err := scanLevel(ctx, root, 0, map[string]bool{root: true})
+	if err != nil {
+		return games, err
+	}
+	return append(games, sub...), nil
+}
+
+// maxContainerDepth bounds how many nested container levels a scan recurses
+// through (Games → Steam → common → …). Deeper nesting is unusual enough
+// that logging and stopping beats walking arbitrarily deep trees.
+const maxContainerDepth = 4
+
+// scanLevel evaluates the immediate children of dir: games become rows,
+// containers are recursed into, anything else is skipped.
+func scanLevel(ctx context.Context, dir string, depth int, seen map[string]bool) ([]domain.Game, error) {
+	if depth > maxContainerDepth {
+		log.Debug().Str("dir", dir).Msg("recursive scan: container nesting limit reached")
+		return nil, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var games []domain.Game
 	for _, e := range entries {
 		if err := ctx.Err(); err != nil {
 			return games, err
@@ -51,7 +92,7 @@ func ScanRecursive(ctx context.Context, root string) ([]domain.Game, error) {
 		if e.IsDir() {
 			// plain directory
 		} else if e.Type()&fs.ModeSymlink != 0 {
-			st, err := os.Stat(filepath.Join(root, e.Name()))
+			st, err := os.Stat(filepath.Join(dir, e.Name()))
 			if err != nil || !st.IsDir() {
 				continue
 			}
@@ -61,27 +102,49 @@ func ScanRecursive(ctx context.Context, root string) ([]domain.Game, error) {
 		if strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		dir := canonicalPath(filepath.Join(root, e.Name()))
-		if seen[dir] {
+		child := canonicalPath(filepath.Join(dir, e.Name()))
+		if seen[child] {
 			continue
 		}
-		seen[dir] = true
+		seen[child] = true
 
-		exe, err := findMainExe(ctx, dir)
+		kind, err := ClassifyGameDir(ctx, child)
 		if err != nil {
-			return games, err
-		}
-		if exe == "" {
-			log.Debug().Str("dir", dir).Msg("recursive scan: no game executable found, skipping")
+			if ctx.Err() != nil {
+				return games, err
+			}
+			log.Debug().Err(err).Str("dir", child).Msg("recursive scan: classification failed, skipping")
 			continue
 		}
-		games = append(games, domain.Game{
-			AppID:      "manual_" + e.Name(),
-			Name:       gameTitle(exe, e.Name()),
-			InstallDir: dir,
-			Store:      domain.StoreManual,
-			ExePath:    exe,
-		})
+		switch kind {
+		case GameDirGame:
+			if engineFolderNames[strings.ToLower(e.Name())] {
+				log.Debug().Str("dir", child).Msg("recursive scan: engine folder, not a game row")
+				continue
+			}
+			exe, err := findMainExe(ctx, child)
+			if err != nil {
+				return games, err
+			}
+			if exe == "" {
+				continue
+			}
+			games = append(games, domain.Game{
+				AppID:      "manual_" + e.Name(),
+				Name:       gameTitle(exe, e.Name()),
+				InstallDir: child,
+				Store:      domain.StoreManual,
+				ExePath:    exe,
+			})
+		case GameDirContainer:
+			sub, err := scanLevel(ctx, child, depth+1, seen)
+			if err != nil {
+				return games, err
+			}
+			games = append(games, sub...)
+		default:
+			log.Debug().Str("dir", child).Msg("recursive scan: no game here, skipping")
+		}
 	}
 	return games, nil
 }

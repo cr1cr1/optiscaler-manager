@@ -18,12 +18,13 @@ const (
 	// GameDirEmpty means no executable qualifies within the scanner's depth
 	// budget: not a game, and no game-bearing children either.
 	GameDirEmpty GameDirKind = iota
-	// GameDirGame means the directory itself yields a main executable.
+	// GameDirGame means the directory itself contains a game: an executable
+	// directly inside it, or one deeper down with no game-bearing child in
+	// between (engine layouts like Binaries/Win64).
 	GameDirGame
-	// GameDirContainer means the directory has no executable of its own,
-	// but at least one immediate subdirectory looks like a game dir: it is
-	// a library/collection root to be scanned per child, not added as one
-	// game.
+	// GameDirContainer means the directory holds other directories that are
+	// (or contain) games: it is a library/collection root to be scanned
+	// transparently, never added as a game itself.
 	GameDirContainer
 )
 
@@ -39,102 +40,136 @@ func (k GameDirKind) String() string {
 	}
 }
 
-// LooksLikeGameDir reports whether dir is itself a game directory: an
-// executable qualifies directly inside dir or one level down, or deeper
-// within the scanner's depth budget (engine-style layouts such as
-// Binaries/Win64). It is the boolean form of ClassifyGameDir.
+// LooksLikeGameDir reports whether dir is itself a game directory (see
+// GameDirGame). It is the boolean form of ClassifyGameDir.
 func LooksLikeGameDir(ctx context.Context, dir string) bool {
 	kind, err := ClassifyGameDir(ctx, dir)
 	return err == nil && kind == GameDirGame
 }
 
+// engineFolderNames are subdirectory names that hold a game's own binaries
+// rather than a separate game. A child with one of these names never counts
+// as a game-bearing child of its parent — the executables inside it belong
+// to the parent. The set is intentionally small and lowercase-compared.
+var engineFolderNames = map[string]bool{
+	"bin": true, "binaries": true,
+	"win64": true, "win32": true, "x64": true, "x86": true, "x86_64": true,
+	"engine": true, "redist": true, "redistributable": true, "_commonredist": true,
+	"support": true, "tools": true, "lib": true, "libs": true,
+	"thirdparty": true, "third_party": true, "plugins": true,
+	"content": true, "data": true, "resources": true, "assets": true,
+	"vendor": true, "runtime": true, "runtimes": true,
+}
+
+// maxClassifyDepth bounds the recursion ClassifyGameDir does while proving
+// that no descendant is a game. It only guards pathological trees; real
+// libraries nest far less.
+const maxClassifyDepth = 6
+
 // ClassifyGameDir sorts dir into GameDirGame, GameDirContainer, or
 // GameDirEmpty using only stats and bounded directory walks (no PE
 // parsing). Executable candidacy, skip tokens, and the depth cap are
-// exactly findMainExe's, so the predicate never disagrees with the
-// scanner about what counts as a game binary.
+// exactly findMainExe's, so the predicate never disagrees with the scanner
+// about what counts as a game binary.
 //
-// Classification rules, in order:
-//   - an exe at depth ≤ 1 (in dir or one level down) → GameDirGame;
-//   - no gamey children (no immediate non-dot subdirectory yields an exe
-//     under findMainExe's depth-bounded walk) → GameDirEmpty, because any
-//     exe at depth 1-3 would make its top-level ancestor gamey;
-//   - exactly one gamey child but dir's own exe reaches it within two
-//     levels (engine-style layouts such as Binaries/Win64, where the lone
-//     subdirectory exists to hold the binaries) → GameDirGame;
-//   - otherwise → GameDirContainer: a library root whose games live one
-//     level down (or a single child that nests its exe deeper than an
-//     engine layout would).
+// Classification rules:
+//   - an exe directly inside dir → GameDirGame;
+//   - an exe at depth ≤ maxExeDepth with no game-bearing or
+//     container-bearing child in between → GameDirGame (the exe is this
+//     dir's own, e.g. bin/game.exe or Binaries/Win64/game.exe);
+//   - any child that is itself a game (and not an engine folder by name) or
+//     itself a container → GameDirContainer (the dir is a library root);
+//   - otherwise → GameDirEmpty.
+//
+// The engine-folder name list is what separates "bin" (this game's
+// binaries) from a same-shaped game folder one level down in a library
+// root.
 func ClassifyGameDir(ctx context.Context, dir string) (GameDirKind, error) {
-	shallow, err := findMainExeWithin(ctx, dir, 1)
-	if err != nil {
-		return GameDirEmpty, err
-	}
-	if shallow != "" {
-		return GameDirGame, nil
-	}
-	gamey, err := gameyChildren(ctx, dir)
-	if err != nil {
-		return GameDirEmpty, err
-	}
-	if gamey == 0 {
-		return GameDirEmpty, nil
-	}
-	if gamey == 1 {
-		medium, err := findMainExeWithin(ctx, dir, 2)
-		if err != nil {
-			return GameDirEmpty, err
-		}
-		if medium != "" {
-			return GameDirGame, nil
-		}
-	}
-	return GameDirContainer, nil
+	return classifyGameDir(ctx, dir, 0)
 }
 
-// gameyChildren counts dir's immediate non-dot subdirectories that yield a
-// main executable under findMainExe's own depth-bounded walk. Broken
-// symlinks and non-directory entries are ignored.
-func gameyChildren(ctx context.Context, dir string) (int, error) {
+func classifyGameDir(ctx context.Context, dir string, depth int) (GameDirKind, error) {
+	if err := ctx.Err(); err != nil {
+		return GameDirEmpty, err
+	}
+	if depth > maxClassifyDepth {
+		return GameDirEmpty, nil
+	}
+	own, err := findMainExeWithin(ctx, dir, 0)
+	if err != nil {
+		return GameDirEmpty, err
+	}
+	if own != "" {
+		return GameDirGame, nil
+	}
+	deep, err := findMainExeWithin(ctx, dir, maxExeDepth)
+	if err != nil {
+		return GameDirEmpty, err
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return 0, err
+		return GameDirEmpty, err
 	}
-	gamey := 0
+	gameChildren, containerChildren := 0, 0
 	for _, e := range entries {
 		if err := ctx.Err(); err != nil {
-			return gamey, err
+			return GameDirEmpty, err
 		}
 		if strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		child := filepath.Join(dir, e.Name())
-		if e.IsDir() {
-			// plain directory
-		} else if e.Type()&fs.ModeSymlink != 0 {
-			st, err := os.Stat(child)
-			if err != nil || !st.IsDir() {
-				continue
-			}
-			// Resolve the link: findMainExeWithin walks with WalkDir, which
-			// does not descend a symlink root, so the unresolved path would
-			// count as non-gamey while ScanRecursive (canonicalizing first)
-			// scans the target.
-			resolved, err := filepath.EvalSymlinks(child)
-			if err != nil {
-				continue
-			}
-			child = resolved
-		} else {
+		child := dirChild(e, dir)
+		if child == "" {
 			continue
 		}
-		exe, err := findMainExeWithin(ctx, child, maxExeDepth)
+		kind, err := classifyGameDir(ctx, child, depth+1)
 		if err != nil {
-			return gamey, err
+			return GameDirEmpty, err
 		}
-		if exe != "" {
-			gamey++
+		switch kind {
+		case GameDirGame:
+			if !engineFolderNames[strings.ToLower(e.Name())] {
+				gameChildren++
+			}
+		case GameDirContainer:
+			containerChildren++
+		}
+		if gameChildren+containerChildren > 0 {
+			break // one game-bearing descendant already decides Container
 		}
 	}
-	return gamey, nil
+	switch {
+	case gameChildren+containerChildren > 0:
+		return GameDirContainer, nil
+	case deep != "":
+		return GameDirGame, nil
+	default:
+		return GameDirEmpty, nil
+	}
+}
+
+// dirChild resolves e (a directory entry of dir) to the child path to
+// classify, following symlinks to directories. It returns "" for non-dirs,
+// broken links, and links that do not resolve to a directory.
+func dirChild(e fs.DirEntry, dir string) string {
+	child := filepath.Join(dir, e.Name())
+	if e.IsDir() {
+		return child
+	}
+	if e.Type()&fs.ModeSymlink == 0 {
+		return ""
+	}
+	st, err := os.Stat(child)
+	if err != nil || !st.IsDir() {
+		return ""
+	}
+	// Resolve the link: findMainExeWithin walks with WalkDir, which does not
+	// descend a symlink root, so the unresolved path would count as
+	// non-gamey while the rest of the scanner (canonicalizing first) sees
+	// the target.
+	resolved, err := filepath.EvalSymlinks(child)
+	if err != nil {
+		return ""
+	}
+	return resolved
 }
