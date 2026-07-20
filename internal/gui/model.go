@@ -40,6 +40,7 @@ type model struct {
 	selIdx       int            // keyboard-driven selection index into visible rows
 	hoveredDir   string         // install dir of the card under the mouse, "" when none
 	cardRect     Rect           // screen rect of the last rendered card (hover test seam)
+	listSegRect  Rect           // screen rect of the List view-switch segment (click test seam)
 	cols         int            // current grid columns, derived from live width
 	cardW        int            // current card width in px, derived from live width
 	cardH        int            // current card height in px
@@ -117,6 +118,12 @@ func (m *model) selectedRow() *ui.GameRow {
 		}
 	}
 	return nil
+}
+
+// libraryEmpty reports whether the library has no rows at all; toolbar
+// controls that only make sense with games are disabled while it is true.
+func (m *model) libraryEmpty() bool {
+	return len(m.state.Rows) == 0
 }
 
 // setSort forwards the toolbar sort choice to the session.

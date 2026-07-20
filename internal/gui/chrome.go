@@ -161,7 +161,7 @@ func (m *model) settingsDirsSection() {
 					}
 				})
 			}
-			ScrollBars()
+			scrollBars()
 		})
 	}
 	if m.sess != nil && focusableButton(SymIPlus, "Add directory…") {
@@ -184,11 +184,9 @@ func (m *model) toolbar() {
 		if m.sess != nil && focusableButton(SymIPlus, "Add Game") {
 			m.sess.PickAndAddDirectory(m.ctx)
 		}
-		Container(Attrs(Grow(1), MinSize(140, 34), MaxSizeVec(Vec2{420, 34})), func() {
-			TextInputExt(&m.filter, searchInputAttrs())
-		})
+		m.searchInput()
 		if m.sess != nil {
-			MenuButtonExt("Sort: "+sortLabel(m.state.Sort), ButtonAttrs{Icon: TypArrowSortedDown}, func() {
+			MenuButtonExt("Sort: "+sortLabel(m.state.Sort), ButtonAttrs{Icon: TypArrowSortedDown, Disabled: m.libraryEmpty()}, func() {
 				if MenuItem(SymStar, "Default (actionable first)") {
 					m.setSort(ui.SortDefault)
 				}
@@ -203,14 +201,6 @@ func (m *model) toolbar() {
 			muted(m.state.Busy)
 		}
 	})
-}
-
-// searchInputAttrs styles the library search field.
-func searchInputAttrs() TextInputAttrs {
-	a := DefaultTextInputAttrs()
-	a.NoAutoFocus = true
-	a.Accent = accent
-	return a
 }
 
 // sortLabel is the toolbar caption for the active sort mode.

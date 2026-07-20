@@ -63,24 +63,81 @@ func spinnerGlyph() {
 	RequestNextFrame()
 }
 
-// viewSwitch is the grid/list segmented toggle with icon segments.
+// searchInput is the themed library filter field: shirei's TextInputExt is
+// hardcoded light-on-white with no theme hook, so the toolbar uses this
+// minimal dark input instead (append/backspace editing, Esc clears and
+// blurs). Disabled while the library is empty.
+func (m *model) searchInput() {
+	if m.libraryEmpty() {
+		Container(Attrs(Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(sp8, sp12), Grow(1), MinSize(140, 34), MaxSizeVec(Vec2{420, 34}), Clip, Trans(0.4)), func() {
+			Container(Attrs(Row, Gap(sp8), CrossMid), func() {
+				widgets.Icon(widgets.SymSearch, FontSize(13), TextColorVec(txtMuted))
+				Label("Search…", FontSize(13), TextColorVec(txtMuted))
+			})
+		})
+		return
+	}
+	Container(Attrs(Focusable, Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(sp8, sp12), Grow(1), MinSize(140, 34), MaxSizeVec(Vec2{420, 34}), Clip), func() {
+		CycleFocusOnTab()
+		FocusOnClick()
+		if HasFocus() {
+			ModAttrs(func(a *AttrSet) { a.BorderColor = accent })
+			m.filter += FrameInput.Text
+			switch FrameInput.Key {
+			case KeyDeleteBackward:
+				if r := []rune(m.filter); len(r) > 0 {
+					m.filter = string(r[:len(r)-1])
+				}
+				FrameInput.Key = KeyCodeNone
+			case KeyEscape:
+				m.filter = ""
+				Blur()
+				FrameInput.Key = KeyCodeNone
+			case KeyEnter:
+				FrameInput.Key = KeyCodeNone // typing must not open the detail panel
+			}
+		}
+		Container(Attrs(Row, Gap(sp8), CrossMid), func() {
+			widgets.Icon(widgets.SymSearch, FontSize(13), TextColorVec(txtMuted))
+			switch {
+			case m.filter != "" && HasFocus():
+				Label(m.filter+"|", FontSize(13), TextColorVec(txtMain))
+			case m.filter != "":
+				Label(m.filter, FontSize(13), TextColorVec(txtMain))
+			case HasFocus():
+				Label("|", FontSize(13), TextColorVec(txtMuted))
+			default:
+				Label("Search…", FontSize(13), TextColorVec(txtMuted))
+			}
+		})
+	})
+}
+
+// viewSwitch is the grid/list segmented toggle with icon segments; disabled
+// while the library is empty.
 func (m *model) viewSwitch() {
+	disabled := m.libraryEmpty()
 	Container(Attrs(Row, Corners(radiusM), Clip, BorderWidth(1), BorderColorVec(border)), func() {
-		m.viewSegment(widgets.SymGrid, "Grid", ui.ViewGrid)
-		m.viewSegment(widgets.SymList, "List", ui.ViewList)
+		m.viewSegment(widgets.SymGrid, "Grid", ui.ViewGrid, disabled)
+		m.viewSegment(widgets.SymList, "List", ui.ViewList, disabled)
 	})
 }
 
 // viewSegment is one half of the view switch; activating it flips the view
 // mode through the session.
-func (m *model) viewSegment(icon rune, label string, mode ui.ViewMode) {
+func (m *model) viewSegment(icon rune, label string, mode ui.ViewMode, disabled bool) {
 	selected := m.state.Mode == mode
 	fg := txtMuted
 	if selected {
 		fg = txtMain
 	}
 	Container(Attrs(Row, CrossMid, Gap(sp4), Pad2(sp4, sp8)), func() {
+		if mode == ui.ViewList {
+			m.listSegRect = GetScreenRectOf(CurrentId())
+		}
 		switch {
+		case disabled:
+			ModAttrs(Trans(0.35))
 		case selected:
 			ModAttrs(BackgroundVec(accent))
 		case IsHovered():
@@ -88,7 +145,7 @@ func (m *model) viewSegment(icon rune, label string, mode ui.ViewMode) {
 		}
 		widgets.Icon(icon, FontSize(13), TextColorVec(fg))
 		Label(label, FontSize(12), TextColorVec(fg))
-		if PressAction() && m.sess != nil && !selected {
+		if !disabled && PressAction() && m.sess != nil && !selected {
 			m.sess.ToggleView()
 		}
 	})
