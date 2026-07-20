@@ -48,11 +48,12 @@ func guiFakes(t *testing.T, opts ...func(*ui.Deps)) (*ui.Session, string) {
 	writeGUIFile(t, filepath.Join(bin, "nvngx_dlss.dll"), "DLSS")
 
 	deps := ui.Deps{
-		Store:     store.New(root),
-		GH:        gh.NewWithBaseURL(nil, filepath.Join(root, "cache"), srv.URL),
-		Covers:    covers.NewWithBase(nil, filepath.Join(root, "covers"), srv.URL+"/cdn/%s", srv.URL+"/search/"),
-		CacheDir:  filepath.Join(root, "cache"),
-		SteamRoot: steamRoot,
+		Store:        store.New(root),
+		GH:           gh.NewWithBaseURL(nil, filepath.Join(root, "cache"), srv.URL),
+		Covers:       covers.NewWithBase(nil, filepath.Join(root, "covers"), srv.URL+"/cdn/%s", srv.URL+"/search/"),
+		CacheDir:     filepath.Join(root, "cache"),
+		SteamRoot:    steamRoot,
+		SettingsRoot: filepath.Join(root, "settings"), // realistic default; mutators may override
 	}
 	for _, o := range opts {
 		o(&deps)
