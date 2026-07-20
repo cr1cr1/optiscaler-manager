@@ -345,6 +345,7 @@ func TestAddDirectoryAddsRowAndPersists(t *testing.T) {
 	}
 
 	e.sess.AddDirectory(custom)
+	waitEventText(t, e.sess, EvScanDone, "directory added")
 	st := e.sess.Snapshot()
 	if len(st.Rows) != 2 {
 		t.Fatalf("rows after add: %d", len(st.Rows))

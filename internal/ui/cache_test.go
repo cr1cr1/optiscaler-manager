@@ -89,6 +89,7 @@ func TestAddDirectoryPersistsCache(t *testing.T) {
 	e.sess.Scan(context.Background())
 	waitEvent(t, e.sess, EvScanDone)
 	e.sess.AddDirectory(custom)
+	waitEventText(t, e.sess, EvScanDone, "directory added")
 
 	c := readGamesCache(t, e.sess.deps.SettingsRoot)
 	found := false
@@ -268,6 +269,8 @@ func TestRemoveDirectoryRemovesRowsSettingsAndCache(t *testing.T) {
 
 	e.sess.AddDirectory(d1)
 	e.sess.AddDirectory(d2)
+	waitEventText(t, e.sess, EvScanDone, "directory added")
+	waitEventText(t, e.sess, EvScanDone, "directory added")
 	drainEvents(e.sess)
 	e.sess.Scan(context.Background())
 	waitEvent(t, e.sess, EvScanDone)

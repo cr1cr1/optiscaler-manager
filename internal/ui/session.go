@@ -354,8 +354,25 @@ func (s *Session) Scan(ctx context.Context) {
 			rows = append(rows, s.toRow(ctx, e))
 		}
 		rows = s.mergeExtraDirs(ctx, rows, snap.ExtraDirs)
-		sortRows(rows)
 		s.mu.Lock()
+		// Directories added while this scan was in flight are not in the
+		// snapshot's ExtraDirs; keep their rows rather than wiping them.
+		fresh := map[string]bool{}
+		for _, r := range rows {
+			fresh[r.InstallDir] = true
+		}
+		for _, r := range s.st.Rows {
+			if fresh[r.InstallDir] {
+				continue
+			}
+			for _, d := range s.deps.Settings.ExtraDirs {
+				if r.InstallDir == d {
+					rows = append(rows, r)
+					break
+				}
+			}
+		}
+		sortRows(rows)
 		s.st.Rows = rows
 		s.st.StatusLine = fmt.Sprintf("%d games", len(rows))
 		s.st.Busy = ""
@@ -412,48 +429,123 @@ func (s *Session) Rollback(gameDir string) {
 }
 
 // AddDirectory registers a user-picked directory as a game row and persists
-// it in settings so later scans keep it.
+// it in settings so later scans keep it. The call never blocks on
+// enrichment: validation, settings persistence, and a placeholder row are
+// synchronous (so a Scan started right after sees the directory), while the
+// walk/classify/cover enrichment runs in a goroutine that replaces the
+// placeholder and settles with the usual EvScanDone "directory added"
+// event. A duplicate Add of the same canonical dir while one is in flight
+// is rejected with a toast and no event.
 func (s *Session) AddDirectory(dir string) {
-	entry, err := app.ManualEntry(dir)
+	root, err := canonicalDirChecked(dir)
 	if err != nil {
 		s.toast("add directory: "+err.Error(), true)
+		return
+	}
+	ctx, ok := s.registerOp(root)
+	if !ok {
+		s.toast("add already in progress", true)
 		return
 	}
 	s.mu.Lock()
 	exists := false
 	for _, r := range s.st.Rows {
-		if r.InstallDir == entry.Game.InstallDir {
+		if r.InstallDir == root {
 			exists = true
 			break
 		}
 	}
-	if !exists {
-		s.st.Rows = append(s.st.Rows, s.toRow(context.Background(), entry))
-		sortRows(s.st.Rows)
-		present := false
-		for _, d := range s.deps.Settings.ExtraDirs {
-			if d == entry.Game.InstallDir {
-				present = true
+	if exists {
+		s.mu.Unlock()
+		s.finishOp(root)
+		s.toast(filepath.Base(root)+" already in library", false)
+		return
+	}
+	present := false
+	for _, d := range s.deps.Settings.ExtraDirs {
+		if d == root {
+			present = true
+			break
+		}
+	}
+	if !present {
+		s.deps.Settings.ExtraDirs = append(s.deps.Settings.ExtraDirs, root)
+	}
+	snap := s.deps.Settings
+	base := filepath.Base(root)
+	s.st.Rows = append(s.st.Rows, GameRow{
+		Title:      base,
+		AppID:      "custom_" + base,
+		InstallDir: root,
+		Platform:   domain.StoreManual.String(),
+		Store:      domain.StoreManual,
+	})
+	sortRows(s.st.Rows)
+	s.mu.Unlock()
+	if !present {
+		if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
+			s.toast("settings not saved: "+err.Error(), true)
+		}
+	}
+	go func() {
+		entry, err := app.ManualEntry(dir)
+		if err != nil {
+			s.finishOp(root)
+			s.removeRow(root)
+			s.toast("add directory: "+err.Error(), true)
+			return
+		}
+		row := s.toRow(ctx, entry)
+		if ctx.Err() != nil {
+			s.finishOp(root)
+			return // cancelled mid-add: the placeholder row stays for the next scan
+		}
+		s.mu.Lock()
+		replaced := false
+		for i := range s.st.Rows {
+			if s.st.Rows[i].InstallDir == entry.Game.InstallDir {
+				s.st.Rows[i] = row
+				replaced = true
 				break
 			}
 		}
-		if !present {
-			s.deps.Settings.ExtraDirs = append(s.deps.Settings.ExtraDirs, entry.Game.InstallDir)
+		if !replaced {
+			s.st.Rows = append(s.st.Rows, row)
+		}
+		sortRows(s.st.Rows)
+		s.mu.Unlock()
+		s.finishOp(root)
+		s.persistCache()
+		s.toast("added "+entry.Game.Name, false)
+		s.emit(Event{Kind: EvScanDone, Text: "directory added"})
+	}()
+}
+
+// removeRow drops the row for dir.
+func (s *Session) removeRow(dir string) {
+	s.mu.Lock()
+	kept := make([]GameRow, 0, len(s.st.Rows))
+	for _, r := range s.st.Rows {
+		if r.InstallDir != dir {
+			kept = append(kept, r)
 		}
 	}
-	snap := s.deps.Settings
+	s.st.Rows = kept
 	s.mu.Unlock()
-	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
-		s.toast("settings not saved: "+err.Error(), true)
-		return
+}
+
+// canonicalDirChecked canonicalizes p like canonicalDir and verifies it is
+// an existing directory, mirroring the validation app.ManualEntry applies.
+func canonicalDirChecked(p string) (string, error) {
+	root := canonicalDir(p)
+	st, err := os.Stat(root)
+	if err != nil {
+		return "", fmt.Errorf("stat %s: %w", root, err)
 	}
-	if exists {
-		s.toast(entry.Game.Name+" already in library", false)
-		return
+	if !st.IsDir() {
+		return "", fmt.Errorf("%s is not a directory", root)
 	}
-	s.persistCache()
-	s.toast("added "+entry.Game.Name, false)
-	s.emit(Event{Kind: EvScanDone, Text: "directory added"})
+	return root, nil
 }
 
 // RemoveDirectory unregisters a manually added directory: its row and any
