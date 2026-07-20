@@ -3,9 +3,11 @@ package ui
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 )
 
 // containerFixture returns a library root holding two game subdirectories
@@ -104,5 +106,146 @@ func TestScan_StaleContainerRowNotResurrected(t *testing.T) {
 	}
 	if _, ok := rows[canonicalDir(alpha)]; !ok {
 		t.Errorf("child game Alpha missing from rows: %v", rows)
+	}
+}
+
+func toastWith(toasts []Toast, substr string) (Toast, bool) {
+	for _, t := range toasts {
+		if strings.Contains(t.Text, substr) {
+			return t, true
+		}
+	}
+	return Toast{}, false
+}
+
+// TestAddDirectory_Container_NoSelfRow_ScanFolderToast: adding a container
+// registers it as a scan root — ExtraDirs updated and persisted — without a
+// placeholder or self-row, and the toast says "scan folder", never "added".
+func TestAddDirectory_Container_NoSelfRow_ScanFolderToast(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	root, _, _ := containerFixture(t)
+
+	e.sess.AddDirectory(root)
+
+	want := canonicalDir(root)
+	got := e.sess.Settings().ExtraDirs
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("in-memory ExtraDirs = %v, want [%s]", got, want)
+	}
+	loaded, err := settings.Load(e.sess.deps.SettingsRoot)
+	if err != nil {
+		t.Fatalf("load settings: %v", err)
+	}
+	if len(loaded.ExtraDirs) != 1 || loaded.ExtraDirs[0] != want {
+		t.Fatalf("persisted ExtraDirs = %v, want [%s]", loaded.ExtraDirs, want)
+	}
+	for _, r := range e.sess.Snapshot().Rows {
+		if r.InstallDir == want {
+			t.Fatalf("container add created a self-row: %+v", r)
+		}
+	}
+
+	waitEvent(t, e.sess, EvScanDone) // the triggered rescan settles
+	toasts := e.sess.Snapshot().Toasts
+	if _, ok := toastWith(toasts, "as a scan folder"); !ok {
+		t.Errorf("missing scan-folder toast: %+v", toasts)
+	}
+	if _, ok := toastWith(toasts, "added "); ok {
+		t.Errorf("container add must not toast 'added X': %+v", toasts)
+	}
+	// No self-row even after the triggered scan settles.
+	for _, r := range e.sess.Snapshot().Rows {
+		if r.InstallDir == want {
+			t.Fatalf("container self-row after rescan: %+v", r)
+		}
+	}
+}
+
+// TestAddDirectory_Container_ChildrenSurfacedAfterRescan: the rescan a
+// container add triggers surfaces the root's games as individual rows.
+func TestAddDirectory_Container_ChildrenSurfacedAfterRescan(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	root, alpha, beta := containerFixture(t)
+
+	e.sess.AddDirectory(root)
+	waitEvent(t, e.sess, EvScanDone)
+
+	rows := rowDirs(e.sess.Snapshot().Rows)
+	if _, ok := rows[canonicalDir(alpha)]; !ok {
+		t.Errorf("child game Alpha not surfaced: %v", rows)
+	}
+	if _, ok := rows[canonicalDir(beta)]; !ok {
+		t.Errorf("child game Beta not surfaced: %v", rows)
+	}
+	if r, ok := rows[canonicalDir(root)]; ok {
+		t.Errorf("container row present after rescan: %+v", r)
+	}
+}
+
+// TestAddDirectory_NoGamesAnywhere_Refused_NotPersisted: a directory with no
+// game exe anywhere is refused — no ExtraDirs change (memory or disk), no
+// row, no op slot held — with a warning toast.
+func TestAddDirectory_NoGamesAnywhere_Refused_NotPersisted(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	empty := filepath.Join(t.TempDir(), "NothingHere")
+	writeUIFile(t, filepath.Join(empty, "notes.txt"), "hello")
+
+	e.sess.AddDirectory(empty)
+
+	if got := e.sess.Settings().ExtraDirs; len(got) != 0 {
+		t.Fatalf("ExtraDirs after refusal = %v, want empty", got)
+	}
+	loaded, err := settings.Load(e.sess.deps.SettingsRoot)
+	if err != nil {
+		t.Fatalf("load settings: %v", err)
+	}
+	if len(loaded.ExtraDirs) != 0 {
+		t.Fatalf("persisted ExtraDirs after refusal = %v, want empty", loaded.ExtraDirs)
+	}
+	for _, r := range e.sess.Snapshot().Rows {
+		if r.InstallDir == canonicalDir(empty) {
+			t.Fatalf("refused directory got a row: %+v", r)
+		}
+	}
+	if e.sess.OpBusy(canonicalDir(empty)) {
+		t.Error("refused directory still holds an op slot")
+	}
+	toast, ok := toastWith(e.sess.Snapshot().Toasts, "no games found under NothingHere")
+	if !ok {
+		t.Fatalf("missing refusal toast: %+v", e.sess.Snapshot().Toasts)
+	}
+	if !toast.Warn {
+		t.Errorf("refusal toast Warn = false, want true: %+v", toast)
+	}
+}
+
+// TestAddDirectory_GameDir_RowAppears: pinning the game-dir path — a real
+// game directory still gets its row (placeholder then enrichment) and
+// settles with the usual "directory added" event.
+func TestAddDirectory_GameDir_RowAppears(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	game := filepath.Join(t.TempDir(), "PinnedGame")
+	writeUIFile(t, filepath.Join(game, "pinned.exe"), "GAME")
+
+	e.sess.AddDirectory(game)
+	waitEventText(t, e.sess, EvScanDone, "directory added")
+
+	r, ok := rowDirs(e.sess.Snapshot().Rows)[canonicalDir(game)]
+	if !ok {
+		t.Fatal("game dir row missing after add")
+	}
+	if r.Title != "PinnedGame" {
+		t.Errorf("row title = %q, want folder fallback %q", r.Title, "PinnedGame")
+	}
+	loaded, err := settings.Load(e.sess.deps.SettingsRoot)
+	if err != nil {
+		t.Fatalf("load settings: %v", err)
+	}
+	if len(loaded.ExtraDirs) != 1 || loaded.ExtraDirs[0] != canonicalDir(game) {
+		t.Fatalf("persisted ExtraDirs = %v", loaded.ExtraDirs)
 	}
 }

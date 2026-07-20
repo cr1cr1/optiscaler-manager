@@ -595,19 +595,41 @@ func (s *Session) Rollback(gameDir string) {
 	}()
 }
 
-// AddDirectory registers a user-picked directory as a game row and persists
-// it in settings so later scans keep it. The call never blocks on
-// enrichment: validation, settings persistence, and a placeholder row are
-// synchronous (so a Scan started right after sees the directory), while the
-// walk/classify/cover enrichment runs in a goroutine that replaces the
-// placeholder and settles with the usual EvScanDone "directory added"
-// event. A duplicate Add of the same canonical dir while one is in flight
-// is rejected with a toast and no event.
+// AddDirectory registers a user-picked directory and persists it in
+// settings so later scans keep it. The directory is classified up front
+// (stats and bounded walks only, no PE parsing — cheap enough for an
+// explicit user action) and the kind decides the flow:
+//
+//   - game: the call never blocks on enrichment — validation, settings
+//     persistence, and a placeholder row are synchronous (so a Scan started
+//     right after sees the directory), while the walk/classify/cover
+//     enrichment runs in a goroutine that replaces the placeholder and
+//     settles with the usual EvScanDone "directory added" event;
+//   - container: registered as a scan root (settings persisted
+//     synchronously) with no placeholder or self-row, a "scan folder"
+//     toast, and a background rescan that surfaces its games as rows;
+//   - empty: refused with a warning toast; settings stay untouched.
+//
+// A classification failure falls through to the game flow, whose async
+// error handling reports the problem. A duplicate Add of the same
+// canonical dir while one is in flight is rejected with a toast and no
+// event.
 func (s *Session) AddDirectory(dir string) {
 	root, err := canonicalDirChecked(dir)
 	if err != nil {
 		s.toast("add directory: "+err.Error(), true)
 		return
+	}
+	kind, kerr := discovery.ClassifyGameDir(context.Background(), root)
+	if kerr == nil {
+		switch kind {
+		case discovery.GameDirEmpty:
+			s.toast("no games found under "+filepath.Base(root), true)
+			return
+		case discovery.GameDirContainer:
+			s.addScanRoot(root)
+			return
+		}
 	}
 	ctx, ok := s.registerOp(root)
 	if !ok {
@@ -703,6 +725,34 @@ func (s *Session) AddDirectory(dir string) {
 		s.toast("added "+entry.Game.Name, false)
 		s.emit(Event{Kind: EvScanDone, Text: "directory added"})
 	}()
+}
+
+// addScanRoot registers a container directory as a recursive scan root:
+// persisted in settings like a game add, but with no placeholder or
+// self-row — the root's games surface as children of the background rescan
+// it triggers (the rescan is the "directory added" equivalent: no
+// EvScanDone text frontends could misread as a single-game add).
+func (s *Session) addScanRoot(root string) {
+	s.mu.Lock()
+	present := false
+	for _, d := range s.deps.Settings.ExtraDirs {
+		if d == root {
+			present = true
+			break
+		}
+	}
+	if !present {
+		s.deps.Settings.ExtraDirs = append(s.deps.Settings.ExtraDirs, root)
+	}
+	snap := s.deps.Settings
+	s.mu.Unlock()
+	if !present {
+		if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
+			s.toast("settings not saved: "+err.Error(), true)
+		}
+	}
+	s.toast("registered "+filepath.Base(root)+" as a scan folder", false)
+	s.Scan(context.Background())
 }
 
 // removeRow drops the row for dir.

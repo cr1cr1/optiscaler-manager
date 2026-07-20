@@ -38,6 +38,10 @@ func TestGUISortControlChangesOrder(t *testing.T) {
 	if err := os.MkdirAll(alphaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// A real exe makes the dir a game (v0.7): empty dirs are refused.
+	if err := os.WriteFile(filepath.Join(alphaDir, "game.exe"), []byte("GAME"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	sess.Scan(context.Background())
 	deadline := time.Now().Add(15 * time.Second)
