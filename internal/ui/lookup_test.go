@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/protondb"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/steam"
@@ -232,4 +233,143 @@ func TestScan_EnrichesOnlyMissingAppID(t *testing.T) {
 		t.Errorf("protondb calls = %d, want 1", got)
 	}
 	t.Logf("steam-library row: appid 100 -> protondb direct (tier=%s), zero search calls", row.ProtonTier)
+}
+
+// TestScan_EnrichmentBudgetCountsLiveRequestsOnly: the lookup budget bounds
+// rows that required a live request, not processed rows — cache hits are
+// free. Six rows warmed by a first scan must not eat the budget: a second
+// scan with 8 more candidates still enriches all 8 live rows.
+func TestScan_EnrichmentBudgetCountsLiveRequestsOnly(t *testing.T) {
+	f := newLookupFixture(t, true, http.StatusOK)
+	cached := manualDirs(t, 6)
+	f.sess.deps.Settings.ExtraDirs = cached
+	scanAndWait(t, f.sess) // warms the steam+protondb caches for 6 rows
+	if got := f.steamHits.Load(); got != 6 {
+		t.Fatalf("warm-up scan: steam hits = %d, want 6", got)
+	}
+
+	// Distinct titles: the row title is the folder name, so a reused
+	// FakeGameNN name would hit the warm steam cache instead of going live.
+	extra := make([]string, 0, 8)
+	for i := 0; i < 8; i++ {
+		dir := filepath.Join(t.TempDir(), fmt.Sprintf("LiveGame%02d", i))
+		writeUIFile(t, filepath.Join(dir, "game.exe"), "GAME")
+		extra = append(extra, dir)
+	}
+	f.sess.deps.Settings.ExtraDirs = append(cached, extra...)
+	st := scanAndWait(t, f.sess)
+	if len(st.Rows) != 14 {
+		t.Fatalf("rows = %d, want 14", len(st.Rows))
+	}
+	enriched := 0
+	for _, r := range st.Rows {
+		if r.ProtonTier != "" {
+			enriched++
+		}
+	}
+	if enriched != 14 {
+		t.Errorf("enriched rows = %d, want 14 (6 cached + 8 live, cache hits are budget-free)", enriched)
+	}
+	if got := f.steamHits.Load(); got != 14 {
+		t.Errorf("steam search calls = %d, want 14 (6 warm-up + 8 live; cached rows re-request nothing)", got)
+	}
+	t.Logf("14 candidates, 6 cached: %d live search calls, %d rows enriched", f.steamHits.Load(), enriched)
+}
+
+// TestScan_EnrichmentPermanentFailuresDontStarve: rows that fail forever
+// (no Steam match) must not starve later rows: once the failures are
+// negative-cached they stop consuming the budget, and a valid row behind 8
+// permanent failures is enriched by the second scan at the latest.
+func TestScan_EnrichmentPermanentFailuresDontStarve(t *testing.T) {
+	var steamHits, protonHits atomic.Int64
+	steamSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		steamHits.Add(1)
+		title, _ := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/actions/SearchApps/"))
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(title, "08") { // only the 9th title resolves
+			fmt.Fprintf(w, `[{"appid":"777","name":%q}]`, title)
+			return
+		}
+		_, _ = fmt.Fprint(w, `[]`)
+	}))
+	t.Cleanup(steamSrv.Close)
+	protonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		protonHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"tier":"gold","confidence":"strong","score":80,"total":100,"bestReportedTier":"gold","trendingTier":"gold"}`)
+	}))
+	t.Cleanup(protonSrv.Close)
+
+	root := t.TempDir()
+	sess := NewSession(Deps{
+		Store:        store.New(root),
+		CacheDir:     filepath.Join(root, "cache"),
+		SteamRoot:    t.TempDir(),
+		SettingsRoot: root,
+		Settings:     settings.Settings{OnlineLookups: true},
+		Steam:        steam.NewWithBaseURL(nil, filepath.Join(root, "steamcache"), steamSrv.URL, "test"),
+		ProtonDB:     protondb.NewWithBaseURL(nil, filepath.Join(root, "protoncache"), protonSrv.URL, "test"),
+	})
+	sess.deps.Settings.ExtraDirs = manualDirs(t, 9)
+
+	tierOf := func(st State, suffix string) string {
+		t.Helper()
+		for _, r := range st.Rows {
+			if strings.HasSuffix(r.InstallDir, suffix) {
+				return r.ProtonTier
+			}
+		}
+		t.Fatalf("no row with InstallDir suffix %q", suffix)
+		return ""
+	}
+
+	st := scanAndWait(t, sess) // scan 1: budget spent on the 8 failures
+	if got := tierOf(st, "FakeGame08"); got != "" {
+		t.Fatalf("scan 1: row 9 tier = %q, want empty (budget went to the 8 live failures)", got)
+	}
+	if got := steamHits.Load(); got != lookupBudget {
+		t.Fatalf("scan 1: steam hits = %d, want %d (8 live failing searches)", got, lookupBudget)
+	}
+
+	st = scanAndWait(t, sess) // scan 2: negatives cached, row 9 resolves
+	if got := tierOf(st, "FakeGame08"); got != "gold" {
+		t.Errorf("scan 2: row 9 tier = %q, want gold (cached negatives freed the budget)", got)
+	}
+	if got := steamHits.Load(); got != lookupBudget+1 {
+		t.Errorf("steam hits after scan 2 = %d, want %d (failures served from the negative cache)", got, lookupBudget+1)
+	}
+	t.Logf("row 9 enriched after 2 scans; steam hits %d", steamHits.Load())
+}
+
+// TestEnrichRow_SkipsNonNumericAppID: an appid resolved from a Steam search
+// is attacker-controlled input to the ProtonDB URL path; anything that is
+// not a bare numeric appid is skipped before the ProtonDB call.
+func TestEnrichRow_SkipsNonNumericAppID(t *testing.T) {
+	var protonHits atomic.Int64
+	steamSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		title, _ := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/actions/SearchApps/"))
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `[{"appid":"../evil","name":%q}]`, title)
+	}))
+	t.Cleanup(steamSrv.Close)
+	protonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		protonHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"tier":"gold"}`)
+	}))
+	t.Cleanup(protonSrv.Close)
+
+	st := steam.NewWithBaseURL(nil, t.TempDir(), steamSrv.URL, "test")
+	pdb := protondb.NewWithBaseURL(nil, t.TempDir(), protonSrv.URL, "test")
+	sess := NewSession(Deps{})
+	row := GameRow{Title: "Evil Game", AppID: "custom_evil", Store: domain.StoreManual}
+
+	sess.enrichRow(context.Background(), &row, st, pdb)
+	if got := protonHits.Load(); got != 0 {
+		t.Errorf("protondb calls = %d, want 0 (non-numeric appid %q must be skipped)", got, "../evil")
+	}
+	if row.SteamAppID != "" || row.ProtonTier != "" {
+		t.Errorf("row mutated by a rejected appid: %+v", row)
+	}
+	t.Log("non-numeric appid skipped: no protondb call, row untouched")
 }

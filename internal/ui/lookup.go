@@ -12,9 +12,11 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/steam"
 )
 
-// lookupBudget caps how many rows one scan enriches online; the rest are
-// skipped silently and retried by a later scan. Combined with the clients'
-// 250ms request pacing this bounds the phase to a few seconds.
+// lookupBudget caps how many rows one scan enriches with a live online
+// request; rows answered entirely from the clients' disk caches are free.
+// The rest are skipped silently and retried by a later scan. Combined with
+// the clients' 250ms request pacing this bounds the phase to a few
+// seconds.
 const lookupBudget = 8
 
 // enrichOnline runs the "lookup" scan phase: manual rows without a Steam
@@ -40,46 +42,61 @@ func (s *Session) enrichOnline(ctx context.Context, rows []GameRow, snap setting
 			cands = append(cands, i)
 		}
 	}
-	total := min(len(cands), lookupBudget)
-	for n, i := range cands {
-		if n >= lookupBudget {
+	live := 0
+	done := 0
+	for _, i := range cands {
+		if live >= lookupBudget {
 			break
 		}
 		if ctx.Err() != nil {
 			return
 		}
-		s.enrichRow(ctx, &rows[i], st, pdb)
-		s.scanProgress(phaseLookup, n+1, total)
+		if s.enrichRow(ctx, &rows[i], st, pdb) {
+			live++
+		}
+		done++
+		s.scanProgress(phaseLookup, done, len(cands))
 	}
 }
 
 // enrichRow resolves one row's SteamAppID and ProtonTier. Both fields are
 // set only on full success: a row whose appid resolved but whose summary
 // failed retries via the clients' disk caches on the next scan instead of
-// caching a half-enriched state.
-func (s *Session) enrichRow(ctx context.Context, row *GameRow, st *steam.Client, pdb *protondb.Client) {
+// caching a half-enriched state. The result reports whether resolving the
+// row required at least one live HTTP request — cache hits, including
+// cached negative answers, do not spend the scan's lookup budget.
+func (s *Session) enrichRow(ctx context.Context, row *GameRow, st *steam.Client, pdb *protondb.Client) (live bool) {
 	appid := row.SteamAppID
 	if appid == "" && isNumericAppID(row.AppID) {
 		appid = row.AppID
 	}
 	if appid == "" {
 		if strings.TrimSpace(row.Title) == "" {
-			return
+			return false
 		}
-		id, _, _, err := st.SearchApps(ctx, row.Title)
+		id, _, searchLive, err := st.SearchApps(ctx, row.Title)
+		live = live || searchLive
 		if err != nil {
 			log.Debug().Err(err).Str("title", row.Title).Msg("lookup: steam search failed")
-			return
+			return live
 		}
 		appid = id
 	}
-	sum, _, err := pdb.Summary(ctx, appid)
+	// The appid becomes a ProtonDB URL path segment; anything a search
+	// returns that is not a bare numeric appid is rejected here.
+	if !isNumericAppID(appid) {
+		log.Debug().Str("appid", appid).Str("title", row.Title).Msg("lookup: skipping non-numeric appid")
+		return live
+	}
+	sum, sumLive, err := pdb.Summary(ctx, appid)
+	live = live || sumLive
 	if err != nil {
 		log.Debug().Err(err).Str("appid", appid).Msg("lookup: protondb summary failed")
-		return
+		return live
 	}
 	row.SteamAppID = appid
 	row.ProtonTier = sum.Tier
+	return live
 }
 
 // isNumericAppID reports whether id is a bare Steam appid (all digits), as
