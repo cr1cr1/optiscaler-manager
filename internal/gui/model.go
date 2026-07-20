@@ -58,11 +58,17 @@ func newModel(cfg Config) *model {
 func Run(ctx context.Context, cfg Config) error {
 	shireiapp.SetupWindow("optiscaler-manager", 1100, 700)
 	m := newModel(cfg)
-	if m.sess != nil {
-		m.sess.Scan(ctx)
-	}
+	m.boot(ctx)
 	shireiapp.Run(m.rootView)
 	return nil
+}
+
+// boot kicks off the session's cache-first startup: a warm games cache shows
+// rows instantly; a cold cache falls through to a full scan inside Start.
+func (m *model) boot(ctx context.Context) {
+	if m.sess != nil {
+		m.sess.Start(ctx)
+	}
 }
 
 // drain pulls pending session events and refreshes the local snapshot.
