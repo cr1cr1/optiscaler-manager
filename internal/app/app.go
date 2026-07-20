@@ -194,18 +194,30 @@ func enrich(g domain.Game, byInstallDir map[string]*domain.Manifest) LibraryEntr
 			m = mm
 		}
 	}
+	// A game with no store manifest may still carry an OptiScaler dropped in
+	// by hand: probe the injection dir for a branded injection DLL. The
+	// probe is bounded to unmanaged rows — manifests stay authoritative.
+	if e.Status == "" && e.InjectionDir != "" {
+		if found, version := pever.DetectOptiScaler(e.InjectionDir); found {
+			e.Status = domain.StatusExternal
+			e.OptiScalerVersion = version // "" when the evidence chain runs dry
+		}
+	}
 	enrichVersions(&e, m)
 	return e
 }
 
 // enrichVersions fills OptiScalerVersion/ComponentVersions for managed
-// installs only (committed manifest or OptiScaler.dll present): parsing PEs
-// for every unmanaged game would multiply scan I/O for no benefit. When the
-// on-disk evidence chain (manifest.json → log → ini) yields no version —
-// e.g. a fresh install that has not run yet — the committed store
-// manifest's resolved version is the fallback.
+// installs only (committed manifest or OptiScaler.dll present). External
+// rows are skipped: their version already came from the bounded
+// DetectOptiScaler probe above, and their component DLLs belong to
+// OptiScaler's bundle, not the game. Parsing PEs for every plain game
+// would multiply scan I/O for no benefit. When the on-disk evidence chain
+// (manifest.json → log → ini) yields no version — e.g. a fresh install
+// that has not run yet — the committed store manifest's resolved version
+// is the fallback.
 func enrichVersions(e *LibraryEntry, m *domain.Manifest) {
-	if e.InjectionDir == "" {
+	if e.InjectionDir == "" || e.Status == domain.StatusExternal {
 		return
 	}
 	managed := e.Status == domain.StatusCommitted ||

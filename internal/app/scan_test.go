@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
@@ -154,6 +155,164 @@ func TestLibraryEntryComponentVersions(t *testing.T) {
 	if len(u.ComponentVersions) != 0 || u.OptiScalerVersion != "" {
 		t.Errorf("unmanaged game enriched (components=%v optiscaler=%q); "+
 			"PE parsing must be guarded to managed installs", u.ComponentVersions, u.OptiScalerVersion)
+	}
+}
+
+// mkExternalGame builds a steam game whose injection dir carries a dxgi.dll
+// with the given PE StringFileInfo identity and optional FileVersion,
+// mimicking an injection DLL dropped in outside this manager.
+func mkExternalGame(t *testing.T, steamRoot, appID, name, dirName string,
+	stringInfo map[string]string, fileVersion [4]uint16) string {
+	t.Helper()
+	game := mkSteamGame(t, steamRoot, appID, name, dirName)
+	writeScanFile(t, filepath.Join(game, strings.ToLower(dirName)+".exe"), []byte("GAME"))
+	writeScanFile(t, filepath.Join(game, "dxgi.dll"),
+		testutil.StringInfoPE(true, stringInfo, fileVersion))
+	return game
+}
+
+func scanOne(t *testing.T, st *store.Store, steamRoot, name string) LibraryEntry {
+	t.Helper()
+	entries, err := ScanAllLibraries(context.Background(), st, ScanAllOptions{SteamRoot: steamRoot})
+	if err != nil {
+		t.Fatalf("ScanAllLibraries: %v", err)
+	}
+	e, ok := entriesByName(entries)[name]
+	if !ok {
+		t.Fatalf("%s missing from scan", name)
+	}
+	return e
+}
+
+// TestEnrichExternalInstallDetected: an unmanaged game dir with an
+// OptiScaler-branded dxgi.dll surfaces as StatusExternal, never "".
+func TestEnrichExternalInstallDetected(t *testing.T) {
+	steamRoot := mkSteamRoot(t)
+	mkExternalGame(t, steamRoot, "100", "External Game", "ExternalGame",
+		map[string]string{"ProductName": "OptiScaler"}, [4]uint16{})
+
+	e := scanOne(t, nil, steamRoot, "External Game")
+	if e.Status != domain.StatusExternal {
+		t.Errorf("Status = %q, want %q", e.Status, domain.StatusExternal)
+	}
+	if e.OptiScalerVersion != "" {
+		t.Errorf("OptiScalerVersion = %q, want \"\" (no version evidence)", e.OptiScalerVersion)
+	}
+}
+
+// TestEnrichExternalVersionFromPE: with no manifest.json/log, the external
+// version falls back to the injection DLL's PE FileVersion.
+func TestEnrichExternalVersionFromPE(t *testing.T) {
+	steamRoot := mkSteamRoot(t)
+	mkExternalGame(t, steamRoot, "100", "External PE", "ExternalPE",
+		map[string]string{"ProductName": "OptiScaler"}, [4]uint16{0, 9, 4, 123})
+
+	e := scanOne(t, nil, steamRoot, "External PE")
+	if e.Status != domain.StatusExternal {
+		t.Fatalf("Status = %q, want %q", e.Status, domain.StatusExternal)
+	}
+	if e.OptiScalerVersion != "0.9.4.123" {
+		t.Errorf("OptiScalerVersion = %q, want %q from PE FileVersion", e.OptiScalerVersion, "0.9.4.123")
+	}
+}
+
+// TestEnrichExternalVersionFromLog: an OptiScaler.log banner outranks the
+// PE FileVersion in the external evidence chain.
+func TestEnrichExternalVersionFromLog(t *testing.T) {
+	steamRoot := mkSteamRoot(t)
+	game := mkExternalGame(t, steamRoot, "100", "External Log", "ExternalLog",
+		map[string]string{"ProductName": "OptiScaler"}, [4]uint16{0, 9, 4, 123})
+	writeScanFile(t, filepath.Join(game, "OptiScaler.log"), []byte("OptiScaler v0.9.5\n"))
+
+	e := scanOne(t, nil, steamRoot, "External Log")
+	if e.Status != domain.StatusExternal {
+		t.Fatalf("Status = %q, want %q", e.Status, domain.StatusExternal)
+	}
+	if e.OptiScalerVersion != "0.9.5" {
+		t.Errorf("OptiScalerVersion = %q, want %q from log banner", e.OptiScalerVersion, "0.9.5")
+	}
+}
+
+// TestEnrichExternalComponentVersionsSuppressed: component DLLs in an
+// external install belong to OptiScaler's bundle, not the game — they must
+// never be attributed as game tech versions.
+func TestEnrichExternalComponentVersionsSuppressed(t *testing.T) {
+	steamRoot := mkSteamRoot(t)
+	game := mkExternalGame(t, steamRoot, "100", "External Bundle", "ExternalBundle",
+		map[string]string{"ProductName": "OptiScaler"}, [4]uint16{0, 9, 4, 0})
+	writeScanFile(t, filepath.Join(game, "libxess.dll"), testutil.FixedVersionPE(1, 3, 0, 0))
+
+	e := scanOne(t, nil, steamRoot, "External Bundle")
+	if e.Status != domain.StatusExternal {
+		t.Fatalf("Status = %q, want %q", e.Status, domain.StatusExternal)
+	}
+	if len(e.ComponentVersions) != 0 {
+		t.Errorf("ComponentVersions = %v, want empty for external rows", e.ComponentVersions)
+	}
+}
+
+// TestEnrichManagedSkipsDetection: a committed store manifest is
+// authoritative; an OptiScaler-branded dxgi.dll on disk must not flip the
+// row to external.
+func TestEnrichManagedSkipsDetection(t *testing.T) {
+	steamRoot := mkSteamRoot(t)
+	game := mkExternalGame(t, steamRoot, "100", "Managed Game", "ManagedGame",
+		map[string]string{"ProductName": "OptiScaler"}, [4]uint16{})
+
+	installDir, err := installDirOf(game)
+	if err != nil {
+		t.Fatalf("installDirOf: %v", err)
+	}
+	st := store.New(t.TempDir())
+	if err := st.Save(&domain.Manifest{
+		ID:            "managed1",
+		SchemaVersion: domain.SchemaVersion,
+		Status:        domain.StatusCommitted,
+		GameRoot:      game,
+		InstallDir:    installDir,
+		Resolved:      domain.ResolvedAsset{Version: "0.9.4"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	e := scanOne(t, st, steamRoot, "Managed Game")
+	if e.Status != domain.StatusCommitted {
+		t.Errorf("Status = %q, want %q (manifest authoritative)", e.Status, domain.StatusCommitted)
+	}
+	if e.ManifestID != "managed1" {
+		t.Errorf("ManifestID = %q, want %q", e.ManifestID, "managed1")
+	}
+}
+
+// TestEnrichPlainGameUnchanged: a game with no injection candidates stays
+// plain: empty status, no version.
+func TestEnrichPlainGameUnchanged(t *testing.T) {
+	steamRoot := mkSteamRoot(t)
+	game := mkSteamGame(t, steamRoot, "100", "Plain Game", "PlainGame")
+	writeScanFile(t, filepath.Join(game, "plaingame.exe"), []byte("GAME"))
+
+	e := scanOne(t, nil, steamRoot, "Plain Game")
+	if e.Status != "" {
+		t.Errorf("Status = %q, want \"\"", e.Status)
+	}
+	if e.OptiScalerVersion != "" {
+		t.Errorf("OptiScalerVersion = %q, want \"\"", e.OptiScalerVersion)
+	}
+}
+
+// TestEnrichDXVKGameNotExternal: a DXVK dxgi.dll (non-OptiScaler identity)
+// must not be flagged as an external OptiScaler install.
+func TestEnrichDXVKGameNotExternal(t *testing.T) {
+	steamRoot := mkSteamRoot(t)
+	mkExternalGame(t, steamRoot, "100", "DXVK Game", "DXVKGame",
+		map[string]string{"ProductName": "DXVK"}, [4]uint16{2, 3, 0, 0})
+
+	e := scanOne(t, nil, steamRoot, "DXVK Game")
+	if e.Status != "" {
+		t.Errorf("Status = %q, want \"\" (DXVK is not OptiScaler)", e.Status)
+	}
+	if e.OptiScalerVersion != "" {
+		t.Errorf("OptiScalerVersion = %q, want \"\"", e.OptiScalerVersion)
 	}
 }
 
