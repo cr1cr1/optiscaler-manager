@@ -183,10 +183,42 @@ func emptyStateCopy(query string) string {
 	return "No games found — use Add Game to register a folder"
 }
 
-// emptyState renders the guidance line in place of an empty library view.
+// emptyState renders a centered icon, heading, guidance, and calls to action
+// in place of an empty library view: scan/add-directory when the library is
+// empty, clear-search when the filter matched nothing.
 func (m *model) emptyState() {
-	Container(Attrs(Pad(18)), func() {
-		muted(emptyStateCopy(m.state.Query))
+	query := m.state.Query
+	icon, heading := TypFolderOpen, "No games yet"
+	if query != "" {
+		icon, heading = SymSearch, "No matches"
+	}
+	Container(Attrs(Grow(1), Expand, Center, Gap(sp12), Pad(sp24)), func() {
+		Container(Attrs(Center, Gap(sp8)), func() {
+			Container(Attrs(Row), func() {
+				Filler(1)
+				Icon(icon, FontSize(36), TextColorVec(txtMuted))
+				Filler(1)
+			})
+			Label(heading, FontSize(18), TextColorVec(txtMain), FontWeight(WeightBold))
+			muted(emptyStateCopy(query))
+			if m.sess != nil {
+				Container(Attrs(Row, Gap(sp8)), func() {
+					if query != "" {
+						if focusableButton(SymILeft, "Clear search") {
+							m.filter = ""
+							m.sess.SetQuery("")
+						}
+						return
+					}
+					if focusableButton(SymRefresh, "Scan") {
+						m.sess.Scan(m.ctx)
+					}
+					if focusableButton(SymIPlus, "Add directory…") {
+						m.sess.PickAndAddDirectory(m.ctx)
+					}
+				})
+			}
+		})
 	})
 }
 
