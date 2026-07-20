@@ -35,8 +35,9 @@ type model struct {
 	auditGrid         bool
 	about             bool
 	settingsOpen      bool
-	versionBuf        string
-	templateBuf       string
+	versionBuf   string
+	templateBuf  string
+	onlineBuf    bool // settings-modal online-lookups toggle buffer, primed on open
 	selIdx            int            // keyboard-driven selection index into visible rows
 	hoveredDir        string         // install dir of the card under the mouse, "" when none
 	cardRect          Rect           // screen rect of the last rendered card (hover test seam)

@@ -63,6 +63,28 @@ func spinnerGlyph() {
 	RequestNextFrame()
 }
 
+// focusableToggle renders widgets.ToggleSwitchExt inside a Focusable row so
+// the Tab cycle reaches it (the switch itself is not focusable): Enter or
+// Space while focused flips the bound value, and the key is consumed. Mouse
+// clicks flip via the switch itself.
+func focusableToggle(on *bool, label string) {
+	Container(Attrs(Focusable, Row, CrossMid, Gap(sp8), Corners(6)), func() {
+		CycleFocusOnTab()
+		if HasFocus() {
+			ModAttrs(func(a *AttrSet) {
+				a.BorderWidth = 2
+				a.BorderColor = Vec4{210, 70, 62, 1}
+			})
+			if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
+				FrameInput.Key = KeyCodeNone
+				*on = !*on
+			}
+		}
+		widgets.ToggleSwitchExt(on, widgets.ToggleSwitchAttrs{})
+		Label(label, FontSize(13), TextColorVec(txtMain))
+	})
+}
+
 // searchInput is the themed library filter field. Disabled while the
 // library is empty.
 func (m *model) searchInput() {

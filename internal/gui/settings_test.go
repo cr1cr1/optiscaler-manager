@@ -103,6 +103,33 @@ func TestGUILaunchTemplateEdit(t *testing.T) {
 	t.Logf("launch template persisted: %q", s.LaunchTemplate)
 }
 
+// TestGUISettingsShowsOnlineLookupsToggle: the General section shows the
+// online-lookups toggle primed from the session, and Tab+Enter flips it
+// through sess.SetOnlineLookups.
+func TestGUISettingsShowsOnlineLookupsToggle(t *testing.T) {
+	sess, _ := guiFakesWithDirs(t)
+	m := newModel(Config{Session: sess})
+	m.openSettings()
+
+	if !m.onlineBuf {
+		t.Fatal("online-lookups toggle not primed from session settings (default true)")
+	}
+
+	headlessFrames(t, 1100, 700)
+	keyFrame(KeyCodeNone, 0, m.rootView) // open frame: registers focusables
+	keyFrame(KeyTab, 0, m.rootView)      // version field
+	keyFrame(KeyTab, 0, m.rootView)      // online-lookups toggle
+	keyFrame(KeyEnter, 0, m.rootView)    // flip off
+
+	if sess.Settings().OnlineLookups {
+		t.Error("OnlineLookups still true after Tab+Enter on the toggle, want flipped to false")
+	}
+	if m.onlineBuf {
+		t.Error("toggle buffer still true after Enter, want flipped")
+	}
+	t.Log("online-lookups toggle flipped via keyboard")
+}
+
 // TestGUISettingsThemedInputs: the settings modal fields are the themed dark
 // inputs (the searchInput pattern, not shirei's light TextInputExt): they
 // join the Tab focus cycle without stealing focus on open, edit their model
