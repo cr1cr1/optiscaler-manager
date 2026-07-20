@@ -242,12 +242,42 @@ func titleWidth(w int) int {
 	return tw
 }
 
+// badgesCell composes styled tech badges into a w-cell column. Whole badges
+// are accumulated while they fit (width measured on the plain text); the
+// first badge that does not fit is dropped along with the rest and replaced
+// by an ellipsis. Truncation happens on badge boundaries before styling, so
+// ANSI sequences are never split or left unclosed.
+func badgesCell(badges []ui.Badge, w int) string {
+	if w <= 0 {
+		return ""
+	}
+	var out strings.Builder
+	used := 0
+	cut := false
+	for _, b := range badges {
+		pw := lipgloss.Width("[" + b.Label + "] ")
+		if used+pw > w {
+			cut = true
+			break
+		}
+		out.WriteString(lipgloss.NewStyle().Foreground(toneColor(b.Tone)).Render("["+b.Label+"]") + " ")
+		used += pw
+	}
+	if cut {
+		s := out.String()
+		if used+1 > w {
+			// No room for the ellipsis: swap the trailing separator space
+			// (plain text, no escape risk) for the marker.
+			s = strings.TrimSuffix(s, " ")
+		}
+		out.Reset()
+		out.WriteString(s + "…")
+	}
+	return lipgloss.NewStyle().Width(w).Render(out.String())
+}
+
 // gameRowLine renders one games-table row; the cursor row is inverted.
 func (m Model) gameRowLine(r ui.GameRow, tw, w int, selected bool) string {
-	var badges strings.Builder
-	for _, b := range r.TechBadges {
-		badges.WriteString(lipgloss.NewStyle().Foreground(toneColor(b.Tone)).Render("["+b.Label+"]") + " ")
-	}
 	version := r.OptiScalerVersion
 	if version == "" {
 		version = "—"
@@ -273,7 +303,7 @@ func (m Model) gameRowLine(r ui.GameRow, tw, w int, selected bool) string {
 	}
 	line := cell(r.Title, tw) +
 		cell(r.Platform, colPlatform) +
-		lipgloss.NewStyle().Width(colBadges).Render(trunc(badges.String(), colBadges)) +
+		badgesCell(r.TechBadges, colBadges) +
 		cell(version, colVersion) +
 		lipgloss.NewStyle().Width(colStatus).Render(statusCell)
 	if selected {
