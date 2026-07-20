@@ -410,3 +410,34 @@ func TestSetSortOrdersVisibleRows(t *testing.T) {
 	want(titles(), "Bravo", "Alpha", "Charlie")
 	t.Log("sort modes: name alphabetical, default actionable-first, invalid = default")
 }
+
+// TestStart_V2CacheFallsThroughToScan: games.json files written by the
+// rejected v0.7 (schema version 2) carry phantom container rows ("Steam",
+// "Games") whose semantics v0.7.1 changed. The v3 schema invalidates them:
+// a v2 cache loads as empty and Start falls through to a real scan.
+func TestStart_V2CacheFallsThroughToScan(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	stale := []GameRow{{
+		Title:      "Game A Real Title",
+		AppID:      "manual_Steam",
+		InstallDir: filepath.Join(t.TempDir(), "Steam"),
+	}}
+	data, err := json.Marshal(gamesCache{Version: 2, Rows: stale})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(e.sess.deps.SettingsRoot, "games.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	e.sess.Start(context.Background())
+	waitEvent(t, e.sess, EvScanDone) // stale v2 cache rejected: a real scan ran
+
+	for _, r := range e.sess.Snapshot().Rows {
+		if r.InstallDir == stale[0].InstallDir {
+			t.Fatalf("stale v2 container row survived warm boot: %+v", r)
+		}
+	}
+	t.Log("v2 cache invalidated by schema v3; Start fell through to scan")
+}

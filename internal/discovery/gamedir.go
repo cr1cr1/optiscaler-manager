@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/rs/zerolog/log"
 )
 
 // GameDirKind classifies a directory by how game executables sit inside it.
@@ -83,18 +85,20 @@ const maxClassifyDepth = 6
 //
 // The engine-folder name list is what separates "bin" (this game's
 // binaries) from a same-shaped game folder one level down in a library
-// root.
+// root. Directories already visited through other paths (symlink loops)
+// are evaluated once.
 func ClassifyGameDir(ctx context.Context, dir string) (GameDirKind, error) {
-	return classifyGameDir(ctx, dir, 0)
+	return classifyGameDir(ctx, canonicalPath(dir), 0, map[string]bool{})
 }
 
-func classifyGameDir(ctx context.Context, dir string, depth int) (GameDirKind, error) {
+func classifyGameDir(ctx context.Context, dir string, depth int, seen map[string]bool) (GameDirKind, error) {
 	if err := ctx.Err(); err != nil {
 		return GameDirEmpty, err
 	}
-	if depth > maxClassifyDepth {
+	if depth > maxClassifyDepth || seen[dir] {
 		return GameDirEmpty, nil
 	}
+	seen[dir] = true
 	own, err := findMainExeWithin(ctx, dir, 0)
 	if err != nil {
 		return GameDirEmpty, err
@@ -108,7 +112,10 @@ func classifyGameDir(ctx context.Context, dir string, depth int) (GameDirKind, e
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return GameDirEmpty, err
+		// An unreadable directory proves nothing either way; treat it like
+		// findMainExe's walk does (skip) instead of failing the whole scan.
+		log.Debug().Err(err).Str("dir", dir).Msg("classify: unreadable directory")
+		return GameDirEmpty, nil
 	}
 	gameChildren, containerChildren := 0, 0
 	for _, e := range entries {
@@ -119,10 +126,10 @@ func classifyGameDir(ctx context.Context, dir string, depth int) (GameDirKind, e
 			continue
 		}
 		child := dirChild(e, dir)
-		if child == "" {
+		if child == "" || seen[canonicalPath(child)] {
 			continue
 		}
-		kind, err := classifyGameDir(ctx, child, depth+1)
+		kind, err := classifyGameDir(ctx, canonicalPath(child), depth+1, seen)
 		if err != nil {
 			return GameDirEmpty, err
 		}

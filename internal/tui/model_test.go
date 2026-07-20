@@ -128,7 +128,7 @@ func seedGamesCache(t *testing.T, root string, rows []ui.GameRow) {
 	data, err := json.Marshal(struct {
 		Version int          `json:"version"`
 		Rows    []ui.GameRow `json:"rows"`
-	}{Version: 2, Rows: rows})
+	}{Version: 3, Rows: rows})
 	if err != nil {
 		t.Fatal(err)
 	}

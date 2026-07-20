@@ -99,3 +99,98 @@ func TestScanGameRootYieldsOnlyItself(t *testing.T) {
 		t.Errorf("InstallDir = %q, want the game root itself", g.InstallDir)
 	}
 }
+
+// TestScanGameRootAlsoSurfacesChildGames: a directory that is both a game
+// (exe at top level) and a container (a real game in a subdirectory) yields
+// its own row AND the child game's row.
+func TestScanGameRootAlsoSurfacesChildGames(t *testing.T) {
+	root := t.TempDir()
+	writePEExe(t, root, "Both/game.exe", "Both Root Game")
+	writePEExe(t, root, "Both/sub/sub.exe", "Sub Game")
+
+	games, err := ScanRecursive(context.Background(), filepath.Join(root, "Both"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(games) != 2 {
+		t.Fatalf("got %d rows, want 2 (root + sub): %v", len(games), games)
+	}
+	names := map[string]bool{}
+	for _, g := range games {
+		names[g.Name] = true
+	}
+	for _, want := range []string{"Both Root Game", "Sub Game"} {
+		if !names[want] {
+			t.Errorf("missing row %q in %v", want, names)
+		}
+	}
+}
+
+// TestClassifyGameDir_SymlinkFanOutTerminates: classification must not
+// re-evaluate directories reached through multiple links — a symlinked
+// fan-out tree terminates quickly and classifies sanely.
+func TestClassifyGameDir_SymlinkFanOutTerminates(t *testing.T) {
+	root := t.TempDir()
+	writePEExe(t, root, "real/game/game.exe", "FanOut Game")
+	base := filepath.Join(root, "real")
+	// Many links back into the tree: without a visited set these multiply
+	// classification work exponentially.
+	for i := 0; i < 30; i++ {
+		if err := os.Symlink(base, filepath.Join(root, "real", "game", "loop"+string(rune('a'+i%26))+string(rune('a'+i/26)))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "self")); err != nil {
+		t.Fatal(err)
+	}
+	root2 := filepath.Join(root, "real")
+	for i := 0; i < 30; i++ {
+		target := root2
+		if i%2 == 1 {
+			target = base
+		}
+		if err := os.Symlink(target, filepath.Join(root, "real", "game", "zz"+string(rune('A'+i%26))+string(rune('A'+i/26)))); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	kind, err := ClassifyGameDir(context.Background(), filepath.Join(root, "real"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kind != GameDirContainer {
+		t.Errorf("kind = %v, want container (it holds the game dir)", kind)
+	}
+	kind, err = ClassifyGameDir(context.Background(), filepath.Join(root, "real", "game"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kind != GameDirGame {
+		t.Errorf("game dir kind = %v, want game", kind)
+	}
+}
+
+// TestClassifyGameDir_PureSymlinkLoopTerminates: a tree whose only content
+// is symlinks back into itself terminates immediately and is empty.
+func TestClassifyGameDir_PureSymlinkLoopTerminates(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "loop"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 50; i++ {
+		if err := os.Symlink(root, filepath.Join(root, "loop", "back"+string(rune('a'+i%26))+string(rune('a'+i/26)))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(root, "loop"), filepath.Join(root, "loop", "self")); err != nil {
+		t.Fatal(err)
+	}
+
+	kind, err := ClassifyGameDir(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kind != GameDirEmpty {
+		t.Errorf("kind = %v, want empty (nothing executable anywhere)", kind)
+	}
+}
