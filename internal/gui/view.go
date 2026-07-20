@@ -161,69 +161,74 @@ func (m *model) detailPanel() {
 		return
 	}
 	panelW := detailPanelWidth(WindowSize[0])
-	Container(Attrs(FixWidth(panelW), Expand, BackgroundVec(bgPanel), Pad(sp16), Gap(sp12), Viewport, Clip), func() {
-		Container(Attrs(Row, CrossMid, Gap(sp8)), func() {
-			Label(e.Title, FontSize(16), TextColorVec(txtMain), FontWeight(WeightBold))
-			Filler(1)
-			if m.sess != nil && focusableButton(TypCancel, "Close") {
-				m.sess.Select("")
-			}
-		})
-		coverW := panelW - 2*sp16
-		m.coverArt(*e, coverW, coverW*coverRatio)
-		muted(e.InstallDir)
-		Container(Attrs(Row, Gap(sp4), CrossMid), func() {
-			txt("Status:")
-			badgePill(statusLabel(e), statusTone(e))
-			if e.EAC {
-				badgePill("EAC", ui.ToneRed)
-			}
-			m.protonTierPill(e.ProtonTier)
-		})
-		if pills := versionPills(e); len(pills) > 0 {
-			Container(Attrs(Row, Gap(sp4)), func() {
-				for _, p := range pills {
-					badgePill(p.Label, p.Tone)
+	// Viewport on a Row child absorbs leftover main-axis space, defeating
+	// FixWidth — the scrollable column nests inside the fixed-width shell.
+	Container(Attrs(FixWidth(panelW), Expand, BackgroundVec(bgPanel)), func() {
+		m.detailPanelRect = GetScreenRectOf(CurrentId())
+		Container(Attrs(Grow(1), Expand, Pad(sp16), Gap(sp12), Viewport, Clip), func() {
+			Container(Attrs(Row, CrossMid, Gap(sp8)), func() {
+				Label(e.Title, FontSize(16), TextColorVec(txtMain), FontWeight(WeightBold))
+				Filler(1)
+				if m.sess != nil && focusableButton(TypCancel, "Close") {
+					m.sess.Select("")
 				}
 			})
-		}
-		Container(Attrs(Gap(2)), func() {
-			if e.Platform != "" {
-				detailField("Platform", e.Platform)
-			}
-			if e.AppID != "" {
-				detailField("AppID", e.AppID)
-			}
-			if e.SteamAppID != "" {
-				detailField("Steam AppID", e.SteamAppID)
-			}
-		})
-		if m.sess == nil {
-			return
-		}
-		if m.sess.OpBusy(e.InstallDir) {
-			Container(Attrs(Row, Gap(sp8), CrossMid), func() {
-				spinnerGlyph()
-				muted("Working…")
+			coverW := panelW - 2*sp16
+			m.coverArt(*e, coverW, coverW*coverRatio)
+			muted(e.InstallDir)
+			Container(Attrs(Row, Gap(sp4), CrossMid), func() {
+				txt("Status:")
+				badgePill(statusLabel(e), statusTone(e))
+				if e.EAC {
+					badgePill("EAC", ui.ToneRed)
+				}
+				m.protonTierPill(e.ProtonTier)
 			})
-			if focusableButton(SymILeft, "Cancel") {
-				m.sess.CancelOp(e.InstallDir)
+			if pills := versionPills(e); len(pills) > 0 {
+				Container(Attrs(Row, Gap(sp4)), func() {
+					for _, p := range pills {
+						badgePill(p.Label, p.Tone)
+					}
+				})
 			}
-			return
-		}
-		if focusableButton(SymIRight, quickLabel(e)) {
-			m.sess.QuickInstall(e.InstallDir)
-		}
-		if launchable(e) && focusableButton(SymPlay, "Launch") {
-			m.launchGame(*e)
-		}
-		if e.Actionable && focusableButton(SymUndo, "Rollback") {
-			m.sess.Rollback(e.InstallDir)
-		}
-		if e.Status == domain.StatusCommitted && focusableButton(SymIRight, "Open OptiScaler.ini in editor") {
-			m.sess.OpenINI(e.InstallDir)
-		}
-		scrollBars()
+			Container(Attrs(Gap(2)), func() {
+				if e.Platform != "" {
+					detailField("Platform", e.Platform)
+				}
+				if e.AppID != "" {
+					detailField("AppID", e.AppID)
+				}
+				if e.SteamAppID != "" {
+					detailField("Steam AppID", e.SteamAppID)
+				}
+			})
+			if m.sess == nil {
+				return
+			}
+			if m.sess.OpBusy(e.InstallDir) {
+				Container(Attrs(Row, Gap(sp8), CrossMid), func() {
+					spinnerGlyph()
+					muted("Working…")
+				})
+				if focusableButton(SymILeft, "Cancel") {
+					m.sess.CancelOp(e.InstallDir)
+				}
+				return
+			}
+			if focusableButton(SymIRight, quickLabel(e)) {
+				m.sess.QuickInstall(e.InstallDir)
+			}
+			if launchable(e) && focusableButton(SymPlay, "Launch") {
+				m.launchGame(*e)
+			}
+			if e.Actionable && focusableButton(SymUndo, "Rollback") {
+				m.sess.Rollback(e.InstallDir)
+			}
+			if e.Status == domain.StatusCommitted && focusableButton(SymIRight, "Open OptiScaler.ini in editor") {
+				m.sess.OpenINI(e.InstallDir)
+			}
+			scrollBars()
+		})
 	})
 }
 

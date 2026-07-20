@@ -46,6 +46,7 @@ type model struct {
 	progressTrackRect Rect           // screen rect of the scan progress track (progress bar test seam)
 	progressFillRect  Rect           // screen rect of the scan progress fill (progress bar test seam)
 	tierPillRect      Rect           // screen rect of the card's ProtonDB tier pill (tier badge test seam)
+	detailPanelRect   Rect           // screen rect of the detail panel shell (panel width test seam)
 	listSegRect       Rect           // screen rect of the List view-switch segment (click test seam)
 	cols              int            // current grid columns, derived from live width
 	cardW             int            // current card width in px, derived from live width
