@@ -86,21 +86,41 @@ func utf16le(s string) []byte {
 	return out
 }
 
-// productVersionString builds a minimal String structure for the
-// StringFileInfo entry "ProductVersion" = value, 4-byte aligned at off 0.
-func productVersionString(value string) []byte {
-	key := utf16le("ProductVersion") // 28 bytes + 2 for NUL = 30
-	val := utf16le(value)
-	valWords := len(val)/2 + 1
-	structLen := 6 + 30 + len(val) + 2
+// stringInfoString builds a minimal String structure for the StringFileInfo
+// entry key = value, 4-byte aligned at off 0.
+func stringInfoString(key, value string) []byte {
+	kb := utf16le(key) // 2 bytes per char + 2 for NUL
+	vb := utf16le(value)
+	valWords := len(vb)/2 + 1
+	// key+NUL occupies b[6:6+len(kb)+2]; the value starts at the next
+	// 4-aligned offset.
+	valOff := (6 + len(kb) + 2 + 3) &^ 3
+	structLen := valOff + len(vb) + 2
 	b := make([]byte, structLen)
 	binary.LittleEndian.PutUint16(b[0:], uint16(structLen))
 	binary.LittleEndian.PutUint16(b[2:], uint16(valWords))
 	binary.LittleEndian.PutUint16(b[4:], 1) // wType = text
-	copy(b[6:], key)
-	// key+NUL occupies b[6:36]; value starts at the 4-aligned offset 36.
-	copy(b[36:], val)
+	copy(b[6:], kb)
+	copy(b[valOff:], vb)
 	return b
+}
+
+// productVersionString builds the StringFileInfo entry "ProductVersion".
+func productVersionString(value string) []byte {
+	return stringInfoString("ProductVersion", value)
+}
+
+// concatStringStructs concatenates String structures, zero-padding each to a
+// 4-byte boundary as real StringFileInfo children are laid out.
+func concatStringStructs(parts ...[]byte) []byte {
+	var out []byte
+	for _, p := range parts {
+		out = append(out, p...)
+		for len(out)%4 != 0 {
+			out = append(out, 0)
+		}
+	}
+	return out
 }
 
 func writeTempPE(t *testing.T, data []byte) string {
@@ -268,5 +288,69 @@ func TestGetFileVersionNormalization(t *testing.T) {
 				t.Errorf("normalize(%q, %q) = %q, want %q", tc.fixed, tc.product, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestExtractTitle_ProductName(t *testing.T) {
+	res := stringInfoString("ProductName", "My Cool Game")
+	got := ExtractTitle(buildPE(true, res))
+	if got != "My Cool Game" {
+		t.Errorf("ExtractTitle = %q, want %q", got, "My Cool Game")
+	}
+}
+
+func TestExtractTitle_FallsBackToFileDescription(t *testing.T) {
+	res := concatStringStructs(stringInfoString("ProductName", "TODO: <Product Name>"),
+		stringInfoString("FileDescription", "Fallback Title"))
+	got := ExtractTitle(buildPE(false, res))
+	if got != "Fallback Title" {
+		t.Errorf("ExtractTitle = %q, want %q", got, "Fallback Title")
+	}
+}
+
+func TestExtractTitle_RejectsGarbage(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+	}{
+		{"todo marker", "TODO"},
+		{"angle placeholder", "<name>"},
+		{"empty", ""},
+		{"all digits", "12345"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := stringInfoString("ProductName", tc.value)
+			if got := ExtractTitle(buildPE(true, res)); got != "" {
+				t.Errorf("ExtractTitle = %q, want %q", got, "")
+			}
+		})
+	}
+
+	t.Run("product name equal to company name", func(t *testing.T) {
+		res := concatStringStructs(stringInfoString("ProductName", "Acme"),
+			stringInfoString("CompanyName", "Acme"))
+		if got := ExtractTitle(buildPE(true, res)); got != "" {
+			t.Errorf("ExtractTitle = %q, want %q", got, "")
+		}
+	})
+}
+
+func TestExtractTitle_NoVersionInfo(t *testing.T) {
+	if got := ExtractTitle([]byte("not a pe at all")); got != "" {
+		t.Errorf("non-PE: ExtractTitle = %q, want %q", got, "")
+	}
+	if got := ExtractTitle(buildPE(false, []byte("deadbeefdeadbeef"))); got != "" {
+		t.Errorf("no rsrc: ExtractTitle = %q, want %q", got, "")
+	}
+}
+
+func TestScanStringFileInfoKey_CustomKey(t *testing.T) {
+	res := stringInfoString("CustomKey", "CustomValue")
+	if got := scanStringFileInfoKey(res, "CustomKey"); got != "CustomValue" {
+		t.Errorf("scanStringFileInfoKey = %q, want %q", got, "CustomValue")
+	}
+	if got := scanStringFileInfoKey(res, "OtherKey"); got != "" {
+		t.Errorf("missing key: scanStringFileInfoKey = %q, want %q", got, "")
 	}
 }

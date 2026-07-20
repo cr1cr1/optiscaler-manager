@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"unicode/utf16"
 )
 
@@ -16,11 +17,8 @@ const (
 	dirEntryResource        = 2
 	maxSections             = 96
 	maxVersionScan          = 4 << 20
-	productVersionMaxChars  = 256
+	stringValueMaxChars     = 256
 )
-
-// productVersionKey is "ProductVersion\0" in UTF-16LE.
-var productVersionKey = []byte("P\x00r\x00o\x00d\x00u\x00c\x00t\x00V\x00e\x00r\x00s\x00i\x00o\x00n\x00\x00\x00")
 
 // parsePEVersion extracts the fixed FILEVERSION dotted quad and the
 // ProductVersion string from a PE image. Either may be empty. Structural
@@ -175,22 +173,39 @@ func scanFixedFileInfo(res []byte) string {
 }
 
 // scanProductVersion finds the StringFileInfo entry "ProductVersion" and
-// decodes its UTF-16LE value. The String structure layout is
+// decodes its UTF-16LE value.
+func scanProductVersion(res []byte) string {
+	return scanStringFileInfoKey(res, "ProductVersion")
+}
+
+// utf16Key encodes an ASCII StringFileInfo key as UTF-16LE bytes with a NUL
+// terminator, matching the szKey layout of a String structure.
+func utf16Key(key string) []byte {
+	b := make([]byte, 0, len(key)*2+2)
+	for i := 0; i < len(key); i++ {
+		b = append(b, key[i], 0)
+	}
+	return append(b, 0, 0)
+}
+
+// scanStringFileInfoKey finds the StringFileInfo entry for key and decodes
+// its UTF-16LE value. The String structure layout is
 // wLength(2) wValueLength(2) wType(2) szKey... padding Value, with members
 // aligned to 4-byte boundaries relative to the version resource base;
 // resource sections are always 4-aligned in the file, so file offsets are
 // used for alignment here.
-func scanProductVersion(res []byte) string {
-	p := bytes.Index(res, productVersionKey)
+func scanStringFileInfoKey(res []byte, key string) string {
+	kb := utf16Key(key)
+	p := bytes.Index(res, kb)
 	if p < 0 || p < 6 {
 		return ""
 	}
 	valueWords := int(binary.LittleEndian.Uint16(res[p-4:]))
 	wType := binary.LittleEndian.Uint16(res[p-2:])
-	if wType != 1 || valueWords <= 0 || valueWords > productVersionMaxChars {
+	if wType != 1 || valueWords <= 0 || valueWords > stringValueMaxChars {
 		return ""
 	}
-	valOff := (p + len(productVersionKey) + 3) &^ 3
+	valOff := (p + len(kb) + 3) &^ 3
 	valLen := valueWords * 2
 	if valOff+valLen > len(res) {
 		return ""
@@ -205,4 +220,54 @@ func scanProductVersion(res []byte) string {
 		u16s = append(u16s, w)
 	}
 	return string(utf16.Decode(u16s))
+}
+
+// ExtractTitle returns a human-readable game title from a PE image's
+// StringFileInfo: ProductName wins, FileDescription is the fallback.
+// Placeholder values (empty, a "todo" prefix, <...> wrappers, all-digit
+// strings, or the CompanyName repeated) are rejected; "" means no usable
+// title.
+func ExtractTitle(data []byte) (title string) {
+	res, err := resourceBytes(data)
+	if err != nil {
+		return ""
+	}
+	if len(res) > maxVersionScan {
+		res = res[:maxVersionScan]
+	}
+	company := scanStringFileInfoKey(res, "CompanyName")
+	for _, key := range []string{"ProductName", "FileDescription"} {
+		if t := usableTitle(scanStringFileInfoKey(res, key), company); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
+// usableTitle filters vendor placeholder strings out of title candidates.
+func usableTitle(v, company string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToLower(v), "todo") {
+		return ""
+	}
+	if len(v) >= 2 && v[0] == '<' && v[len(v)-1] == '>' {
+		return ""
+	}
+	allDigit := true
+	for i := 0; i < len(v); i++ {
+		if v[i] < '0' || v[i] > '9' {
+			allDigit = false
+			break
+		}
+	}
+	if allDigit {
+		return ""
+	}
+	if company != "" && v == company {
+		return ""
+	}
+	return v
 }

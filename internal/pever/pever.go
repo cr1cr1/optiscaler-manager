@@ -62,7 +62,7 @@ const (
 // Reads are bounded: path must be a regular file of at most maxPEFileSize
 // bytes (ErrNotRegular / ErrTooLarge otherwise).
 func FileVersion(path string) (string, error) {
-	data, err := readBounded(path, maxPEFileSize)
+	data, err := ReadBounded(path, maxPEFileSize)
 	if err != nil {
 		return "", err
 	}
@@ -77,10 +77,10 @@ func FileVersion(path string) (string, error) {
 	return v, nil
 }
 
-// readBounded reads path after stat-verifying it is a regular file of at
+// ReadBounded reads path after stat-verifying it is a regular file of at
 // most limit bytes; the read itself is capped at limit as well, so a file
 // that grows between stat and read is truncated rather than slurped.
-func readBounded(path string, limit int64) ([]byte, error) {
+func ReadBounded(path string, limit int64) ([]byte, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("pever: stat %s: %w", path, err)

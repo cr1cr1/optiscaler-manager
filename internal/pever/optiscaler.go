@@ -34,7 +34,7 @@ func OptiScalerVersion(dir string) string {
 }
 
 func manifestVersion(path string) string {
-	data, err := readBounded(path, maxManifestSize)
+	data, err := ReadBounded(path, maxManifestSize)
 	if err != nil {
 		return ""
 	}
