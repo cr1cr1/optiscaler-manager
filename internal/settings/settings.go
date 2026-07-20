@@ -51,8 +51,12 @@ func Load(root string) (Settings, error) {
 	return s, nil
 }
 
-// Save persists settings atomically (temp file + rename).
+// Save persists settings atomically (temp file + rename). An empty root is a
+// no-op: sessions without a state dir must not fail or spam callers.
 func Save(root string, s Settings) error {
+	if root == "" {
+		return nil
+	}
 	if s.DefaultVersion == "" {
 		s.DefaultVersion = "latest"
 	}

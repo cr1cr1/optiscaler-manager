@@ -74,3 +74,9 @@ func TestLaunchTemplatePersists(t *testing.T) {
 	}
 	t.Log("launch template: default, custom round-trip, empty normalization ok")
 }
+
+func TestSaveEmptyRootIsNoOp(t *testing.T) {
+	if err := Save("", Defaults()); err != nil {
+		t.Fatalf("Save with empty root must be a no-op, got %v", err)
+	}
+}
