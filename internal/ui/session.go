@@ -422,7 +422,20 @@ func (s *Session) Scan(ctx context.Context) {
 				return
 			}
 		}
-		coversTotal := len(entries) + len(snap.ExtraDirs)
+		// Classify each extra root once (stats and bounded walks only, no PE
+		// parsing): container/empty roots are scan roots whose games already
+		// surfaced via the recursive scan — they get no self-row from
+		// mergeExtraDirs, no cover tick, and stale self-rows are not
+		// resurrected by the in-flight keep below. Roots that fail
+		// classification keep the previous row-bearing behavior.
+		scanOnlyRoots := map[string]bool{}
+		for _, d := range snap.ExtraDirs {
+			kind, err := discovery.ClassifyGameDir(ctx, d)
+			if err == nil && kind != discovery.GameDirGame {
+				scanOnlyRoots[d] = true
+			}
+		}
+		coversTotal := len(entries) + len(snap.ExtraDirs) - len(scanOnlyRoots)
 		coversDone := 0
 		coversTick := func() {
 			coversDone++
@@ -441,7 +454,7 @@ func (s *Session) Scan(ctx context.Context) {
 			rows = append(rows, s.toRow(ctx, e))
 			coversTick()
 		}
-		rows = s.mergeExtraDirs(ctx, rows, snap.ExtraDirs, coversTick)
+		rows = s.mergeExtraDirs(ctx, rows, snap.ExtraDirs, scanOnlyRoots, coversTick)
 		// Online lookup phase: enrich the local rows before they are
 		// committed to state, so the final persistCache lands the enriched
 		// fields in one write.
@@ -449,6 +462,8 @@ func (s *Session) Scan(ctx context.Context) {
 		s.mu.Lock()
 		// Directories added while this scan was in flight are not in the
 		// snapshot's ExtraDirs; keep their rows rather than wiping them.
+		// Rows for roots the snapshot classified as container/empty are
+		// stale self-rows from before the gate existed — drop them.
 		fresh := map[string]bool{}
 		for _, r := range rows {
 			fresh[r.InstallDir] = true
@@ -458,7 +473,7 @@ func (s *Session) Scan(ctx context.Context) {
 				continue
 			}
 			for _, d := range s.deps.Settings.ExtraDirs {
-				if r.InstallDir == d {
+				if r.InstallDir == d && !scanOnlyRoots[d] {
 					rows = append(rows, r)
 					break
 				}
@@ -789,11 +804,16 @@ func (s *Session) PickAndAddDirectory(ctx context.Context) {
 	}()
 }
 
-// mergeExtraDirs appends rows for directories the user added manually.
+// mergeExtraDirs appends rows for game directories the user added manually
+// and the scan did not surface. Roots in scanOnly (classified container or
+// empty by the caller) are scan roots, not games: they get no self-row.
 // extraDirs must be a locked settings snapshot taken by the caller. tick,
 // when non-nil, runs after each appended row (cover-progress accounting).
-func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow, extraDirs []string, tick func()) []GameRow {
+func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow, extraDirs []string, scanOnly map[string]bool, tick func()) []GameRow {
 	for _, d := range extraDirs {
+		if scanOnly[d] {
+			continue
+		}
 		entry, err := app.ManualEntry(d, s.deps.Store)
 		if err != nil {
 			log.Warn().Err(err).Str("dir", d).Msg("extra dir unavailable")

@@ -21,6 +21,10 @@ func TestGUIArrowKeyNav(t *testing.T) {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
+		// A real exe makes the dir a game (v0.7): empty dirs are refused.
+		if err := os.WriteFile(filepath.Join(dir, "game.exe"), []byte("GAME"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		sess.AddDirectory(dir)
 	}
 	sess.Scan(context.Background())
