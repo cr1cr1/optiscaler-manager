@@ -290,11 +290,12 @@ func (m Model) settingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// detailRow re-reads the selected game's row from the snapshot.
+// detailRow re-reads the selected game's row from a single snapshot.
 func (m Model) detailRow() *ui.GameRow {
-	for i, r := range m.sess.Snapshot().Rows {
-		if r.InstallDir == m.detailDir {
-			row := m.sess.Snapshot().Rows[i]
+	rows := m.sess.Snapshot().Rows
+	for i := range rows {
+		if rows[i].InstallDir == m.detailDir {
+			row := rows[i]
 			return &row
 		}
 	}
