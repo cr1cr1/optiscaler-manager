@@ -80,10 +80,13 @@ added folders (recursive); game titles come from PE version info
 (ProductName, then FileDescription, then the folder name), so Windows exes
 get real titles even on Linux, and Linux scans also accept `.exe` files
 without the execute bit. Manually added folders are classified before they
-become rows: a folder that is itself a game gets one row; a **container**
-(a library root whose subdirectories are the games) is a scan root — each
-game inside surfaces as its own row and the container never gets a row of
-its own; a folder with no games anywhere is refused.
+become rows: a folder that is itself a game gets one row (plus one per
+game it contains); a **container** (a library root whose subdirectories
+are or hold the games, e.g. `Games` or `Steam`) is a scan root — every
+game inside surfaces as its own row at any nesting depth, and the
+container never gets a row of its own; engine folders holding a game's own
+binaries (`bin`, `Binaries/Win64`, …) never become rows; a folder with no
+games anywhere is refused.
 The grid shows each game's store, installed OptiScaler version, detected
 upscaler versions (DLSS/FSR/XeSS marketing names), and ProtonDB tier.
 Scans also detect OptiScaler installs this manager did not make: unmanaged

@@ -343,16 +343,16 @@ closed; reopen only with new evidence.
 
 ### v0.7 known limits
 
-- A container holding exactly one game whose exe sits deeper than an engine
-  layout (single chain, depth ≥ 3) is structurally indistinguishable from a
-  game directory and may appear with the deep exe's PE title — the
-  classification walks are depth-bounded by design.
-- Engine subfolders (e.g. a `Binaries/Win64` tree inside an otherwise
-  exe-less sibling of real games) may still surface as their own rows in
-  the recursive scan — pre-existing scanner behavior, unchanged by the
-  classification gate.
-- Classification in `Scan` re-walks each extra root (bounded stats only)
-  on top of the recursive scan's own walk; the duplication is deliberate
+- A directory that is both a game and a container (its own exe at top
+  level plus game subdirectories) yields its own row AND one row per
+  contained game.
+- Engine-folder detection is name-based (`bin`, `Binaries`, `Win64`,
+  `x64`, `engine`, `redist`, …). A real game literally named like an
+  engine folder would be skipped; an unusual engine layout not in the
+  list could still row. Container nesting is bounded (4 levels in the
+  scan, 6 in classification).
+- Classification walks each directory tree a bounded number of times
+  (classify, then the scan level itself); the duplication is deliberate
   to keep the gate independent of scanner internals.
 - A container holding exactly one game whose exe sits at depth ≤ 2 from
   the container root may classify as a game (getting a self-row) — the

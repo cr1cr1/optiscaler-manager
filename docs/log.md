@@ -1166,3 +1166,25 @@ forward to unconditional PASS:
 - **R4 security**: PASS (LOWs resolved in the same wave).
 - **R5 context**: PASS (reference client is also exe-based; no convention
   contradicted).
+
+## v0.7.1 container recursion fix — 2026-07-21
+
+User report after v0.7: containers (e.g. `Games`, `Steam`) still appeared
+as rows and games were lost. Root cause: the v0.7 gate classified only the
+top-level added directory; `ScanRecursive` still rowed any child with an
+exe within depth 3, so a nested container became a row that stole one
+child's PE title while its siblings were dropped.
+
+- `9875f5e` fix(discovery): containers are transparent at every scan
+  level. `ScanRecursive` classifies the root and every child
+  (game/container/empty): game dirs yield their own row plus one per game
+  child, containers are recursed into transparently (never rows), engine
+  folders (`bin`, `Binaries`, `Win64`, `x64`, …) never row.
+  `ClassifyGameDir` is now recursive with an engine-folder name set so a
+  child's exe is attributed to the game it belongs to; single-game
+  containers resolve to the child instead of rowing themselves.
+  Verified against the reported scenario: `Games` and `Steam` each
+  surface exactly their games with binary-metadata titles and no self
+  rows. TDD: nested container, deep nesting, game-root engine folders.
+- Docs: README scanning section + scope.md v0.7 known limits updated for
+  the new semantics.
