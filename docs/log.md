@@ -1145,3 +1145,24 @@ forward to unconditional PASS:
   containers surfacing one game per intermediate dir per scan, v1 cache
   invalidation); ScanRecursive documents exe-less-subdir skipping;
   depthOf documents depth 1 as an immediate subdirectory.
+
+## v0.7 review gate (T3) — 2026-07-21
+
+Five-lane review of the v0.7 range; quality failed round 1 and was fixed
+forward to unconditional PASS:
+
+- **R1 goal**: PASS (WARNs: warm-cache stale rows → cache schema v2;
+  nested-container collapse → documented).
+- **R2 QA**: PASS (17/17 scenarios; deviations pinned as documented
+  semantics: nested containers surface the intermediate dir, bin-layout
+  phantom child rows pre-exist, depth-1 rule).
+- **R3 quality**: FAIL→PASS. MAJOR: container-add rescan raced in-flight
+  scans — a stale scan settling last wiped freshly surfaced container
+  children (keep-block only covers ExtraDir self-rows) → scan
+  serialization with a pending bit (e88e056; deterministic gated-CDN
+  regression test). Also fixed in the wave: cache schema v2 (d8d437f),
+  symlink-child canonicalization (f1f39a8), TUI add-dir off the update
+  loop (5e3f0cf), docs (0dc5bb3).
+- **R4 security**: PASS (LOWs resolved in the same wave).
+- **R5 context**: PASS (reference client is also exe-based; no convention
+  contradicted).
