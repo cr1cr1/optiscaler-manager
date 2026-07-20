@@ -110,10 +110,13 @@ type LibraryEntry struct {
 
 // ScanAllOptions controls ScanAllLibraries. An empty SteamRoot means "probe
 // the platform's Steam roots"; ExtraDirs lists manual roots whose
-// subdirectories are individual games (settings.ExtraDirs).
+// subdirectories are individual games (settings.ExtraDirs). Progress, when
+// non-nil, receives ticks in pipeline order: "discover" per probed root,
+// then "enrich" per discovered game.
 type ScanAllOptions struct {
 	SteamRoot string
 	ExtraDirs []string
+	Progress  func(phase string, done, total int)
 }
 
 // ScanAllLibraries discovers games across every store the platform supports
@@ -129,6 +132,11 @@ func ScanAllLibraries(ctx context.Context, st *store.Store, opts ScanAllOptions)
 	games, err := discovery.ScanAll(ctx, discovery.ScanOptions{
 		SteamRoots:     steamRoots,
 		RecursiveRoots: opts.ExtraDirs,
+		Progress: func(done, total int) {
+			if opts.Progress != nil {
+				opts.Progress("discover", done, total)
+			}
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -147,11 +155,14 @@ func ScanAllLibraries(ctx context.Context, st *store.Store, opts ScanAllOptions)
 	}
 
 	var out []LibraryEntry
-	for _, g := range games {
+	for i, g := range games {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		out = append(out, enrich(g, byInstallDir))
+		if opts.Progress != nil {
+			opts.Progress("enrich", i+1, len(games))
+		}
 	}
 	if len(out) == 0 {
 		return nil, ErrNoGames

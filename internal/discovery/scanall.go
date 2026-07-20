@@ -10,10 +10,13 @@ import (
 
 // ScanOptions controls ScanAll. A nil SteamRoots slice means "probe the
 // platform's Steam roots"; RecursiveRoots lists manually managed roots whose
-// subdirectories are individual games.
+// subdirectories are individual games. Progress, when non-nil, is called
+// after each probed root with the number of roots done and the total root
+// count (steam + recursive).
 type ScanOptions struct {
 	SteamRoots     []string
 	RecursiveRoots []string
+	Progress       func(done, total int)
 }
 
 // ScanAll discovers games from every store the platform supports — Steam,
@@ -40,6 +43,14 @@ func ScanAll(ctx context.Context, opts ScanOptions) ([]domain.Game, error) {
 	if steamRoots == nil {
 		steamRoots = SteamRoots()
 	}
+	done := 0
+	total := len(steamRoots) + len(opts.RecursiveRoots)
+	tick := func() {
+		done++
+		if opts.Progress != nil {
+			opts.Progress(done, total)
+		}
+	}
 	for _, root := range steamRoots {
 		if err := ctx.Err(); err != nil {
 			return games, err
@@ -47,9 +58,11 @@ func ScanAll(ctx context.Context, opts ScanOptions) ([]domain.Game, error) {
 		found, err := ScanSteam(root)
 		if err != nil {
 			log.Debug().Err(err).Str("root", root).Msg("steam root not scannable")
+			tick()
 			continue
 		}
 		add(found)
+		tick()
 	}
 	if err := ctx.Err(); err != nil {
 		return games, err
@@ -64,9 +77,11 @@ func ScanAll(ctx context.Context, opts ScanOptions) ([]domain.Game, error) {
 		found, err := ScanRecursive(ctx, root)
 		if err != nil {
 			log.Debug().Err(err).Str("root", root).Msg("manual root not scannable")
+			tick()
 			continue
 		}
 		add(found)
+		tick()
 	}
 	return games, nil
 }

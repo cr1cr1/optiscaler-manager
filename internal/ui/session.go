@@ -49,7 +49,28 @@ const (
 	EvOpFailed
 	EvOpCancelled
 	EvConfirm
+	EvScanProgress
 )
+
+// Scan progress phases, in pipeline order. "covers" includes the manual
+// extra-dir rows merged after the discovered entries.
+const (
+	phaseDiscover = "discover"
+	phaseEnrich   = "enrich"
+	phaseCovers   = "covers"
+)
+
+// progressPokeInterval is the minimum spacing between EvScanProgress pokes
+// within a phase; the State.Progress snapshot is updated on every tick
+// regardless.
+const progressPokeInterval = 50 * time.Millisecond
+
+// ScanProgress is one pipeline phase's completion counters.
+type ScanProgress struct {
+	Phase string
+	Done  int
+	Total int
+}
 
 // Event is a single notification on the session's event stream.
 type Event struct {
@@ -92,6 +113,7 @@ type State struct {
 	StatusLine string
 	Confirm    *Confirmation
 	Toasts     []Toast
+	Progress   *ScanProgress // scan pipeline counters, nil when no scan runs
 }
 
 // Deps wires the session to the lower layers.
@@ -116,6 +138,9 @@ type Session struct {
 	now       func() time.Time
 	opCancels map[string]context.CancelFunc // in-flight op per game dir
 	cacheMu   sync.Mutex                    // serializes games-cache writes
+
+	progressMu sync.Mutex // serializes progress poke throttling
+	lastPoke   time.Time
 
 	openExternal func(path string) error
 	pickDir      func(ctx context.Context) (string, error)
@@ -346,15 +371,23 @@ func (s *Session) Scan(ctx context.Context) {
 	go func() {
 		s.emit(Event{Kind: EvScanStarted})
 		s.setBusy("Scanning…")
+		s.resetProgress()
 		snap := s.Settings()
 		entries, err := app.ScanAllLibraries(ctx, s.deps.Store, app.ScanAllOptions{
 			SteamRoot: s.deps.SteamRoot,
 			ExtraDirs: snap.ExtraDirs,
+			Progress: func(phase string, done, total int) {
+				if ctx.Err() != nil {
+					return
+				}
+				s.scanProgress(phase, done, total)
+			},
 		})
 		if err != nil {
 			if errors.Is(err, app.ErrNoGames) {
 				entries = nil // empty first-run library: settle at 0 games
 			} else {
+				s.clearProgress()
 				s.setBusy("")
 				s.setStatus("Scan failed: " + err.Error())
 				log.Warn().Err(err).Msg("scan failed")
@@ -362,11 +395,26 @@ func (s *Session) Scan(ctx context.Context) {
 				return
 			}
 		}
+		coversTotal := len(entries) + len(snap.ExtraDirs)
+		coversDone := 0
+		coversTick := func() {
+			coversDone++
+			s.scanProgress(phaseCovers, coversDone, coversTotal)
+		}
 		rows := make([]GameRow, 0, len(entries))
 		for _, e := range entries {
+			if err := ctx.Err(); err != nil {
+				s.clearProgress()
+				s.setBusy("")
+				s.setStatus("Scan failed: " + err.Error())
+				log.Warn().Err(err).Msg("scan cancelled")
+				s.emit(Event{Kind: EvScanFailed, Text: err.Error()})
+				return
+			}
 			rows = append(rows, s.toRow(ctx, e))
+			coversTick()
 		}
-		rows = s.mergeExtraDirs(ctx, rows, snap.ExtraDirs)
+		rows = s.mergeExtraDirs(ctx, rows, snap.ExtraDirs, coversTick)
 		s.mu.Lock()
 		// Directories added while this scan was in flight are not in the
 		// snapshot's ExtraDirs; keep their rows rather than wiping them.
@@ -389,10 +437,48 @@ func (s *Session) Scan(ctx context.Context) {
 		s.st.Rows = rows
 		s.st.StatusLine = fmt.Sprintf("%d games", len(rows))
 		s.st.Busy = ""
+		s.st.Progress = nil
 		s.mu.Unlock()
 		s.persistCache()
 		s.emit(Event{Kind: EvScanDone, Text: fmt.Sprintf("%d games", len(rows))})
 	}()
+}
+
+// scanProgress records one pipeline tick. State.Progress is authoritative
+// and updated on every tick; an EvScanProgress poke is emitted at most
+// every progressPokeInterval or on a phase change.
+func (s *Session) scanProgress(phase string, done, total int) {
+	s.mu.Lock()
+	changed := s.st.Progress == nil || s.st.Progress.Phase != phase
+	s.st.Progress = &ScanProgress{Phase: phase, Done: done, Total: total}
+	s.mu.Unlock()
+	s.progressMu.Lock()
+	due := changed || time.Since(s.lastPoke) >= progressPokeInterval
+	if due {
+		s.lastPoke = time.Now()
+	}
+	s.progressMu.Unlock()
+	if due {
+		s.emit(Event{Kind: EvScanProgress})
+	}
+}
+
+// resetProgress arms the poke throttle for a new scan.
+func (s *Session) resetProgress() {
+	s.progressMu.Lock()
+	s.lastPoke = time.Time{}
+	s.progressMu.Unlock()
+	s.mu.Lock()
+	s.st.Progress = nil
+	s.mu.Unlock()
+}
+
+// clearProgress drops the progress snapshot; callers invoke it before the
+// terminal scan event so frontends observe nil on completion.
+func (s *Session) clearProgress() {
+	s.mu.Lock()
+	s.st.Progress = nil
+	s.mu.Unlock()
 }
 
 // QuickInstall installs when not installed, uninstalls when installed —
@@ -618,8 +704,9 @@ func (s *Session) PickAndAddDirectory(ctx context.Context) {
 }
 
 // mergeExtraDirs appends rows for directories the user added manually.
-// extraDirs must be a locked settings snapshot taken by the caller.
-func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow, extraDirs []string) []GameRow {
+// extraDirs must be a locked settings snapshot taken by the caller. tick,
+// when non-nil, runs after each appended row (cover-progress accounting).
+func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow, extraDirs []string, tick func()) []GameRow {
 	for _, d := range extraDirs {
 		entry, err := app.ManualEntry(d)
 		if err != nil {
@@ -635,6 +722,9 @@ func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow, extraDirs 
 		}
 		if !dup {
 			rows = append(rows, s.toRow(ctx, entry))
+			if tick != nil {
+				tick()
+			}
 		}
 	}
 	return rows
