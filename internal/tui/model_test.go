@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -38,10 +39,11 @@ func TestMain(m *testing.M) {
 // store, temp Steam root with one game) — the same seams the ui tests use,
 // expressed through the exported API only.
 type testEnv struct {
-	sess     *ui.Session
-	gameRoot string
-	bin      string
-	srv      *httptest.Server
+	sess      *ui.Session
+	gameRoot  string
+	bin       string
+	steamRoot string
+	srv       *httptest.Server
 }
 
 func newTestEnv(t *testing.T, mutate func(*ui.Deps)) *testEnv {
@@ -66,6 +68,7 @@ func newTestEnv(t *testing.T, mutate func(*ui.Deps)) *testEnv {
 
 	root := t.TempDir()
 	steamRoot := t.TempDir()
+	e.steamRoot = steamRoot
 	e.gameRoot = filepath.Join(steamRoot, "steamapps", "common", "GameOne")
 	e.bin = filepath.Join(e.gameRoot, "bin")
 	writeFile(t, filepath.Join(steamRoot, "steamapps", "libraryfolders.vdf"),
@@ -76,11 +79,12 @@ func newTestEnv(t *testing.T, mutate func(*ui.Deps)) *testEnv {
 	writeFile(t, filepath.Join(e.bin, "nvngx_dlss.dll"), "DLSS")
 
 	deps := ui.Deps{
-		Store:     store.New(root),
-		GH:        gh.NewWithBaseURL(nil, filepath.Join(root, "cache"), e.srv.URL),
-		Covers:    covers.NewWithBase(nil, filepath.Join(root, "covers"), e.srv.URL+"/cdn/%s", e.srv.URL+"/search/"),
-		CacheDir:  filepath.Join(root, "cache"),
-		SteamRoot: steamRoot,
+		Store:        store.New(root),
+		GH:           gh.NewWithBaseURL(nil, filepath.Join(root, "cache"), e.srv.URL),
+		Covers:       covers.NewWithBase(nil, filepath.Join(root, "covers"), e.srv.URL+"/cdn/%s", e.srv.URL+"/search/"),
+		CacheDir:     filepath.Join(root, "cache"),
+		SteamRoot:    steamRoot,
+		SettingsRoot: filepath.Join(root, "settings"),
 	}
 	if mutate != nil {
 		mutate(&deps)
@@ -102,9 +106,44 @@ func writeFile(t *testing.T, path, content string) {
 // startTUI runs the model under teatest with a deterministic terminal size.
 func startTUI(t *testing.T, sess *ui.Session) *teatest.TestModel {
 	t.Helper()
-	tm := teatest.NewTestModel(t, New(sess), teatest.WithInitialTermSize(100, 30))
+	return startTUISize(t, sess, 100, 30)
+}
+
+func startTUISize(t *testing.T, sess *ui.Session, w, h int) *teatest.TestModel {
+	t.Helper()
+	tm := teatest.NewTestModel(t, New(sess), teatest.WithInitialTermSize(w, h))
 	t.Cleanup(func() { _ = tm.Quit() })
 	return tm
+}
+
+// seedGamesCache writes a games-list cache (games.json) into root, mirroring
+// internal/ui's cache schema so Session.Start boots warm without scanning.
+func seedGamesCache(t *testing.T, root string, rows []ui.GameRow) {
+	t.Helper()
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(struct {
+		Version int          `json:"version"`
+		Rows    []ui.GameRow `json:"rows"`
+	}{Version: 1, Rows: rows})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "games.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func pollUntil(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // waitFrame blocks until the rendered output contains want.
@@ -182,14 +221,14 @@ func TestTUIFilter(t *testing.T) {
 	}
 }
 
-// TestTUIInstallRoundTrip presses enter on the selected row: the session op
+// TestTUIInstallRoundTrip presses i on the selected row: the session op
 // runs end-to-end (files on disk) and the status line reports the install.
 func TestTUIInstallRoundTrip(t *testing.T) {
 	e := newTestEnv(t, nil)
 	tm := startTUI(t, e.sess)
 
 	waitFrame(t, tm, "Game One")
-	sendKey(tm, tea.KeyEnter)
+	tm.Type("i")
 	waitFrame(t, tm, "Installed Game One")
 
 	if _, err := os.Stat(filepath.Join(e.bin, "dxgi.dll")); err != nil {
@@ -221,14 +260,14 @@ func TestTUIQuitsOnQ(t *testing.T) {
 }
 
 // TestTUIConfirmEACPrompt: installing an EAC game surfaces the confirm
-// dialog; accepting it with 'y' lets the install proceed.
+// modal; accepting it with 'y' lets the install proceed.
 func TestTUIConfirmEACPrompt(t *testing.T) {
 	e := newTestEnv(t, nil)
 	writeFile(t, filepath.Join(e.gameRoot, "start_protected_game.exe"), "EAC")
 	tm := startTUI(t, e.sess)
 
 	waitFrame(t, tm, "Game One")
-	sendKey(tm, tea.KeyEnter)
+	tm.Type("i")
 	waitFrame(t, tm, "Easy Anti-Cheat")
 	if _, err := os.Stat(filepath.Join(e.bin, "dxgi.dll")); !os.IsNotExist(err) {
 		t.Fatal("install proceeded before the EAC prompt was answered")
@@ -243,8 +282,8 @@ func TestTUIConfirmEACPrompt(t *testing.T) {
 	_ = tm.Quit()
 	frame := finalFrame(t, tm)
 	t.Logf("frame after EAC consent:\n%s", frame)
-	if strings.Contains(frame, "[y/N]") {
-		t.Errorf("confirm dialog still rendered after answering:\n%s", frame)
+	if strings.Contains(frame, "[y] proceed") {
+		t.Errorf("confirm modal still rendered after answering:\n%s", frame)
 	}
 }
 
@@ -305,5 +344,293 @@ func TestTUILaunchBinding(t *testing.T) {
 	t.Logf("frame after launch:\n%s", frame)
 	if !strings.Contains(frame, "Launch requested: Game One") {
 		t.Errorf("status line does not reflect the launch:\n%s", frame)
+	}
+}
+
+// TestTUIStartCachedShowsCachedRowsNoScan boots with a warm games cache: the
+// cached rows render instantly, the status line reports "(cached)", and no
+// scan ever runs (the fixture game must NOT appear).
+func TestTUIStartCachedShowsCachedRowsNoScan(t *testing.T) {
+	settingsDir := t.TempDir()
+	e := newTestEnv(t, func(d *ui.Deps) { d.SettingsRoot = settingsDir })
+	seedGamesCache(t, settingsDir, []ui.GameRow{{
+		Title:      "Cached Phantom Game",
+		AppID:      "999",
+		InstallDir: "/phantom/dir",
+		Platform:   "Steam",
+	}})
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Cached Phantom Game")
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("cached-boot frame:\n%s", frame)
+	for _, want := range []string{"Cached Phantom Game", "(cached)"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("cached-boot frame lacks %q:\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "Scanning") {
+		t.Errorf("cache hit must never scan, frame shows scanning:\n%s", frame)
+	}
+	if strings.Contains(frame, "Game One") {
+		t.Errorf("cache hit must not scan the fixture library:\n%s", frame)
+	}
+}
+
+// TestTUITabSwitch: number keys switch between the Games, Settings, and Help
+// screens.
+func TestTUITabSwitch(t *testing.T) {
+	e := newTestEnv(t, nil)
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	tm.Type("2")
+	waitFrame(t, tm, "Scan directories")
+	tm.Type("3")
+	waitFrame(t, tm, "Keyboard reference")
+	tm.Type("1")
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("frame after switching back to games:\n%s", frame)
+	for _, want := range []string{"Game One", "TITLE"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("games screen not restored after tab switch, lacks %q:\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "Keyboard reference") {
+		t.Errorf("help screen still rendered after switching back:\n%s", frame)
+	}
+}
+
+// TestTUISettingsListsDirectories: ExtraDirs from settings render in the
+// settings screen's scan-directories section.
+func TestTUISettingsListsDirectories(t *testing.T) {
+	extra := t.TempDir()
+	e := newTestEnv(t, func(d *ui.Deps) {
+		d.Settings.ExtraDirs = []string{extra}
+	})
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	tm.Type("2")
+	waitFrame(t, tm, extra)
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("settings frame:\n%s", frame)
+	for _, want := range []string{"Scan directories", extra, "Launch template", "Default OptiScaler version"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("settings frame lacks %q:\n%s", want, frame)
+		}
+	}
+}
+
+// TestTUISettingsRemoveDirectory: d on a listed directory asks for inline
+// confirmation; y removes it from settings and from the rendered list.
+func TestTUISettingsRemoveDirectory(t *testing.T) {
+	extra := t.TempDir()
+	e := newTestEnv(t, func(d *ui.Deps) {
+		d.Settings.ExtraDirs = []string{extra}
+	})
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	tm.Type("2")
+	waitFrame(t, tm, extra)
+	tm.Type("d")
+	waitFrame(t, tm, "[y/n]")
+	tm.Type("y")
+
+	pollUntil(t, "ExtraDirs to shrink", func() bool {
+		return len(e.sess.Settings().ExtraDirs) == 0
+	})
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("settings frame after removal:\n%s", frame)
+	if strings.Contains(frame, extra) {
+		t.Errorf("removed directory still rendered:\n%s", frame)
+	}
+}
+
+// TestTUISettingsAddDirectory: a opens a path input; entering an existing
+// directory registers it through the session (settings + rendered list).
+func TestTUISettingsAddDirectory(t *testing.T) {
+	newDir := filepath.Join(t.TempDir(), "AddedGame")
+	if err := os.MkdirAll(newDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e := newTestEnv(t, nil)
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	tm.Type("2")
+	waitFrame(t, tm, "Scan directories")
+	tm.Type("a")
+	waitFrame(t, tm, "add dir:")
+	tm.Type(newDir)
+	sendKey(tm, tea.KeyEnter)
+
+	pollUntil(t, "ExtraDirs to contain the new dir", func() bool {
+		for _, d := range e.sess.Settings().ExtraDirs {
+			if strings.Contains(d, "AddedGame") {
+				return true
+			}
+		}
+		return false
+	})
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("settings frame after add:\n%s", frame)
+	if !strings.Contains(frame, "AddedGame") {
+		t.Errorf("added directory not rendered:\n%s", frame)
+	}
+}
+
+// TestTUISettingsTemplateEdit: t opens the launch-template editor prefilled
+// with the current value; Enter persists through the session setter.
+func TestTUISettingsTemplateEdit(t *testing.T) {
+	e := newTestEnv(t, nil)
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	tm.Type("2")
+	waitFrame(t, tm, "Launch template")
+	tm.Type("t")
+	waitFrame(t, tm, "launch template:")
+	tm.Type(" --fast")
+	sendKey(tm, tea.KeyEnter)
+
+	pollUntil(t, "launch template update", func() bool {
+		return e.sess.Settings().LaunchTemplate == `"{exe}" {args} --fast`
+	})
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("settings frame after template edit:\n%s", frame)
+	if !strings.Contains(frame, "--fast") {
+		t.Errorf("edited template not rendered:\n%s", frame)
+	}
+}
+
+// TestTUIDetailViewActions: enter on a row opens the detail screen with the
+// game's metadata (path, AppID, versions) and the full actions list.
+func TestTUIDetailViewActions(t *testing.T) {
+	e := newTestEnv(t, nil)
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	sendKey(tm, tea.KeyEnter)
+	waitFrame(t, tm, "AppID")
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("detail frame:\n%s", frame)
+	for _, want := range []string{"Game One", e.gameRoot, "100", "OptiScaler", "Actions", "rollback", "open INI", "launch"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("detail frame lacks %q:\n%s", want, frame)
+		}
+	}
+}
+
+// TestTUIConfirmModal: an EAC install gates behind a modal that swallows
+// unrelated keys until answered; y lets the install proceed.
+func TestTUIConfirmModal(t *testing.T) {
+	e := newTestEnv(t, nil)
+	writeFile(t, filepath.Join(e.gameRoot, "start_protected_game.exe"), "EAC")
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	tm.Type("i")
+	waitFrame(t, tm, "[y] proceed")
+
+	// Keys unrelated to the modal must be swallowed while it is up.
+	sendKey(tm, tea.KeyDown)
+	tm.Type("2jx")
+	time.Sleep(200 * time.Millisecond)
+	if e.sess.Snapshot().Confirm == nil {
+		t.Fatal("unrelated keys answered or dismissed the confirm modal")
+	}
+	if _, err := os.Stat(filepath.Join(e.bin, "dxgi.dll")); !os.IsNotExist(err) {
+		t.Fatal("install proceeded before the modal was answered")
+	}
+
+	tm.Type("y")
+	waitFrame(t, tm, "Installed Game One")
+	if _, err := os.Stat(filepath.Join(e.bin, "dxgi.dll")); err != nil {
+		t.Fatalf("install did not proceed after accepting the modal: %v", err)
+	}
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("frame after modal consent:\n%s", frame)
+	if strings.Contains(frame, "[y] proceed") {
+		t.Errorf("modal still rendered after answering:\n%s", frame)
+	}
+}
+
+// TestTUIResizeKeepsCursorVisible: at a small terminal height, moving the
+// cursor deep into a long list keeps the selected row rendered.
+func TestTUIResizeKeepsCursorVisible(t *testing.T) {
+	settingsDir := t.TempDir()
+	e := newTestEnv(t, func(d *ui.Deps) { d.SettingsRoot = settingsDir })
+	rows := make([]ui.GameRow, 0, 30)
+	for i := 1; i <= 30; i++ {
+		rows = append(rows, ui.GameRow{
+			Title:      fmt.Sprintf("Game %02d", i),
+			AppID:      fmt.Sprintf("%d", 1000+i),
+			InstallDir: fmt.Sprintf("/phantom/%02d", i),
+			Platform:   "Steam",
+		})
+	}
+	seedGamesCache(t, settingsDir, rows)
+	tm := startTUISize(t, e.sess, 100, 12)
+
+	waitFrame(t, tm, "Game 01")
+	tm.Type(strings.Repeat("j", 25))
+	waitFrame(t, tm, "Game 26")
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("small-height scrolled frame:\n%s", frame)
+	if !strings.Contains(frame, "Game 26") {
+		t.Errorf("selected row scrolled out of view:\n%s", frame)
+	}
+}
+
+// TestTUIQuitsOnCtrlC: ctrl+c terminates the program from the games screen.
+func TestTUIQuitsOnCtrlC(t *testing.T) {
+	e := newTestEnv(t, nil)
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	sendKey(tm, tea.KeyCtrlC)
+	tm.WaitFinished(t, teatest.WithFinalTimeout(10*time.Second))
+	t.Log("quit cleanly on ctrl+c")
+}
+
+// TestTUIEmptyLibraryGuidance: an empty library renders friendly guidance
+// instead of a blank screen.
+func TestTUIEmptyLibraryGuidance(t *testing.T) {
+	e := newTestEnv(t, nil)
+	if err := os.Remove(filepath.Join(e.steamRoot, "steamapps", "appmanifest_100.acf")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(e.steamRoot, "steamapps", "common")); err != nil {
+		t.Fatal(err)
+	}
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "no games yet")
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("empty-library frame:\n%s", frame)
+	if !strings.Contains(frame, "no games yet") {
+		t.Errorf("empty-state guidance missing:\n%s", frame)
 	}
 }
