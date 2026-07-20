@@ -29,8 +29,11 @@ import (
 )
 
 // ManualEntry builds a library entry for a user-supplied game directory
-// (added via the directory picker, not launcher discovery).
-func ManualEntry(dir string) (LibraryEntry, error) {
+// (added via the directory picker, not launcher discovery). st may be nil;
+// when non-nil, a store manifest for the resolved injection dir is
+// authoritative (mirroring enrich's manifest precedence): the manager's own
+// install must never be re-probed into external.
+func ManualEntry(dir string, st *store.Store) (LibraryEntry, error) {
 	root, err := canonicalDir(dir)
 	if err != nil {
 		return LibraryEntry{}, err
@@ -59,12 +62,26 @@ func ManualEntry(dir string) (LibraryEntry, error) {
 	if d, err := installDirOf(root); err == nil {
 		e.InjectionDir = d
 	}
+	// Manifest precedence (mirrors enrich): a manager-made install is
+	// authoritative — the branded OptiScaler PE on disk may be the manager's
+	// own, so only unmanaged rows probe for an external install.
+	if st != nil && e.InjectionDir != "" {
+		if manifests, err := st.List(); err == nil {
+			for _, m := range manifests {
+				if m.InstallDir == e.InjectionDir {
+					e.Status = m.Status
+					e.ManifestID = m.ID
+					break
+				}
+			}
+		}
+	}
 	// Manual roots bypass the discovery→enrich probe, so detect a
 	// pre-existing OptiScaler install here (mirroring enrich): a branded
 	// injection DLL means external, with the version from the bounded
 	// evidence chain. Component versions stay suppressed — those DLLs
 	// belong to OptiScaler's bundle, not the game.
-	if e.InjectionDir != "" {
+	if e.Status == "" && e.InjectionDir != "" {
 		if found, version := pever.DetectOptiScaler(e.InjectionDir); found {
 			e.Status = domain.StatusExternal
 			e.OptiScalerVersion = version

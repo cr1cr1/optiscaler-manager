@@ -371,6 +371,68 @@ func TestAddDirectoryShowsExternalImmediately(t *testing.T) {
 	t.Logf("manual add surfaced external immediately (version %q)", row.OptiScalerVersion)
 }
 
+// TestManagedManualGameSurvivesRescan: a game the MANAGER installed into a
+// manually added folder must stay committed across rescans (manifest
+// precedence — the branded OptiScaler PE on disk is the manager's own
+// install, not an external one), and uninstall of it must not be refused.
+func TestManagedManualGameSurvivesRescan(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	custom := filepath.Join(t.TempDir(), "ManagedManual")
+	writeUIFile(t, filepath.Join(custom, "game.exe"), "GAME")
+	findRow := func() *GameRow {
+		rows := e.sess.Snapshot().Rows
+		for i := range rows {
+			if rows[i].InstallDir == custom {
+				return &rows[i]
+			}
+		}
+		return nil
+	}
+
+	e.sess.AddDirectory(custom)
+	waitEventText(t, e.sess, EvScanDone, "directory added")
+
+	// 1. Install (adopt-free, plain game) → committed.
+	e.sess.QuickInstall(custom)
+	waitEvent(t, e.sess, EvOpDone)
+	row := findRow()
+	if row == nil || row.Status != domain.StatusCommitted {
+		t.Fatalf("(1) row after install = %+v, want committed", row)
+	}
+
+	// 2. Production branding: the manager-installed OptiScaler.dll carries
+	// OptiScaler PE identity (the fake bundle's does not — simulate it).
+	marker := testutil.StringInfoPE(false, map[string]string{
+		"ProductName":      "OptiScaler",
+		"OriginalFilename": "OptiScaler.dll",
+	}, [4]uint16{0, 9, 4, 0})
+	writeUIFile(t, filepath.Join(custom, "OptiScaler.dll"), string(marker))
+
+	// 3. Rescan: manifest precedence must keep the row committed.
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+	row = findRow()
+	if row == nil {
+		t.Fatal("(3) manual row lost after rescan")
+	}
+	if row.Status != domain.StatusCommitted {
+		t.Fatalf("(3) row status = %q after rescan, want %q (manager's own install probed as external)",
+			row.Status, domain.StatusCommitted)
+	}
+	t.Log("(3) rescan kept the managed manual game committed")
+
+	// 4. Uninstall of the manager's own install must succeed — no refusal.
+	e.sess.Uninstall(custom)
+	waitEvent(t, e.sess, EvOpDone)
+	for _, toast := range e.sess.Snapshot().Toasts {
+		if strings.Contains(toast.Text, notManagedRefusal) {
+			t.Fatalf("(4) legitimate uninstall refused: %q", toast.Text)
+		}
+	}
+	t.Log("(4) uninstall of the managed manual game succeeded")
+}
+
 // TestCanOpenINI: the OptiScaler.ini affordance opens for every install that
 // has one on disk — manager-committed AND external (detected, unmanaged) —
 // and stays closed for every state without a usable install.

@@ -639,7 +639,7 @@ func (s *Session) AddDirectory(dir string) {
 		}
 	}
 	go func() {
-		entry, err := app.ManualEntry(dir)
+		entry, err := app.ManualEntry(dir, s.deps.Store)
 		if err != nil {
 			s.finishOp(root)
 			s.removeRow(root)
@@ -793,7 +793,7 @@ func (s *Session) PickAndAddDirectory(ctx context.Context) {
 // when non-nil, runs after each appended row (cover-progress accounting).
 func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow, extraDirs []string, tick func()) []GameRow {
 	for _, d := range extraDirs {
-		entry, err := app.ManualEntry(d)
+		entry, err := app.ManualEntry(d, s.deps.Store)
 		if err != nil {
 			log.Warn().Err(err).Str("dir", d).Msg("extra dir unavailable")
 			continue

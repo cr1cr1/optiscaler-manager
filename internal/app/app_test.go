@@ -257,7 +257,7 @@ func TestManualEntry_TitleFromExe(t *testing.T) {
 		if err := os.WriteFile(exe, peWithProductName("My Cool Game"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		e, err := ManualEntry(dir)
+		e, err := ManualEntry(dir, nil)
 		if err != nil {
 			t.Fatalf("ManualEntry: %v", err)
 		}
@@ -278,7 +278,7 @@ func TestManualEntry_TitleFromExe(t *testing.T) {
 		if err := os.WriteFile(exe, []byte("GAME"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		e, err := ManualEntry(dir)
+		e, err := ManualEntry(dir, nil)
 		if err != nil {
 			t.Fatalf("ManualEntry: %v", err)
 		}
@@ -321,7 +321,7 @@ func TestManualEntry_DetectsExternalInstall(t *testing.T) {
 		"OriginalFilename": "OptiScaler.dll",
 	})
 
-	e, err := ManualEntry(dir)
+	e, err := ManualEntry(dir, nil)
 	if err != nil {
 		t.Fatalf("ManualEntry: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestManualEntry_DetectsExternalInstall(t *testing.T) {
 func TestManualEntry_PlainGameUnchanged(t *testing.T) {
 	dir := newManualGameDir(t, "PlainGame")
 
-	e, err := ManualEntry(dir)
+	e, err := ManualEntry(dir, nil)
 	if err != nil {
 		t.Fatalf("ManualEntry: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestManualEntry_DXVKNotExternal(t *testing.T) {
 		"OriginalFilename": "dxgi.dll",
 	})
 
-	e, err := ManualEntry(dir)
+	e, err := ManualEntry(dir, nil)
 	if err != nil {
 		t.Fatalf("ManualEntry: %v", err)
 	}
@@ -372,5 +372,58 @@ func TestManualEntry_DXVKNotExternal(t *testing.T) {
 	}
 	if e.OptiScalerVersion != "" {
 		t.Errorf("OptiScalerVersion = %q, want empty", e.OptiScalerVersion)
+	}
+}
+
+var optiScalerBrand = map[string]string{
+	"ProductName":      "OptiScaler",
+	"OriginalFilename": "OptiScaler.dll",
+}
+
+// TestManualEntry_ManagedStaysCommitted: manifest precedence — a game the
+// MANAGER installed into a manual folder carries a committed manifest, so
+// the branded OptiScaler PE on disk is the manager's own install and the
+// entry must stay committed (never probed into external, which would make
+// doUninstall refuse a legitimate uninstall).
+func TestManualEntry_ManagedStaysCommitted(t *testing.T) {
+	f := newAppFakes(t)
+	f.seedCache(t)
+	if _, err := Install(context.Background(), f.st, f.client, f.cacheDir, f.gameRoot, InstallOpts{}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	// Production branding: the manager-installed OptiScaler.dll carries
+	// OptiScaler PE identity (the fake bundle's does not — simulate it).
+	writeBrandedDLL(t, f.bin, optiScalerBrand)
+
+	e, err := ManualEntry(f.gameRoot, f.st)
+	if err != nil {
+		t.Fatalf("ManualEntry: %v", err)
+	}
+	if e.Status != domain.StatusCommitted {
+		t.Errorf("Status = %q, want %q (committed manifest must win over the external probe)",
+			e.Status, domain.StatusCommitted)
+	}
+	if e.ManifestID == "" {
+		t.Error("ManifestID empty for a managed manual game")
+	}
+	t.Logf("managed manual entry: status=%q manifest=%q", e.Status, e.ManifestID)
+}
+
+// TestManualEntry_UnmanagedStillExternal: with a store that holds NO
+// manifest for the directory, the probe still fires — external.
+func TestManualEntry_UnmanagedStillExternal(t *testing.T) {
+	dir := newManualGameDir(t, "UnmanagedGame")
+	writeBrandedDLL(t, dir, optiScalerBrand)
+	st := store.New(t.TempDir())
+
+	e, err := ManualEntry(dir, st)
+	if err != nil {
+		t.Fatalf("ManualEntry: %v", err)
+	}
+	if e.Status != domain.StatusExternal {
+		t.Errorf("Status = %q, want %q with an empty store", e.Status, domain.StatusExternal)
+	}
+	if e.OptiScalerVersion == "" {
+		t.Error("OptiScalerVersion empty; want the PE FileVersion fallback")
 	}
 }
