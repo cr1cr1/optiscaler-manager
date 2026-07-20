@@ -630,6 +630,23 @@ func (s *Session) AddDirectory(dir string) {
 			return // cancelled mid-add: the placeholder row stays for the next scan
 		}
 		s.mu.Lock()
+		// A RemoveDirectory that landed while this add was enriching has
+		// already dropped the placeholder row and the ExtraDirs entry;
+		// re-appending now would resurrect a zombie row that survives until
+		// the next scan. Skip the append, the cache write, and the event.
+		registered := false
+		for _, d := range s.deps.Settings.ExtraDirs {
+			if d == root {
+				registered = true
+				break
+			}
+		}
+		if !registered {
+			s.mu.Unlock()
+			s.finishOp(root)
+			log.Debug().Str("dir", root).Msg("add settled after directory removal; row not appended")
+			return
+		}
 		replaced := false
 		for i := range s.st.Rows {
 			if s.st.Rows[i].InstallDir == entry.Game.InstallDir {
@@ -685,6 +702,22 @@ func (s *Session) RemoveDirectory(dir string) {
 	root := canonicalDir(dir)
 	s.mu.Lock()
 	present := false
+	for _, d := range s.deps.Settings.ExtraDirs {
+		if d == root {
+			present = true
+			break
+		}
+	}
+	s.mu.Unlock()
+	if !present {
+		return
+	}
+	// Abort any in-flight AddDirectory for this root before dropping the
+	// row: its goroutine checks ctx.Err() before touching rows, so a cancel
+	// here stops it from resurrecting the row after RemoveDirectory returns.
+	s.CancelOp(root)
+	s.mu.Lock()
+	present = false
 	kept := make([]string, 0, len(s.deps.Settings.ExtraDirs))
 	for _, d := range s.deps.Settings.ExtraDirs {
 		if d == root {
@@ -695,7 +728,7 @@ func (s *Session) RemoveDirectory(dir string) {
 	}
 	if !present {
 		s.mu.Unlock()
-		return
+		return // raced with a concurrent removal of the same root
 	}
 	s.deps.Settings.ExtraDirs = kept
 	prefix := root + string(os.PathSeparator)

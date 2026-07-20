@@ -198,6 +198,59 @@ drained:
 	t.Logf("final rows consistent: %v", counts)
 }
 
+// TestRemoveDirectoryDuringInFlightAdd: removing a directory while its
+// AddDirectory enrichment is still in flight must not leave a zombie row
+// behind: the in-flight add observes the removal, never re-appends the row,
+// never persists it to games.json, and never emits "directory added".
+func TestRemoveDirectoryDuringInFlightAdd(t *testing.T) {
+	e := newSlowCoversEnv(t, 2*time.Second)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	custom := filepath.Join(t.TempDir(), "ZombieGame")
+	writeUIFile(t, filepath.Join(custom, "game.exe"), "GAME")
+	root := canonicalDir(custom)
+
+	e.sess.AddDirectory(custom)
+	e.sess.RemoveDirectory(custom)
+
+	// The in-flight add must settle (its ctx cancelled) without hanging.
+	deadline := time.Now().Add(10 * time.Second)
+	for e.sess.OpBusy(root) {
+		if time.Now().After(deadline) {
+			t.Fatal("in-flight add never settled after RemoveDirectory")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Drain events: no "directory added" may arrive for the removed dir.
+	drain := time.After(300 * time.Millisecond)
+draining:
+	for {
+		select {
+		case ev := <-e.sess.Events():
+			t.Logf("event: %v %q", ev.Kind, ev.Text)
+			if ev.Kind == EvScanDone && ev.Text == "directory added" {
+				t.Fatal("removed directory still emitted 'directory added'")
+			}
+		case <-drain:
+			break draining
+		}
+	}
+
+	for _, r := range e.sess.Snapshot().Rows {
+		if r.InstallDir == root {
+			t.Fatalf("zombie row resurrected after RemoveDirectory: %+v", r)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(e.sess.deps.SettingsRoot, "games.json"))
+	if err != nil {
+		t.Fatalf("games.json: %v", err)
+	}
+	if strings.Contains(string(data), root) {
+		t.Errorf("games.json still contains removed dir %s", root)
+	}
+	t.Log("in-flight add observed the removal: no row, no cache entry, no event")
+}
+
 // TestClearBundleCache_Async: ClearBundleCache returns while the deletion
 // is still in flight; the directory disappears shortly after and a
 // completion toast is posted.
