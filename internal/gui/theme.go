@@ -37,11 +37,30 @@ const (
 // Chrome widths and the shared modal widths, exported for layout tests.
 const (
 	sidebarW       = 72
-	detailPanelW   = 360
 	settingsModalW = 560
 	confirmModalW  = 460
 	aboutModalW    = 420
 )
+
+// Detail panel sizing: 30% of the window, clamped so narrow windows keep a
+// usable panel and ultrawide windows cap the sidebar.
+const (
+	detailPanelMinW = 300
+	detailPanelMaxW = 480
+)
+
+// detailPanelWidth is the proportional width of the right-docked detail
+// panel for a given window width.
+func detailPanelWidth(windowW float32) float32 {
+	w := windowW * 0.30
+	if w < detailPanelMinW {
+		return detailPanelMinW
+	}
+	if w > detailPanelMaxW {
+		return detailPanelMaxW
+	}
+	return w
+}
 
 // Dark theme palette (HSLA), matching the reference client's look.
 var (

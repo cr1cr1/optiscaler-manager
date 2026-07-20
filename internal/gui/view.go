@@ -159,7 +159,8 @@ func (m *model) detailPanel() {
 		}
 		return
 	}
-	Container(Attrs(FixWidth(detailPanelW), Expand, BackgroundVec(bgPanel), Pad(sp16), Gap(sp12), Viewport, Clip), func() {
+	panelW := detailPanelWidth(WindowSize[0])
+	Container(Attrs(FixWidth(panelW), Expand, BackgroundVec(bgPanel), Pad(sp16), Gap(sp12), Viewport, Clip), func() {
 		Container(Attrs(Row, CrossMid, Gap(sp8)), func() {
 			Label(e.Title, FontSize(16), TextColorVec(txtMain), FontWeight(WeightBold))
 			Filler(1)
@@ -167,7 +168,8 @@ func (m *model) detailPanel() {
 				m.sess.Select("")
 			}
 		})
-		m.coverArt(*e, 160, 160*coverRatio)
+		coverW := panelW - 2*sp16
+		m.coverArt(*e, coverW, coverW*coverRatio)
 		muted(e.InstallDir)
 		Container(Attrs(Row, Gap(sp4), CrossMid), func() {
 			txt("Status:")
