@@ -94,6 +94,16 @@ func (m *model) viewSegment(icon rune, label string, mode ui.ViewMode) {
 	})
 }
 
+// shortenPath ellipsizes a long path at the front so the distinctive tail
+// (the directory name) stays visible.
+func shortenPath(p string, max int) string {
+	r := []rune(p)
+	if len(r) <= max {
+		return p
+	}
+	return "…" + string(r[len(r)-max+1:])
+}
+
 // versionPills is the install-version badge set for a row: the OptiScaler
 // pill (versioned when the installed version is known), one pill per
 // component version, and a Proton marker for prefixed games.

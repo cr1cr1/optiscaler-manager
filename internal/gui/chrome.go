@@ -145,10 +145,16 @@ func (m *model) settingsDirsSection() {
 		muted("No extra directories — Steam library folders are always scanned")
 	}
 	if len(dirs) > 0 {
-		Container(Attrs(Expand, MaxHeight(160), Viewport, Clip, Gap(sp4)), func() {
+		// A Viewport inside the auto-sized modal needs an explicit height:
+		// content-driven sizing would collapse it to zero and clip the rows.
+		h := float32(len(dirs))*32 + sp8
+		if h > 160 {
+			h = 160
+		}
+		Container(Attrs(Expand, FixHeight(h), Viewport, Clip, Gap(sp4)), func() {
 			for _, d := range dirs {
-				Container(Attrs(Row, CrossMid, Gap(sp8), Pad2(2, sp4), Corners(radiusS), BackgroundVec(bgCard)), func() {
-					Label(d, TextColorVec(txtMain), FontSize(12))
+				Container(Attrs(Row, CrossMid, Gap(sp8), Pad2(2, sp4), Corners(radiusS), BackgroundVec(bgCard), Clip), func() {
+					Label(shortenPath(d, 44), TextColorVec(txtMain), FontSize(12))
 					Filler(1)
 					if m.sess != nil && focusableButton(TypCancel, "Remove") {
 						m.sess.RemoveDirectory(d)
