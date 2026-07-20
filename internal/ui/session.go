@@ -119,9 +119,12 @@ type Session struct {
 
 	openExternal func(path string) error
 	pickDir      func(ctx context.Context) (string, error)
+	removeAll    func(path string) error
 }
 
 // NewSession starts a session. The library is empty until Scan is called.
+// The settings root is created up front so later background writers never
+// need to recreate directories.
 func NewSession(deps Deps) *Session {
 	if deps.Settings.DefaultVersion == "" {
 		deps.Settings.DefaultVersion = "latest"
@@ -132,6 +135,11 @@ func NewSession(deps Deps) *Session {
 	if deps.Launcher == nil {
 		deps.Launcher = launch.New(nil, "", nil)
 	}
+	if deps.SettingsRoot != "" {
+		if err := os.MkdirAll(deps.SettingsRoot, 0o755); err != nil {
+			log.Warn().Err(err).Str("root", deps.SettingsRoot).Msg("settings root not creatable")
+		}
+	}
 	return &Session{
 		deps:         deps,
 		events:       make(chan Event, 64),
@@ -140,6 +148,7 @@ func NewSession(deps Deps) *Session {
 		opCancels:    map[string]context.CancelFunc{},
 		openExternal: openExternal,
 		pickDir:      pickdir.Pick,
+		removeAll:    os.RemoveAll,
 	}
 }
 
@@ -198,14 +207,18 @@ func (s *Session) SetLaunchTemplate(tmpl string) {
 	s.toast("launch template: "+tmpl, false)
 }
 
-// ClearBundleCache deletes all cached OptiScaler bundles.
+// ClearBundleCache deletes all cached OptiScaler bundles. The deletion runs
+// in the background (large caches can take a while); a toast reports the
+// outcome.
 func (s *Session) ClearBundleCache() {
 	dir := filepath.Join(s.deps.CacheDir, "optiscaler")
-	if err := os.RemoveAll(dir); err != nil {
-		s.toast("clear cache: "+err.Error(), true)
-		return
-	}
-	s.toast("OptiScaler cache cleared", false)
+	go func() {
+		if err := s.removeAll(dir); err != nil {
+			s.toast("clear cache: "+err.Error(), true)
+			return
+		}
+		s.toast("OptiScaler cache cleared", false)
+	}()
 }
 
 // Events returns the notification stream. Frontends drain it (GUI: each

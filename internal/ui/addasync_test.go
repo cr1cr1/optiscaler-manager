@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -195,4 +196,44 @@ drained:
 		t.Fatalf("persisted ExtraDirs: %v", loaded.ExtraDirs)
 	}
 	t.Logf("final rows consistent: %v", counts)
+}
+
+// TestClearBundleCache_Async: ClearBundleCache returns while the deletion
+// is still in flight; the directory disappears shortly after and a
+// completion toast is posted.
+func TestClearBundleCache_Async(t *testing.T) {
+	e := newTestEnv(t)
+	dir := filepath.Join(e.sess.deps.CacheDir, "optiscaler", "v1")
+	writeUIFile(t, filepath.Join(dir, "bundle.7z"), "cached")
+	e.sess.removeAll = func(path string) error {
+		time.Sleep(time.Second)
+		return os.RemoveAll(path)
+	}
+
+	start := time.Now()
+	e.sess.ClearBundleCache()
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("ClearBundleCache blocked %v (deletion takes 1s)", elapsed)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("cache dir still exists after async clear")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	found := false
+	for _, toast := range e.sess.Snapshot().Toasts {
+		if toast.Text == "OptiScaler cache cleared" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing completion toast: %+v", e.sess.Snapshot().Toasts)
+	}
+	t.Log("clear returned immediately; dir deleted and toast posted async")
 }

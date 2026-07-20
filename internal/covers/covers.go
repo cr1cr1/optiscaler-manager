@@ -121,7 +121,7 @@ func (c *Covers) fetch(ctx context.Context, url, dest string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("cover fetch: HTTP %d", resp.StatusCode)
 	}
-	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
+	if err := c.ensureCacheDir(); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(c.cacheDir, ".dl-*")
@@ -141,12 +141,25 @@ func (c *Covers) fetch(ctx context.Context, url, dest string) error {
 }
 
 // placeholder writes (once) and returns a simple dark tile PNG.
+// ensureCacheDir creates the cache directory, but only when its parent
+// still exists: a vanished parent means the process (or test) is tearing
+// down, and recreating the tree would race that removal.
+func (c *Covers) ensureCacheDir() error {
+	if _, err := os.Stat(c.cacheDir); err == nil {
+		return nil
+	}
+	if _, err := os.Stat(filepath.Dir(c.cacheDir)); err != nil {
+		return fmt.Errorf("cover cache parent gone: %w", err)
+	}
+	return os.MkdirAll(c.cacheDir, 0o755)
+}
+
 func (c *Covers) placeholder() (string, error) {
 	p := filepath.Join(c.cacheDir, "_placeholder.png")
 	if _, err := os.Stat(p); err == nil {
 		return p, nil
 	}
-	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
+	if err := c.ensureCacheDir(); err != nil {
 		return "", err
 	}
 	img := image.NewRGBA(image.Rect(0, 0, 60, 90))

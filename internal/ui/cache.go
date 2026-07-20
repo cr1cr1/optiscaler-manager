@@ -48,10 +48,12 @@ func loadGamesCache(root string) []GameRow {
 
 // saveGamesCache persists rows atomically (temp file + rename, mirroring
 // settings.Save). Best-effort: a failed write only forfeits a warm next
-// start, so it logs and never fails the caller.
+// start, so it logs and never fails the caller. A missing root is skipped,
+// never recreated: the root is created at session construction, and a
+// vanished root means the session is being torn down.
 func saveGamesCache(root string, rows []GameRow) {
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		log.Warn().Err(err).Msg("games cache: create root")
+	if _, err := os.Stat(root); err != nil {
+		log.Debug().Str("root", root).Msg("games cache: root gone, skipping write")
 		return
 	}
 	data, err := json.Marshal(gamesCache{Version: cacheSchemaVersion, Rows: rows})

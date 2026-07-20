@@ -322,13 +322,24 @@ func TestClearBundleCache(t *testing.T) {
 	writeUIFile(t, filepath.Join(dir, "bundle.7z"), "cached")
 
 	e.sess.ClearBundleCache()
-	if _, err := os.Stat(filepath.Join(e.sess.deps.CacheDir, "optiscaler")); !os.IsNotExist(err) {
-		t.Fatal("cache dir still exists after clear")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(filepath.Join(e.sess.deps.CacheDir, "optiscaler")); os.IsNotExist(err) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("cache dir still exists after clear")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for len(e.sess.Snapshot().Toasts) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("no confirmation toast")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	st := e.sess.Snapshot()
-	if len(st.Toasts) == 0 {
-		t.Fatal("no confirmation toast")
-	}
 	t.Logf("cache cleared, toast: %q", st.Toasts[len(st.Toasts)-1].Text)
 }
 
