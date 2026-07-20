@@ -50,17 +50,45 @@ func LooksLikeGameDir(ctx context.Context, dir string) bool {
 }
 
 // engineFolderNames are subdirectory names that hold a game's own binaries
-// rather than a separate game. A child with one of these names never counts
-// as a game-bearing child of its parent — the executables inside it belong
-// to the parent. The set is intentionally small and lowercase-compared.
+// or platform plumbing rather than a separate game. A child with one of
+// these names never counts as a game-bearing or container-bearing child of
+// its parent — the executables inside it belong to the parent (or to the
+// platform). The set is intentionally small and lowercase-compared.
 var engineFolderNames = map[string]bool{
-	"bin": true, "binaries": true,
+	"bin": true, "binaries": true, "bin64": true, "bin32": true,
 	"win64": true, "win32": true, "x64": true, "x86": true, "x86_64": true,
 	"engine": true, "redist": true, "redistributable": true, "_commonredist": true,
 	"support": true, "tools": true, "lib": true, "libs": true,
 	"thirdparty": true, "third_party": true, "plugins": true,
 	"content": true, "data": true, "resources": true, "assets": true,
-	"vendor": true, "runtime": true, "runtimes": true,
+	"vendor": true, "runtime": true, "runtimes": true, "retail": true,
+	"__installer": true, "_redist": true,
+	// Wine prefixes and Steam's steamapps plumbing hold platform runtime
+	// files, never standalone games (a Proton game's files live in
+	// common/<Game>; the prefix only holds wine's drive_c).
+	"drive_c": true, "compatdata": true, "shadercache": true,
+	"downloading": true, "temp": true, "music": true, "sourcemods": true,
+	"steamworks common redistributables": true,
+}
+
+// engineFolderName reports whether name marks a subdirectory that holds a
+// game's own binaries or platform plumbing (engineFolderNames plus the
+// versioned Proton / Steam Linux Runtime folders, which ship their own
+// versioned names). Engine-named directories never become rows and never
+// make their parent a container.
+func engineFolderName(name string) bool {
+	name = strings.ToLower(name)
+	if engineFolderNames[name] {
+		return true
+	}
+	if name == "proton" || strings.HasPrefix(name, "proton - ") ||
+		strings.HasPrefix(name, "proton hotfix") ||
+		strings.HasPrefix(name, "proton easyanticheat") ||
+		strings.HasPrefix(name, "proton battleye") ||
+		(strings.HasPrefix(name, "proton ") && len(name) > 7 && name[7] >= '0' && name[7] <= '9') {
+		return true
+	}
+	return strings.HasPrefix(name, "steamlinuxruntime")
 }
 
 // maxClassifyDepth bounds the recursion ClassifyGameDir does while proving
@@ -122,7 +150,7 @@ func classifyGameDir(ctx context.Context, dir string, depth int, seen map[string
 		if err := ctx.Err(); err != nil {
 			return GameDirEmpty, err
 		}
-		if strings.HasPrefix(e.Name(), ".") {
+		if strings.HasPrefix(e.Name(), ".") || engineFolderName(e.Name()) {
 			continue
 		}
 		child := dirChild(e, dir)
@@ -135,9 +163,7 @@ func classifyGameDir(ctx context.Context, dir string, depth int, seen map[string
 		}
 		switch kind {
 		case GameDirGame:
-			if !engineFolderNames[strings.ToLower(e.Name())] {
-				gameChildren++
-			}
+			gameChildren++
 		case GameDirContainer:
 			containerChildren++
 		}

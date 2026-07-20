@@ -102,6 +102,10 @@ func scanLevel(ctx context.Context, dir string, depth int, seen map[string]bool)
 		if strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
+		if engineFolderName(e.Name()) {
+			log.Debug().Str("dir", filepath.Join(dir, e.Name())).Msg("recursive scan: engine folder, not a game row")
+			continue
+		}
 		child := canonicalPath(filepath.Join(dir, e.Name()))
 		if seen[child] {
 			continue
@@ -118,10 +122,6 @@ func scanLevel(ctx context.Context, dir string, depth int, seen map[string]bool)
 		}
 		switch kind {
 		case GameDirGame:
-			if engineFolderNames[strings.ToLower(e.Name())] {
-				log.Debug().Str("dir", child).Msg("recursive scan: engine folder, not a game row")
-				continue
-			}
 			exe, err := findMainExe(ctx, child)
 			if err != nil {
 				return games, err
