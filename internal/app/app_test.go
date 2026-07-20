@@ -16,6 +16,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
+	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
 )
 
 type appFakes struct {
@@ -285,4 +286,91 @@ func TestManualEntry_TitleFromExe(t *testing.T) {
 			t.Errorf("Name = %q, want %q", e.Game.Name, "PlainFolder")
 		}
 	})
+}
+
+// writeBrandedDLL plants a synthetic PE-branded dxgi.dll next to the game's
+// exe (the injection dir for a flat manual folder is the game root itself).
+func writeBrandedDLL(t *testing.T, dir string, strings map[string]string) {
+	t.Helper()
+	pe := testutil.StringInfoPE(false, strings, [4]uint16{0, 7, 0, 0})
+	if err := os.WriteFile(filepath.Join(dir, "dxgi.dll"), pe, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func newManualGameDir(t *testing.T, name string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "game.exe"), []byte("GAME"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// TestManualEntry_DetectsExternalInstall: a manual game root carrying an
+// OptiScaler-branded injection DLL (dropped in by hand, no manifest) must
+// surface as external with its recovered version — manual adds bypass the
+// discovery→enrich probe, so ManualEntry itself must probe.
+func TestManualEntry_DetectsExternalInstall(t *testing.T) {
+	dir := newManualGameDir(t, "ExternalGame")
+	writeBrandedDLL(t, dir, map[string]string{
+		"ProductName":      "OptiScaler",
+		"OriginalFilename": "OptiScaler.dll",
+	})
+
+	e, err := ManualEntry(dir)
+	if err != nil {
+		t.Fatalf("ManualEntry: %v", err)
+	}
+	if e.Status != domain.StatusExternal {
+		t.Errorf("Status = %q, want %q (branded dxgi.dll undetected)", e.Status, domain.StatusExternal)
+	}
+	if e.OptiScalerVersion == "" {
+		t.Error("OptiScalerVersion empty; want the PE FileVersion fallback")
+	}
+	if e.InjectionDir == "" {
+		t.Error("InjectionDir empty")
+	}
+	t.Logf("external manual entry: status=%q version=%q", e.Status, e.OptiScalerVersion)
+}
+
+// TestManualEntry_PlainGameUnchanged: a plain game root (no injection DLL)
+// keeps an empty status and version — the probe must not invent state.
+func TestManualEntry_PlainGameUnchanged(t *testing.T) {
+	dir := newManualGameDir(t, "PlainGame")
+
+	e, err := ManualEntry(dir)
+	if err != nil {
+		t.Fatalf("ManualEntry: %v", err)
+	}
+	if e.Status != "" {
+		t.Errorf("Status = %q, want empty for a plain game", e.Status)
+	}
+	if e.OptiScalerVersion != "" {
+		t.Errorf("OptiScalerVersion = %q, want empty", e.OptiScalerVersion)
+	}
+}
+
+// TestManualEntry_DXVKNotExternal: a DXVK dxgi.dll (a different product
+// brand) must not be misread as an OptiScaler install.
+func TestManualEntry_DXVKNotExternal(t *testing.T) {
+	dir := newManualGameDir(t, "DXVKGame")
+	writeBrandedDLL(t, dir, map[string]string{
+		"ProductName":      "DXVK",
+		"OriginalFilename": "dxgi.dll",
+	})
+
+	e, err := ManualEntry(dir)
+	if err != nil {
+		t.Fatalf("ManualEntry: %v", err)
+	}
+	if e.Status != "" {
+		t.Errorf("Status = %q, want empty for a DXVK dxgi.dll", e.Status)
+	}
+	if e.OptiScalerVersion != "" {
+		t.Errorf("OptiScalerVersion = %q, want empty", e.OptiScalerVersion)
+	}
 }

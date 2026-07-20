@@ -315,6 +315,39 @@ func TestRollbackNotManagedCleanToast(t *testing.T) {
 	assertNoRawFailureToast(t, e.sess)
 }
 
+// TestAddDirectoryShowsExternalImmediately: a game root added directly via
+// AddDirectory (bypassing discovery→enrich) must still surface its external
+// OptiScaler install as soon as the "directory added" event settles.
+func TestAddDirectoryShowsExternalImmediately(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	custom := filepath.Join(t.TempDir(), "ExternalGame")
+	writeUIFile(t, filepath.Join(custom, "game.exe"), "GAME")
+	writeExternalMarker(t, custom)
+
+	e.sess.AddDirectory(custom)
+	waitEventText(t, e.sess, EvScanDone, "directory added")
+
+	var row *GameRow
+	rows := e.sess.Snapshot().Rows
+	for i := range rows {
+		if rows[i].InstallDir == custom {
+			row = &rows[i]
+			break
+		}
+	}
+	if row == nil {
+		t.Fatalf("added row missing: %+v", rows)
+	}
+	if row.Status != domain.StatusExternal {
+		t.Fatalf("row status = %q after directory add, want %q", row.Status, domain.StatusExternal)
+	}
+	if row.OptiScalerVersion == "" {
+		t.Error("OptiScalerVersion empty on the external row")
+	}
+	t.Logf("manual add surfaced external immediately (version %q)", row.OptiScalerVersion)
+}
+
 // TestCanOpenINI: the OptiScaler.ini affordance opens for every install that
 // has one on disk — manager-committed AND external (detected, unmanaged) —
 // and stays closed for every state without a usable install.

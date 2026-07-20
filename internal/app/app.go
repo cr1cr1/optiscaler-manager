@@ -59,6 +59,17 @@ func ManualEntry(dir string) (LibraryEntry, error) {
 	if d, err := installDirOf(root); err == nil {
 		e.InjectionDir = d
 	}
+	// Manual roots bypass the discovery→enrich probe, so detect a
+	// pre-existing OptiScaler install here (mirroring enrich): a branded
+	// injection DLL means external, with the version from the bounded
+	// evidence chain. Component versions stay suppressed — those DLLs
+	// belong to OptiScaler's bundle, not the game.
+	if e.InjectionDir != "" {
+		if found, version := pever.DetectOptiScaler(e.InjectionDir); found {
+			e.Status = domain.StatusExternal
+			e.OptiScalerVersion = version
+		}
+	}
 	return e, nil
 }
 
