@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"context"
 	"strings"
 
 	. "go.hasen.dev/shirei"
@@ -18,17 +17,23 @@ func (m *model) rootView() {
 	Container(Attrs(Viewport, Row, BackgroundVec(bgApp)), func() {
 		m.sidebar()
 		Container(Attrs(Grow(1), Expand, Gap(0)), func() {
-			m.toolbar(context.Background())
+			m.toolbar()
 			// The virtualized views must sit directly inside the expanding
 			// column: they size to the remaining space and render nothing
-			// inside auto-sized wrappers (upstream demos do the same).
-			if m.auditGrid {
-				m.auditTable()
-			} else if m.state.Mode == ui.ViewList {
-				m.actionList()
+			// inside auto-sized wrappers (upstream demos do the same). With
+			// the detail panel open the column nests inside a Row that keeps
+			// it expanding beside the fixed-width panel.
+			if m.state.Selected != "" && !m.auditGrid {
+				Container(Attrs(Row, Grow(1), Expand), func() {
+					Container(Attrs(Grow(1), Expand), m.contentView)
+					m.detailPanel()
+				})
 			} else {
-				m.gridView()
+				m.contentView()
 			}
+			// Bottom breathing room: rows clip at the list viewport edge,
+			// so the last visible row must not sit flush against the bar.
+			Element(Attrs(FixHeight(sp8)))
 			m.statusBar()
 		})
 		m.toastOverlay()
@@ -38,10 +43,68 @@ func (m *model) rootView() {
 			m.settingsModal()
 		} else if m.state.Confirm != nil {
 			m.confirmModal()
-		} else if m.state.Selected != "" {
-			m.dashboard()
 		}
+		m.handleGlobalKeys()
 	})
+}
+
+// contentView is the active library view (grid, list, or audit table).
+func (m *model) contentView() {
+	if m.auditGrid {
+		m.auditTable()
+	} else if m.state.Mode == ui.ViewList {
+		m.actionList()
+	} else {
+		m.gridView()
+	}
+}
+
+// handleGlobalKeys runs at the very end of the frame so focused widgets get
+// first pick of the key stream: arrows move the card selection (±1 across,
+// ±cols up/down), Enter opens the detail view, Escape closes it. Modals own
+// their own keys, so nothing runs while one is open.
+func (m *model) handleGlobalKeys() {
+	if m.sess == nil || m.about || m.settingsOpen || m.state.Confirm != nil {
+		return
+	}
+	rows := m.visibleRows()
+	if n := len(rows); n > 0 && m.selIdx >= n {
+		m.selIdx = n - 1
+	}
+	cols := m.cols
+	if cols < 1 {
+		cols = 1
+	}
+	move := func(d int) {
+		m.selIdx += d
+		if m.selIdx < 0 {
+			m.selIdx = 0
+		}
+		if n := len(rows); n > 0 && m.selIdx >= n {
+			m.selIdx = n - 1
+		}
+	}
+	switch FrameInput.Key {
+	case KeyRight:
+		move(1)
+	case KeyLeft:
+		move(-1)
+	case KeyDown:
+		move(cols)
+	case KeyUp:
+		move(-cols)
+	case KeyEnter:
+		if len(rows) > 0 {
+			m.sess.Select(rows[m.selIdx].InstallDir)
+		}
+	case KeyEscape:
+		if m.state.Selected != "" {
+			m.sess.Select("")
+		}
+	default:
+		return
+	}
+	FrameInput.Key = KeyCodeNone
 }
 
 // actionList is the fuzzy-filtered, actionable-first virtualized game list.
@@ -56,8 +119,11 @@ func (m *model) actionList() {
 		func(i int, w float32) float32 { return 30 },
 		func(i int, w float32) {
 			e := rows[i]
-			Container(Attrs(Row, CrossMid, Gap(10), Pad2(3, 12), MinSize(w, 30)), func() {
-				Container(Attrs(Row, Gap(4)), func() {
+			Container(Attrs(Row, CrossMid, Gap(sp12), Pad2(3, sp12), MinSize(w, 30), Corners(radiusS)), func() {
+				if IsHovered() {
+					ModAttrs(BackgroundVec(bgRaised))
+				}
+				Container(Attrs(Row, Gap(sp4)), func() {
 					if e.Actionable {
 						badgePill(string(e.Status), ui.ToneRed)
 					} else if e.Status == domain.StatusCommitted {
@@ -82,8 +148,10 @@ func (m *model) actionList() {
 		})
 }
 
-// dashboard is the per-game modal with status and actions.
-func (m *model) dashboard() {
+// detailPanel is the right-docked per-game panel that replaces the old
+// dashboard modal: the grid stays visible beside it. Escape (global keys)
+// and the close button both dismiss it.
+func (m *model) detailPanel() {
 	e := m.selectedRow()
 	if e == nil {
 		if m.sess != nil {
@@ -91,60 +159,98 @@ func (m *model) dashboard() {
 		}
 		return
 	}
-	modal(520, func() {
-		if m.sess != nil {
-			m.sess.Select("")
-		}
-	}, func() {
-		Container(Attrs(Pad(18), Gap(8), BackgroundVec(bgPanel)), func() {
-			txt(e.Title)
-			muted(e.InstallDir)
-			txt("Status: " + statusLabel(e))
-			if pills := versionPills(e); len(pills) > 0 {
-				Container(Attrs(Row, Gap(4)), func() {
-					for _, p := range pills {
-						badgePill(p.Label, p.Tone)
-					}
-				})
-			}
-			if m.state.Busy != "" {
-				muted("Working…")
-				if m.sess != nil && m.sess.OpBusy(e.InstallDir) && focusableButton(SymILeft, "Cancel") {
-					m.sess.CancelOp(e.InstallDir)
-				}
-				return
-			}
-			if m.sess == nil {
-				return
-			}
-			if focusableButton(SymIRight, quickLabel(e)) {
-				m.sess.QuickInstall(e.InstallDir)
-			}
-			if launchable(e) && focusableButton(0, "Launch") {
-				m.launchGame(*e)
-			}
-			if e.Actionable && focusableButton(SymIRight, "Rollback") {
-				m.sess.Rollback(e.InstallDir)
-			}
-			if e.Status == domain.StatusCommitted && focusableButton(SymIRight, "Open OptiScaler.ini in editor") {
-				m.sess.OpenINI(e.InstallDir)
-			}
-			if focusableButton(SymILeft, "Close") {
+	Container(Attrs(FixWidth(detailPanelW), Expand, BackgroundVec(bgPanel), Pad(sp16), Gap(sp12), Viewport, Clip), func() {
+		Container(Attrs(Row, CrossMid, Gap(sp8)), func() {
+			Label(e.Title, FontSize(16), TextColorVec(txtMain), FontWeight(WeightBold))
+			Filler(1)
+			if m.sess != nil && focusableButton(TypCancel, "Close") {
 				m.sess.Select("")
 			}
 		})
+		m.coverArt(*e, 160, 160*coverRatio)
+		muted(e.InstallDir)
+		Container(Attrs(Row, Gap(sp4), CrossMid), func() {
+			txt("Status:")
+			badgePill(statusLabel(e), statusTone(e))
+			if e.EAC {
+				badgePill("EAC", ui.ToneRed)
+			}
+		})
+		if pills := versionPills(e); len(pills) > 0 {
+			Container(Attrs(Row, Gap(sp4)), func() {
+				for _, p := range pills {
+					badgePill(p.Label, p.Tone)
+				}
+			})
+		}
+		Container(Attrs(Gap(2)), func() {
+			if e.Platform != "" {
+				detailField("Platform", e.Platform)
+			}
+			if e.AppID != "" {
+				detailField("AppID", e.AppID)
+			}
+		})
+		if m.sess == nil {
+			return
+		}
+		if m.sess.OpBusy(e.InstallDir) {
+			Container(Attrs(Row, Gap(sp8), CrossMid), func() {
+				spinnerGlyph()
+				muted("Working…")
+			})
+			if focusableButton(SymILeft, "Cancel") {
+				m.sess.CancelOp(e.InstallDir)
+			}
+			return
+		}
+		if focusableButton(SymIRight, quickLabel(e)) {
+			m.sess.QuickInstall(e.InstallDir)
+		}
+		if launchable(e) && focusableButton(SymPlay, "Launch") {
+			m.launchGame(*e)
+		}
+		if e.Actionable && focusableButton(SymUndo, "Rollback") {
+			m.sess.Rollback(e.InstallDir)
+		}
+		if e.Status == domain.StatusCommitted && focusableButton(SymIRight, "Open OptiScaler.ini in editor") {
+			m.sess.OpenINI(e.InstallDir)
+		}
+		scrollBars()
 	})
+}
+
+// detailField is one label/value metadata row in the detail panel.
+func detailField(label, value string) {
+	Container(Attrs(Row, Gap(sp8)), func() {
+		Label(label, FontSize(12), TextColorVec(txtMuted))
+		Filler(1)
+		Label(value, FontSize(12), TextColorVec(txtMain))
+	})
+}
+
+// statusTone colors the detail panel's status pill: committed green,
+// actionable red, everything else neutral.
+func statusTone(e *ui.GameRow) ui.Tone {
+	switch {
+	case e.Actionable:
+		return ui.ToneRed
+	case e.Status == domain.StatusCommitted:
+		return ui.ToneGreen
+	default:
+		return ui.ToneGray
+	}
 }
 
 // confirmModal renders the session's pending consent gate.
 func (m *model) confirmModal() {
 	c := m.state.Confirm
-	modal(460, func() {
+	modal(confirmModalW, func() {
 		if m.sess != nil {
 			m.sess.AnswerConfirm(false)
 		}
 	}, func() {
-		Container(Attrs(Pad(18), Gap(8), BackgroundVec(bgPanel)), func() {
+		Container(Attrs(Gap(sp8), BackgroundVec(bgPanel)), func() {
 			txt(c.Message)
 			if m.sess == nil {
 				return
@@ -183,10 +289,42 @@ func emptyStateCopy(query string) string {
 	return "No games found — use Add Game to register a folder"
 }
 
-// emptyState renders the guidance line in place of an empty library view.
+// emptyState renders a centered icon, heading, guidance, and calls to action
+// in place of an empty library view: scan/add-directory when the library is
+// empty, clear-search when the filter matched nothing.
 func (m *model) emptyState() {
-	Container(Attrs(Pad(18)), func() {
-		muted(emptyStateCopy(m.state.Query))
+	query := m.state.Query
+	icon, heading := TypFolderOpen, "No games yet"
+	if query != "" {
+		icon, heading = SymSearch, "No matches"
+	}
+	Container(Attrs(Grow(1), Expand, Center, Gap(sp12), Pad(sp24)), func() {
+		Container(Attrs(Center, Gap(sp8)), func() {
+			Container(Attrs(Row), func() {
+				Filler(1)
+				Icon(icon, FontSize(36), TextColorVec(txtMuted))
+				Filler(1)
+			})
+			Label(heading, FontSize(18), TextColorVec(txtMain), FontWeight(WeightBold))
+			muted(emptyStateCopy(query))
+			if m.sess != nil {
+				Container(Attrs(Row, Gap(sp8)), func() {
+					if query != "" {
+						if focusableButton(SymILeft, "Clear search") {
+							m.filter = ""
+							m.sess.SetQuery("")
+						}
+						return
+					}
+					if focusableButton(SymRefresh, "Scan") {
+						m.sess.Scan(m.ctx)
+					}
+					if focusableButton(SymIPlus, "Add directory…") {
+						m.sess.PickAndAddDirectory(m.ctx)
+					}
+				})
+			}
+		})
 	})
 }
 
@@ -203,11 +341,4 @@ func quickLabel(e *ui.GameRow) string {
 		return "Uninstall"
 	}
 	return "Install"
-}
-
-func viewToggleLabel(mode ui.ViewMode) string {
-	if mode == ui.ViewGrid {
-		return "View: grid"
-	}
-	return "View: list"
 }

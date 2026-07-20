@@ -12,6 +12,19 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
+func TestPlaceholderCoverDetection(t *testing.T) {
+	if !isPlaceholderCover(filepath.Join("cache", "covers", "_placeholder.png")) {
+		t.Error("covers-package placeholder not detected")
+	}
+	if isPlaceholderCover(filepath.Join("cache", "covers", "1091500.img")) {
+		t.Error("real cover misdetected as placeholder")
+	}
+	if isPlaceholderCover("") {
+		t.Error("empty path misdetected as placeholder")
+	}
+	t.Log("placeholder covers fall back to the gradient tile, real covers render")
+}
+
 func TestChunkRows(t *testing.T) {
 	rows := make([]ui.GameRow, 7)
 	for i := range rows {
@@ -134,7 +147,7 @@ func TestRenderPNG800pxValid(t *testing.T) {
 		t.Errorf("cardW %d at 800px: cards unusably narrow", m.cardW)
 	}
 	used := m.cols*m.cardW + (m.cols-1)*cardGap
-	avail := 800 - 64 - 2*rowPadH // window minus sidebar and row padding
+	avail := 800 - sidebarW - 2*rowPadH // window minus sidebar and row padding
 	if used > avail {
 		t.Errorf("grid row occupies %dpx of %dpx usable width at 800px: horizontal overflow", used, avail)
 	}
@@ -173,7 +186,7 @@ func TestRenderPNG3840pxValid(t *testing.T) {
 		t.Errorf("cardW %d at 3840px exceeds cap %d: cards stretch absurdly", m.cardW, maxCardW)
 	}
 	used := m.cols*m.cardW + (m.cols-1)*cardGap
-	avail := 3840 - 64 - 2*rowPadH
+	avail := 3840 - sidebarW - 2*rowPadH
 	if used > avail {
 		t.Errorf("grid row occupies %dpx of %dpx usable width at 3840px", used, avail)
 	}

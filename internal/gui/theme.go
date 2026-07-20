@@ -11,19 +11,70 @@ import (
 // dark accent yields light text automatically. DefaultBackground is shirei's
 // surface color for modals and popup panels.
 func init() {
-	widgets.ButtonAccent = Vec4{220, 18, 26, 1}
+	widgets.ButtonAccent = accent
 	widgets.DefaultBackground = Vec4{230, 20, 16, 1}
+	// Virtualized lists draw their own scrollbars with this fallback accent;
+	// the default is an off-palette bright cyan.
+	widgets.DefaultAccent = scrolAccent
 }
+
+// Spacing scale: every padding, gap, and offset derives from these tokens.
+const (
+	sp4  float32 = 4
+	sp8  float32 = 8
+	sp12 float32 = 12
+	sp16 float32 = 16
+	sp24 float32 = 24
+)
+
+// Corner radii scale.
+const (
+	radiusS float32 = 4
+	radiusM float32 = 6
+	radiusL float32 = 10
+)
+
+// Chrome widths and the shared modal widths, exported for layout tests.
+const (
+	sidebarW       = 72
+	detailPanelW   = 360
+	settingsModalW = 560
+	confirmModalW  = 460
+	aboutModalW    = 420
+)
 
 // Dark theme palette (HSLA), matching the reference client's look.
 var (
-	bgApp    = Vec4{230, 25, 11, 1}
-	bgPanel  = Vec4{230, 20, 16, 1}
-	bgCard   = Vec4{230, 18, 20, 1}
-	txtMain  = Vec4{220, 15, 92, 1}
-	txtMuted = Vec4{220, 10, 62, 1}
-	txtWarn  = Vec4{20, 80, 65, 1}
+	bgApp       = Vec4{230, 25, 11, 1}
+	bgPanel     = Vec4{230, 20, 16, 1}
+	bgCard      = Vec4{230, 18, 20, 1}
+	bgRaised    = Vec4{230, 16, 25, 1}
+	border      = Vec4{230, 12, 32, 1}
+	accent      = Vec4{220, 18, 26, 1}
+	accentHov   = Vec4{220, 22, 34, 1}
+	scrolAccent = Vec4{220, 10, 45, 1}
+	txtMain     = Vec4{220, 15, 92, 1}
+	txtMuted    = Vec4{220, 10, 62, 1}
+	txtWarn     = Vec4{20, 80, 65, 1}
 )
+
+// elevateCard lifts a surface with a soft, low-contrast drop shadow.
+func elevateCard(a *AttrSet) {
+	a.Shadow.Blur = 18
+	a.Shadow.Alpha = 0.35
+	a.Shadow.Offset[1] = 4
+}
+
+// elevateOverlay is the stronger lift for modals, toasts, and popups.
+func elevateOverlay(a *AttrSet) {
+	a.Shadow.Blur = 28
+	a.Shadow.Alpha = 0.5
+	a.Shadow.Offset[1] = 6
+}
+
+// scrollBars renders themed (muted gray-blue) scrollbars for the current
+// scrolling container; the default accent is an off-palette bright cyan.
+func scrollBars() { widgets.ScrollBarsExt(widgets.ScrollBarsAttrs{Accent: scrolAccent}) }
 
 // txt and muted are the standard body texts.
 func txt(s string)   { Label(s, TextColorVec(txtMain)) }
@@ -47,7 +98,7 @@ func toneColor(t ui.Tone) Vec4 {
 
 // badgePill renders a small colored pill like the client's tech badges.
 func badgePill(label string, tone ui.Tone) {
-	Container(Attrs(Pad2(1, 6), Corners(4), BackgroundVec(toneColor(tone))), func() {
+	Container(Attrs(Pad2(1, 6), Corners(radiusS), BackgroundVec(toneColor(tone))), func() {
 		Label(label, TextColor(0, 0, 96, 1), FontSize(11))
 	})
 }
