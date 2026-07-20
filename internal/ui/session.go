@@ -21,6 +21,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
 	"github.com/cr1cr1/optiscaler-manager/internal/launch"
+	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 	"github.com/cr1cr1/optiscaler-manager/internal/pickdir"
 	"github.com/cr1cr1/optiscaler-manager/internal/protondb"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
@@ -999,7 +1000,16 @@ func (s *Session) doUninstall(gameDir string) {
 		s.opFailed(err)
 		return
 	}
-	s.setRowStatus(gameDir, "")
+	// Uninstall restores whatever the adopt-time backup held — possibly a
+	// pre-existing external install. One bounded probe keeps the row honest:
+	// external when a branded injection DLL is back, "" when the dir is clean.
+	status := domain.Status("")
+	if row != nil && row.InjectionDir != "" {
+		if found, _ := pever.DetectOptiScaler(row.InjectionDir); found {
+			status = domain.StatusExternal
+		}
+	}
+	s.setRowStatus(gameDir, status)
 	s.opDone("Uninstalled "+gameTitle(s.findRow(gameDir), gameDir), gameDir)
 }
 

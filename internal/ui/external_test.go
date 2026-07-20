@@ -2,6 +2,8 @@ package ui
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,6 +123,76 @@ func TestDoUninstallNotManagedCleanToast(t *testing.T) {
 		t.Error("OpBusy true after the op settled")
 	}
 	assertNoRawFailureToast(t, e.sess)
+}
+
+// TestAdoptRoundTripRestoresExternalBytes is the keystone: an external
+// OptiScaler install (marker dxgi.dll, no manifest) is adopted by
+// QuickInstall — which must back it up — then uninstalled, which must
+// restore the exact marker bytes from the SHA-verified backup, and the
+// post-uninstall re-detect must surface the row as external again.
+func TestAdoptRoundTripRestoresExternalBytes(t *testing.T) {
+	e := newTestEnv(t)
+	marker := writeExternalMarker(t, e.bin)
+	markerSHA := sha256.Sum256(marker)
+	dxgi := filepath.Join(e.bin, "dxgi.dll")
+	t.Logf("marker: %d bytes sha256=%s", len(marker), hex.EncodeToString(markerSHA[:]))
+
+	// 1. Scan → row Status external (PE detection inside the scan pipeline).
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+	row := e.sess.Snapshot().Rows[0]
+	if row.Status != domain.StatusExternal {
+		t.Fatalf("(1) row status = %q, want %q", row.Status, domain.StatusExternal)
+	}
+	t.Logf("(1) scan: %q detected as external (version %q)", row.Title, row.OptiScalerVersion)
+
+	// 2. QuickInstall on the external row adopts it: status committed, the
+	// store gains a manifest, and dxgi.dll is now the bundle's file.
+	e.sess.QuickInstall(row.InstallDir)
+	waitEvent(t, e.sess, EvOpDone)
+	row = e.sess.Snapshot().Rows[0]
+	if row.Status != domain.StatusCommitted {
+		t.Fatalf("(2) row status = %q after adopt, want %q", row.Status, domain.StatusCommitted)
+	}
+	manifests, err := e.sess.deps.Store.List()
+	if err != nil || len(manifests) != 1 {
+		t.Fatalf("(2) adopt left %d manifests (err %v), want 1", len(manifests), err)
+	}
+	adopted, err := os.ReadFile(dxgi)
+	if err != nil {
+		t.Fatalf("(2) dxgi.dll missing after adopt: %v", err)
+	}
+	adoptedSHA := sha256.Sum256(adopted)
+	if adoptedSHA == markerSHA {
+		t.Fatal("(2) adopt did not replace the external dxgi.dll with the bundle's")
+	}
+	t.Logf("(2) adopt: committed, manifest %s, dxgi.dll sha256=%s (!= marker)",
+		manifests[0].ID, hex.EncodeToString(adoptedSHA[:]))
+
+	// 3. Uninstall succeeds: the row is managed now, so no refusal.
+	e.sess.Uninstall(row.InstallDir)
+	waitEvent(t, e.sess, EvOpDone)
+
+	// 4. The SHA-verified backup restored the exact marker bytes.
+	restored, err := os.ReadFile(dxgi)
+	if err != nil {
+		t.Fatalf("(4) external dxgi.dll not restored by uninstall: %v", err)
+	}
+	restoredSHA := sha256.Sum256(restored)
+	if restoredSHA != markerSHA {
+		t.Fatalf("(4) restored dxgi.dll sha256=%s, want marker %s",
+			hex.EncodeToString(restoredSHA[:]), hex.EncodeToString(markerSHA[:]))
+	}
+	t.Logf("(4) uninstall restored marker bytes: sha256=%s == marker", hex.EncodeToString(restoredSHA[:]))
+
+	// 5. Post-uninstall re-detect: the restored external install shows as
+	// external again, not as a bare uninstalled game.
+	row = e.sess.Snapshot().Rows[0]
+	if row.Status != domain.StatusExternal {
+		t.Fatalf("(5) row status = %q after uninstall restored the external install, want %q",
+			row.Status, domain.StatusExternal)
+	}
+	t.Logf("(5) row external again — round trip closed")
 }
 
 // TestCanOpenINI: the OptiScaler.ini affordance opens for every install that
