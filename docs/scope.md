@@ -310,6 +310,51 @@ closed; reopen only with new evidence.
 - Component versions stay hidden for external rows (see above) even when the
   external bundle's component DLLs are present.
 
+## v0.7 scope (game-dir vs container classification + session integration)
+
+- **`discovery.ClassifyGameDir(ctx, dir) (GameDirKind, error)`** (T1): sorts
+  a directory into `GameDirGame`, `GameDirContainer`, or `GameDirEmpty`
+  using only stats and bounded walks (no PE parsing); candidacy, skip
+  tokens, and the depth cap are exactly the recursive scanner's.
+  `LooksLikeGameDir` is the boolean form. Rules: an exe at depth ≤ 1 →
+  game; no gamey children → empty; exactly one gamey child with the exe
+  within depth ≤ 2 (engine layouts like Binaries/Win64) → game; otherwise
+  → container. The recursive scan skips exe-less subdirectories instead of
+  surfacing phantom rows.
+- **Session integration** (T2): scans gate extra-dir self-rows on the
+  classification — container/empty roots get no `ManualEntry` row (their
+  games surface via the recursive scan), cover-progress totals exclude
+  them, and the in-flight merge no longer resurrects stale container rows
+  from pre-gating `games.json` caches. Roots that fail classification keep
+  the previous row-bearing behavior.
+- **`AddDirectory` three-way branch** (T2): the picked directory is
+  classified synchronously (bounded, cheap — an explicit user action). Game
+  → the v0.5 async contract unchanged (placeholder row, background
+  enrichment, "directory added" event). Container → registered as a scan
+  root: settings persisted synchronously, no placeholder/self-row, a
+  "registered `<base>` as a scan folder" toast, and a background rescan
+  surfaces its games. Empty → refused with a "no games found under
+  `<base>`" warning; settings untouched, no op slot held. Classification
+  failure falls through to the game flow.
+- **Title priority pins** (T2): named characterization tests lock the chain
+  PE ProductName → FileDescription → folder name for manual entries,
+  including the AddDirectory placeholder (folder title) being replaced by
+  the enriched row (PE title).
+
+### v0.7 known limits
+
+- A container holding exactly one game whose exe sits deeper than an engine
+  layout (single chain, depth ≥ 3) is structurally indistinguishable from a
+  game directory and may appear with the deep exe's PE title — the
+  classification walks are depth-bounded by design.
+- Engine subfolders (e.g. a `Binaries/Win64` tree inside an otherwise
+  exe-less sibling of real games) may still surface as their own rows in
+  the recursive scan — pre-existing scanner behavior, unchanged by the
+  classification gate.
+- Classification in `Scan` re-walks each extra root (bounded stats only)
+  on top of the recursive scan's own walk; the duplication is deliberate
+  to keep the gate independent of scanner internals.
+
 ## Dependencies (settled)
 
 - Vendored (`go mod vendor`, `vendor/` committed; `-mod=vendor` stays in CI and

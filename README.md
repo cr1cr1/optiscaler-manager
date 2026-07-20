@@ -12,7 +12,14 @@ The GUI is a thin [go-shirei](https://github.com/hasenj/go-shirei) binding
 over a frontend-agnostic session core (`internal/ui`); the `tui` subcommand
 is a second, terminal frontend on the same session.
 
-Status: v0.6. This release detects **pre-existing OptiScaler installations**
+Status: v0.7. This release teaches scanning the difference between a game
+folder and a library root: a manually added directory is classified
+(`discovery.ClassifyGameDir` — exe at the top or one level down means game;
+game-bearing subdirectories mean container; nothing executable means empty),
+and containers become **scan roots**, not games — adding one registers it
+and surfaces each game inside as its own row, with no phantom self-row for
+the container itself; directories with no games anywhere are refused with a
+clear toast. v0.6 detects **pre-existing OptiScaler installations**
 on scanned games — manual installs dropped in by hand, with no manager
 manifest. During a scan, unmanaged games are probed for an OptiScaler-branded
 injection DLL (dxgi.dll, OptiScaler.dll, winmm.dll, dbghelp.dll, version.dll,
@@ -72,8 +79,12 @@ Scanning covers Steam, Epic, GOG (discovery is Windows-only), and manually
 added folders (recursive); game titles come from PE version info
 (ProductName, then FileDescription, then the folder name), so Windows exes
 get real titles even on Linux, and Linux scans also accept `.exe` files
-without the execute bit;
-the grid shows each game's store, installed OptiScaler version, detected
+without the execute bit. Manually added folders are classified before they
+become rows: a folder that is itself a game gets one row; a **container**
+(a library root whose subdirectories are the games) is a scan root — each
+game inside surfaces as its own row and the container never gets a row of
+its own; a folder with no games anywhere is refused.
+The grid shows each game's store, installed OptiScaler version, detected
 upscaler versions (DLSS/FSR/XeSS marketing names), and ProtonDB tier.
 Scans also detect OptiScaler installs this manager did not make: unmanaged
 games are probed (in the background scan goroutine, with bounded reads — no
@@ -82,8 +93,10 @@ PE version info rather than filename so renamed shims still count. Matches
 surface as status **external**; their component versions stay hidden (those
 DLLs belong to OptiScaler's bundle, not the game), and the external status
 is cached in `games.json` until the next rescan.
-Adding a directory is non-blocking: a placeholder row appears instantly and
-is enriched in the background. Launch a game from its
+Adding a directory is non-blocking: a game directory gets a placeholder row
+instantly and is enriched in the background; a container is registered as a
+scan folder and its games surface on the automatic rescan; a directory with
+no games is refused with a warning. Launch a game from its
 card or the detail panel button (GUI) or the `l` key (TUI): Steam games go through
 `steam://rungameid` (Proton is applied by Steam automatically), Epic through
 the launcher URL, GOG and manual games via their exe — manual games use the

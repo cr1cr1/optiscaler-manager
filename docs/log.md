@@ -1053,3 +1053,59 @@ forward to unconditional PASS:
   matches the official wiki; rollback divergence flagged — fixed in round
   1; OptiScaler.asi/nvngx.dll noted as unprobed edge deployment modes).
 
+
+## 2026-07-20 — v0.7 T1: discovery — game-dir vs container predicate
+
+- Merge `5201a42` (`c130c3d`, `283529d`).
+- `discovery.ClassifyGameDir(ctx, dir) (GameDirKind, error)` sorts a
+  directory into `GameDirGame` / `GameDirContainer` / `GameDirEmpty` using
+  only stats and bounded walks (no PE parsing); candidacy, skip tokens, and
+  the depth cap are exactly `findMainExe`'s. `LooksLikeGameDir` is the
+  boolean form. Rules: exe at depth ≤ 1 → game; no gamey children → empty;
+  exactly one gamey child with the exe within depth ≤ 2 (engine layouts) →
+  game; otherwise → container.
+- `ScanRecursive` skips exe-less subdirectories instead of surfacing
+  phantom rows (`283529d`); `TestScanRecursive_InstallerNamesStillRejected`
+  was replaced by `TestScanRecursive_InstallerOnlySubdirSkipped` (the old
+  test characterized the phantom-row bug).
+- Deviations recorded in the T1 log: kind-returning classifier instead of a
+  bare bool; engine-edge override at depth ≤ 2 (deeper single-chain game
+  dirs classify as container — documented in the docstring).
+
+## 2026-07-21 — v0.7 T2: session — container scan roots + title pins
+
+- Commits `8f9cc95` (scan gate), `7c64f30` (AddDirectory branch),
+  `5d3587f` (title-priority pins); docs in the follow-up docs commit.
+- Scan gate: extra roots are classified once per scan; container/empty
+  roots get no `ManualEntry` self-row from `mergeExtraDirs`, are excluded
+  from the covers progress total, and the in-flight merge drops stale
+  container self-rows left in `games.json` by pre-gating builds. Roots
+  that fail classification keep the previous row-bearing behavior.
+  RED→GREEN: `TestMergeExtraDirs_SkipsContainer`,
+  `TestScan_StaleContainerRowNotResurrected` (both red first);
+  `TestMergeExtraDirs_GameDirRowKept` pins the game-dir path.
+- `AddDirectory` classifies synchronously (bounded stats/walks, no PE
+  parsing — cheap for an explicit user action; sync-classify decision
+  documented in scope/architecture) and branches: game → v0.5 async
+  contract unchanged; container → persisted as a scan root, no
+  placeholder/self-row, "registered `<base>` as a scan folder" toast,
+  background rescan surfaces the children (no "directory added" text —
+  `race_test.go`'s scan-done filter stays compatible); empty → refused
+  with a warning toast before any settings mutation. RED→GREEN:
+  `TestAddDirectory_Container_NoSelfRow_ScanFolderToast`,
+  `TestAddDirectory_Container_ChildrenSurfacedAfterRescan`,
+  `TestAddDirectory_NoGamesAnywhere_Refused_NotPersisted` (red first);
+  `TestAddDirectory_GameDir_RowAppears` pins the game path.
+- Title-priority pins (characterization; behavior shipped in v0.5/v0.6):
+  `TestManualName_PEProductNameBeatsFolder`,
+  `TestManualName_FolderFallbackWhenNoPETitle`,
+  `TestAddDirectory_PlaceholderReplacedByPETitle`.
+- Deviation: three frontend test fixtures (`internal/gui` sort/nav,
+  `internal/tui` settings) added genuinely EMPTY directories and expected
+  rows/registration; under the T2 contract empty dirs are refused, so the
+  fixtures gained a real `game.exe` (test-only, intent unchanged). The
+  nav-test fix rode the scan-gate commit (the gate alone made it flaky:
+  placeholder rows for empty dirs are dropped at scan).
+- Docs: README scanning/add-directory sections, scope.md v0.7 + known
+  limits, architecture.md classification section + package map, plan.md
+  v0.7 milestone, index.md release line.

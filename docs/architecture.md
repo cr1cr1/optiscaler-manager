@@ -35,7 +35,9 @@ internal/
               registry via a registry-reader seam, macOS /Applications .app,
               linux Proton compat prefix) compile per-GOOS. ScanAll merges
               Steam → Epic → GOG → apps → manual, deduped by canonical
-              InstallDir; install-dir resolution
+              InstallDir; install-dir resolution; ClassifyGameDir sorts a
+              directory into game / container / empty (bounded walks, no PE
+              parsing — see the v0.7 section)
   classify/   upscaler kind+DLL detection (Dir, DirFiles)
   pever/      hostile-input PE version-resource parser (no cgo): FileVersion,
               MarketingName (vendored DLSS/FSR/XeSS version→name maps),
@@ -145,6 +147,40 @@ on the row's injection dir) surfaces the row as external again. Uninstall of
 a never-managed external row is refused up front with a clean toast (the
 `app.ErrNotManaged` sentinel never leaks raw). `GameRow.CanOpenINI()`
 (committed or external) gates Open INI in both frontends.
+
+## Game-dir classification and container scan roots (v0.7)
+
+`discovery.ClassifyGameDir(ctx, dir)` sorts a directory into `GameDirGame`,
+`GameDirContainer`, or `GameDirEmpty` using only stats and bounded directory
+walks — executable candidacy, skip tokens, and the depth cap are exactly
+`findMainExe`'s, so the predicate never disagrees with the scanner about
+what counts as a game binary. An exe at depth ≤ 1 (in the dir or one level
+down) means game; no game-bearing immediate subdirectory means empty;
+exactly one gamey child reachable within two levels means an engine-style
+game (Binaries/Win64); anything else is a container — a library root whose
+games live one level down. `LooksLikeGameDir` is the boolean form. The
+recursive scan itself skips exe-less subdirectories (T1), so containers
+scanned as roots surface only real games.
+
+The session consumes the classification in two places (T2):
+
+- **Scan** classifies each extra root once per scan (bounded, no PE
+  parsing). Roots classified container/empty are scan roots only:
+  `mergeExtraDirs` appends no `ManualEntry` self-row for them, the covers
+  progress total excludes them, and the in-flight merge drops stale
+  self-rows left in `games.json` by pre-gating builds. Roots whose
+  classification fails keep the previous row-bearing behavior
+  (conservative).
+- **AddDirectory** classifies synchronously — cheap enough for an explicit
+  user action — and branches: game dirs take the v0.5 async contract
+  unchanged (synchronous persist + placeholder row, goroutine enrichment,
+  `EvScanDone "directory added"`); containers persist as scan roots with
+  no placeholder/self-row, toast "registered `<base>` as a scan folder",
+  and trigger a background `Scan` (the rescan is the completion signal —
+  no "directory added" text frontends could misread as a single-game
+  add); empty dirs are refused with a warning toast before any settings
+  mutation or op registration. A classification error falls through to the
+  game flow, whose async error handling reports the problem.
 
 ## Scan phases, progress, and online lookups (v0.5)
 

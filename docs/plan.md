@@ -132,6 +132,23 @@ External OptiScaler detection and adopt flows. Scope recorded in
 - **T8**: docs wrap (this section, README, scope, architecture, log).
 - **T9**: review gate — placeholder, pending.
 
+## v0.7 milestone (in progress)
+
+Game-dir vs container classification and its session integration: manual
+folders that are library roots become scan roots instead of phantom games.
+Scope recorded in `docs/scope.md`, architecture in `docs/architecture.md`,
+task detail in `docs/log.md`.
+
+- **T1** (complete, 2026-07-20): `discovery.ClassifyGameDir` +
+  `LooksLikeGameDir` (game / container / empty; bounded walks, no PE
+  parsing); recursive scan skips exe-less subdirs. Merge `5201a42`.
+- **T2** (complete, 2026-07-21): session integration — scans gate extra-dir
+  self-rows on the classification (no container self-rows, stale cache rows
+  dropped, cover totals adjusted); `AddDirectory` three-way branch
+  (game → async placeholder flow; container → scan-root registration +
+  background rescan; empty → refused); title-priority pins; docs wrap.
+- **T3**: review gate — placeholder, pending.
+
 ## Risks
 
 1. BCJ2/sevenzip failure → early spike, fallback ready.
