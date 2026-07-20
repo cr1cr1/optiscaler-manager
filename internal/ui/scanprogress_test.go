@@ -102,9 +102,6 @@ func TestScan_ProgressMonotonic(t *testing.T) {
 		if o == lastPhase && sm.done < lastDone {
 			t.Fatalf("sample %d: Done decreased %d -> %d in phase %q", i, lastDone, sm.done, sm.phase)
 		}
-		if o != lastPhase {
-			lastDone = 0
-		}
 		lastPhase, lastDone = o, sm.done
 		if sm.phase == "covers" {
 			coversTicks++
