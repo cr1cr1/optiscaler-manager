@@ -178,6 +178,7 @@ func (m *model) detailPanel() {
 			if e.EAC {
 				badgePill("EAC", ui.ToneRed)
 			}
+			m.protonTierPill(e.ProtonTier)
 		})
 		if pills := versionPills(e); len(pills) > 0 {
 			Container(Attrs(Row, Gap(sp4)), func() {
@@ -192,6 +193,9 @@ func (m *model) detailPanel() {
 			}
 			if e.AppID != "" {
 				detailField("AppID", e.AppID)
+			}
+			if e.SteamAppID != "" {
+				detailField("Steam AppID", e.SteamAppID)
 			}
 		})
 		if m.sess == nil {

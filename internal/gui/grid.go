@@ -127,6 +127,7 @@ func (m *model) gridView() {
 func (m *model) gameCard(e ui.GameRow) {
 	cardW, cardH := m.cardW, m.cardH
 	coverW := float32(cardW - 2*cardPad)
+	m.tierPillRect = Rect{}
 	Container(Attrs(Pad(cardPad), Gap(sp4), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(radiusM), Clip), func() {
 		if IsHovered() {
 			m.hoveredDir = e.InstallDir
@@ -151,6 +152,7 @@ func (m *model) gameCard(e ui.GameRow) {
 			if e.Actionable {
 				badgePill(string(e.Status), ui.ToneRed)
 			}
+			m.protonTierPill(e.ProtonTier)
 			if m.sess != nil && m.sess.OpBusy(e.InstallDir) {
 				spinnerGlyph()
 			}

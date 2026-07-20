@@ -206,6 +206,40 @@ func componentTone(label string) ui.Tone {
 	}
 }
 
+// tierPillStyle maps a ProtonDB tier to its pill background: precious-metal
+// tiers get their metal's hue, borked is red, pending is muted. ok=false
+// for empty or unknown tiers (no pill rendered).
+func tierPillStyle(tier string) (bg Vec4, ok bool) {
+	switch tier {
+	case "platinum":
+		return Vec4{210, 60, 42, 1}, true
+	case "gold":
+		return Vec4{45, 70, 45, 1}, true
+	case "silver":
+		return Vec4{220, 8, 55, 1}, true
+	case "bronze":
+		return Vec4{25, 65, 45, 1}, true
+	case "borked":
+		return Vec4{5, 60, 40, 1}, true
+	case "pending":
+		return Vec4{220, 10, 35, 1}, true
+	}
+	return Vec4{}, false
+}
+
+// protonTierPill renders the ProtonDB tier badge; a no-op for empty or
+// unknown tiers.
+func (m *model) protonTierPill(tier string) {
+	bg, ok := tierPillStyle(tier)
+	if !ok {
+		return
+	}
+	Container(Attrs(Pad2(1, 6), Corners(radiusS), BackgroundVec(bg)), func() {
+		m.tierPillRect = GetScreenRectOf(CurrentId())
+		Label(tier, TextColor(0, 0, 96, 1), FontSize(11))
+	})
+}
+
 // launchable reports whether a row carries enough identity to launch:
 // store games go by AppID, manual/GOG games by executable path.
 func launchable(e *ui.GameRow) bool {
