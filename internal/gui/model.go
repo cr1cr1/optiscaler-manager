@@ -37,6 +37,8 @@ type model struct {
 	settingsOpen bool
 	versionBuf   string
 	templateBuf  string
+	selIdx       int            // keyboard-driven selection index into visible rows
+	hoveredDir   string         // install dir of the card under the mouse, "" when none
 	cols         int            // current grid columns, derived from live width
 	cardW        int            // current card width in px, derived from live width
 	cardH        int            // current card height in px

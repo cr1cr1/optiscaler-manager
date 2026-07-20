@@ -40,7 +40,56 @@ func (m *model) rootView() {
 		} else if m.state.Selected != "" {
 			m.dashboard()
 		}
+		m.handleGlobalKeys()
 	})
+}
+
+// handleGlobalKeys runs at the very end of the frame so focused widgets get
+// first pick of the key stream: arrows move the card selection (±1 across,
+// ±cols up/down), Enter opens the detail view, Escape closes it. Modals own
+// their own keys, so nothing runs while one is open.
+func (m *model) handleGlobalKeys() {
+	if m.sess == nil || m.about || m.settingsOpen || m.state.Confirm != nil {
+		return
+	}
+	rows := m.visibleRows()
+	if n := len(rows); n > 0 && m.selIdx >= n {
+		m.selIdx = n - 1
+	}
+	cols := m.cols
+	if cols < 1 {
+		cols = 1
+	}
+	move := func(d int) {
+		m.selIdx += d
+		if m.selIdx < 0 {
+			m.selIdx = 0
+		}
+		if n := len(rows); n > 0 && m.selIdx >= n {
+			m.selIdx = n - 1
+		}
+	}
+	switch FrameInput.Key {
+	case KeyRight:
+		move(1)
+	case KeyLeft:
+		move(-1)
+	case KeyDown:
+		move(cols)
+	case KeyUp:
+		move(-cols)
+	case KeyEnter:
+		if len(rows) > 0 {
+			m.sess.Select(rows[m.selIdx].InstallDir)
+		}
+	case KeyEscape:
+		if m.state.Selected != "" {
+			m.sess.Select("")
+		}
+	default:
+		return
+	}
+	FrameInput.Key = KeyCodeNone
 }
 
 // actionList is the fuzzy-filtered, actionable-first virtualized game list.
