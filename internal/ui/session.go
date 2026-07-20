@@ -151,6 +151,10 @@ type Session struct {
 	progressMu sync.Mutex // serializes progress poke throttling
 	lastPoke   time.Time
 
+	scanMu      sync.Mutex // guards scanning/scanPending
+	scanning    bool       // a scan goroutine is running
+	scanPending bool       // a Scan landed mid-scan; the running scan re-runs once
+
 	openExternal func(path string) error
 	pickDir      func(ctx context.Context) (string, error)
 	removeAll    func(path string) error
@@ -393,101 +397,141 @@ func (s *Session) reconcileStatuses(rows []GameRow) {
 	}
 }
 
-// Scan refreshes the library asynchronously.
+// Scan refreshes the library asynchronously. Scans are serialized: a Scan
+// landing while one is in flight sets a pending bit instead of spawning a
+// second goroutine, and the running scan re-runs once when it settles
+// (success or failure). A container added mid-scan is therefore surfaced by
+// a scan whose settings snapshot already includes it — an earlier scan
+// settling last can no longer wipe freshly surfaced rows — and concurrent
+// scans never thrash the busy/progress state. Only scans that actually run
+// emit EvScanStarted/EvScanDone; a coalesced call emits nothing.
 func (s *Session) Scan(ctx context.Context) {
+	s.scanMu.Lock()
+	if s.scanning {
+		s.scanPending = true
+		s.scanMu.Unlock()
+		return
+	}
+	s.scanning = true
+	s.scanMu.Unlock()
 	go func() {
-		s.emit(Event{Kind: EvScanStarted})
-		s.setBusy("Scanning…")
-		s.resetProgress()
-		snap := s.Settings()
-		entries, err := app.ScanAllLibraries(ctx, s.deps.Store, app.ScanAllOptions{
-			SteamRoot: s.deps.SteamRoot,
-			ExtraDirs: snap.ExtraDirs,
-			Progress: func(phase string, done, total int) {
-				if ctx.Err() != nil {
-					return
-				}
-				s.scanProgress(phase, done, total)
-			},
-		})
-		if err != nil {
-			if errors.Is(err, app.ErrNoGames) {
-				entries = nil // empty first-run library: settle at 0 games
-			} else {
-				s.clearProgress()
-				s.setBusy("")
-				s.setStatus("Scan failed: " + err.Error())
-				log.Warn().Err(err).Msg("scan failed")
-				s.emit(Event{Kind: EvScanFailed, Text: err.Error()})
+		for {
+			s.runScan(ctx)
+			s.scanMu.Lock()
+			if !s.scanPending {
+				s.scanning = false
+				s.scanMu.Unlock()
 				return
 			}
+			s.scanPending = false
+			s.scanMu.Unlock()
+			// The pending re-run's trigger may outlive the caller's ctx.
+			ctx = context.Background()
 		}
-		// Classify each extra root once (stats and bounded walks only, no PE
-		// parsing): container/empty roots are scan roots whose games already
-		// surfaced via the recursive scan — they get no self-row from
-		// mergeExtraDirs, no cover tick, and stale self-rows are not
-		// resurrected by the in-flight keep below. Roots that fail
-		// classification keep the previous row-bearing behavior.
-		scanOnlyRoots := map[string]bool{}
-		for _, d := range snap.ExtraDirs {
-			kind, err := discovery.ClassifyGameDir(ctx, d)
-			if err == nil && kind != discovery.GameDirGame {
-				scanOnlyRoots[d] = true
-			}
-		}
-		coversTotal := len(entries) + len(snap.ExtraDirs) - len(scanOnlyRoots)
-		coversDone := 0
-		coversTick := func() {
-			coversDone++
-			s.scanProgress(phaseCovers, coversDone, coversTotal)
-		}
-		rows := make([]GameRow, 0, len(entries))
-		for _, e := range entries {
-			if err := ctx.Err(); err != nil {
-				s.clearProgress()
-				s.setBusy("")
-				s.setStatus("Scan failed: " + err.Error())
-				log.Warn().Err(err).Msg("scan cancelled")
-				s.emit(Event{Kind: EvScanFailed, Text: err.Error()})
-				return
-			}
-			rows = append(rows, s.toRow(ctx, e))
-			coversTick()
-		}
-		rows = s.mergeExtraDirs(ctx, rows, snap.ExtraDirs, scanOnlyRoots, coversTick)
-		// Online lookup phase: enrich the local rows before they are
-		// committed to state, so the final persistCache lands the enriched
-		// fields in one write.
-		s.enrichOnline(ctx, rows, snap)
-		s.mu.Lock()
-		// Directories added while this scan was in flight are not in the
-		// snapshot's ExtraDirs; keep their rows rather than wiping them.
-		// Rows for roots the snapshot classified as container/empty are
-		// stale self-rows from before the gate existed — drop them.
-		fresh := map[string]bool{}
-		for _, r := range rows {
-			fresh[r.InstallDir] = true
-		}
-		for _, r := range s.st.Rows {
-			if fresh[r.InstallDir] {
-				continue
-			}
-			for _, d := range s.deps.Settings.ExtraDirs {
-				if r.InstallDir == d && !scanOnlyRoots[d] {
-					rows = append(rows, r)
-					break
-				}
-			}
-		}
-		sortRows(rows)
-		s.st.Rows = rows
-		s.st.StatusLine = fmt.Sprintf("%d games", len(rows))
-		s.st.Busy = ""
-		s.st.Progress = nil
-		s.mu.Unlock()
-		s.persistCache()
-		s.emit(Event{Kind: EvScanDone, Text: fmt.Sprintf("%d games", len(rows))})
 	}()
+}
+
+// scanIdle reports whether no scan is running and none is pending.
+func (s *Session) scanIdle() bool {
+	s.scanMu.Lock()
+	defer s.scanMu.Unlock()
+	return !s.scanning && !s.scanPending
+}
+
+// runScan performs one scan pass, emitting EvScanStarted up front and
+// EvScanDone/EvScanFailed on settle.
+func (s *Session) runScan(ctx context.Context) {
+	s.emit(Event{Kind: EvScanStarted})
+	s.setBusy("Scanning…")
+	s.resetProgress()
+	snap := s.Settings()
+	entries, err := app.ScanAllLibraries(ctx, s.deps.Store, app.ScanAllOptions{
+		SteamRoot: s.deps.SteamRoot,
+		ExtraDirs: snap.ExtraDirs,
+		Progress: func(phase string, done, total int) {
+			if ctx.Err() != nil {
+				return
+			}
+			s.scanProgress(phase, done, total)
+		},
+	})
+	if err != nil {
+		if errors.Is(err, app.ErrNoGames) {
+			entries = nil // empty first-run library: settle at 0 games
+		} else {
+			s.clearProgress()
+			s.setBusy("")
+			s.setStatus("Scan failed: " + err.Error())
+			log.Warn().Err(err).Msg("scan failed")
+			s.emit(Event{Kind: EvScanFailed, Text: err.Error()})
+			return
+		}
+	}
+	// Classify each extra root once (stats and bounded walks only, no PE
+	// parsing): container/empty roots are scan roots whose games already
+	// surfaced via the recursive scan — they get no self-row from
+	// mergeExtraDirs, no cover tick, and stale self-rows are not
+	// resurrected by the in-flight keep below. Roots that fail
+	// classification keep the previous row-bearing behavior.
+	scanOnlyRoots := map[string]bool{}
+	for _, d := range snap.ExtraDirs {
+		kind, err := discovery.ClassifyGameDir(ctx, d)
+		if err == nil && kind != discovery.GameDirGame {
+			scanOnlyRoots[d] = true
+		}
+	}
+	coversTotal := len(entries) + len(snap.ExtraDirs) - len(scanOnlyRoots)
+	coversDone := 0
+	coversTick := func() {
+		coversDone++
+		s.scanProgress(phaseCovers, coversDone, coversTotal)
+	}
+	rows := make([]GameRow, 0, len(entries))
+	for _, e := range entries {
+		if err := ctx.Err(); err != nil {
+			s.clearProgress()
+			s.setBusy("")
+			s.setStatus("Scan failed: " + err.Error())
+			log.Warn().Err(err).Msg("scan cancelled")
+			s.emit(Event{Kind: EvScanFailed, Text: err.Error()})
+			return
+		}
+		rows = append(rows, s.toRow(ctx, e))
+		coversTick()
+	}
+	rows = s.mergeExtraDirs(ctx, rows, snap.ExtraDirs, scanOnlyRoots, coversTick)
+	// Online lookup phase: enrich the local rows before they are
+	// committed to state, so the final persistCache lands the enriched
+	// fields in one write.
+	s.enrichOnline(ctx, rows, snap)
+	s.mu.Lock()
+	// Directories added while this scan was in flight are not in the
+	// snapshot's ExtraDirs; keep their rows rather than wiping them.
+	// Rows for roots the snapshot classified as container/empty are
+	// stale self-rows from before the gate existed — drop them.
+	fresh := map[string]bool{}
+	for _, r := range rows {
+		fresh[r.InstallDir] = true
+	}
+	for _, r := range s.st.Rows {
+		if fresh[r.InstallDir] {
+			continue
+		}
+		for _, d := range s.deps.Settings.ExtraDirs {
+			if r.InstallDir == d && !scanOnlyRoots[d] {
+				rows = append(rows, r)
+				break
+			}
+		}
+	}
+	sortRows(rows)
+	s.st.Rows = rows
+	s.st.StatusLine = fmt.Sprintf("%d games", len(rows))
+	s.st.Busy = ""
+	s.st.Progress = nil
+	s.mu.Unlock()
+	s.persistCache()
+	s.emit(Event{Kind: EvScanDone, Text: fmt.Sprintf("%d games", len(rows))})
 }
 
 // scanProgress records one pipeline tick. State.Progress is authoritative

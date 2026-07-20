@@ -33,9 +33,10 @@ func TestSessionSettingsConcurrentAccess(t *testing.T) {
 	ctx := context.Background()
 
 	// Drain events continuously so the 64-slot buffer never drops, and
-	// count scan completions: Scan is fire-and-forget, so without this the
-	// test would return with scans in flight and TempDir cleanup would race
-	// them. The switch below issues one Scan per (w+i)%4==0 slot: 25 total.
+	// count scan completions. Scans serialize and coalesce (a Scan landing
+	// mid-scan sets a pending bit), so the 25 Scan calls below no longer
+	// map 1:1 to completions; the marker scan after the workers finish
+	// proves no request is terminally lost.
 	var scansDone atomic.Int32
 	stop := make(chan struct{})
 	defer close(stop)
@@ -74,13 +75,21 @@ func TestSessionSettingsConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 
-	const wantScans = workers * iters / 4
+	// The workers issued 25 Scan calls (one per (w+i)%4==0 slot), but scans
+	// coalesce, so the completion count is nondeterministic. Assert liveness
+	// instead: a marker Scan issued now must still produce a completion.
+	before := scansDone.Load()
+	e.sess.Scan(ctx)
 	deadline := time.Now().Add(30 * time.Second)
-	for scansDone.Load() < wantScans && time.Now().Before(deadline) {
+	for scansDone.Load() == before && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if got := scansDone.Load(); got < wantScans {
-		t.Fatalf("only %d of %d scans finished", got, wantScans)
+	if scansDone.Load() == before {
+		t.Fatal("marker scan never completed — a Scan request was lost")
+	}
+	// Let queued scans settle so TempDir cleanup cannot race them.
+	for !e.sess.scanIdle() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	got := e.sess.Settings()
@@ -153,12 +162,10 @@ func TestSessionRemoveDirectoryVsScan(t *testing.T) {
 	}()
 	wg.Wait()
 
-	// Let in-flight scans settle so TempDir cleanup cannot race them.
+	// Let in-flight and pending scans settle so TempDir cleanup cannot race
+	// them.
 	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if e.sess.Snapshot().Busy != "Scanning…" {
-			break
-		}
+	for !e.sess.scanIdle() && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Logf("after hammering: extraDirs=%d rows=%d",
