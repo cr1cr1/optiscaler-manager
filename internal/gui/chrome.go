@@ -31,24 +31,43 @@ func modal(width float32, dismiss func(), fn func()) {
 	})
 }
 
-// sidebar is the icon navigation column on the left edge.
+// sidebar is the icon navigation column on the left edge: glyph above a
+// short label, with the active section highlighted in the accent color.
 func (m *model) sidebar() {
 	Container(Attrs(FixSize(sidebarW, 0), BackgroundVec(bgPanel), Pad(sp8), Gap(sp12)), func() {
 		Label("✦", FontSize(22), TextColorVec(toneColor(2)))
-		if focusableButton(0, "Games") {
+		m.sidebarItem(SymHome, "Games", !m.about && !m.settingsOpen, func() {
 			m.about = false
 			m.settingsOpen = false
-		}
-		if focusableButton(0, "Settings") {
+		})
+		m.sidebarItem(SymCog, "Prefs", m.settingsOpen, func() {
 			m.about = false
 			m.openSettings()
-		}
-		if focusableButton(0, "About") {
+		})
+		m.sidebarItem(SymInfo, "About", m.about, func() {
 			m.settingsOpen = false
 			m.about = true
+		})
+		Filler(1)
+		m.sidebarItem(SymPower, "Exit", false, m.exit)
+	})
+}
+
+// sidebarItem is one navigation entry: icon over a truncated label, tinted
+// with the accent while its section is active.
+func (m *model) sidebarItem(icon rune, label string, active bool, action func()) {
+	fg := txtMuted
+	if active {
+		fg = accentHov
+	}
+	Container(Attrs(Center, Gap(2), Pad2(sp4, 2), Corners(radiusS)), func() {
+		if !active && IsHovered() {
+			ModAttrs(BackgroundVec(bgRaised))
 		}
-		if focusableButton(0, "Exit") {
-			m.exit()
+		Icon(icon, FontSize(20), TextColorVec(fg))
+		Label(label, FontSize(10), TextColorVec(fg))
+		if PressAction() {
+			action()
 		}
 	})
 }
@@ -196,11 +215,13 @@ func sortLabel(mode ui.SortMode) string {
 	return "Default"
 }
 
-// statusBar is the bottom strip with the current status line.
+// statusBar is the bottom strip with the current status line, the keyboard
+// shortcut hints, and the library size.
 func (m *model) statusBar() {
 	Container(Attrs(Expand, BackgroundVec(bgPanel), Pad2(sp8, sp12), Row, CrossMid, Gap(sp12)), func() {
 		muted(m.state.StatusLine)
 		Filler(1)
+		muted("Tab: focus · ←→↑↓: select · Enter: open · Esc: close")
 		muted(fmt.Sprintf("%d games", len(m.state.Rows)))
 	})
 }
