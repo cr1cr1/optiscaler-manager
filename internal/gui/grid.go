@@ -17,13 +17,24 @@ const (
 	maxCols    = 8
 	maxCardW   = 320
 	rowPadH    = 12 // horizontal padding each side of a grid row
+	cardPad    = 6  // inner card padding
+)
+
+// Fixed card chrome below the cover: badge row, title, two pill rows, and
+// the button row, each one text line tall, plus gaps and padding.
+const (
+	badgeRowH  = 18
+	textRowH   = 18
+	pillRowH   = 18
+	buttonRowH = 30
 )
 
 // cardContentH sizes a card so every element fits: badge row, cover,
 // title, version pills, tech pills, and the button row, plus gaps.
 func cardContentH(cardW int) int {
-	coverH := int(float32(cardW-12) * coverRatio)
-	return coverH + 140
+	coverH := int(float32(cardW-2*cardPad) * coverRatio)
+	chrome := badgeRowH + textRowH + 2*pillRowH + buttonRowH + 5*int(sp4) + 2*cardPad
+	return coverH + chrome
 }
 
 // chunkRows groups rows into rows-of-cols for the virtualized grid. cols is
@@ -93,8 +104,8 @@ func (m *model) gridView() {
 // title, version pills, tech pills, and the install/launch buttons.
 func (m *model) gameCard(e ui.GameRow) {
 	cardW, cardH := m.cardW, m.cardH
-	coverW := float32(cardW - 12)
-	Container(Attrs(Pad(6), Gap(4), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(6), Clip), func() {
+	coverW := float32(cardW - 2*cardPad)
+	Container(Attrs(Pad(cardPad), Gap(sp4), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(radiusM), Clip), func() {
 		Container(Attrs(Row, Gap(4)), func() {
 			if e.Platform != "" {
 				badgePill(e.Platform, ui.ToneGray)

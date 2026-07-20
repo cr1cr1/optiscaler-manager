@@ -139,12 +139,12 @@ func (m *model) dashboard() {
 // confirmModal renders the session's pending consent gate.
 func (m *model) confirmModal() {
 	c := m.state.Confirm
-	modal(460, func() {
+	modal(confirmModalW, func() {
 		if m.sess != nil {
 			m.sess.AnswerConfirm(false)
 		}
 	}, func() {
-		Container(Attrs(Pad(18), Gap(8), BackgroundVec(bgPanel)), func() {
+		Container(Attrs(Gap(sp8), BackgroundVec(bgPanel)), func() {
 			txt(c.Message)
 			if m.sess == nil {
 				return

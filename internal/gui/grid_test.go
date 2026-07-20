@@ -134,7 +134,7 @@ func TestRenderPNG800pxValid(t *testing.T) {
 		t.Errorf("cardW %d at 800px: cards unusably narrow", m.cardW)
 	}
 	used := m.cols*m.cardW + (m.cols-1)*cardGap
-	avail := 800 - 64 - 2*rowPadH // window minus sidebar and row padding
+	avail := 800 - sidebarW - 2*rowPadH // window minus sidebar and row padding
 	if used > avail {
 		t.Errorf("grid row occupies %dpx of %dpx usable width at 800px: horizontal overflow", used, avail)
 	}
@@ -173,7 +173,7 @@ func TestRenderPNG3840pxValid(t *testing.T) {
 		t.Errorf("cardW %d at 3840px exceeds cap %d: cards stretch absurdly", m.cardW, maxCardW)
 	}
 	used := m.cols*m.cardW + (m.cols-1)*cardGap
-	avail := 3840 - 64 - 2*rowPadH
+	avail := 3840 - sidebarW - 2*rowPadH
 	if used > avail {
 		t.Errorf("grid row occupies %dpx of %dpx usable width at 3840px", used, avail)
 	}

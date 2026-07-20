@@ -15,7 +15,7 @@ func modal(width float32, dismiss func(), fn func()) {
 		var cardID ContainerId
 		var cardFirst bool
 		Container(Attrs(Float(0, 0), FixWidth(WindowSize[0]), FixHeight(WindowSize[1]), FocusTrap, Center, Background(220, 25, 12, 0.45), NoAnimate, InFront), func() {
-			Container(Attrs(FixWidth(width), Gap(10), Pad(20), BackgroundVec(bgPanel), Corners(10), BoxShadow(24)), func() {
+			Container(Attrs(FixWidth(width), Gap(sp12), Pad(sp24), BackgroundVec(bgPanel), Corners(radiusL), elevateOverlay), func() {
 				cardID = CurrentId()
 				cardFirst = FirstRender()
 				fn()
@@ -32,7 +32,7 @@ func modal(width float32, dismiss func(), fn func()) {
 
 // sidebar is the icon navigation column on the left edge.
 func (m *model) sidebar() {
-	Container(Attrs(FixSize(64, 0), BackgroundVec(bgPanel), Pad(8), Gap(12)), func() {
+	Container(Attrs(FixSize(sidebarW, 0), BackgroundVec(bgPanel), Pad(sp8), Gap(sp12)), func() {
 		Label("✦", FontSize(22), TextColorVec(toneColor(2)))
 		if focusableButton(0, "Games") {
 			m.about = false
@@ -61,8 +61,8 @@ func (m *model) openSettings() {
 }
 
 func (m *model) settingsModal() {
-	modal(480, func() { m.settingsOpen = false }, func() {
-		Container(Attrs(Pad(18), Gap(10), BackgroundVec(bgPanel)), func() {
+	modal(settingsModalW, func() { m.settingsOpen = false }, func() {
+		Container(Attrs(Gap(sp12), BackgroundVec(bgPanel)), func() {
 			txt("Settings")
 			muted("Default OptiScaler version (tag or 'latest')")
 			TextInput(&m.versionBuf)
@@ -84,7 +84,7 @@ func (m *model) settingsModal() {
 
 // toolbar is the top action bar: scan, search, view switch.
 func (m *model) toolbar(ctx context.Context) {
-	Container(Attrs(Expand, Row, CrossMid, Gap(10), Pad2(8, 4)), func() {
+	Container(Attrs(Expand, Row, CrossMid, Gap(sp8), Pad2(sp8, sp4)), func() {
 		if m.sess != nil && focusableButton(SymIRight, "Scan Games") {
 			m.sess.Scan(ctx)
 		}
@@ -106,7 +106,7 @@ func (m *model) toolbar(ctx context.Context) {
 
 // statusBar is the bottom strip with the current status line.
 func (m *model) statusBar() {
-	Container(Attrs(Expand, BackgroundVec(bgPanel), Pad2(6, 10), Row, CrossMid, Gap(10)), func() {
+	Container(Attrs(Expand, BackgroundVec(bgPanel), Pad2(sp8, sp12), Row, CrossMid, Gap(sp12)), func() {
 		muted(m.state.StatusLine)
 		Filler(1)
 		muted(fmt.Sprintf("%d games", len(m.state.Rows)))
@@ -132,8 +132,8 @@ func (m *model) toastOverlay() {
 
 // aboutModal shows version and project info.
 func (m *model) aboutModal() {
-	modal(420, func() { m.about = false }, func() {
-		Container(Attrs(Pad(18), Gap(8)), func() {
+	modal(aboutModalW, func() { m.about = false }, func() {
+		Container(Attrs(Gap(sp8)), func() {
 			txt("optiscaler-manager " + m.cfg.Version)
 			muted("OptiScaler manager for local games — Linux + Steam.")
 			muted("GUI: go-shirei (pinned v0.5.2)")
