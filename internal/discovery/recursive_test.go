@@ -245,7 +245,47 @@ func TestScanRecursive_AcceptsExeWithoutExecBit(t *testing.T) {
 	}
 }
 
-func TestScanRecursive_InstallerNamesStillRejected(t *testing.T) {
+func TestScanRecursive_SkipsSubdirWithoutExe(t *testing.T) {
+	root := t.TempDir()
+
+	// Steam: a container-style subdirectory with no exe within the depth
+	// budget must not produce a row at all.
+	writeFile(t, filepath.Join(root, "Steam", "readme.txt"), "not a game")
+	// RealGame: a real game next to it must still be found.
+	realExe := mkGameBin(t, filepath.Join(root, "RealGame", "realgame"), 1<<20)
+
+	games, err := ScanRecursive(context.Background(), root)
+	if err != nil {
+		t.Fatalf("ScanRecursive: %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("got %d games, want 1 (exe-less subdir skipped): %+v", len(games), games)
+	}
+	if games[0].Name != "RealGame" || games[0].ExePath != realExe {
+		t.Errorf("game = %+v, want RealGame with exe %q", games[0], realExe)
+	}
+}
+
+func TestScanRecursive_DeepExeGameStillFound(t *testing.T) {
+	root := t.TempDir()
+
+	// Engine-style layout: the exe sits at Binaries/Win64 (depth 2), which
+	// is inside the depth budget, so the game must still produce a row.
+	engineExe := mkGameBin(t, filepath.Join(root, "EngineGame", "Binaries", "Win64", "enginegame"), 1<<20)
+
+	games, err := ScanRecursive(context.Background(), root)
+	if err != nil {
+		t.Fatalf("ScanRecursive: %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("got %d games, want 1: %+v", len(games), games)
+	}
+	if games[0].ExePath != engineExe {
+		t.Errorf("ExePath = %q, want deep exe %q", games[0].ExePath, engineExe)
+	}
+}
+
+func TestScanRecursive_InstallerOnlySubdirSkipped(t *testing.T) {
 	root := t.TempDir()
 	gameDir := filepath.Join(root, "InstGame")
 	for _, name := range []string{"unins000.exe", "setup.exe"} {
@@ -261,10 +301,31 @@ func TestScanRecursive_InstallerNamesStillRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanRecursive: %v", err)
 	}
+	if len(games) != 0 {
+		t.Fatalf("got %d games, want 0 (installer-only subdir yields no row): %+v", len(games), games)
+	}
+}
+
+// Pin: a PE whose ProductName is a vendor TODO placeholder carries no
+// usable title, so the game keeps its folder name.
+func TestScanRecursive_TODOPlaceholderTitleFallsBackToFolder(t *testing.T) {
+	root := t.TempDir()
+	gameDir := filepath.Join(root, "SomeFolder")
+	writeFile(t, filepath.Join(gameDir, "game.exe"), string(peWithProductName("TODO: <Product Name>")))
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(filepath.Join(gameDir, "game.exe"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	games, err := ScanRecursive(context.Background(), root)
+	if err != nil {
+		t.Fatalf("ScanRecursive: %v", err)
+	}
 	if len(games) != 1 {
 		t.Fatalf("got %d games, want 1: %+v", len(games), games)
 	}
-	if games[0].ExePath != "" {
-		t.Errorf("ExePath = %q, want %q (installers never chosen as main exe)", games[0].ExePath, "")
+	if games[0].Name != "SomeFolder" {
+		t.Errorf("Name = %q, want folder fallback %q for TODO placeholder", games[0].Name, "SomeFolder")
 	}
 }

@@ -71,7 +71,8 @@ func ScanRecursive(ctx context.Context, root string) ([]domain.Game, error) {
 			return games, err
 		}
 		if exe == "" {
-			log.Debug().Str("dir", dir).Msg("recursive scan: no game executable found")
+			log.Debug().Str("dir", dir).Msg("recursive scan: no game executable found, skipping")
+			continue
 		}
 		games = append(games, domain.Game{
 			AppID:      "manual_" + e.Name(),
