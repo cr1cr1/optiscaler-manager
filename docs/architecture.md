@@ -57,10 +57,13 @@ internal/
               Uninstall, Rollback, ManualEntry, versioned bundle cache,
               ops.go (Op, RunOps: errgroup, first error cancels siblings)
   ui/         frontend-agnostic Session: state, commands, events, consent,
-              per-game CancelOp
-  gui/        shirei binding over ui.Session (ALL shirei imports live here)
+              per-game CancelOp, sort mode; cache.go is the games.json
+              library cache (schema-versioned, atomic) behind Session.Start
+  gui/        shirei binding over ui.Session (ALL shirei imports live here);
+              theme tokens, arrow-key grid nav, right-docked detail panel
   tui/        bubbletea binding over ui.Session (renders snapshots, forwards
-              keys; no business logic)
+              keys; no business logic); multi-screen styled layout on
+              bubbles spinner/textinput/viewport + lipgloss
 ```
 
 `internal/installer` is the deep module for file transactions. `internal/app`
@@ -90,6 +93,21 @@ op, so it must outlive the dead op context while keeping the caller's values.
 siblings. `ui.Session.CancelOp(gameDir)` cancels a single in-flight op and
 settles the row to its pre-op status with one "Cancelled" event. Invariant #6
 in `docs/safety.md`.
+
+## Startup flow: games cache (v0.4)
+
+Both frontends boot through `Session.Start(ctx)`. It reads `games.json`
+from the data root (`internal/ui/cache.go`: schema-versioned envelope,
+atomic temp-write + rename, best-effort writes that log and never fail the
+caller). A warm cache hydrates the rows synchronously; each row's status is
+then reconciled from the store's manifests (keyed by canonical install dir,
+falling back to game root) so installs that settled while the manager was
+not running show their real state. No PE parsing, no reclassification, no
+scan; the status line reads `N games (cached)`. A missing, unreadable,
+corrupt, stale-schema, or empty cache falls through to `Scan`. The cache is
+rewritten after every scan, `AddDirectory`/`RemoveDirectory`, and op settle
+(status change), serialized so concurrent writers cannot interleave.
+Explicit rescans stay user-initiated (GUI Scan button, TUI `R`).
 
 ## Data flow
 

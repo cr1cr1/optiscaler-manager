@@ -69,6 +69,24 @@ Critical path: M0 → M1 → M2d → M3 → M4 → M5 → M6 → M7.
    pre-planned.
 2. **M6 GUI smoke** — gates M7.
 
+## v0.4 milestone (complete, 2026-07-20)
+
+Settings UI, games cache, GUI polish, TUI overhaul. All gates green
+(`go test ./...`, `go vet ./...`); scope recorded in `docs/scope.md`,
+task detail in `docs/log.md`.
+
+- **W1 (T1)**: games.json library cache, `Session.Start` cache-first boot
+  with manifest status reconcile, `RemoveDirectory`, `SetSort`.
+- **W2a (T2)**: GUI polish (theme tokens, hover states, gradient
+  placeholders, detail side panel, sort menu, icon view switch, empty
+  states, arrow-key nav, raised toasts) + settings scan-directory list and
+  launch-template editing + cache-first GUI boot.
+- **W2b (T3)**: TUI overhaul (number-key screens, styled columns, detail
+  screen, live filter, settings directory management, confirm modal,
+  spinner, toasts) on bubbles v1.0.0 + direct lipgloss.
+- **Fix**: `settings.Save` is a no-op on an empty root (sessions without a
+  state dir must not fail or spam callers).
+
 ## Risks
 
 1. BCJ2/sevenzip failure → early spike, fallback ready.

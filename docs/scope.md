@@ -153,6 +153,64 @@ only with new evidence.
   fallback fires.
 - Launch is fire-and-forget: no process tracking, no "game is running" state.
 
+## v0.4 scope (settings UI, games cache, GUI polish, TUI overhaul)
+
+Delivered 2026-07-20 (waves W1–W2). Decisions closed; reopen only with new
+evidence.
+
+- **Scan directories managed in-app**: Settings (GUI modal "Scan
+  Directories" section, TUI screen `2`) lists `ExtraDirs` with add and
+  per-row remove. GUI: "Add directory…" opens the OS picker, each row has a
+  Remove button. TUI: `a` adds a path inline, `d` removes the selected row
+  behind a `y`/`n` confirm. New session commands: `RemoveDirectory` (drops
+  the directory's row and any nested games scanned under it, persists
+  settings, rewrites the games cache; unknown dirs are a silent no-op) and
+  `SetSort` (`SortDefault` actionable-first / `SortName` A–Z).
+- **Launch template edited in-app**: GUI Settings "Launch Template" field
+  and TUI `t`; both persist through `Session.SetLaunchTemplate`. Editing
+  `settings.json` by hand is no longer required (the file format is
+  unchanged).
+- **Games cache (cache-first startup)**: `games.json` in the data root,
+  schema-versioned (`version: 1`), written atomically (temp + rename).
+  `Session.Start` boots cache-first: a warm cache hydrates rows
+  synchronously with each row's status reconciled from store manifests (no
+  PE parsing, no reclassification, no scan) and reports
+  `N games (cached)`; a missing, unreadable, corrupt, stale-schema, or
+  empty cache falls through to a full scan. The cache is rewritten
+  (best-effort, serialized, never fails the caller) after scans,
+  Add/RemoveDirectory, and op settles. Explicit rescan stays
+  user-initiated: GUI Scan button, TUI `R`.
+- **GUI polish**: theme tokens (spacing, radii, elevation, expanded
+  palette), card/row hover states, deterministic gradient cover
+  placeholders (glyph + title initial, FNV-hashed hue) replacing the tiny
+  dark no-art tile, right-docked detail side panel replacing the dashboard
+  modal (grid stays visible beside it), toolbar sort menu (Default / Name)
+  + icon grid/list switch + scan spinner, empty states with icon, heading,
+  and CTA buttons (scan/add-directory, clear-search), 72px icon sidebar
+  with active-section accent, arrow-key grid navigation (±1 across, ±cols
+  up/down; Enter opens the detail panel, Esc closes it) with status-bar
+  shortcut hints, raised toast cards with tone accent bar capped at three,
+  themed scrollbars and dark search input, and sort/view/search controls
+  disabled while the library is empty.
+- **TUI overhaul**: number-key screens (1 Games / 2 Settings / 3 Help),
+  styled game columns (badges, title, store, version, status with tone
+  colors), detail screen (`enter`) with actions `i`/`l`/`c`/`r`/`o` and
+  `esc` back, live `/` filter (Esc clears), `s` sort toggle, `R` rescan,
+  `i` quick install, `q` + `ctrl+c` quit, centered confirm modal
+  (`[y]` proceed / `[n]` cancel), busy spinner, toasts, resize-aware
+  layout, and empty-state guidance. Deps: bubbles v1.0.0 (vendored),
+  lipgloss promoted to a direct dependency.
+
+### v0.4 known limits
+
+- The GUI search field is click-to-focus only; there is no `/` focus
+  shortcut in the GUI (that keybind is TUI-only).
+- Cache hydration reconciles install status from manifests only; version
+  strings and covers shown at boot are the cached values until the next
+  scan.
+- macOS remains blocked exactly as in v0.3 (shirei cocoa backend needs an
+  Apple SDK); no macOS support is claimed.
+
 ## Dependencies (settled)
 
 - Vendored (`go mod vendor`, `vendor/` committed; `-mod=vendor` stays in CI and

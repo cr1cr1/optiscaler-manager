@@ -702,3 +702,113 @@ Append-only milestone and task log. Newest at the bottom.
   table; updated to REAL raws (3.7.20.0→DLSS 3.7.20, 1.0.1.41314→FSR 3.1.4).
 - Verified: `go test ./...`, `go vet ./...`, `golangci-lint run` (0 issues),
   full suite with `OM_TEST_ARCHIVE=/tmp/opencode/optiscaler-0.9.4.7z`.
+
+## 2026-07-20 — v0.4 W1 (T1): games cache, Session.Start, RemoveDirectory, SetSort
+
+- `internal/ui/cache.go` (new): the games-list cache, `games.json` in the
+  data root, schema-versioned envelope (`version: 1`), atomic temp-write +
+  rename. `loadGamesCache` yields nil (never an error) on missing,
+  unreadable, corrupt, or stale-schema files so callers fall through to a
+  real scan; `saveGamesCache` is best-effort (logs, never fails the
+  caller).
+- `Session.Start(ctx)`: cache-first boot. A warm cache hydrates rows
+  synchronously and reconciles each row's status from store manifests
+  (keyed by canonical install dir, falling back to game root) so installs
+  that settled while the manager was not running show their real state.
+  No PE parsing, no reclassification, no scan; status line
+  `N games (cached)`. An empty/unusable cache falls through to `Scan`.
+- `persistCache` rewrites the cache after scans, `AddDirectory`,
+  `RemoveDirectory`, and op settles (`setRowStatus`), serialized under a
+  dedicated mutex so concurrent scan/op writers cannot interleave.
+- `Session.RemoveDirectory(dir)`: drops the directory's row and any nested
+  games scanned under it, persists settings without it, rewrites the cache;
+  directories not in ExtraDirs are a silent no-op. `Session.SetSort(mode)`
+  selects `SortDefault` (actionable-first) or `SortName` (A–Z) in
+  `VisibleRows`; out-of-range modes reset to default.
+- TDD: cache round-trip/corrupt/stale-schema tests, Start warm/cold boot,
+  status reconcile, RemoveDirectory row/settings/cache effects, SetSort
+  ordering, red first, then green.
+
+## 2026-07-20 — v0.4 W2a (T2): GUI polish, settings directories, cache-first boot
+
+- Settings modal gains sections: "Scan Directories" lists `ExtraDirs` with
+  per-row Remove buttons and an "Add directory…" entry that opens the OS
+  picker (`Session.PickAndAddDirectory`); "Launch Template" edits the
+  manual-game launch template in-app through `SetLaunchTemplate` (hand
+  editing `settings.json` no longer required). Directory rows ellipsize at
+  the front so the distinctive tail stays visible; the list is a bounded
+  Viewport inside the auto-sized modal.
+- Theme tokens: spacing, radii, elevation, and an expanded palette in
+  `theme.go`; scrollbars and the toolbar search input themed dark (upstream
+  widgets hardcode light surfaces).
+- Cards and list rows gain hover states; games without cover art render a
+  deterministic gradient placeholder (glyph + title initial, FNV-hashed
+  hue) instead of the tiny dark no-art tile (`_placeholder.png` detected by
+  filename).
+- The dashboard modal is replaced by a right-docked detail side panel: the
+  grid stays visible beside it; Close button and Esc both dismiss.
+- Toolbar: sort menu (Default: actionable first / Name: A–Z) wired to
+  `Session.SetSort`, icon grid/list view switch, scan spinner while busy;
+  sort/view/search controls disable while the library is empty.
+- Empty states: centered icon, heading, guidance, and CTA buttons
+  (scan/add-directory on an empty library, clear-search on an empty
+  filter).
+- Chrome: 72px icon sidebar with active-section accent, status-bar shortcut
+  hints (`Tab: focus · ←→↑↓: select · Enter: open · Esc: close`), raised
+  toast cards with a tone accent bar capped at three.
+- Arrow-key grid navigation: ±1 across, ±cols up/down; Enter opens the
+  detail panel for the selected card, Esc closes it; global keys run last
+  in the frame so focused widgets get first pick, and modals own their own
+  keys.
+- GUI boots cache-first via `Session.Start` (`model.boot`); a warm cache
+  shows rows instantly, a cold cache falls through to a scan inside Start.
+- Verified: `go test ./...`, `go vet ./...`; headless RenderToPNG smoke
+  tests cover the new views (nav, hover, sort, toolbar, settings, empty
+  states).
+
+## 2026-07-20 — v0.4 W2b (T3): TUI overhaul — screens, styling, settings dirs, bubbles
+
+- Multi-screen layout: number keys switch top-level screens (1 Games /
+  2 Settings / 3 Help); per-screen update/view handlers on one flat model.
+- Styled game columns (badges, title, store, version, status) with tone
+  colors via lipgloss; resize-aware layout on bubbles viewport.
+- Detail screen (`enter`) with actions `i` install / `l` launch /
+  `c` cancel / `r` rollback / `o` open INI; `esc` back. Live `/` filter
+  (Esc clears), `s` sort toggle, `R` rescan, `i` quick install on the games
+  screen; `q` and `ctrl+c` quit.
+- Settings screen: `e` edit default version, `t` edit launch template,
+  `a` add a scan directory inline, `d` remove the selected one behind an
+  inline `y`/`n` confirm, `x` clear the bundle cache.
+- Centered confirm modal for session consent gates (`[y]` proceed /
+  `[n]` cancel); unrelated keys are swallowed while it is up. Busy spinner
+  (bubbles spinner), toasts, empty-state guidance.
+- `Init` boots the library cache-first via `Session.Start` (warm cache
+  hydrates rows without a scan; cold falls through to one).
+- Deps: bubbles v1.0.0 added and vendored; lipgloss promoted to a direct
+  dependency (`go mod tidy && go mod vendor` in the merge).
+- TDD: teatest RED tests first for the multi-screen UI, settings directory
+  management, and cache-first start, then green. Verified: `go test ./...`,
+  `go vet ./...`, `golangci-lint run` (0 issues; one ineffassign fix in
+  status cell styling).
+
+## 2026-07-20 — fix(settings): Save is a no-op on empty root
+
+- `settings.Save("")` previously attempted `MkdirAll("")` + temp-file
+  creation and errored, surfacing as save-error toast storms in contexts
+  without a state dir (tests, misconfigured launches). An empty root now
+  returns nil immediately: sessions without a state dir must not fail or
+  spam callers. Behavior for non-empty roots is unchanged (atomic temp +
+  rename, defaults normalized).
+
+## 2026-07-20 — v0.4 docs wrap
+
+- README: status → v0.4, cache-first startup and `games.json` in the state
+  root, in-app settings description (scan-directory add/remove, launch
+  template edited in-app), GUI interaction summary, TUI keymap table.
+- scope.md: v0.4 section (settings UI, games cache, GUI polish, TUI
+  overhaul) with known limits (no GUI `/` focus shortcut, cached
+  versions/covers until next scan, macOS still blocked).
+- architecture.md: ui/cache.go in the package map and a startup-flow
+  section (cache-first boot, manifest status reconcile, persist triggers).
+- plan.md: v0.4 milestone recorded complete; index.md release line → v0.4.
+- No Go source changed; OKF frontmatter untouched.
