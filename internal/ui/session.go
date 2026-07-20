@@ -22,7 +22,9 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
 	"github.com/cr1cr1/optiscaler-manager/internal/launch"
 	"github.com/cr1cr1/optiscaler-manager/internal/pickdir"
+	"github.com/cr1cr1/optiscaler-manager/internal/protondb"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
+	"github.com/cr1cr1/optiscaler-manager/internal/steam"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 )
 
@@ -58,6 +60,7 @@ const (
 	phaseDiscover = "discover"
 	phaseEnrich   = "enrich"
 	phaseCovers   = "covers"
+	phaseLookup   = "lookup"
 )
 
 // progressPokeInterval is the minimum spacing between EvScanProgress pokes
@@ -126,6 +129,11 @@ type Deps struct {
 	Settings     settings.Settings
 	SettingsRoot string
 	Launcher     *launch.Launcher // nil selects the platform detached-spawn default
+
+	// Steam and ProtonDB feed the online lookup phase of Scan; either nil
+	// skips enrichment entirely.
+	Steam    *steam.Client
+	ProtonDB *protondb.Client
 }
 
 // Session is the frontend-agnostic interactive core.
@@ -433,6 +441,10 @@ func (s *Session) Scan(ctx context.Context) {
 			coversTick()
 		}
 		rows = s.mergeExtraDirs(ctx, rows, snap.ExtraDirs, coversTick)
+		// Online lookup phase: enrich the local rows before they are
+		// committed to state, so the final persistCache lands the enriched
+		// fields in one write.
+		s.enrichOnline(ctx, rows, snap)
 		s.mu.Lock()
 		// Directories added while this scan was in flight are not in the
 		// snapshot's ExtraDirs; keep their rows rather than wiping them.

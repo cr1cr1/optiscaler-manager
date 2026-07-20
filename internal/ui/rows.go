@@ -42,6 +42,8 @@ type GameRow struct {
 	EAC          bool
 	CoverPath    string
 	ModTime      time.Time
+	SteamAppID   string // resolved via Steam search or copied from a numeric AppID; "" when unknown
+	ProtonTier   string // ProtonDB tier (platinum/gold/silver/bronze/borked); "" when unknown
 
 	Store             domain.Store // raw storefront (launch needs it)
 	AppName           string       // Epic launch AppName; "" elsewhere
