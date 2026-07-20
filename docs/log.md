@@ -1028,7 +1028,28 @@ fixed forward to unconditional PASS:
 - plan.md: v0.6 milestone recorded complete (T1–T9); index.md release line
   → v0.6. No Go source changed; OKF frontmatter untouched.
 
-## v0.6 review gate (T9) — placeholder
+## v0.6 review gate (T9) — 2026-07-21
 
-- Pending. Five-lane review (goal / QA / quality / security / context) to
-  run over the v0.6 range; results to be recorded here.
+Five-lane review of the v0.6 range; quality failed twice and was fixed
+forward to unconditional PASS:
+
+- **R1 goal**: PASS (WARN: ManualEntry never probed → fixed in round 1).
+- **R2 QA**: PASS (20/20 scenarios; strongest proof: the real 0.9.4
+  OptiScaler.dll detected as external under all 8 injection names, version
+  "0.9.4"; keystone adopt→uninstall byte-identical restore re-run).
+- **R3 quality**: FAIL→FAIL→PASS. Round 1 MAJOR: rollback path missing
+  post-restore re-detect → `redetectExternal` shared helper + rollback
+  ErrNotManaged mapping (2c4012f); R1 WARN: ManualEntry probe (4533e51).
+  Round 2 MAJORs: rolled_back manifest re-asserted on rescan/restart →
+  manifest deleted when rollback restores external (798f03f); ManualEntry
+  probed without store precedence, mislabeling managed manual games as
+  external and blocking their uninstall → manifest precedence in
+  ManualEntry(dir, st) (00008e4). Re-review verified both with independent
+  traces (rescan + warm-cache stay external; managed manual stays
+  committed + uninstall works).
+- **R4 security**: PASS (LOW; subslice retention + ReadBounded TOCTOU
+  accepted as bounded).
+- **R5 context**: PASS (real-bytes identity verified; candidate list
+  matches the official wiki; rollback divergence flagged — fixed in round
+  1; OptiScaler.asi/nvngx.dll noted as unprobed edge deployment modes).
+
