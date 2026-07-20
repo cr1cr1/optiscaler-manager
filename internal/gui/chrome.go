@@ -194,6 +194,40 @@ func (m *model) toolbar() {
 	})
 }
 
+// progressBar is the thin scan-pipeline indicator under the toolbar: a
+// phase label and a weighted fill tracking Done/Total. Hidden while no scan
+// runs (State.Progress is nil). shirei has no progress widget, so the bar
+// is hand-rolled from two Grow-weighted containers.
+func (m *model) progressBar() {
+	m.progressTrackRect = Rect{}
+	m.progressFillRect = Rect{}
+	p := m.state.Progress
+	if p == nil {
+		return
+	}
+	var frac float32
+	if p.Total > 0 {
+		frac = float32(p.Done) / float32(p.Total)
+	}
+	if frac > 1 {
+		frac = 1
+	}
+	Container(Attrs(Expand, Row, CrossMid, Gap(sp8), Pad2(sp8, 2)), func() {
+		Label(fmt.Sprintf("%s %d/%d", p.Phase, p.Done, p.Total), FontSize(11), TextColorVec(txtMuted))
+		Container(Attrs(Row, Grow(1), FixHeight(6), Corners(3), BackgroundVec(bgRaised), Clip), func() {
+			m.progressTrackRect = GetScreenRectOf(CurrentId())
+			if frac > 0 {
+				Container(Attrs(Grow(frac), Expand, BackgroundVec(accentHov)), func() {
+					m.progressFillRect = GetScreenRectOf(CurrentId())
+				})
+			}
+			if frac < 1 {
+				Container(Attrs(Grow(1-frac), Expand), func() {})
+			}
+		})
+	})
+}
+
 // sortLabel is the toolbar caption for the active sort mode.
 func sortLabel(mode ui.SortMode) string {
 	if mode == ui.SortName {

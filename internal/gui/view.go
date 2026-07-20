@@ -18,6 +18,7 @@ func (m *model) rootView() {
 		m.sidebar()
 		Container(Attrs(Grow(1), Expand, Gap(0)), func() {
 			m.toolbar()
+			m.progressBar()
 			// The virtualized views must sit directly inside the expanding
 			// column: they size to the remaining space and render nothing
 			// inside auto-sized wrappers (upstream demos do the same). With
