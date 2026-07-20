@@ -55,6 +55,37 @@ func assertNoScanEvents(t *testing.T, s *Session) {
 	}
 }
 
+// TestStart_StaleSchemaCacheFallsThroughToScan: a games.json written at the
+// v0.6 schema (version 1 — rows predate the v0.7 container self-row
+// semantics) is invalidated by the schema bump: it loads as empty and Start
+// falls through to a real scan rather than resurrecting stale rows.
+func TestStart_StaleSchemaCacheFallsThroughToScan(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	stale := []GameRow{{
+		Title:      "StaleContainer",
+		AppID:      "custom_StaleContainer",
+		InstallDir: filepath.Join(t.TempDir(), "StaleContainer"),
+	}}
+	data, err := json.Marshal(gamesCache{Version: 1, Rows: stale})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(e.sess.deps.SettingsRoot, "games.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	e.sess.Start(context.Background())
+	waitEvent(t, e.sess, EvScanDone) // stale cache rejected: a real scan ran
+
+	for _, r := range e.sess.Snapshot().Rows {
+		if r.InstallDir == stale[0].InstallDir {
+			t.Fatalf("stale v1 row survived warm boot: %+v", r)
+		}
+	}
+	t.Log("v1 cache invalidated by schema bump; Start fell through to scan")
+}
+
 // TestScanPersistsCache: a completed scan writes games.json whose rows match
 // the session rows on the stable fields (InstallDir, Title, Status).
 func TestScanPersistsCache(t *testing.T) {

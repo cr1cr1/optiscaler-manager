@@ -11,8 +11,9 @@ import (
 )
 
 // cacheSchemaVersion is the on-disk schema of the games-list cache. Bump on
-// any breaking change to the cached row shape.
-const cacheSchemaVersion = 1
+// any breaking change to the cached row shape or semantics (2: v0.7 made
+// container scan-roots row-less, so v0.6 caches carry stale self-rows).
+const cacheSchemaVersion = 2
 
 // gamesCache is the persisted games list: display-ready rows written on
 // every library change and read once at Start so a warm boot skips the scan.
