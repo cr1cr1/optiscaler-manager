@@ -1,7 +1,9 @@
 package optiscalermanager
 
 import (
+	"net/http"
 	"path/filepath"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
@@ -21,7 +23,7 @@ func newSession(d *Deps) *ui.Session {
 	return ui.NewSession(ui.Deps{
 		Store:        d.Store,
 		GH:           d.GH,
-		Covers:       covers.New(nil, filepath.Join(d.CacheDir, "covers")),
+		Covers:       covers.New(&http.Client{Timeout: 10 * time.Second}, filepath.Join(d.CacheDir, "covers")),
 		CacheDir:     d.CacheDir,
 		Settings:     prefs,
 		SettingsRoot: d.DataRoot,
