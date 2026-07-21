@@ -1417,3 +1417,25 @@ rebinds after the identification phase each scan; 7-day miss markers
 for artless appids; "reloaded" edition token for store rebrands
 (Dying Light 2). Real-library re-audit: all 14 previously bad covers
 now correct.
+
+## 2026-07-21 — v0.8.4: portrait art everywhere, emulator tooling
+
+User report: landscape banners instead of posters (007, Aphelion,
+Oblivion), artless games (Alan Wake 2, From Dust, Jazz Jackrabbit,
+STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
+
+- PCGamingWiki box art (portrait) in the cover chain between Steam's
+  600x900 and the landscape hero — posters for Steam-artless games,
+  and the only art source for non-Steam games. The wiki's thumbnail
+  host 403s non-descriptive UAs (and Go's default): covers now sends a
+  proper User-Agent on every request.
+- Exact matching maps roman-numeral tokens (i/v/x only): Alan Wake
+  II ↔ Alan Wake 2.
+- In-dir metadata rows without an appid now go fuzzy instead of
+  freezing: "STASIS2" → "STASIS: BONE TOTEM" (title + cover).
+- Emulator dirs (cemu/yuzu/ryujinx/dolphin/pcsx2/rpcs3/xenia/citra/
+  retroarch) are walkable tooling: console dumps row at their root with
+  the emulator exe; emulator names are rejected as titles ("Cemu",
+  "Wii U emulator") — Zelda is "The Legend of Zelda - Breath of the
+  Wild" again.
+- Real-library verified: all listed cases fixed.
