@@ -143,7 +143,15 @@ const maxExeDepth = 4
 // match to the game folder, then larger size, then 64-bit-looking names.
 // Games are deduplicated by canonical install directory, so rescanning is
 // idempotent.
+// ScanRecursive resolves the games under root with the default
+// identification chain (see ScanRecursiveWithResolver).
 func ScanRecursive(ctx context.Context, root string) ([]domain.Game, error) {
+	return ScanRecursiveWithResolver(ctx, root, ChainResolver(nil))
+}
+
+// ScanRecursiveWithResolver is ScanRecursive with a caller-chosen title
+// resolver (v0.8: the session injects its settings-aware chain).
+func ScanRecursiveWithResolver(ctx context.Context, root string, res TitleResolver) ([]domain.Game, error) {
 	root = canonicalPath(root)
 	if engineFolderName(filepath.Base(root)) {
 		// Plumbing added directly (a Proton folder, a compatdata tree)
@@ -161,15 +169,18 @@ func ScanRecursive(ctx context.Context, root string) ([]domain.Game, error) {
 		if err != nil {
 			return nil, err
 		}
+		title := res(root, exe)
 		games = append(games, domain.Game{
-			AppID:      "manual_" + filepath.Base(root),
-			Name:       gameTitle(exe, filepath.Base(root)),
-			InstallDir: root,
-			Store:      domain.StoreManual,
-			ExePath:    exe,
+			AppID:       "manual_" + filepath.Base(root),
+			Name:        title.Name,
+			InstallDir:  root,
+			Store:       domain.StoreManual,
+			ExePath:     exe,
+			SteamAppID:  title.SteamAppID,
+			TitleSource: title.Source,
 		})
 	}
-	sub, err := scanLevel(ctx, root, 0, map[string]bool{root: true})
+	sub, err := scanLevel(ctx, root, 0, map[string]bool{root: true}, res)
 	if err != nil {
 		return games, err
 	}
@@ -183,7 +194,7 @@ const maxContainerDepth = 4
 
 // scanLevel evaluates the immediate children of dir: games become rows,
 // containers are recursed into, anything else is skipped.
-func scanLevel(ctx context.Context, dir string, depth int, seen map[string]bool) ([]domain.Game, error) {
+func scanLevel(ctx context.Context, dir string, depth int, seen map[string]bool, res TitleResolver) ([]domain.Game, error) {
 	if depth > maxContainerDepth {
 		log.Debug().Str("dir", dir).Msg("recursive scan: container nesting limit reached")
 		return nil, nil
@@ -237,15 +248,18 @@ func scanLevel(ctx context.Context, dir string, depth int, seen map[string]bool)
 			if exe == "" {
 				continue
 			}
+			title := res(child, exe)
 			games = append(games, domain.Game{
-				AppID:      "manual_" + e.Name(),
-				Name:       gameTitle(exe, e.Name()),
-				InstallDir: child,
-				Store:      domain.StoreManual,
-				ExePath:    exe,
+				AppID:       "manual_" + e.Name(),
+				Name:        title.Name,
+				InstallDir:  child,
+				Store:       domain.StoreManual,
+				ExePath:     exe,
+				SteamAppID:  title.SteamAppID,
+				TitleSource: title.Source,
 			})
 		case GameDirContainer:
-			sub, err := scanLevel(ctx, child, depth+1, seen)
+			sub, err := scanLevel(ctx, child, depth+1, seen, res)
 			if err != nil {
 				return games, err
 			}

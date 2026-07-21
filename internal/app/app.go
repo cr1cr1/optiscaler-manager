@@ -29,22 +29,37 @@ import (
 )
 
 // ManualEntry builds a library entry for a user-supplied game directory
-// (added via the directory picker, not launcher discovery). st may be nil;
-// when non-nil, a store manifest for the resolved injection dir is
-// authoritative (mirroring enrich's manifest precedence): the manager's own
-// install must never be re-probed into external.
+// (added via the directory picker, not launcher discovery) with the
+// default identification chain. st may be nil; see ManualEntryWithResolver
+// for the contract both share.
 func ManualEntry(dir string, st *store.Store) (LibraryEntry, error) {
+	return ManualEntryWithResolver(dir, st, discovery.ChainResolver(nil))
+}
+
+// ManualEntryWithResolver is ManualEntry with a caller-chosen title
+// resolver (v0.8: the session injects its settings-aware chain, so user
+// overrides and identification sources apply to manual adds too). st may
+// be nil; when non-nil, a store manifest for the resolved injection dir
+// is authoritative (mirroring enrich's manifest precedence): the
+// manager's own install must never be re-probed into external.
+func ManualEntryWithResolver(dir string, st *store.Store, res discovery.TitleResolver) (LibraryEntry, error) {
 	root, err := canonicalDir(dir)
 	if err != nil {
 		return LibraryEntry{}, err
 	}
-	name := manualName(root)
+	exe, exeErr := discovery.FindMainExe(context.Background(), root)
+	if exeErr != nil {
+		exe = ""
+	}
+	title := res(root, exe)
 	e := LibraryEntry{
 		Game: domain.Game{
-			AppID:      "custom_" + filepath.Base(root),
-			Name:       name,
-			InstallDir: root,
-			Store:      domain.StoreManual,
+			AppID:       "custom_" + filepath.Base(root),
+			Name:        title.Name,
+			InstallDir:  root,
+			Store:       domain.StoreManual,
+			SteamAppID:  title.SteamAppID,
+			TitleSource: title.Source,
 		},
 		EAC: installer.EACProtected(root),
 	}
@@ -90,17 +105,6 @@ func ManualEntry(dir string, st *store.Store) (LibraryEntry, error) {
 	return e, nil
 }
 
-// manualName resolves a manually added game's title through the shared
-// chain (PE metadata → exe stem → folder name).
-func manualName(root string) string {
-	folder := filepath.Base(root)
-	exe, err := discovery.FindMainExe(context.Background(), root)
-	if err != nil || exe == "" {
-		return folder
-	}
-	return discovery.GameTitle(exe, folder)
-}
-
 // ErrEACProtected is returned by Install when the game ships an anti-cheat
 // launcher and the caller did not pass InstallOpts.EACOverride.
 var ErrEACProtected = errors.New("game is EAC-protected")
@@ -139,11 +143,13 @@ type LibraryEntry struct {
 // the platform's Steam roots"; ExtraDirs lists manual roots whose
 // subdirectories are individual games (settings.ExtraDirs). Progress, when
 // non-nil, receives ticks in pipeline order: "discover" per probed root,
-// then "enrich" per discovered game.
+// then "enrich" per discovered game. Resolver, when non-nil, is the v0.8
+// identification chain for manual rows.
 type ScanAllOptions struct {
 	SteamRoot string
 	ExtraDirs []string
 	Progress  func(phase string, done, total int)
+	Resolver  discovery.TitleResolver
 }
 
 // ScanAllLibraries discovers games across every store the platform supports
@@ -164,6 +170,7 @@ func ScanAllLibraries(ctx context.Context, st *store.Store, opts ScanAllOptions)
 				opts.Progress("discover", done, total)
 			}
 		},
+		Resolver: opts.Resolver,
 	})
 	if err != nil {
 		return nil, err

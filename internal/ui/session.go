@@ -446,6 +446,9 @@ func (s *Session) runScan(ctx context.Context) {
 	s.setBusy("Scanning…")
 	s.resetProgress()
 	snap := s.Settings()
+	resolver := discovery.ChainResolver(func(dir string) string {
+		return snap.TitleOverrides[canonicalDir(dir)]
+	})
 	entries, err := app.ScanAllLibraries(ctx, s.deps.Store, app.ScanAllOptions{
 		SteamRoot: s.deps.SteamRoot,
 		ExtraDirs: snap.ExtraDirs,
@@ -455,6 +458,7 @@ func (s *Session) runScan(ctx context.Context) {
 			}
 			s.scanProgress(phase, done, total)
 		},
+		Resolver: resolver,
 	})
 	if err != nil {
 		if errors.Is(err, app.ErrNoGames) {
@@ -500,7 +504,7 @@ func (s *Session) runScan(ctx context.Context) {
 		rows = append(rows, s.toRow(ctx, e))
 		coversTick()
 	}
-	rows = s.mergeExtraDirs(ctx, rows, snap.ExtraDirs, scanOnlyRoots, coversTick)
+	rows = s.mergeExtraDirs(ctx, rows, snap.ExtraDirs, scanOnlyRoots, coversTick, resolver)
 	// Online lookup phase: enrich the local rows before they are
 	// committed to state, so the final persistCache lands the enriched
 	// fields in one write.
@@ -906,12 +910,12 @@ func (s *Session) PickAndAddDirectory(ctx context.Context) {
 // extraDirs must be a locked settings snapshot taken by the caller. tick,
 // when non-nil, runs once per non-scanOnly root (row appended, deduplicated,
 // or failed — the caller's total counts all of them).
-func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow, extraDirs []string, scanOnly map[string]bool, tick func()) []GameRow {
+func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow, extraDirs []string, scanOnly map[string]bool, tick func(), res discovery.TitleResolver) []GameRow {
 	for _, d := range extraDirs {
 		if scanOnly[d] {
 			continue
 		}
-		entry, err := app.ManualEntry(d, s.deps.Store)
+		entry, err := app.ManualEntryWithResolver(d, s.deps.Store, res)
 		if err != nil {
 			log.Warn().Err(err).Str("dir", d).Msg("extra dir unavailable")
 		} else {
@@ -1282,6 +1286,8 @@ func (s *Session) toRow(ctx context.Context, e app.LibraryEntry) GameRow {
 		Actionable:        actionableStatus(e.Status),
 		EAC:               e.EAC,
 		ModTime:           e.ModTime,
+		SteamAppID:        e.Game.SteamAppID,
+		TitleSource:       string(e.Game.TitleSource),
 	}
 	keys := make([]string, 0, len(e.ComponentVersions))
 	for k := range e.ComponentVersions {

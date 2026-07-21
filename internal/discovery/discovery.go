@@ -173,7 +173,7 @@ func readManifest(path, lib string) (domain.Game, bool) {
 		log.Debug().Str("manifest", path).Str("dir", dir).Msg("skipping game with missing install dir")
 		return domain.Game{}, false
 	}
-	return domain.Game{AppID: appID, Name: name, InstallDir: dir, LibraryPath: lib, CompatPrefix: compatPrefix(lib, appID)}, true
+	return domain.Game{AppID: appID, Name: name, InstallDir: dir, LibraryPath: lib, CompatPrefix: compatPrefix(lib, appID), SteamAppID: appID}, true
 }
 
 func decodeVDF(r io.Reader) (*govdf.Node, error) {

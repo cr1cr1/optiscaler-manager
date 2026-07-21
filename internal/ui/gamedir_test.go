@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/app"
+	"github.com/cr1cr1/optiscaler-manager/internal/discovery"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
@@ -303,7 +304,8 @@ func TestMergeExtraDirs_TicksEveryNonScanOnlyRoot(t *testing.T) {
 	out := e.sess.mergeExtraDirs(context.Background(), rows,
 		[]string{game, filepath.Join(t.TempDir(), "missing"), container},
 		map[string]bool{container: true},
-		func() { ticks++ })
+		func() { ticks++ },
+		discovery.ChainResolver(nil))
 
 	if ticks != 2 {
 		t.Errorf("ticks = %d, want 2 (deduplicated root + failing root; scanOnly root skipped)", ticks)
@@ -353,5 +355,28 @@ func TestScan_DuplicateTitlesDisambiguated(t *testing.T) {
 	}
 	if !titles["TOI (Tails of Iron)"] || !titles["TOI (Tails of Iron Bright Fir Forest)"] {
 		t.Errorf("duplicate TOI rows not disambiguated: %v", titles)
+	}
+}
+
+// TestScan_TitleOverrideWins: a pinned title in settings beats every
+// identification rule for the row, and the row records the source.
+func TestScan_TitleOverrideWins(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	game := filepath.Join(t.TempDir(), "SomeGame")
+	writeUIFile(t, filepath.Join(game, "game.exe"), string(testutil.StringInfoPE(false, map[string]string{"ProductName": "PE Title"}, [4]uint16{1, 0, 0, 0})))
+	canon := canonicalDir(game)
+	e.sess.deps.Settings.ExtraDirs = []string{game}
+	e.sess.deps.Settings.TitleOverrides = map[string]string{canon: "Pinned Title"}
+
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+
+	r, ok := rowDirs(e.sess.Snapshot().Rows)[canon]
+	if !ok {
+		t.Fatal("game row missing")
+	}
+	if r.Title != "Pinned Title" || r.TitleSource != "override" {
+		t.Errorf("row = %+v, want pinned title with override source", r)
 	}
 }
