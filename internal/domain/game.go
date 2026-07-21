@@ -33,6 +33,23 @@ func (s Store) String() string {
 	}
 }
 
+// TitleSource records which identification rule produced a game's display
+// title (v0.8). The strings are persisted in the games cache — they are a
+// wire contract, change them only with a cache schema bump.
+type TitleSource string
+
+const (
+	SourceOverride TitleSource = "override" // user-pinned (settings.title_overrides)
+	SourceStoreID  TitleSource = "storeid"  // steam_appid.txt resolved via the store
+	SourceGOGInfo  TitleSource = "goggame"  // goggame-*.info name
+	SourceEGStore  TitleSource = "egstore"  // .egstore manifest DisplayName
+	SourceUnity    TitleSource = "unity"    // Unity *_Data/app.info product
+	SourceFuzzy    TitleSource = "fuzzy"    // normalized store-search match
+	SourcePE       TitleSource = "pe"       // PE version resources
+	SourceStem     TitleSource = "stem"     // exe filename stem
+	SourceFolder   TitleSource = "folder"   // directory name (last resort)
+)
+
 // Game is a discovered game installation (M2a discovery produces these).
 type Game struct {
 	AppID       string
@@ -44,4 +61,11 @@ type Game struct {
 	AppName      string // Epic launch AppName; "" for other stores
 	ExePath      string // resolved main executable; "" when unknown
 	CompatPrefix string // Proton prefix path (linux only); "" when absent
+
+	// SteamAppID is the numeric Steam app id when known — from
+	// steam_appid.txt, a store manifest, or an online match; "" when
+	// unknown. TitleSource records which identification rule produced
+	// Name (empty for store-manifest rows and pre-v0.8 paths).
+	SteamAppID  string
+	TitleSource TitleSource
 }

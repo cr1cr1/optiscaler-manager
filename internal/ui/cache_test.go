@@ -412,12 +412,12 @@ func TestSetSortOrdersVisibleRows(t *testing.T) {
 }
 
 // TestStart_PreV4CacheFallsThroughToScan: games.json files written before
-// schema v4 carry rows produced by rejected scanner semantics — v0.7's
-// phantom container rows (v2) and v0.7.1's platform/junk rows (v3:
-// "Steam", "steamapps", redist/tooling dirs). Every older schema loads as
-// empty and Start falls through to a real scan.
+// schema v5 carry rows produced by older identification semantics —
+// v0.7's phantom container rows (v2), v0.7.1's platform/junk rows (v3),
+// and v0.7.2 rows without identification sources (v4). Every older
+// schema loads as empty and Start falls through to a real scan.
 func TestStart_PreV4CacheFallsThroughToScan(t *testing.T) {
-	for _, version := range []int{1, 2, 3} {
+	for _, version := range []int{1, 2, 3, 4} {
 		t.Run(string(rune('0'+version)), func(t *testing.T) {
 			e := newTestEnv(t)
 			e.sess.deps.SettingsRoot = t.TempDir()

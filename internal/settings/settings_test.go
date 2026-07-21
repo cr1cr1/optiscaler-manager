@@ -80,3 +80,24 @@ func TestSaveEmptyRootIsNoOp(t *testing.T) {
 		t.Fatalf("Save with empty root must be a no-op, got %v", err)
 	}
 }
+
+// Title overrides persist: a user's pinned title for a canonical install
+// dir survives a Save/Load roundtrip; absent key yields nil, not empty map.
+func TestSettings_TitleOverridesRoundtrip(t *testing.T) {
+	root := t.TempDir()
+	s := Defaults()
+	if s.TitleOverrides != nil {
+		t.Fatalf("Defaults().TitleOverrides = %v, want nil (no key written)", s.TitleOverrides)
+	}
+	s.TitleOverrides = map[string]string{"/games/Prey": "Prey (2017)"}
+	if err := Save(root, s); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TitleOverrides["/games/Prey"] != "Prey (2017)" {
+		t.Errorf("TitleOverrides = %v, want the pinned title", got.TitleOverrides)
+	}
+}

@@ -39,3 +39,26 @@ func TestStoreEnumOnGame(t *testing.T) {
 		}
 	})
 }
+// TitleSource values are persisted in the games cache — the strings are a
+// wire contract and must not drift.
+func TestTitleSourceValues(t *testing.T) {
+	want := map[domain.TitleSource]string{
+		domain.SourceOverride: "override",
+		domain.SourceStoreID:  "storeid",
+		domain.SourceGOGInfo:  "goggame",
+		domain.SourceEGStore:  "egstore",
+		domain.SourceUnity:    "unity",
+		domain.SourceFuzzy:    "fuzzy",
+		domain.SourcePE:       "pe",
+		domain.SourceStem:     "stem",
+		domain.SourceFolder:   "folder",
+	}
+	for src, s := range want {
+		if string(src) != s {
+			t.Errorf("TitleSource = %q, want %q", string(src), s)
+		}
+	}
+	if len(want) != 9 {
+		t.Errorf("want map covers %d sources, update the contract test", len(want))
+	}
+}

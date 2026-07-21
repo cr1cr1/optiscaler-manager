@@ -43,6 +43,7 @@ type GameRow struct {
 	CoverPath    string
 	ModTime      time.Time
 	SteamAppID   string // resolved via Steam search or copied from a numeric AppID; "" when unknown
+	TitleSource  string // which identification rule produced Title (domain.TitleSource); "" for store rows/legacy
 	ProtonTier   string // ProtonDB tier (platinum/gold/silver/bronze/borked); "" when unknown
 
 	Store             domain.Store // raw storefront (launch needs it)

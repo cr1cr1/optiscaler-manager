@@ -25,6 +25,10 @@ type Settings struct {
 	// decodes through a pointer to tell "missing key" (legacy file →
 	// true) apart from an explicit false.
 	OnlineLookups bool `json:"online_lookups"`
+	// TitleOverrides pins display titles per canonical install dir; an
+	// override beats every identification rule (v0.8). JSON-edited only
+	// for now.
+	TitleOverrides map[string]string `json:"title_overrides,omitempty"`
 }
 
 // Defaults returns the out-of-box settings.
@@ -46,10 +50,11 @@ func Load(root string) (Settings, error) {
 	// Decode through a pointer for OnlineLookups so a legacy file without
 	// the key defaults to true while an explicit false stays false.
 	var raw struct {
-		DefaultVersion string   `json:"default_version"`
-		LaunchTemplate string   `json:"launch_template"`
-		ExtraDirs      []string `json:"extra_dirs,omitempty"`
-		OnlineLookups  *bool    `json:"online_lookups"`
+		DefaultVersion string            `json:"default_version"`
+		LaunchTemplate string            `json:"launch_template"`
+		ExtraDirs      []string          `json:"extra_dirs,omitempty"`
+		OnlineLookups  *bool             `json:"online_lookups"`
+		TitleOverrides map[string]string `json:"title_overrides,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return Defaults(), fmt.Errorf("settings: parse: %w", err)
@@ -59,6 +64,7 @@ func Load(root string) (Settings, error) {
 		LaunchTemplate: raw.LaunchTemplate,
 		ExtraDirs:      raw.ExtraDirs,
 		OnlineLookups:  true,
+		TitleOverrides: raw.TitleOverrides,
 	}
 	if raw.OnlineLookups != nil {
 		s.OnlineLookups = *raw.OnlineLookups
