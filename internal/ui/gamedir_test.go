@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/app"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
@@ -279,5 +280,35 @@ func TestAddDirectory_PlaceholderReplacedByPETitle(t *testing.T) {
 	}
 	if r.Title != "Shiny PE Title" {
 		t.Errorf("enriched title = %q, want PE ProductName %q", r.Title, "Shiny PE Title")
+	}
+}
+
+// TestMergeExtraDirs_TicksEveryNonScanOnlyRoot: coversTotal counts every
+// non-scanOnly extra root, so the tick must fire for each of them — a
+// deduplicated self-row (the common case since v0.7.1, where the scan
+// surfaces game-dir roots itself) and a failing ManualEntry alike —
+// otherwise the covers phase stalls below 100%.
+func TestMergeExtraDirs_TicksEveryNonScanOnlyRoot(t *testing.T) {
+	e := newTestEnv(t)
+	game := filepath.Join(t.TempDir(), "SoloGame")
+	writeUIFile(t, filepath.Join(game, "solo.exe"), "GAME")
+	entry, err := app.ManualEntry(game, e.sess.deps.Store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := []GameRow{{InstallDir: entry.Game.InstallDir}} // self-row already surfaced: dedup path
+	container, _, _ := containerFixture(t)
+
+	ticks := 0
+	out := e.sess.mergeExtraDirs(context.Background(), rows,
+		[]string{game, filepath.Join(t.TempDir(), "missing"), container},
+		map[string]bool{container: true},
+		func() { ticks++ })
+
+	if ticks != 2 {
+		t.Errorf("ticks = %d, want 2 (deduplicated root + failing root; scanOnly root skipped)", ticks)
+	}
+	if len(out) != 1 {
+		t.Errorf("rows = %d, want 1 (dedup added nothing)", len(out))
 	}
 }

@@ -902,7 +902,8 @@ func (s *Session) PickAndAddDirectory(ctx context.Context) {
 // and the scan did not surface. Roots in scanOnly (classified container or
 // empty by the caller) are scan roots, not games: they get no self-row.
 // extraDirs must be a locked settings snapshot taken by the caller. tick,
-// when non-nil, runs after each appended row (cover-progress accounting).
+// when non-nil, runs once per non-scanOnly root (row appended, deduplicated,
+// or failed — the caller's total counts all of them).
 func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow, extraDirs []string, scanOnly map[string]bool, tick func()) []GameRow {
 	for _, d := range extraDirs {
 		if scanOnly[d] {
@@ -911,20 +912,20 @@ func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow, extraDirs 
 		entry, err := app.ManualEntry(d, s.deps.Store)
 		if err != nil {
 			log.Warn().Err(err).Str("dir", d).Msg("extra dir unavailable")
-			continue
-		}
-		dup := false
-		for _, r := range rows {
-			if r.InstallDir == entry.Game.InstallDir {
-				dup = true
-				break
+		} else {
+			dup := false
+			for _, r := range rows {
+				if r.InstallDir == entry.Game.InstallDir {
+					dup = true
+					break
+				}
+			}
+			if !dup {
+				rows = append(rows, s.toRow(ctx, entry))
 			}
 		}
-		if !dup {
-			rows = append(rows, s.toRow(ctx, entry))
-			if tick != nil {
-				tick()
-			}
+		if tick != nil {
+			tick()
 		}
 	}
 	return rows
