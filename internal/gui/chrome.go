@@ -39,7 +39,7 @@ func (m *model) sidebar() {
 	m.sidebarRects = m.sidebarRects[:0]
 	Container(Attrs(FixSize(sidebarW, WindowSize[1]), BackgroundVec(bgPanel), Pad(sp8), Gap(sp12)), func() {
 		m.sidebarShellRect = GetScreenRectOf(CurrentId())
-		Container(Attrs(Center, Expand), func() {
+		Container(Attrs(Row, Center, Expand), func() {
 			Label("✦", FontSize(22), TextColorVec(toneColor(2)))
 		})
 		Filler(1)
@@ -175,7 +175,7 @@ func (m *model) settingsDirsSection() {
 
 // toolbar is the top action bar: scan, add, search, sort, view switch.
 func (m *model) toolbar() {
-	Container(Attrs(Expand, Row, CrossMid, Gap(sp8), Pad2(sp8, sp4)), func() {
+	Container(Attrs(Expand, Row, CrossMid, Gap(sp8), Pad2(sp16, sp16)), func() {
 		if m.sess != nil {
 			busy := m.state.Busy != ""
 			if focusableButtonExt("Scan", ButtonAttrs{Icon: SymRefresh, Disabled: busy}) && !busy {

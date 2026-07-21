@@ -21,7 +21,9 @@ const (
 	maxCols    = 8
 	maxCardW   = 320
 	rowPadH    = 12 // horizontal padding each side of a grid row
-	cardPad    = 6  // inner card padding
+	cardPad    = 10 // inner card padding
+	cardGapV   = 8  // vertical gap between components
+	cardGapH   = 8  // horizontal gap inside row containers
 )
 
 // Fixed card chrome below the cover: badge row, title, two pill rows, and
@@ -37,7 +39,7 @@ const (
 // title, version pills, tech pills, and the button row, plus gaps.
 func cardContentH(cardW int) int {
 	coverH := int(float32(cardW-2*cardPad) * coverRatio)
-	chrome := badgeRowH + textRowH + 2*pillRowH + buttonRowH + 5*int(sp4) + 2*cardPad
+	chrome := badgeRowH + textRowH + 2*pillRowH + buttonRowH + 5*cardGapV + 2*cardPad
 	return coverH + chrome
 }
 
@@ -129,7 +131,7 @@ func (m *model) gameCard(e ui.GameRow) {
 	cardW, cardH := m.cardW, m.cardH
 	coverW := float32(cardW - 2*cardPad)
 	m.tierPillRect = Rect{}
-	Container(Attrs(Pad(cardPad), Gap(sp4), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(radiusM), Clip), func() {
+	Container(Attrs(Pad(cardPad), Gap(cardGapV), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(radiusM), Clip), func() {
 		if IsHovered() {
 			m.hoveredDir = e.InstallDir
 			ModAttrs(func(a *AttrSet) {
@@ -143,7 +145,7 @@ func (m *model) gameCard(e ui.GameRow) {
 			m.hoveredDir = ""
 		}
 		m.cardRect = GetScreenRectOf(CurrentId())
-		Container(Attrs(Row, Gap(sp4)), func() {
+		Container(Attrs(Row, Gap(cardGapH)), func() {
 			if e.Platform != "" {
 				badgePill(e.Platform, ui.ToneGray)
 			}
@@ -161,14 +163,14 @@ func (m *model) gameCard(e ui.GameRow) {
 		m.coverArt(e, coverW, coverW*coverRatio)
 		txt(e.Title)
 		if pills := versionPills(&e); len(pills) > 0 {
-			Container(Attrs(Row, Gap(sp4)), func() {
+			Container(Attrs(Row, Gap(cardGapH)), func() {
 				for _, p := range pills {
 					badgePill(p.Label, p.Tone)
 				}
 			})
 		}
 		if len(e.TechBadges) > 0 {
-			Container(Attrs(Row, Gap(sp4)), func() {
+			Container(Attrs(Row, Gap(cardGapH)), func() {
 				for _, b := range e.TechBadges {
 					badgePill(b.Label, b.Tone)
 				}
@@ -179,7 +181,7 @@ func (m *model) gameCard(e ui.GameRow) {
 		Filler(1)
 		var btnRowID ContainerId
 		if m.sess != nil {
-			Container(Attrs(Row, Gap(sp4)), func() {
+			Container(Attrs(Row, Gap(cardGapH)), func() {
 				m.cardBtnRect = GetScreenRectOf(CurrentId())
 				if focusableButton(SymIRight, quickLabel(&e)) {
 					m.sess.QuickInstall(e.InstallDir)

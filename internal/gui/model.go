@@ -65,7 +65,7 @@ func newModel(cfg Config) *model {
 		auditGrid: cfg.AuditGrid,
 		cols:      4,
 		cardW:     190,
-		cardH:     310,
+		cardH:     300,
 		state:     ui.State{Mode: ui.ViewGrid, StatusLine: "Ready"},
 		exitNow:   os.Exit,
 	}
