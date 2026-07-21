@@ -408,10 +408,18 @@ closed; reopen only with new evidence.
   names (untouched).
 - The fuzzy match is deliberately strict: exact normalized equality or
   Jaccard ≥ 90 on token sets (no subset credit), PC platform bonus,
-  edition-mismatch penalty; scores of 75–89 need the store developer to
-  match the PE CompanyName. Titles of ≤4 chars only ever match exactly.
-  False accepts are still possible for genuinely ambiguous names; the
-  override table is the escape hatch.
+  edition-mismatch penalty; scores of 75–89 (in practice, 80) need the
+  store developer to match the PE CompanyName. Titles of ≤3 normalized
+  chars are never queried, and ≤4 only ever match exactly. When Steam
+  has no match, PCGamingWiki is the secondary canonical source (keyless
+  Cargo/opensearch, 30 req/min, cached; GOG/off-store games). False
+  accepts are still possible for genuinely ambiguous names; the
+  override table is the escape hatch. Known limits: engine-metadata
+  codenames (e.g. a Unity product string like "STASIS2") stop the
+  pipeline by design; DLC store pages resolve only when no base app
+  matches; edition variants sharing one name (Crysis vs Crysis
+  Remastered) resolve to the first store hit unless an appid file or
+  override disambiguates.
 - Normalization strips edition/repack noise for MATCHING only — the
   canonical store name becomes the display title, so a folder "Dead
   Space Remake" can legitimately become "Dead Space".

@@ -1341,3 +1341,35 @@ codename PE metadata; IGDB/SGDB deferred as user-cred tiers).
   (404), so no offline canonical corpus; appdetails ~200 req/5min; the
   user's Heroic service list was evaluated — only Steam endpoints are
   keyless and title-relevant today.
+
+## 2026-07-21 — v0.8.1: gate fix-forward + PCGamingWiki secondary source
+
+Five-lane gate on v0.8: R2 QA PASS (15/15 probes), R3 quality PASS, R4
+security PASS; R1 FAIL (override gaps on AddDirectory + CLI scan,
+precedence inversion for metadata-sourced rows with appids), R5 PASS
+with honest UX concerns (convergence math, stuck rows, fuzzy edition
+traps). Fix-forward `7ce3fd8`:
+
+- TitleOverrides now apply on the AddDirectory path and the CLI scan
+  (discovery.CanonicalPath exported for key matching) — "manual
+  override always wins" holds on every path.
+- Precedence corrected: a known Steam appid takes its canonical upgrade
+  before the in-dir metadata switch (hard ID > engine metadata, per the
+  user's spec); hostile non-numeric appids from hand-edited caches are
+  refused before becoming URLs/cache filenames.
+- findSteamAppID tries the next candidate on a rejected parse (a root
+  "480" placeholder no longer masks a real steam_settings id); all
+  identification reads bounded (4KiB/1MiB/8-file caps).
+- Lookup queue prioritizes appid-bearing tail rows — the cheap
+  canonical upgrades (GoWR-class) land in scan 1 instead of starving
+  behind ~100 fuzzy candidates (budget stays 8; failures cache and the
+  queue flows forward).
+- DLC store pages resolve when no base app matches (The Talos Principle
+  2: Road to Elysium); digit-boundary matching (Samorost2 ↔
+  Samorost 2); duplicate-title suffixes use the parent dir
+  ("Red Dead Redemption 2 (Games)" not a raw path).
+- internal/pcgw: PCGamingWiki as the secondary canonical source when
+  Steam finds nothing (the only viable service from the user's Heroic
+  list — keyless, cargoquery HOLDS + opensearch, 30 req/min pacing,
+  30d caches with negatives; TheGamesDB/UMU/HLTB/Deck/AppleGamingWiki
+  rejected per the feasibility review).
