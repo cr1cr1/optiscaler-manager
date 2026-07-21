@@ -1527,3 +1527,13 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   upgrading an external install adopts with the usual external backup.
   QuickInstall dispatches to Upgrade for eligible rows, so the committed
   toggle (uninstall) can never fire by mistake on an outdated game.
+- "Open OptiScaler.ini" on Linux now opens the file in the user's
+  terminal editor inside a terminal emulator: the editor comes from
+  $EDITOR (verbatim), falling back to micro, then nano, then vi; the
+  terminal comes from $TERMINAL (basename-matched argv conventions:
+  foot/kitty positional, konsole/alacritty/xterm -e, gnome-terminal --,
+  unknown terminals get a best-effort -e) falling back through
+  foot → konsole → gnome-terminal → kitty → alacritty → xterm, spawned
+  detached (new internal/termopen package, modeled on internal/launch).
+  Windows (rundll32) and macOS (open) behavior is unchanged, and the
+  session's openExternal seam is preserved.

@@ -29,6 +29,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/steam"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
+	"github.com/cr1cr1/optiscaler-manager/internal/termopen"
 )
 
 // toastTTL is how long a toast stays visible.
@@ -216,7 +217,10 @@ func NewSession(deps Deps) *Session {
 	}
 }
 
-// openExternal opens path with the platform's default handler.
+// openExternal opens path with the platform's default handler. On Linux
+// that is a terminal editor ($EDITOR → micro → nano → vi) running inside a
+// terminal emulator, spawned detached; darwin and windows keep the OS
+// file handler.
 func openExternal(path string) error {
 	switch runtime.GOOS {
 	case "darwin":
@@ -224,7 +228,7 @@ func openExternal(path string) error {
 	case "windows":
 		return exec.Command("rundll32", "url.dll,FileProtocolHandler", path).Start()
 	default: // linux and the rest
-		return exec.Command("xdg-open", path).Start()
+		return termopen.New("", nil, nil, nil).Open(path)
 	}
 }
 

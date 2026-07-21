@@ -265,19 +265,27 @@ func TestTUIQuitsOnQ(t *testing.T) {
 }
 
 // TestDetailKeyOpenINIAllowedForExternal: pressing o on the detail screen of
-// an external row (CanOpenINI true) reaches the opener seam — a fake
-// xdg-open earlier in PATH records every path handed to the platform opener;
-// a never-installed row stays gated off.
+// an external row (CanOpenINI true) reaches the opener seam — on Linux the
+// session opens the ini in a terminal editor inside a terminal emulator, so
+// a fake $TERMINAL earlier in PATH records the argv it was spawned with
+// (editor argv + the ini path); a never-installed row stays gated off.
 func TestDetailKeyOpenINIAllowedForExternal(t *testing.T) {
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "opened.log")
-	xdg := filepath.Join(binDir, "xdg-open")
-	writeFile(t, xdg, "#!/bin/sh\nprintf '%s\n' \"$1\" >> \"$XDG_OPEN_LOG\"\n")
-	if err := os.Chmod(xdg, 0o755); err != nil {
+	fakeTerm := filepath.Join(binDir, "faketerm")
+	writeFile(t, fakeTerm, "#!/bin/sh\nprintf '%s\n' \"$@\" >> \"$TERM_OPEN_LOG\"\n")
+	if err := os.Chmod(fakeTerm, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeEdit := filepath.Join(binDir, "fakeedit")
+	writeFile(t, fakeEdit, "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(fakeEdit, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("XDG_OPEN_LOG", logPath)
+	t.Setenv("TERM_OPEN_LOG", logPath)
+	t.Setenv("TERMINAL", "faketerm")
+	t.Setenv("EDITOR", "fakeedit --wait")
 
 	opened := func() string {
 		data, err := os.ReadFile(logPath)
@@ -312,9 +320,18 @@ func TestDetailKeyOpenINIAllowedForExternal(t *testing.T) {
 	t.Run("external row opens", func(t *testing.T) {
 		m, bin := externalDetail(t, domain.StatusExternal, true)
 		m.detailKey(oKey)
+		iniPath := filepath.Join(bin, "OptiScaler.ini")
 		pollUntil(t, "opener seam invoked for an external row", func() bool {
-			return strings.Contains(opened(), filepath.Join(bin, "OptiScaler.ini"))
+			return strings.Contains(opened(), iniPath)
 		})
+		lines := strings.Split(strings.TrimSpace(opened()), "\n")
+		if got := lines[len(lines)-1]; got != iniPath {
+			t.Errorf("last terminal argv element = %q, want ini path %q", got, iniPath)
+		}
+		if !strings.Contains(opened(), "fakeedit\n--wait\n") {
+			t.Errorf("terminal argv missing editor argv %q; recorded:\n%s", "fakeedit --wait", opened())
+		}
+		t.Logf("terminal recorded argv:\n%s", opened())
 	})
 
 	t.Run("never-installed row stays gated", func(t *testing.T) {
