@@ -1,0 +1,156 @@
+package gid
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+)
+
+func write(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func gogInfoJSON(id, name string) string {
+	return `{"gameId":"` + id + `","name":"` + name + `","playTasks":[]}`
+}
+
+func egstoreJSON(appName, displayName, installLocation string) string {
+	return `{"AppName":"` + appName + `","DisplayName":"` + displayName + `","InstallLocation":"` + installLocation + `","AppCategories":[{"Category":"games"}]}`
+}
+
+func TestDetect_SteamAppIDTxt(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "steam_appid.txt"), "2322010\n")
+	got := Detect(root, "")
+	if got.SteamAppID != "2322010" || got.Title != "" || got.Source != "" {
+		t.Errorf("Detect = %+v, want appid only", got)
+	}
+}
+
+func TestDetect_SteamAppIDTxtNestedDepths(t *testing.T) {
+	for _, rel := range []string{"steam_settings/steam_appid.txt", "a/b/steam_appid.txt"} {
+		root := t.TempDir()
+		write(t, filepath.Join(root, rel), "1693980")
+		if got := Detect(root, ""); got.SteamAppID != "1693980" {
+			t.Errorf("%s: SteamAppID = %q, want found", rel, got.SteamAppID)
+		}
+	}
+}
+
+func TestDetect_SteamAppIDTxtTooDeep(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "a/b/c/steam_appid.txt"), "2322010")
+	if got := Detect(root, ""); got.SteamAppID != "" {
+		t.Errorf("depth-3 appid file must be ignored, got %q", got.SteamAppID)
+	}
+}
+
+func TestDetect_SteamAppIDRejectedValues(t *testing.T) {
+	for _, content := range []string{"480", "abc", "", "12 34", "  ", "00480"} {
+		root := t.TempDir()
+		write(t, filepath.Join(root, "steam_appid.txt"), content)
+		if got := Detect(root, ""); got.SteamAppID != "" {
+			t.Errorf("content %q: SteamAppID = %q, want rejected", content, got.SteamAppID)
+		}
+	}
+}
+
+func TestDetect_SteamAppIDShallowestWins(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "steam_appid.txt"), "111")
+	write(t, filepath.Join(root, "steam_settings", "steam_appid.txt"), "222")
+	if got := Detect(root, ""); got.SteamAppID != "111" {
+		t.Errorf("SteamAppID = %q, want shallowest (root) file", got.SteamAppID)
+	}
+}
+
+func TestDetect_GOGInfo(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "goggame-1552771812.info"), gogInfoJSON("1552771812", "A Plague Tale: Requiem"))
+	got := Detect(root, "")
+	if got.Title != "A Plague Tale: Requiem" || got.Source != domain.SourceGOGInfo {
+		t.Errorf("Detect = %+v, want goggame title", got)
+	}
+}
+
+func TestDetect_EGStore(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".egstore", "ABC123.manifest"), egstoreJSON("Prey", "Prey", root))
+	got := Detect(root, "")
+	if got.Title != "Prey" || got.Source != domain.SourceEGStore {
+		t.Errorf("Detect = %+v, want egstore title", got)
+	}
+}
+
+// .egstore markers linger after uninstalls: a manifest pointing at a
+// different install location is not evidence for this dir.
+func TestDetect_EGStoreStaleRejected(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".egstore", "ABC123.manifest"), egstoreJSON("Prey", "Prey", filepath.Join(t.TempDir(), "elsewhere")))
+	if got := Detect(root, ""); got.Title != "" {
+		t.Errorf("stale egstore: Title = %q, want rejected", got.Title)
+	}
+}
+
+func TestDetect_UnityAppInfo(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "TOI_Data", "app.info"), "Odd Bug Studio\nTails of Iron\n")
+	got := Detect(root, "")
+	if got.Title != "Tails of Iron" || got.Source != domain.SourceUnity {
+		t.Errorf("Detect = %+v, want unity title", got)
+	}
+}
+
+func TestDetect_UnityRejected(t *testing.T) {
+	for _, content := range []string{"Unity\nGame", "Acme\nAcme", "Acme\nab", "\n\n", "Acme"} {
+		root := t.TempDir()
+		write(t, filepath.Join(root, "X_Data", "app.info"), content)
+		if got := Detect(root, ""); got.Title != "" {
+			t.Errorf("content %q: Title = %q, want rejected", content, got.Title)
+		}
+	}
+}
+
+func TestDetect_UnityMultipleDataDirsPrefersExeStem(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "Other_Data", "app.info"), "A\nWrong Game")
+	write(t, filepath.Join(root, "MyGame_Data", "app.info"), "B\nRight Game")
+	got := Detect(root, filepath.Join(root, "MyGame.exe"))
+	if got.Title != "Right Game" {
+		t.Errorf("Title = %q, want the exe-matching _Data dir", got.Title)
+	}
+}
+
+func TestDetect_Precedence(t *testing.T) {
+	// appid recorded alongside a goggame title; goggame beats egstore; egstore beats unity.
+	root := t.TempDir()
+	write(t, filepath.Join(root, "steam_appid.txt"), "111")
+	write(t, filepath.Join(root, "goggame-1.info"), gogInfoJSON("1", "GOG Name"))
+	write(t, filepath.Join(root, ".egstore", "M.manifest"), egstoreJSON("E", "Epic Name", root))
+	write(t, filepath.Join(root, "X_Data", "app.info"), "C\nUnity Name")
+	got := Detect(root, "")
+	if got.SteamAppID != "111" || got.Title != "GOG Name" || got.Source != domain.SourceGOGInfo {
+		t.Errorf("Detect = %+v, want appid + goggame title", got)
+	}
+
+	root2 := t.TempDir()
+	write(t, filepath.Join(root2, ".egstore", "M.manifest"), egstoreJSON("E", "Epic Name", root2))
+	write(t, filepath.Join(root2, "X_Data", "app.info"), "C\nUnity Name")
+	if got := Detect(root2, ""); got.Title != "Epic Name" || got.Source != domain.SourceEGStore {
+		t.Errorf("Detect = %+v, want egstore over unity", got)
+	}
+}
+
+func TestDetect_Nothing(t *testing.T) {
+	if got := Detect(t.TempDir(), ""); got != (Result{}) {
+		t.Errorf("Detect = %+v, want zero", got)
+	}
+}
