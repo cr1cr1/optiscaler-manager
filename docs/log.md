@@ -1383,3 +1383,22 @@ factory per the user's spec. Two WARNs landed same-day: storesearch
 caches written before StoreItem.Type existed now serve their items as
 apps (v0.8.0 warm caches kept working), and the README privacy note
 lists pcgamingwiki.com.
+
+## 2026-07-21 — v0.8.2: bootstrap-shim exe picking + one-scan convergence
+
+User report: "Black Myth Wukong" titled `b1`, and "some binaries are
+shims for actual binaries in deeper directories". Both classes confirmed
+on the real library:
+
+- UE bootstrap stubs (hundreds of KB, no PE title) won exe picking via
+  folder-name match while the real `-Win64-Shipping.exe` (with the real
+  title) sat deeper. `findMainExe` demotes small root exes for bigger
+  prefix-matched shipping binaries (fbb82e2): Layers of Fear, Tempest
+  Rising, Oblivion Remastered, Empire of the Ants, Obduction, Dispatch
+  now pick the real binary. Black Myth itself already picked its real
+  695MB exe — whose PE ProductName literally is "b1" (vendor codename).
+- The fuzzy fix for codenames was real but unreachable in practice at 8
+  live rows/scan (~10+ rescans for a tail row). `lookupBudget` is now a
+  128-row sanity cap with pacing + 429 cooldown as the rate control; the
+  whole library converges in one scan. Verified live: Black Myth →
+  "Black Myth: Wukong" in scan 1.
