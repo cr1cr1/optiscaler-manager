@@ -62,13 +62,13 @@ var engineFolderNames = map[string]bool{
 	"thirdparty": true, "third_party": true, "plugins": true,
 	"content": true, "data": true, "resources": true, "assets": true,
 	"vendor": true, "runtime": true, "runtimes": true, "retail": true,
-	"__installer": true, "_redist": true,
+	"__installer": true, "_redist": true, "exe": true,
 	// Wine prefixes and Steam's steamapps plumbing hold platform runtime
 	// files, never standalone games (a Proton game's files live in
 	// common/<Game>; the prefix only holds wine's drive_c).
 	"drive_c": true, "compatdata": true, "shadercache": true,
 	"downloading": true, "temp": true, "music": true, "sourcemods": true,
-	"steamworks common redistributables": true,
+	"steamworks common redistributables": true, "steamworks shared": true,
 }
 
 // engineFolderName reports whether name marks a subdirectory that holds a

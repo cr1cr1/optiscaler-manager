@@ -441,3 +441,14 @@ func TestTitleFromResource_RejectsBootstrapPackagedGame(t *testing.T) {
 		}
 	}
 }
+
+// Unreal's other stock placeholder: packaged games that never set a
+// ProductName ship "UE4Game" (the user saw Obduction row under it).
+func TestTitleFromResource_RejectsUE4Game(t *testing.T) {
+	for _, v := range []string{"UE4Game", "ue4game"} {
+		res := stringInfoString("ProductName", v)
+		if got := ExtractTitle(buildPE(true, res)); got != "" {
+			t.Errorf("ExtractTitle(%q) = %q, want %q", v, got, "")
+		}
+	}
+}

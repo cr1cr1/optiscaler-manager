@@ -148,3 +148,33 @@ func TestScan_SteamappsItselfNeverRows(t *testing.T) {
 		}
 	}
 }
+
+// Homeworld's classic build keeps its exe in a folder literally named
+// "exe"; Steam's "Steamworks Shared" depot holds shared redistributables.
+// Both are binary containers, not games.
+func TestScan_ExeFolderAndSteamworksSharedAreNotGames(t *testing.T) {
+	root := t.TempDir()
+	hw := filepath.Join(root, "Homeworld1Classic")
+	writePEExe(t, hw, "exe/homeworld.exe", "Homeworld")
+	writePEExe(t, filepath.Join(root, "Steamworks Shared"), "vcredist/2022/vc.exe", "VC Runtime")
+
+	rows := scanRows(t, root)
+	assertOnlyRows(t, rows, hw)
+}
+
+// The exe ranking must see through decorative separators: "FarCry5.exe" is
+// the main exe of "Far Cry 5" even though the raw strings differ by a
+// space — a larger junk binary must not win.
+func TestScan_NameMatchIgnoresSeparators(t *testing.T) {
+	root := t.TempDir()
+	fc := filepath.Join(root, "Far Cry 5")
+	writePEExe(t, fc, "bin/FarCry5.exe", "Far Cry 5 PE Title")
+	big := filepath.Join(fc, "bin", "zztool.exe")
+	writeSized(t, big, 9<<20)
+
+	rows := scanRows(t, root)
+	assertOnlyRows(t, rows, fc)
+	if rows[canonicalPath(fc)] != "Far Cry 5 PE Title" {
+		t.Errorf("title = %q, want the name-matched exe's PE title (separator-insensitive ranking)", rows[canonicalPath(fc)])
+	}
+}

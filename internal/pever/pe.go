@@ -307,7 +307,7 @@ func usableTitle(v, company string) string {
 	if allDigit(v) {
 		return ""
 	}
-	if strings.EqualFold(v, "bootstrappackagedgame") {
+	if strings.EqualFold(v, "bootstrappackagedgame") || strings.EqualFold(v, "ue4game") {
 		return ""
 	}
 	if company != "" && v == company {

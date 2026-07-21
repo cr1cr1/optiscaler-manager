@@ -335,10 +335,20 @@ func depthOf(root, path string) int {
 }
 
 // scoreCandidate builds the ranked record for one accepted binary: name
-// similarity to the game folder dominates, then file size, then a
+// similarity to the game folder dominates (compared separator-insensitively,
+// so "FarCry5.exe" matches "Far Cry 5"), then file size, then a
 // 64-bit-looking name.
 func scoreCandidate(path, base, folder string, size int64) *exeCandidate {
-	stem := strings.ToLower(strings.TrimSuffix(base, filepath.Ext(base)))
+	squeeze := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			if r == '-' || r == '_' || r == '.' || r == ' ' {
+				return -1
+			}
+			return unicode.ToLower(r)
+		}, s)
+	}
+	stem := squeeze(strings.TrimSuffix(base, filepath.Ext(base)))
+	folder = squeeze(folder)
 	c := &exeCandidate{path: path, size: size}
 	switch {
 	case stem == folder:
