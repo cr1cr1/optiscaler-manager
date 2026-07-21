@@ -361,10 +361,11 @@ closed; reopen only with new evidence.
   `Binaries/Danielle/x64-Epic/Release` layout; anything deeper is
   invisible). Exe walks never descend pure-plumbing subtrees
   (`downloading`, `compatdata`, `shadercache`, `temp`, `music`,
-  `sourcemods`, `steamworks*`, `steamvr`) nor a Wine prefix's
-  `drive_c/windows` or `drive_c/users` — a game whose only exe lived
-  there would be missed (none known; Lutris games under
-  `drive_c/Program Files` / `GOG Games` are unaffected).
+  `sourcemods`, `steamworks*`, `steamvr`, `workshop`) nor a Wine prefix's
+  `drive_c/windows` or `drive_c/users`, and never descends Proton /
+  SteamLinuxRuntime / `ThirdParty` tooling trees — a game whose only exe
+  lived under one of those would be missed (none known; Lutris games
+  under `drive_c/Program Files` / `GOG Games` are unaffected).
 - A `steam.exe` + `Steam.dll` pair marks a platform client install,
   which always classifies as a container. A game shipping both files at
   its root would be misclassified (not seen in practice).

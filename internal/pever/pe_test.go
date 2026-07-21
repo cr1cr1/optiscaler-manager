@@ -452,3 +452,24 @@ func TestTitleFromResource_RejectsUE4Game(t *testing.T) {
 		}
 	}
 }
+
+// Vendor-baked mojibake is not metadata: Helldivers 2's exe carries a
+// ProductName whose ™ was destroyed at build time ("HELLDIVERSï¿½ 2" —
+// the double-encoded replacement char). Treat mojibake strings as
+// unusable so the clean FileDescription wins.
+func TestExtractTitle_MojibakeFallsToFileDescription(t *testing.T) {
+	res := concatStringStructs(
+		stringInfoString("ProductName", "HELLDIVERS\u00ef\u00bf\u00bd 2"),
+		stringInfoString("FileDescription", "HELLDIVERS 2"),
+	)
+	if got := ExtractTitle(buildPE(true, res)); got != "HELLDIVERS 2" {
+		t.Errorf("ExtractTitle = %q, want %q (mojibake ProductName rejected)", got, "HELLDIVERS 2")
+	}
+	res = concatStringStructs(
+		stringInfoString("ProductName", "Broken \ufffd Game"),
+		stringInfoString("FileDescription", "Clean Title"),
+	)
+	if got := ExtractTitle(buildPE(true, res)); got != "Clean Title" {
+		t.Errorf("ExtractTitle = %q, want %q (replacement char rejected)", got, "Clean Title")
+	}
+}

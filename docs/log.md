@@ -1268,3 +1268,23 @@ evidence). Fix-forward:
   `NobodyWantsToDie`) are metadata-first per the user's contract —
   presented to the user as an explicit decision; covers phase can clear
   before its final 100% frame renders (cosmetic).
+
+## 2026-07-21 — v0.7.2 gate round 2: R1/R5 PASS, mojibake guard
+
+R1 re-review found three same-mechanism leaks (walk descended
+engine-named dirs that are never game material): Proton-only `common`
+rowed "Wine", `workshop/content` rowed next to real games, and the
+depth-4 bump re-admitted the CRS class. `dfcf0c3` walk-prunes
+Proton/SteamLinuxRuntime (shared `platformToolName`), `workshop`, and
+`ThirdParty`/`third_party`, and unifies the skip-token lists
+(`unrealcefsubprocess`, `prerequisites`). R1 then passed with a
+real-tree worktree diff (108 → 109 rows, zero lost, exactly +Prey).
+R5 passed on real data: FC5 InjectionDir = `bin`, PREY restored, all
+externals reconcile — plus a newly detected Cyberpunk 2077 external
+install (0.7.9) every prior scan missed. Residual landed: `usableTitle`
+rejects vendor-baked mojibake (U+FFFD / double-encoded `ï¿½`), so
+Helldivers 2's damaged ProductName falls through to its clean
+FileDescription on the manual path. Row counts: the definitive HEAD
+artifact is 109 rows (the historical 111 figure predated the ranking
+fix; the QA lane's independent probe reports 110 including
+manifest-sourced rows outside ScanRecursive's scope).

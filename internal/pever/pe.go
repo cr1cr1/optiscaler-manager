@@ -307,6 +307,9 @@ func usableTitle(v, company string) string {
 	if len(v) >= 2 && v[0] == '<' && v[len(v)-1] == '>' {
 		return ""
 	}
+	if strings.ContainsRune(v, '\ufffd') || strings.Contains(v, "\u00ef\u00bf\u00bd") {
+		return "" // vendor-baked encoding damage is not metadata
+	}
 	if allDigit(v) {
 		return ""
 	}
