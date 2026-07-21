@@ -207,40 +207,6 @@ func gogName(dir string) string {
 
 // egstoreName reads .egstore manifests: the newer in-dir format yields
 // its catalog id (no display name exists there), an older .item-shaped
-// manifest yields its DisplayName when its InstallLocation points at this
-// very directory — the marker survives uninstalls, so a stale one is not
-// evidence.
-func egstoreName(dir string) (name, appName string) {
-	matches, err := filepath.Glob(filepath.Join(dir, ".egstore", "*.manifest"))
-	if err != nil || len(matches) == 0 {
-		return "", ""
-	}
-	sort.Strings(matches)
-	for _, m := range matches {
-		f, err := os.Open(m)
-		if err != nil {
-			continue
-		}
-		data, err := io.ReadAll(io.LimitReader(f, 1<<20))
-		_ = f.Close()
-		if err != nil {
-			continue
-		}
-		if appID, _, err := ParseEGStoreManifest(bytes.NewReader(data)); err == nil {
-			return "", appID
-		}
-		manifest, err := ParseEpicManifest(bytes.NewReader(data))
-		if err != nil || !manifest.IsGame() || manifest.DisplayName == "" {
-			continue
-		}
-		if !sameDir(manifest.InstallLocation, dir) {
-			continue
-		}
-		return manifest.DisplayName, manifest.AppName
-	}
-	return "", ""
-}
-
 // sameDir compares two paths after cleaning and symlink resolution.
 func sameDir(a, b string) bool {
 	clean := func(p string) string {
