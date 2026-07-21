@@ -106,7 +106,7 @@ func prettifyStem(stem string) string {
 	for i, r := range spaced {
 		if i > 0 && r != ' ' && prev != ' ' &&
 			unicode.IsUpper(r) && (unicode.IsLower(prev) ||
-				(unicode.IsUpper(prev) && i+1 < len(spaced) && unicode.IsLower(rune(spaced[i+1])))) {
+			(unicode.IsUpper(prev) && i+1 < len(spaced) && unicode.IsLower(rune(spaced[i+1])))) {
 			b.WriteByte(' ')
 		}
 		b.WriteRune(r)
