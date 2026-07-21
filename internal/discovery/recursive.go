@@ -44,6 +44,9 @@ var platformStemTokens = map[string]bool{
 var genericStemNames = map[string]bool{
 	"game": true, "main": true, "app": true, "start": true,
 	"client": true, "play": true, "run": true, "elevate": true,
+	"cemu": true, "yuzu": true, "ryujinx": true, "dolphin": true,
+	"pcsx2": true, "rpcs3": true, "xenia": true, "citra": true,
+	"retroarch": true,
 }
 
 // exeStemTitle derives a title from the exe's filename stem when it is more

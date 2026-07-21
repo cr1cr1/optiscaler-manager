@@ -131,3 +131,53 @@ func TestTitleBySteamAppID_EmptyIsCachedNegative(t *testing.T) {
 		t.Errorf("calls = %d, want 1 (negative cached)", got)
 	}
 }
+
+func TestCoverFile_ResolvesAndCaches(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"cargoquery":[{"title":{"Page":"From Dust","Cover":"From_Dust_cover.png"}}]}`)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	name, live, err := c.CoverFile(context.Background(), "From Dust")
+	if err != nil {
+		t.Fatalf("CoverFile: %v", err)
+	}
+	if !live || name != "From_Dust_cover.png" {
+		t.Errorf("got name=%q live=%v", name, live)
+	}
+	if _, live2, err := c.CoverFile(context.Background(), "From Dust"); err != nil || live2 {
+		t.Errorf("cache: live=%v err=%v", live2, err)
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("calls = %d, want 1 (cached)", got)
+	}
+}
+
+func TestImageThumbURL_ResolvesAndCaches(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"query":{"pages":{"5719":{"title":"File:From Dust cover.png","imageinfo":[{"thumburl":"https://thumbnails.pcgamingwiki.com/3/3b/From_Dust_cover.png/600px-From_Dust_cover.png","thumbwidth":600}]}}}}`)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	u, live, err := c.ImageThumbURL(context.Background(), "From_Dust_cover.png", 600)
+	if err != nil {
+		t.Fatalf("ImageThumbURL: %v", err)
+	}
+	if !live || u != "https://thumbnails.pcgamingwiki.com/3/3b/From_Dust_cover.png/600px-From_Dust_cover.png" {
+		t.Errorf("got url=%q live=%v", u, live)
+	}
+	if _, live2, err := c.ImageThumbURL(context.Background(), "From_Dust_cover.png", 600); err != nil || live2 {
+		t.Errorf("cache: live=%v err=%v", live2, err)
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("calls = %d, want 1 (cached)", got)
+	}
+}

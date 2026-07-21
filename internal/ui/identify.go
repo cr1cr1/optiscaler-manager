@@ -48,10 +48,9 @@ func (s *Session) identifyRow(ctx context.Context, row *GameRow, st *steam.Clien
 		}
 		return live
 	}
-	switch src {
-	case domain.SourceGOGInfo, domain.SourceEGStore, domain.SourceUnity:
-		return false // in-dir metadata already fired its rule; no appid to upgrade
-	}
+	// Without an appid, in-dir metadata titles (goggame/.egstore/Unity)
+	// still go through the fuzzy canonical match: a codename like Unity's
+	// "STASIS2" must not stop the pipeline at a weak string.
 	candidates := []string{row.Title}
 	if base := filepath.Base(row.InstallDir); base != row.Title {
 		candidates = append(candidates, base)

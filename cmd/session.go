@@ -25,16 +25,20 @@ func newSession(d *Deps) *ui.Session {
 	}
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	steamClient, protonClient := onlineClients(d.CacheDir, d.Version)
+	pcgwClient := pcgw.New(httpClient, filepath.Join(d.CacheDir, "pcgw"), d.Version)
+	coverClient := covers.New(httpClient, filepath.Join(d.CacheDir, "covers"))
+	coverClient.PCGW = pcgwClient
+	coverClient.UserAgent = "optiscaler-manager/" + d.Version + " (https://github.com/cr1cr1/optiscaler-manager)"
 	return ui.NewSession(ui.Deps{
 		Store:        d.Store,
 		GH:           d.GH,
-		Covers:       covers.New(httpClient, filepath.Join(d.CacheDir, "covers")),
+		Covers:       coverClient,
 		CacheDir:     d.CacheDir,
 		Settings:     prefs,
 		SettingsRoot: d.DataRoot,
 		Steam:        steamClient,
 		ProtonDB:     protonClient,
-		PCGW:         pcgw.New(httpClient, filepath.Join(d.CacheDir, "pcgw"), d.Version),
+		PCGW:         pcgwClient,
 	})
 }
 

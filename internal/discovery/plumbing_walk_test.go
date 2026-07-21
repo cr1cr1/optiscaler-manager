@@ -169,3 +169,36 @@ func TestScan_UnrealCEFSubProcessNotCandidate(t *testing.T) {
 	}
 	assertKind(t, folder, GameDirEmpty)
 }
+
+// A Wii U dump with its emulator inside: the game rows at its root with
+// the emulator exe as its launch binary and the folder as its title —
+// the emulator itself (like Proton or Wine) is tooling, never the game.
+func TestScan_EmulatorDirRowsAsGameAtRoot(t *testing.T) {
+	root := t.TempDir()
+	zelda := filepath.Join(root, "The Legend of Zelda - Breath of the Wild")
+	writePEExe(t, zelda, "cemu/cemu.exe", "Cemu")
+
+	rows := scanRows(t, root)
+	assertOnlyRows(t, rows, zelda)
+	if rows[canonicalPath(zelda)] != "The Legend of Zelda - Breath of the Wild" {
+		t.Errorf("title = %q, want the folder (the emulator is tooling, not the game)", rows[canonicalPath(zelda)])
+	}
+	games, err := ScanRecursive(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(games[0].ExePath) != "cemu.exe" {
+		t.Errorf("ExePath = %q, want the emulator exe for launching", games[0].ExePath)
+	}
+}
+
+// Emulator names are not game titles, whether from PE metadata or stems.
+func TestGameTitle_EmulatorNamesRejected(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"cemu", "yuzu", "ryujinx", "dolphin", "pcsx2", "rpcs3", "xenia", "citra", "retroarch"} {
+		exe := writeNamedPE(t, dir, name+".exe", name)
+		if got := GameTitle(exe, "Real Game Folder"); got != "Real Game Folder" {
+			t.Errorf("GameTitle(%s) = %q, want folder (emulator is tooling)", name, got)
+		}
+	}
+}

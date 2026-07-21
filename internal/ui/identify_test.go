@@ -194,8 +194,14 @@ func TestIdentify_AppIDOutranksInDirMetadata(t *testing.T) {
 	hitsBefore := f.hits.Load()
 	noID := GameRow{Title: "Anno 1404", InstallDir: "/games/Anno 1404 Gold Edition", Store: domain.StoreManual, TitleSource: "goggame"}
 	f.sess.identifyRow(context.Background(), &noID, f.sess.deps.Steam)
-	if noID.Title != "Anno 1404" || f.hits.Load() != hitsBefore {
-		t.Errorf("noID row = %+v (+%d calls), want metadata title kept, zero fuzzy", noID, f.hits.Load()-hitsBefore)
+	// The metadata title is kept when the fuzzy pass finds nothing better —
+	// but without an appid the fuzzy pass now runs (codenames like
+	// "STASIS2" must be able to resolve).
+	if noID.Title != "Anno 1404" || noID.SteamAppID != "" {
+		t.Errorf("noID row = %+v, want metadata title kept when fuzzy has no match", noID)
+	}
+	if f.hits.Load() == hitsBefore {
+		t.Errorf("no fuzzy attempt for a metadata row without appid — codenames would stay stuck")
 	}
 }
 
@@ -285,5 +291,19 @@ func TestIdentify_PCGWMissKeepsRow(t *testing.T) {
 	f.sess.identifyRow(context.Background(), &row, f.sess.deps.Steam)
 	if row.Title != "zzz nothing" {
 		t.Errorf("row = %+v, want unchanged", row)
+	}
+}
+
+// In-dir metadata that is itself a codename (a Unity product string like
+// "STASIS2") must not stop the pipeline: without an appid, metadata
+// rows go through the fuzzy canonical match like everyone else.
+func TestIdentify_UnityCodenameGoesFuzzy(t *testing.T) {
+	f := newIdentifyFixture(t)
+	f.search["stasis bone totem"] = `{"total":1,"items":[{"type":"app","name":"STASIS: BONE TOTEM","id":1426010,"platforms":{"windows":true}}]}`
+	row := GameRow{Title: "STASIS2", InstallDir: "/games/STASIS BONE TOTEM", Store: domain.StoreManual, TitleSource: "unity"}
+
+	f.sess.identifyRow(context.Background(), &row, f.sess.deps.Steam)
+	if row.Title != "STASIS: BONE TOTEM" || row.SteamAppID != "1426010" || row.TitleSource != "fuzzy" {
+		t.Errorf("row = %+v, want the canonical title via fuzzy", row)
 	}
 }

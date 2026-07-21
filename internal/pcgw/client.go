@@ -252,3 +252,85 @@ func (c *Client) writeCache(kind, key string, cv cachedValue) {
 	}
 	_ = os.WriteFile(c.cacheFile(kind, key), data, 0o644)
 }
+
+// CoverFile resolves a wiki page to its infobox cover image filename
+// (Cargo Infobox_game.Cover). Empty when the page has no cover.
+func (c *Client) CoverFile(ctx context.Context, pageTitle string) (fileName string, live bool, err error) {
+	pageTitle = strings.TrimSpace(pageTitle)
+	if pageTitle == "" {
+		return "", false, errors.New("pcgw: empty page title")
+	}
+	key := "cover:" + pageTitle
+	if hit, ok := c.readCache("cover", key); ok && c.now().Sub(hit.FetchedAt) < cacheTTL {
+		if hit.NoMatch {
+			return "", false, fmt.Errorf("%w for %q (cached)", ErrNoMatch, pageTitle)
+		}
+		return hit.Value, false, nil
+	}
+	q := "/w/api.php?action=cargoquery&tables=Infobox_game" +
+		"&fields=" + url.QueryEscape("Infobox_game._pageName=Page,Infobox_game.Cover") +
+		"&where=" + url.QueryEscape("Infobox_game._pageName=\""+pageTitle+"\"") +
+		"&format=json"
+	var payload struct {
+		CargoQuery []struct {
+			Title struct {
+				Cover string `json:"Cover"`
+			} `json:"title"`
+		} `json:"cargoquery"`
+	}
+	if err := c.get(ctx, q, &payload); err != nil {
+		return "", true, err
+	}
+	if len(payload.CargoQuery) == 0 || payload.CargoQuery[0].Title.Cover == "" {
+		c.writeCache("cover", key, cachedValue{FetchedAt: c.now(), NoMatch: true})
+		return "", true, fmt.Errorf("%w for %q", ErrNoMatch, pageTitle)
+	}
+	fileName = payload.CargoQuery[0].Title.Cover
+	c.writeCache("cover", key, cachedValue{Value: fileName, FetchedAt: c.now()})
+	return fileName, true, nil
+}
+
+// ImageThumbURL resolves a wiki file name to a sized thumbnail URL
+// (imageinfo thumburl), used for the actual image download.
+func (c *Client) ImageThumbURL(ctx context.Context, fileName string, width int) (thumbURL string, live bool, err error) {
+	fileName = strings.TrimSpace(fileName)
+	if fileName == "" {
+		return "", false, errors.New("pcgw: empty file name")
+	}
+	key := fmt.Sprintf("thumb:%s:%d", fileName, width)
+	if hit, ok := c.readCache("thumb", key); ok && c.now().Sub(hit.FetchedAt) < cacheTTL {
+		if hit.NoMatch {
+			return "", false, fmt.Errorf("%w for %q (cached)", ErrNoMatch, fileName)
+		}
+		return hit.Value, false, nil
+	}
+	q := "/w/api.php?action=query" +
+		"&titles=" + url.QueryEscape("File:"+fileName) +
+		"&prop=imageinfo&iiprop=url" +
+		"&iiurlwidth=" + fmt.Sprintf("%d", width) +
+		"&format=json"
+	var payload struct {
+		Query struct {
+			Pages map[string]struct {
+				ImageInfo []struct {
+					ThumbURL string `json:"thumburl"`
+				} `json:"imageinfo"`
+			} `json:"pages"`
+		} `json:"query"`
+	}
+	if err := c.get(ctx, q, &payload); err != nil {
+		return "", true, err
+	}
+	for _, page := range payload.Query.Pages {
+		if len(page.ImageInfo) > 0 && page.ImageInfo[0].ThumbURL != "" {
+			thumbURL = page.ImageInfo[0].ThumbURL
+			break
+		}
+	}
+	if thumbURL == "" {
+		c.writeCache("thumb", key, cachedValue{FetchedAt: c.now(), NoMatch: true})
+		return "", true, fmt.Errorf("%w for %q", ErrNoMatch, fileName)
+	}
+	c.writeCache("thumb", key, cachedValue{Value: thumbURL, FetchedAt: c.now()})
+	return thumbURL, true, nil
+}

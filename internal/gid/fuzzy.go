@@ -110,7 +110,7 @@ func Score(candRaw, itemName string, pc bool) int {
 	candNorm := Normalize(candRaw)
 	itemNorm := Normalize(itemName)
 	score := 0
-	if candNorm != "" && splitLetterDigit(candNorm) == splitLetterDigit(itemNorm) {
+	if candNorm != "" && canonTokens(candNorm) == canonTokens(itemNorm) {
 		score += 100
 	} else if len(candNorm) > 4 && tokenSetRatio(candNorm, itemNorm) >= 90 {
 		score += 70
@@ -122,6 +122,15 @@ func Score(candRaw, itemName string, pc bool) int {
 		score -= 20
 	}
 	return score
+}
+
+// romanTokens maps game-numeral tokens (i..xx, letters i/v/x only — so
+// "civ" is never touched) to their arabic form for matching.
+var romanTokens = map[string]string{
+	"i": "1", "ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6",
+	"vii": "7", "viii": "8", "ix": "9", "x": "10", "xi": "11", "xii": "12",
+	"xiii": "13", "xiv": "14", "xv": "15", "xvi": "16", "xvii": "17",
+	"xviii": "18", "xix": "19", "xx": "20",
 }
 
 // splitLetterDigit inserts a space at letter→digit transitions so a title
@@ -138,6 +147,20 @@ func splitLetterDigit(s string) string {
 		prev = r
 	}
 	return b.String()
+}
+
+// canonTokens is splitLetterDigit plus roman-numeral token equivalence,
+// so "Alan Wake 2" matches "Alan Wake II" and "Final Fantasy XVI"
+// matches "Final Fantasy 16".
+func canonTokens(s string) string {
+	s = splitLetterDigit(s)
+	toks := strings.Fields(s)
+	for i, t := range toks {
+		if n, ok := romanTokens[t]; ok {
+			toks[i] = n
+		}
+	}
+	return strings.Join(toks, " ")
 }
 
 // tokenSetRatio is the strict Jaccard similarity (×100) of the two token

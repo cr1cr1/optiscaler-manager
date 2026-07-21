@@ -326,11 +326,14 @@ func usableTitle(v, company string) string {
 }
 
 // junkTitle reports vendor metadata that names a tool or platform, never
-// the game (repacked-exe strings, runtime hosts, launcher stubs).
+// the game (repacked-exe strings, runtime hosts, launcher stubs,
+// emulators).
 func junkTitle(v string) bool {
 	switch strings.ToLower(v) {
 	case "electronic arts system information", "shockwave flash",
-		"elevate application", "elevate", "easy mfc application":
+		"elevate application", "elevate", "easy mfc application",
+		"cemu", "yuzu", "ryujinx", "dolphin", "pcsx2", "rpcs3",
+		"xenia", "citra", "retroarch", "wii u emulator":
 		return true
 	}
 	return strings.HasPrefix(strings.ToLower(v), "macromedia flash player")

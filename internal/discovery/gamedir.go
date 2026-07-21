@@ -63,6 +63,12 @@ var engineFolderNames = map[string]bool{
 	"content": true, "data": true, "resources": true, "assets": true,
 	"vendor": true, "runtime": true, "runtimes": true, "retail": true,
 	"__installer": true, "_redist": true, "exe": true,
+	// Emulators are tooling like Proton or Wine: the emulator dir inside a
+	// console-game dump is never itself the game (its exe belongs to the
+	// host game folder, so it stays walkable).
+	"cemu": true, "yuzu": true, "ryujinx": true, "dolphin": true,
+	"pcsx2": true, "rpcs3": true, "xenia": true, "citra": true,
+	"retroarch": true,
 	// Wine prefixes and Steam's steamapps plumbing hold platform runtime
 	// files, never standalone games (a Proton game's files live in
 	// common/<Game>; the prefix only holds wine's drive_c).

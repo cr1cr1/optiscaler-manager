@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
 )
 
 // fakeCDN serves covers and store-search responses like Steam's services.
@@ -280,5 +282,111 @@ func TestCoverMissIsCachedBriefly(t *testing.T) {
 	}
 	if hits != first {
 		t.Errorf("CDN hits = %d then %d, want no refetch while the miss marker is fresh", first, hits)
+	}
+}
+
+// PCGW box art (portrait) wins over the Steam hero banner (landscape)
+// when the portrait poster is missing — users want poster-like art.
+func TestCoverPCGWPreferredOverHero(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/steam/apps/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "library_hero.jpg") {
+			_, _ = w.Write([]byte("HEROART"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	var srv *httptest.Server
+	mux.HandleFunc("/w/api.php", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("action") {
+		case "cargoquery":
+			if strings.Contains(r.URL.RawQuery, "HOLDS") {
+				_, _ = fmt.Fprint(w, `{"cargoquery":[{"title":{"Page":"From Dust"}}]}`)
+				return
+			}
+			_, _ = fmt.Fprint(w, `{"cargoquery":[{"title":{"Page":"From Dust","Cover":"From_Dust_cover.png"}}]}`)
+		case "query":
+			fmt.Fprintf(w, `{"query":{"pages":{"1":{"imageinfo":[{"thumburl":%q,"thumbwidth":600}]}}}}`, srv.URL+"/thumb/from_dust.png")
+		default:
+			_, _ = fmt.Fprint(w, `["From Dust",["From Dust"],[""],["https://x"]]`)
+		}
+	})
+	mux.HandleFunc("/thumb/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("PCGWART"))
+	})
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+	c.PCGW = pcgwForCoversTest(t, srv)
+
+	p, err := c.Cover(context.Background(), "33460", "From Dust")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	data, _ := os.ReadFile(p)
+	if string(data) != "PCGWART" {
+		t.Errorf("cover = %q, want PCGW box art over the hero banner", string(data))
+	}
+}
+
+// With no Steam match at all, the wiki's title search finds the box art.
+func TestCoverPCGWByTitleWhenNoSteam(t *testing.T) {
+	mux := http.NewServeMux()
+	var srv *httptest.Server
+	mux.HandleFunc("/api/storesearch/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"items":[]}`)
+	})
+	mux.HandleFunc("/w/api.php", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("action") {
+		case "opensearch":
+			_, _ = fmt.Fprint(w, `["Alan Wake 2",["Alan Wake II"],[""],["https://x"]]`)
+		case "cargoquery":
+			_, _ = fmt.Fprint(w, `{"cargoquery":[{"title":{"Page":"Alan Wake II","Cover":"Alan_Wake_II_cover.jpg"}}]}`)
+		case "query":
+			fmt.Fprintf(w, `{"query":{"pages":{"1":{"imageinfo":[{"thumburl":%q,"thumbwidth":600}]}}}}`, srv.URL+"/thumb/aw2.jpg")
+		}
+	})
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	mux.HandleFunc("/thumb/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("PCGWART"))
+	})
+	c := NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+	c.PCGW = pcgwForCoversTest(t, srv)
+
+	p, err := c.Cover(context.Background(), "", "Alan Wake 2")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	data, _ := os.ReadFile(p)
+	if string(data) != "PCGWART" {
+		t.Errorf("cover = %q, want the wiki box art", string(data))
+	}
+}
+
+func pcgwForCoversTest(t *testing.T, srv *httptest.Server) *pcgw.Client {
+	t.Helper()
+	return pcgw.NewWithBaseURL(srv.Client(), t.TempDir(), srv.URL, "test")
+}
+
+// The wiki's thumbnail host rejects requests without a descriptive
+// User-Agent (403 even for Go's default UA): every fetch must carry one.
+func TestFetchSendsUserAgent(t *testing.T) {
+	var gotUA string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.UserAgent()
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write([]byte("img"))
+	}))
+	defer srv.Close()
+	c := NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+
+	if _, err := c.Cover(context.Background(), "33460", "x"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(gotUA, "optiscaler-manager") {
+		t.Errorf("User-Agent = %q, want a descriptive optiscaler-manager UA (wiki policy)", gotUA)
 	}
 }

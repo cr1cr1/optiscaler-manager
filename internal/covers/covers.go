@@ -4,6 +4,8 @@ package covers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -18,6 +20,7 @@ import (
 	"time"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/gid"
+	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
 )
 
 const (
@@ -30,6 +33,17 @@ type Covers struct {
 	http     *http.Client
 	cacheDir string
 
+	// PCGW, when non-nil, is the portrait-art fallback for games Steam's
+	// CDN has no poster for (and the only art source for games not on
+	// Steam at all). Wiki box art is poster-like; the Steam hero banner
+	// (landscape) is the last resort before the placeholder.
+	PCGW *pcgw.Client
+
+	// UserAgent identifies every outbound request; the wiki's hosts
+	// reject requests without a descriptive UA (403), and Go's default
+	// UA string is rejected too.
+	UserAgent string
+
 	// Overridable for tests.
 	cdnBase    string
 	searchBase string
@@ -41,7 +55,13 @@ func New(httpClient *http.Client, cacheDir string) *Covers {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	return &Covers{http: httpClient, cacheDir: cacheDir, cdnBase: steamCDN, searchBase: steamSearch}
+	return &Covers{
+		http:       httpClient,
+		cacheDir:   cacheDir,
+		UserAgent:  "optiscaler-manager/dev (https://github.com/cr1cr1/optiscaler-manager)",
+		cdnBase:    steamCDN,
+		searchBase: steamSearch,
+	}
 }
 
 // NewWithBase is New with explicit service base URLs (tests, mirrors).
@@ -67,10 +87,14 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 		if c.recentMiss(sanitized) {
 			return c.placeholder()
 		}
-		for _, art := range []string{"library_600x900.jpg", "library_hero.jpg"} {
-			if err := c.fetch(ctx, fmt.Sprintf(c.artURL(art), url.PathEscape(sanitized)), cached); err == nil {
-				return cached, nil
-			}
+		if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_600x900.jpg"), url.PathEscape(sanitized)), cached); err == nil {
+			return cached, nil
+		}
+		if p, ok := c.fromPCGW(ctx, sanitized, name); ok {
+			return p, nil
+		}
+		if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_hero.jpg"), url.PathEscape(sanitized)), cached); err == nil {
+			return cached, nil
 		}
 		c.markMiss(sanitized)
 	}
@@ -78,11 +102,17 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 	if name != "" {
 		if id, err := c.searchAppID(ctx, name); err == nil && id != "" {
 			cached := filepath.Join(c.cacheDir, id+".img")
-			for _, art := range []string{"library_600x900.jpg", "library_hero.jpg"} {
-				if err := c.fetch(ctx, fmt.Sprintf(c.artURL(art), url.PathEscape(id)), cached); err == nil {
-					return cached, nil
-				}
+			if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_600x900.jpg"), url.PathEscape(id)), cached); err == nil {
+				return cached, nil
 			}
+			if p, ok := c.fromPCGW(ctx, id, name); ok {
+				return p, nil
+			}
+			if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_hero.jpg"), url.PathEscape(id)), cached); err == nil {
+				return cached, nil
+			}
+		} else if p, ok := c.fromPCGW(ctx, "", name); ok {
+			return p, nil
 		}
 	}
 
@@ -127,6 +157,7 @@ func (c *Covers) searchAppID(ctx context.Context, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	req.Header.Set("User-Agent", c.UserAgent)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", err
@@ -162,6 +193,7 @@ func (c *Covers) fetch(ctx context.Context, url, dest string) error {
 	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", c.UserAgent)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
@@ -239,4 +271,44 @@ func sanitize(appID string) string {
 		}
 	}
 	return b.String()
+}
+
+// fromPCGW resolves box art via PCGamingWiki: page by Steam appid when
+// known, else by title (scored against the candidate). Returns the cached
+// image path on success.
+func (c *Covers) fromPCGW(ctx context.Context, appID, name string) (string, bool) {
+	if c.PCGW == nil {
+		return "", false
+	}
+	page := ""
+	if appID != "" {
+		if t, _, err := c.PCGW.TitleBySteamAppID(ctx, appID); err == nil {
+			page = t
+		}
+	}
+	if page == "" && name != "" {
+		if t, _, err := c.PCGW.SearchTitle(ctx, name); err == nil && t != "" && gid.Accept(gid.Score(name, t, true), false) {
+			page = t
+		}
+	}
+	if page == "" {
+		return "", false
+	}
+	file, _, err := c.PCGW.CoverFile(ctx, page)
+	if err != nil || file == "" {
+		return "", false
+	}
+	thumb, _, err := c.PCGW.ImageThumbURL(ctx, file, 600)
+	if err != nil || thumb == "" {
+		return "", false
+	}
+	dest := filepath.Join(c.cacheDir, appID+".img")
+	if appID == "" {
+		sum := sha256.Sum256([]byte("pcgw:" + strings.ToLower(page)))
+		dest = filepath.Join(c.cacheDir, "pcgw_"+hex.EncodeToString(sum[:])[:16]+".img")
+	}
+	if err := c.fetch(ctx, thumb, dest); err == nil {
+		return dest, true
+	}
+	return "", false
 }

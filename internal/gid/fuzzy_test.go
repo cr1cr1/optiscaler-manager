@@ -54,6 +54,9 @@ func TestScore(t *testing.T) {
 		{"b1", "Black Myth: Wukong", true, 10},                                           // no shared tokens
 		{"samorost2", "Samorost 2", true, 110},                                           // letter→digit boundary is not a mismatch
 		{"cyberpunk 2077", "Cyberpunk 2077", true, 110},                                  // digit tails still match exactly
+		{"alan wake 2", "Alan Wake II", true, 110},                                       // roman numerals are the same number
+		{"final fantasy xvi", "Final Fantasy XVI", true, 110},                            // multi-letter romans too
+		{"doom 2", "Doom", true, 10},                                                     // different numbers stay different
 	}
 	for _, tc := range cases {
 		if got := Score(tc.cand, tc.item, tc.pc); got != tc.want {
