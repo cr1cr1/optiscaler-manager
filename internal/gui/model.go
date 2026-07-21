@@ -49,8 +49,11 @@ type model struct {
 	tierPillRect      Rect           // screen rect of the card's ProtonDB tier pill (tier badge test seam)
 	detailPanelRect   Rect           // screen rect of the detail panel shell (panel width test seam)
 	listSegRect       Rect           // screen rect of the List view-switch segment (click test seam)
+	listSelRect       Rect           // screen rect of the keyboard-selected list row (nav test seam)
 	openINIRect       Rect           // screen rect of the detail panel's OpenINI button (visibility test seam)
 	searchID          ContainerId    // the search field's container (`/` focuses it from anywhere)
+	listID            ContainerId    // the list view's focusable wrapper (Tab focus nav test seam)
+	listFocusRing     bool           // whether the list wrapper drew its focus ring on the last frame (focus ring test seam)
 	cols              int            // current grid columns, derived from live width
 	cardW             int            // current card width in px, derived from live width
 	cardH             int            // current card height in px

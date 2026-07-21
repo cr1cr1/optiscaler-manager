@@ -60,10 +60,43 @@ func (m *model) contentView() {
 	}
 }
 
+// moveListSel moves the keyboard selection by d rows (clamped at both ends)
+// and scrolls the selected row into view. Shared by the global key fallback
+// and the focused list wrapper so both paths behave identically.
+func (m *model) moveListSel(rows []ui.GameRow, d int) {
+	m.selIdx += d
+	if m.selIdx < 0 {
+		m.selIdx = 0
+	}
+	if n := len(rows); n > 0 && m.selIdx >= n {
+		m.selIdx = n - 1
+	}
+	if len(rows) > 0 {
+		VirtualListScrollIntoView("games", rows[m.selIdx].InstallDir)
+	}
+}
+
+// toggleListDetail opens the detail panel for the selected row, or closes
+// it when the panel already shows that row (Enter toggles). Shared by the
+// global key fallback and the focused list wrapper.
+func (m *model) toggleListDetail(rows []ui.GameRow) {
+	if len(rows) == 0 || m.sess == nil {
+		return
+	}
+	if dir := rows[m.selIdx].InstallDir; m.state.Selected == dir {
+		m.sess.Select("") // toggle: Enter closes the open panel
+	} else {
+		m.sess.Select(dir)
+	}
+}
+
 // handleGlobalKeys runs at the very end of the frame so focused widgets get
-// first pick of the key stream: arrows move the card selection (±1 across,
-// ±cols up/down), Enter opens the detail view, Escape closes it. Modals own
-// their own keys, so nothing runs while one is open.
+// first pick of the key stream. In grid mode arrows move the card selection
+// (±1 across, ±cols up/down); in list mode Up/Down move one row (and scroll
+// the row into view) while Left/Right do nothing. Enter toggles the detail
+// panel for the selected row (open when closed, closed when already open),
+// Escape closes it. Modals own their own keys, so nothing runs while one is
+// open.
 func (m *model) handleGlobalKeys() {
 	if m.sess == nil || m.about || m.settingsOpen || m.state.Confirm != nil {
 		return
@@ -83,6 +116,7 @@ func (m *model) handleGlobalKeys() {
 	if cols < 1 {
 		cols = 1
 	}
+	listMode := m.state.Mode == ui.ViewList && !m.auditGrid
 	move := func(d int) {
 		m.selIdx += d
 		if m.selIdx < 0 {
@@ -94,17 +128,31 @@ func (m *model) handleGlobalKeys() {
 	}
 	switch FrameInput.Key {
 	case KeyRight:
+		if listMode {
+			return
+		}
 		move(1)
 	case KeyLeft:
+		if listMode {
+			return
+		}
 		move(-1)
 	case KeyDown:
+		if listMode {
+			m.moveListSel(rows, 1)
+			FrameInput.Key = KeyCodeNone
+			return
+		}
 		move(cols)
 	case KeyUp:
+		if listMode {
+			m.moveListSel(rows, -1)
+			FrameInput.Key = KeyCodeNone
+			return
+		}
 		move(-cols)
 	case KeyEnter:
-		if len(rows) > 0 {
-			m.sess.Select(rows[m.selIdx].InstallDir)
-		}
+		m.toggleListDetail(rows)
 	case KeyEscape:
 		if m.state.Selected != "" {
 			m.sess.Select("")
@@ -112,53 +160,93 @@ func (m *model) handleGlobalKeys() {
 	default:
 		return
 	}
+	if listMode && len(rows) > 0 {
+		VirtualListScrollIntoView("games", rows[m.selIdx].InstallDir)
+	}
 	FrameInput.Key = KeyCodeNone
 }
 
 // actionList is the fuzzy-filtered, actionable-first virtualized game list.
+// The Focusable wrapper makes the list a Tab stop: while focused it draws
+// the focus ring and owns Up/Down/Enter (consumed so the global fallback at
+// frame end cannot double-fire); Tab/Shift-Tab always cycle focus away.
 func (m *model) actionList() {
 	rows := m.visibleRows()
+	m.listFocusRing = false
 	if len(rows) == 0 {
 		m.emptyState()
 		return
 	}
-	VirtualListView("games", len(rows),
-		func(i int) any { return rows[i].InstallDir },
-		func(i int, w float32) float32 { return 30 },
-		func(i int, w float32) {
-			e := rows[i]
-			Container(Attrs(Row, CrossMid, Gap(sp8), Pad2(3, sp12), MinSize(w, 34), Corners(radiusS)), func() {
-				if IsHovered() {
-					ModAttrs(BackgroundVec(bgRaised))
-				}
-				// List rows keep their cover thumbnails: a small portrait
-				// tile before the status pills.
-				Container(Attrs(FixSize(20, 30), Corners(radiusS), Clip), func() {
-					m.coverArt(e, 20, 30)
-				})
-				Container(Attrs(Row, Gap(sp4)), func() {
-					if b, ok := statusPill(&e); ok {
-						badgePill(b.Label, b.Tone)
-					} else if e.Status == domain.StatusCommitted {
-						badgePill("✦ OptiScaler", ui.TonePurple)
+	// Grow(1)+Expand are required: virtualized lists render nothing inside
+	// auto-sized wrappers (see the rootView comment). BorderWidth stays 1 so
+	// the focus ring never shifts layout; only the color flips when focused.
+	Container(Attrs(Focusable, Grow(1), Expand, BorderWidth(1), BorderColorVec(Vec4{0, 0, 0, 0})), func() {
+		m.listID = CurrentId()
+		CycleFocusOnTab()
+		FocusOnClick()
+		// HasFocus only reports the container currently being built — capture
+		// it here, at the wrapper (see the themedInput comment).
+		focused := HasFocus()
+		if focused {
+			m.listFocusRing = true
+			ModAttrs(func(a *AttrSet) { a.BorderColor = focusBorder })
+			switch FrameInput.Key {
+			case KeyDown:
+				m.moveListSel(rows, 1)
+				FrameInput.Key = KeyCodeNone
+			case KeyUp:
+				m.moveListSel(rows, -1)
+				FrameInput.Key = KeyCodeNone
+			case KeyEnter:
+				m.toggleListDetail(rows)
+				FrameInput.Key = KeyCodeNone
+			}
+		}
+		VirtualListView("games", len(rows),
+			func(i int) any { return rows[i].InstallDir },
+			func(i int, w float32) float32 { return 30 },
+			func(i int, w float32) {
+				e := rows[i]
+				Container(Attrs(Row, CrossMid, Gap(sp8), Pad2(3, sp12), MinSize(w, 34), Corners(radiusS)), func() {
+					if i == m.selIdx {
+						m.listSelRect = GetScreenRectOf(CurrentId())
+						ModAttrs(func(a *AttrSet) {
+							a.BorderWidth = 1.5
+							a.BorderColor = accent
+						})
 					}
-					if e.EAC {
-						badgePill("EAC", ui.ToneRed)
+					if IsHovered() {
+						ModAttrs(BackgroundVec(bgRaised))
+					}
+					// List rows keep their cover thumbnails: a small portrait
+					// tile before the status pills.
+					Container(Attrs(FixSize(20, 30), Corners(radiusS), Clip), func() {
+						m.coverArt(e, 20, 30)
+					})
+					Container(Attrs(Row, Gap(sp4)), func() {
+						if b, ok := statusPill(&e); ok {
+							badgePill(b.Label, b.Tone)
+						} else if e.Status == domain.StatusCommitted {
+							badgePill("✦ OptiScaler", ui.TonePurple)
+						}
+						if e.EAC {
+							badgePill("EAC", ui.ToneRed)
+						}
+					})
+					txt(e.Title)
+					var tech []string
+					for _, b := range e.TechBadges {
+						tech = append(tech, b.Label)
+					}
+					if len(tech) > 0 {
+						muted(strings.Join(tech, ","))
+					}
+					if PressAction() && m.sess != nil {
+						m.sess.Select(e.InstallDir)
 					}
 				})
-				txt(e.Title)
-				var tech []string
-				for _, b := range e.TechBadges {
-					tech = append(tech, b.Label)
-				}
-				if len(tech) > 0 {
-					muted(strings.Join(tech, ","))
-				}
-				if PressAction() && m.sess != nil {
-					m.sess.Select(e.InstallDir)
-				}
 			})
-		})
+	})
 }
 
 // detailPanel is the right-docked per-game panel that replaces the old

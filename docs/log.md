@@ -1506,3 +1506,10 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   owns history), features are presented for users, and the technical
   content (architecture, stack, conventions, release process) moved to
   the new README.dev.md, linked from the README's Development section.
+- The list view is keyboard-navigable with a real focus model: Tab cycles
+  focus into the list (visible focus ring), Up/Down move the selection one
+  row and scroll it into view, Enter toggles the detail panel, and Tab
+  exits to the next focusable element. When the list is not focused the
+  global arrow/Enter fallback keeps working (grid mode unchanged). Shared
+  move/toggle logic factored onto the model so the focused path and the
+  fallback cannot drift apart.
