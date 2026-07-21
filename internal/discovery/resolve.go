@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/classify"
 )
@@ -30,7 +31,7 @@ func ResolveInstallDir(gameRoot string) (string, error) {
 		return ue5, nil
 	}
 
-	gameName := strings.ToLower(filepath.Base(gameRoot))
+	gameName := squeezeName(filepath.Base(gameRoot))
 	bestScore := -1
 	bestDir := ""
 	found := false
@@ -53,7 +54,7 @@ func ResolveInstallDir(gameRoot string) (string, error) {
 		}
 
 		score := 0
-		stem := strings.ToLower(strings.TrimSuffix(d.Name(), filepath.Ext(d.Name())))
+		stem := squeezeName(strings.TrimSuffix(d.Name(), filepath.Ext(d.Name())))
 		if stem == gameName || strings.Contains(stem, gameName) || strings.Contains(gameName, stem) {
 			score += 15
 		}
@@ -104,6 +105,17 @@ func exeIn(dir string) bool {
 		}
 	}
 	return false
+}
+
+// squeezeName lowercases s and drops separator characters so exe stems and
+// folder names compare the way users read them ("FarCry5" == "Far Cry 5").
+func squeezeName(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '-' || r == '_' || r == '.' || r == ' ' {
+			return -1
+		}
+		return unicode.ToLower(r)
+	}, s)
 }
 
 func skipExe(base string) bool {
