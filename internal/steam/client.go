@@ -58,6 +58,7 @@ type Client struct {
 	http      *http.Client
 	cacheDir  string
 	baseURL   string // unexported so tests can point at httptest servers
+	storeURL  string // store API host (appdetails/storesearch)
 	userAgent string
 
 	// now is a clock hook for tests (cache TTL, cooldown expiry, pacing).
@@ -81,6 +82,7 @@ func New(httpClient *http.Client, cacheDir, version string) *Client {
 		http:      httpClient,
 		cacheDir:  cacheDir,
 		baseURL:   defaultBaseURL,
+		storeURL:  defaultStoreURL,
 		userAgent: "optiscaler-manager/" + version,
 		now:       time.Now,
 	}
