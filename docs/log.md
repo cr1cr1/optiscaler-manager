@@ -1493,3 +1493,12 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   mid-session, bumping pins and wiping the vendored shirei patches;
   TestVendorCSDPatchPresent caught it and the tree was restored
   (git checkout + git clean). The guard works — keep it.
+
+## 2026-07-22 — v0.9.0: list focus nav, upgrade action, Linux-only ProtonDB, terminal-editor INI, README revamp
+
+- ProtonDB is Linux-only: enrichment skips the ProtonDB summary call
+  off-Linux (injectable GOOS seam on ui.Deps, "" → runtime.GOOS, the
+  launch.New idiom), and games.json caches written on Linux are stripped
+  of tiers when loaded off-Linux (strip-at-load, no schema bump). The
+  resolved Steam appid is still kept for identification on every
+  platform. Display sites already no-op on an empty tier.

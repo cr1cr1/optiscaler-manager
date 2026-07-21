@@ -111,6 +111,13 @@ func (s *Session) enrichRow(ctx context.Context, row *GameRow, st *steam.Client,
 		log.Debug().Str("appid", appid).Str("title", row.Title).Msg("lookup: skipping non-numeric appid")
 		return live
 	}
+	if s.deps.GOOS != "linux" {
+		// ProtonDB rates Proton (linux) compatibility; off-linux the tier
+		// is meaningless, so the summary call is gated out. The resolved
+		// appid is still kept for identification.
+		row.SteamAppID = appid
+		return live
+	}
 	sum, sumLive, err := pdb.Summary(ctx, appid)
 	live = live || sumLive
 	if err != nil {

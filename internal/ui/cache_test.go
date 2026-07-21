@@ -86,6 +86,34 @@ func TestStart_StaleSchemaCacheFallsThroughToScan(t *testing.T) {
 	t.Log("v1 cache invalidated by schema bump; Start fell through to scan")
 }
 
+// TestLoadGamesCacheStripsProtonTierOffLinux: a games.json carried over from
+// a linux profile (or written before the gate) holds ProtonDB tiers that are
+// meaningless off-linux. Loading strips them in place — no schema bump, the
+// cache self-heals — while a linux load preserves them.
+func TestLoadGamesCacheStripsProtonTierOffLinux(t *testing.T) {
+	root := t.TempDir()
+	writeGamesCache(t, root, []GameRow{
+		{Title: "Tiered", AppID: "100", InstallDir: "/games/tiered", ProtonTier: "gold"},
+	})
+
+	offLinux := loadGamesCache(root, "darwin")
+	if len(offLinux) != 1 {
+		t.Fatalf("off-linux rows = %d, want 1", len(offLinux))
+	}
+	if offLinux[0].ProtonTier != "" {
+		t.Errorf("off-linux ProtonTier = %q, want empty (stripped at load)", offLinux[0].ProtonTier)
+	}
+
+	onLinux := loadGamesCache(root, "linux")
+	if len(onLinux) != 1 {
+		t.Fatalf("linux rows = %d, want 1", len(onLinux))
+	}
+	if onLinux[0].ProtonTier != "gold" {
+		t.Errorf("linux ProtonTier = %q, want %q (preserved)", onLinux[0].ProtonTier, "gold")
+	}
+	t.Log("cache load: tier stripped on darwin, preserved on linux")
+}
+
 // TestScanPersistsCache: a completed scan writes games.json whose rows match
 // the session rows on the stable fields (InstallDir, Title, Status).
 func TestScanPersistsCache(t *testing.T) {

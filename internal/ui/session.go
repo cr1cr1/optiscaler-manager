@@ -141,6 +141,10 @@ type Deps struct {
 	// PCGW is the secondary canonical-title source (PCGamingWiki), used
 	// when Steam's storesearch finds nothing; nil disables the fallback.
 	PCGW *pcgw.Client
+
+	// GOOS selects the target platform behavior (empty = runtime.GOOS);
+	// ProtonDB enrichment and cached proton tiers are linux-only.
+	GOOS string
 }
 
 // Session is the frontend-agnostic interactive core.
@@ -178,6 +182,9 @@ func NewSession(deps Deps) *Session {
 	}
 	if deps.Launcher == nil {
 		deps.Launcher = launch.New(nil, "", nil)
+	}
+	if deps.GOOS == "" {
+		deps.GOOS = runtime.GOOS
 	}
 	if deps.SettingsRoot != "" {
 		if err := os.MkdirAll(deps.SettingsRoot, 0o755); err != nil {
@@ -359,7 +366,7 @@ func (s *Session) Select(dir string) {
 // reclassification) and no scan runs; a missing or unusable cache falls
 // through to Scan. Safe to call once at frontend boot.
 func (s *Session) Start(ctx context.Context) {
-	rows := loadGamesCache(s.deps.SettingsRoot)
+	rows := loadGamesCache(s.deps.SettingsRoot, s.deps.GOOS)
 	if len(rows) == 0 {
 		s.Scan(ctx)
 		return

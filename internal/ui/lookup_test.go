@@ -346,6 +346,54 @@ func TestScan_EnrichmentPermanentFailuresDontStarve(t *testing.T) {
 	t.Logf("last row enriched after 2 scans; steam hits %d", steamHits.Load())
 }
 
+// TestEnrichOnlineSkipsProtonDBOffLinux: ProtonDB answers Proton (linux)
+// compatibility, so off-linux sessions must never query it: the steam
+// identification still runs, but the summary call is gated out and rows
+// keep an empty ProtonTier.
+func TestEnrichOnlineSkipsProtonDBOffLinux(t *testing.T) {
+	f := newLookupFixture(t, true, http.StatusOK)
+	f.sess.deps.GOOS = "windows"
+	f.sess.deps.Settings.ExtraDirs = manualDirs(t, 1)
+
+	st := scanAndWait(t, f.sess)
+	if len(st.Rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(st.Rows))
+	}
+	row := st.Rows[0]
+	if got := f.protonHits.Load(); got != 0 {
+		t.Errorf("protondb calls on windows = %d, want 0 (ProtonDB is linux-only)", got)
+	}
+	if row.ProtonTier != "" {
+		t.Errorf("ProtonTier = %q on windows, want empty (proton tiers are linux-only)", row.ProtonTier)
+	}
+	if got := f.steamHits.Load(); got != 1 {
+		t.Errorf("steam search calls on windows = %d, want 1 (identification stays cross-platform)", got)
+	}
+	t.Logf("windows scan: protondb untouched, steam hit %d, tier %q", f.steamHits.Load(), row.ProtonTier)
+}
+
+// TestEnrichOnlineFetchesProtonDBOnLinux: the goos gate must not over-gate —
+// an explicit linux session still resolves the tier (mirrors
+// TestScan_EnrichesManualRowsWhenOnline, which relies on runtime.GOOS).
+func TestEnrichOnlineFetchesProtonDBOnLinux(t *testing.T) {
+	f := newLookupFixture(t, true, http.StatusOK)
+	f.sess.deps.GOOS = "linux"
+	f.sess.deps.Settings.ExtraDirs = manualDirs(t, 1)
+
+	st := scanAndWait(t, f.sess)
+	if len(st.Rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(st.Rows))
+	}
+	row := st.Rows[0]
+	if row.ProtonTier != "gold" {
+		t.Errorf("ProtonTier = %q on linux, want %q", row.ProtonTier, "gold")
+	}
+	if got := f.protonHits.Load(); got != 1 {
+		t.Errorf("protondb calls on linux = %d, want 1 (linux must not be gated)", got)
+	}
+	t.Logf("linux scan: tier=%s after %d protondb call", row.ProtonTier, f.protonHits.Load())
+}
+
 // TestEnrichRow_SkipsNonNumericAppID: an appid resolved from a Steam search
 // is attacker-controlled input to the ProtonDB URL path; anything that is
 // not a bare numeric appid is skipped before the ProtonDB call.

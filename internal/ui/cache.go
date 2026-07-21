@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/rs/zerolog/log"
 )
@@ -31,8 +32,13 @@ func gamesCachePath(root string) string { return filepath.Join(root, "games.json
 
 // loadGamesCache reads the cached rows. A missing, unreadable, corrupt, or
 // stale-schema cache yields nil — never an error — so callers fall through
-// to a real scan.
-func loadGamesCache(root string) []GameRow {
+// to a real scan. goos follows the launch.New idiom ("" = runtime.GOOS):
+// proton tiers are linux-only, so off-linux loads strip them in place (no
+// schema bump — the next save self-heals the file).
+func loadGamesCache(root, goos string) []GameRow {
+	if goos == "" {
+		goos = runtime.GOOS
+	}
 	data, err := os.ReadFile(gamesCachePath(root))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -48,6 +54,11 @@ func loadGamesCache(root string) []GameRow {
 	}
 	if c.Version != cacheSchemaVersion {
 		return nil
+	}
+	if goos != "linux" {
+		for i := range c.Rows {
+			c.Rows[i].ProtonTier = ""
+		}
 	}
 	return c.Rows
 }
