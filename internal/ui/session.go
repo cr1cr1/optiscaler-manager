@@ -168,6 +168,19 @@ type Session struct {
 	openExternal func(path string) error
 	pickDir      func(ctx context.Context) (string, error)
 	removeAll    func(path string) error
+
+	// resolveVersion is the test seam for resolving the configured default
+	// version to a concrete tag (fresh = live fetch, not cache); nil picks
+	// ghResolveVersion. Set it before the first Scan, like openExternal.
+	resolveVersion func(ctx context.Context, requested string) (version string, fresh bool, err error)
+
+	// resolvedDefault* memoize the default-version resolution (see
+	// upgrade.go): one Resolve per distinct configured value, never per
+	// row or per frame.
+	resolvedDefaultKey     string
+	resolvedDefaultVersion string
+	resolvedDefaultFresh   bool
+	resolvedDefaultAt      time.Time
 }
 
 // NewSession starts a session. The library is empty until Scan is called.
@@ -458,6 +471,12 @@ func (s *Session) runScan(ctx context.Context) {
 	s.setBusy("Scanning…")
 	s.resetProgress()
 	snap := s.Settings()
+	// Resolve the default OptiScaler version once per scan (never per row
+	// or frame); toRow compares every installed row against the memo.
+	// Gated on online lookups like the rest of the scan's network work.
+	if snap.OnlineLookups {
+		s.refreshResolvedDefault(ctx, snap.DefaultVersion)
+	}
 	resolver := discovery.ChainResolver(func(dir string) string {
 		return snap.TitleOverrides[canonicalDir(dir)]
 	})
@@ -591,9 +610,15 @@ func (s *Session) clearProgress() {
 }
 
 // QuickInstall installs when not installed, uninstalls when installed —
-// the one-click toggle from the reference client, with our defaults.
+// the one-click toggle from the reference client, with our defaults. An
+// upgrade-eligible row is UPGRADED instead: the plain toggle would
+// uninstall a committed row and leave the game with no OptiScaler at all.
 func (s *Session) QuickInstall(gameDir string) {
 	row := s.findRow(gameDir)
+	if row != nil && row.UpgradeAvailable {
+		go s.doUpgrade(gameDir)
+		return
+	}
 	if row != nil && row.Status == domain.StatusCommitted {
 		go s.doUninstall(gameDir)
 		return
@@ -613,49 +638,53 @@ func (s *Session) Uninstall(gameDir string) {
 
 // Rollback starts a rollback of an interrupted/failed install.
 func (s *Session) Rollback(gameDir string) {
-	go func() {
-		pre := preOpStatus(s.findRow(gameDir))
-		ctx, ok := s.registerOp(gameDir)
-		if !ok {
-			s.toast("operation already in progress for this game", true)
-			return
-		}
-		s.opStarted("Rolling back…")
-		dir, err := app.Rollback(ctx, s.deps.Store, gameDir)
-		s.finishOp(gameDir)
-		if errors.Is(err, context.Canceled) {
-			s.opCancelled(gameDir, pre)
-			return
-		}
-		if errors.Is(err, app.ErrNotManaged) {
-			s.opRefused(errNotManagedToast, gameDir)
-			return
-		}
+	go s.runRollback(gameDir)
+}
+
+// runRollback is Rollback's body, callable synchronously by chained ops
+// (the upgrade chain runs it as cleanup after a failed install leg).
+func (s *Session) runRollback(gameDir string) {
+	pre := preOpStatus(s.findRow(gameDir))
+	ctx, ok := s.registerOp(gameDir)
+	if !ok {
+		s.toast("operation already in progress for this game", true)
+		return
+	}
+	s.opStarted("Rolling back…")
+	dir, err := app.Rollback(ctx, s.deps.Store, gameDir)
+	s.finishOp(gameDir)
+	if errors.Is(err, context.Canceled) {
+		s.opCancelled(gameDir, pre)
+		return
+	}
+	if errors.Is(err, app.ErrNotManaged) {
+		s.opRefused(errNotManagedToast, gameDir)
+		return
+	}
+	if err != nil {
+		s.opFailed(err)
+		return
+	}
+	// Rollback restores whatever the adopt-time backup held — possibly a
+	// pre-existing external install. Re-probe like doUninstall: external
+	// when a branded injection DLL is back, rolled_back otherwise.
+	status := domain.StatusRolledBack
+	if row := s.findRow(gameDir); row != nil && redetectExternal(row.InjectionDir) == domain.StatusExternal {
+		status = domain.StatusExternal
+		// The rollback's idempotent job is done: drop the rolled_back
+		// manifest so the next scan's enrich probe and the warm-cache
+		// reconcile converge on external (exactly like the uninstall
+		// path, which deletes its manifest). A later manual Rollback
+		// re-run refuses cleanly via ErrNotManaged.
+		id, _, err := app.ManifestIDFor(gameDir)
 		if err != nil {
-			s.opFailed(err)
-			return
+			log.Warn().Err(err).Str("dir", gameDir).Msg("rollback: resolve manifest id")
+		} else if err := s.deps.Store.Delete(id); err != nil {
+			log.Warn().Err(err).Str("id", id).Msg("rollback: drop rolled_back manifest")
 		}
-		// Rollback restores whatever the adopt-time backup held — possibly a
-		// pre-existing external install. Re-probe like doUninstall: external
-		// when a branded injection DLL is back, rolled_back otherwise.
-		status := domain.StatusRolledBack
-		if row := s.findRow(gameDir); row != nil && redetectExternal(row.InjectionDir) == domain.StatusExternal {
-			status = domain.StatusExternal
-			// The rollback's idempotent job is done: drop the rolled_back
-			// manifest so the next scan's enrich probe and the warm-cache
-			// reconcile converge on external (exactly like the uninstall
-			// path, which deletes its manifest). A later manual Rollback
-			// re-run refuses cleanly via ErrNotManaged.
-			id, _, err := app.ManifestIDFor(gameDir)
-			if err != nil {
-				log.Warn().Err(err).Str("dir", gameDir).Msg("rollback: resolve manifest id")
-			} else if err := s.deps.Store.Delete(id); err != nil {
-				log.Warn().Err(err).Str("id", id).Msg("rollback: drop rolled_back manifest")
-			}
-		}
-		s.setRowStatus(gameDir, status)
-		s.opDone("Rolled back "+dir, gameDir)
-	}()
+	}
+	s.setRowStatus(gameDir, status)
+	s.opDone("Rolled back "+dir, gameDir)
 }
 
 // AddDirectory registers a user-picked directory and persists it in
@@ -1134,6 +1163,15 @@ func canonicalDir(p string) string {
 }
 
 func (s *Session) doInstall(gameDir string, eacOK, cachedOK bool) {
+	_ = s.runInstall(gameDir, eacOK, cachedOK)
+}
+
+// runInstall is doInstall's body with an outcome: nil on success,
+// errInstallPaused when a consent gate owns the continuation, errOpBusy
+// when the game already has an op, the context cause on cancel, and the
+// surfaced error on failure. Callers that chain ops (upgrade) branch on
+// the outcome; fire-and-forget callers discard it.
+func (s *Session) runInstall(gameDir string, eacOK, cachedOK bool) error {
 	row := s.findRow(gameDir)
 	if row != nil && row.EAC && !eacOK {
 		s.setConfirm(&Confirmation{
@@ -1141,21 +1179,24 @@ func (s *Session) doInstall(gameDir string, eacOK, cachedOK bool) {
 			GameDir: gameDir,
 			Message: fmt.Sprintf("%s uses Easy Anti-Cheat. Installing OptiScaler may result in a ban.", row.Title),
 		})
-		return
+		return errInstallPaused
 	}
 	pre := preOpStatus(row)
 	ctx, ok := s.registerOp(gameDir)
 	if !ok {
 		s.toast("operation already in progress for this game", true)
-		return
+		return errOpBusy
 	}
 	s.opStarted("Installing…")
-	_, err := app.Install(ctx, s.deps.Store, s.deps.GH, s.deps.CacheDir, gameDir,
-		app.InstallOpts{AllowCached: cachedOK, EACOverride: eacOK, Requested: s.Settings().DefaultVersion})
+	// A scan that just resolved the default live leaves a provably fresh
+	// release cache behind; serving it back without the stale-cache
+	// consent prompt keeps scan-then-install a one-click flow.
+	m, err := app.Install(ctx, s.deps.Store, s.deps.GH, s.deps.CacheDir, gameDir,
+		app.InstallOpts{AllowCached: cachedOK || s.defaultRecentlyResolved(), EACOverride: eacOK, Requested: s.Settings().DefaultVersion})
 	s.finishOp(gameDir)
 	if errors.Is(err, context.Canceled) {
 		s.opCancelled(gameDir, pre)
-		return
+		return err
 	}
 	if errors.Is(err, app.ErrStaleCache) {
 		s.opAborted()
@@ -1164,14 +1205,15 @@ func (s *Session) doInstall(gameDir string, eacOK, cachedOK bool) {
 			GameDir: gameDir,
 			Message: "GitHub is rate-limiting; only stale cached release info is available. Use it anyway?",
 		})
-		return
+		return errInstallPaused
 	}
 	if err != nil {
 		s.opFailed(err)
-		return
+		return err
 	}
-	s.setRowStatus(gameDir, domain.StatusCommitted)
+	s.setRowInstalled(gameDir, m.Resolved.Version)
 	s.opDone("Installed "+gameTitle(row, gameDir), gameDir)
+	return nil
 }
 
 // errNotManagedToast is the user-facing refusal when an uninstall targets an
@@ -1181,31 +1223,39 @@ func (s *Session) doInstall(gameDir string, eacOK, cachedOK bool) {
 const errNotManagedToast = "not installed by this manager — adopt first or remove manually"
 
 func (s *Session) doUninstall(gameDir string) {
+	_ = s.runUninstall(gameDir)
+}
+
+// runUninstall is doUninstall's body with an outcome, mirroring
+// runInstall: nil on success, app.ErrNotManaged on the refusal paths,
+// errOpBusy when the game is busy, the context cause on cancel, and the
+// surfaced error on failure.
+func (s *Session) runUninstall(gameDir string) error {
 	row := s.findRow(gameDir)
 	if row != nil && row.Status == domain.StatusExternal {
 		s.toast(errNotManagedToast, true)
-		return
+		return app.ErrNotManaged
 	}
 	pre := preOpStatus(row)
 	ctx, ok := s.registerOp(gameDir)
 	if !ok {
 		s.toast("operation already in progress for this game", true)
-		return
+		return errOpBusy
 	}
 	s.opStarted("Uninstalling…")
 	_, err := app.Uninstall(ctx, s.deps.Store, gameDir)
 	s.finishOp(gameDir)
 	if errors.Is(err, context.Canceled) {
 		s.opCancelled(gameDir, pre)
-		return
+		return err
 	}
 	if errors.Is(err, app.ErrNotManaged) {
 		s.opRefused(errNotManagedToast, gameDir)
-		return
+		return err
 	}
 	if err != nil {
 		s.opFailed(err)
-		return
+		return err
 	}
 	// Uninstall restores whatever the adopt-time backup held — possibly a
 	// pre-existing external install. One bounded probe keeps the row honest:
@@ -1216,6 +1266,7 @@ func (s *Session) doUninstall(gameDir string) {
 	}
 	s.setRowStatus(gameDir, redetectExternal(injectionDir))
 	s.opDone("Uninstalled "+gameTitle(s.findRow(gameDir), gameDir), gameDir)
+	return nil
 }
 
 // redetectExternal runs the bounded post-op probe shared by uninstall and
@@ -1312,6 +1363,7 @@ func (s *Session) toRow(ctx context.Context, e app.LibraryEntry) GameRow {
 		SteamAppID:        e.Game.SteamAppID,
 		TitleSource:       string(e.Game.TitleSource),
 	}
+	row.UpgradeAvailable, row.UpgradeTarget = upgradeOffer(e.Status, e.OptiScalerVersion, s.resolvedDefault())
 	keys := make([]string, 0, len(e.ComponentVersions))
 	for k := range e.ComponentVersions {
 		keys = append(keys, k)
@@ -1375,6 +1427,40 @@ func (s *Session) setRowStatus(dir string, status domain.Status) {
 		if s.st.Rows[i].InstallDir == dir {
 			s.st.Rows[i].Status = status
 			s.st.Rows[i].Actionable = actionableStatus(status)
+			// A row leaving the installed states can no longer honor an
+			// upgrade offer computed against the old one — drop it rather
+			// than let a stale offer dispatch a no-op upgrade. Committed
+			// and external rows keep theirs (a restored external install
+			// is exactly as old as it was when the offer was computed).
+			if status != domain.StatusCommitted && status != domain.StatusExternal {
+				s.st.Rows[i].UpgradeAvailable = false
+				s.st.Rows[i].UpgradeTarget = ""
+			}
+			sortRows(s.st.Rows)
+			changed = true
+			break
+		}
+	}
+	s.mu.Unlock()
+	if changed {
+		s.persistCache()
+	}
+}
+
+// setRowInstalled settles a row after a successful install: committed at
+// the just-installed version, with any upgrade offer consumed — a fresh
+// install IS the resolved default, so offering an upgrade right after it
+// would re-dispatch the chain on every quick click until the next scan.
+func (s *Session) setRowInstalled(dir, version string) {
+	s.mu.Lock()
+	changed := false
+	for i := range s.st.Rows {
+		if s.st.Rows[i].InstallDir == dir {
+			s.st.Rows[i].Status = domain.StatusCommitted
+			s.st.Rows[i].Actionable = false
+			s.st.Rows[i].OptiScalerVersion = version
+			s.st.Rows[i].UpgradeAvailable = false
+			s.st.Rows[i].UpgradeTarget = ""
 			sortRows(s.st.Rows)
 			changed = true
 			break

@@ -1513,3 +1513,17 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   global arrow/Enter fallback keeps working (grid mode unchanged). Shared
   move/toggle logic factored onto the model so the focused path and the
   fallback cannot drift apart.
+- Games running an outdated OptiScaler get an Upgrade action: the session
+  resolves the preferences' default version to a concrete tag once per
+  setting (cached, never per row), compares it against the installed
+  version with a new dependency-free semver-ish comparator
+  (internal/version: leading-v normalized, numeric triple, pre-release
+  older than release), and marks eligible rows (committed or external).
+  The quick action on cards and the detail panel reads "Upgrade to X" for
+  eligible games. Upgrading a managed install chains uninstall then
+  install through the existing backup/rollback paths (a crash between
+  steps leaves the game without OptiScaler — the window is deliberate,
+  rollback cleans any partial state and the row shows the failure);
+  upgrading an external install adopts with the usual external backup.
+  QuickInstall dispatches to Upgrade for eligible rows, so the committed
+  toggle (uninstall) can never fire by mistake on an outdated game.
