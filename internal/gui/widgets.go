@@ -102,23 +102,187 @@ func (m *model) searchInput() {
 	m.searchID = GetLastId()
 }
 
-// fieldH is the shared text-field height: compact enough to keep the
-// layout tight while fitting one line of text at the default size.
-const fieldH = 28
+// fieldH is the shared text-field height: tight, one line of text plus a
+// couple of pixels of breathing room.
+const fieldH = 24
 
-// themedInput is the dark single-line text field: shirei's TextInputExt is
-// hardcoded light-on-white with no theme hook, so themed screens use this
-// minimal input instead. It is THE reusable text field — search, the
-// version field, and the launch-template field all share it, with sizing
-// attrs as their only variation. Editing is append/backspace on the bound
-// buffer, Esc clears and blurs, Enter is consumed so it cannot leak to
-// global key handlers, and typed text is consumed so `/` cannot leak to the
-// search-focus shortcut while the field itself is focused. The caret is a
-// thin accent bar (a text `|` was effectively invisible). The icon is
-// optional (0 for none); sizing attrs set the field's extent.
+// editState is one themedInput's editing state: the caret position (a rune
+// index into the buffer), the selection anchor (-1 when nothing is
+// selected), and the blink clock. It persists per widget via UseWithInit.
+type editState struct {
+	cursor int
+	anchor int
+	blink  time.Time
+	phase  bool
+}
+
+// selRange normalizes anchor/cursor into (lo, hi, hasSelection).
+func (st *editState) selRange(bufLen int) (int, int, bool) {
+	if st.cursor > bufLen {
+		st.cursor = bufLen
+	}
+	if st.anchor < 0 || st.anchor == st.cursor {
+		return st.cursor, st.cursor, false
+	}
+	if st.anchor > bufLen {
+		st.anchor = bufLen
+	}
+	lo, hi := st.anchor, st.cursor
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	return lo, hi, true
+}
+
+// editKeys applies one frame of editing input to the buffer: cursor motion
+// (arrows/Home/End), selection extension (Shift), select-all, copy/cut/
+// paste (Ctrl+A/C/X/V via RequestTextCopy/RequestPaste), insert-replacing-
+// selection, and range deletion. Keys are consumed so nothing leaks out.
+func editKeys(buf *string, st *editState) {
+	r := []rune(*buf)
+	shift := InputState.Modifiers&ModShift != 0
+	ctrl := InputState.Modifiers&ModCtrl != 0
+	move := func(to int, extend bool) {
+		if to < 0 {
+			to = 0
+		}
+		if to > len(r) {
+			to = len(r)
+		}
+		if extend {
+			if st.anchor < 0 {
+				st.anchor = st.cursor
+			}
+		} else {
+			st.anchor = -1
+		}
+		st.cursor = to
+	}
+	insert := func(s string) {
+		rs := []rune(s)
+		lo, hi, has := st.selRange(len(r))
+		if has {
+			out := make([]rune, 0, len(r)-hi+lo+len(rs))
+			out = append(out, r[:lo]...)
+			out = append(out, rs...)
+			out = append(out, r[hi:]...)
+			r = out
+			st.cursor = lo + len(rs)
+			st.anchor = -1
+		} else {
+			out := make([]rune, 0, len(r)+len(rs))
+			out = append(out, r[:st.cursor]...)
+			out = append(out, rs...)
+			out = append(out, r[st.cursor:]...)
+			r = out
+			st.cursor += len(rs)
+		}
+		*buf = string(r)
+	}
+	deleteRange := func(lo, hi int) {
+		out := make([]rune, 0, len(r)-(hi-lo))
+		out = append(out, r[:lo]...)
+		out = append(out, r[hi:]...)
+		r = out
+		st.cursor = lo
+		st.anchor = -1
+		*buf = string(r)
+	}
+	selText := func() string {
+		lo, hi, has := st.selRange(len(r))
+		if !has {
+			return ""
+		}
+		return string(r[lo:hi])
+	}
+
+	if FrameInput.Text != "" {
+		insert(FrameInput.Text)
+		FrameInput.Text = ""
+		st.phase = true
+		st.blink = time.Now()
+	}
+	key := FrameInput.Key
+	switch {
+	case ctrl && key == KeyA:
+		st.anchor = 0
+		st.cursor = len(r)
+	case ctrl && (key == KeyC || key == KeyX):
+		if s := selText(); s != "" {
+			RequestTextCopy(s)
+			if key == KeyX {
+				lo, hi, _ := st.selRange(len(r))
+				deleteRange(lo, hi)
+			}
+		}
+	case ctrl && key == KeyV:
+		RequestPaste()
+	case key == KeyLeft:
+		move(st.cursor-1, shift)
+	case key == KeyRight:
+		move(st.cursor+1, shift)
+	case key == KeyHome:
+		move(0, shift)
+	case key == KeyEnd:
+		move(len(r), shift)
+	case key == KeyDeleteBackward:
+		if lo, hi, has := st.selRange(len(r)); has {
+			deleteRange(lo, hi)
+		} else if st.cursor > 0 {
+			deleteRange(st.cursor-1, st.cursor)
+		}
+	case key == KeyDeleteForward:
+		if lo, hi, has := st.selRange(len(r)); has {
+			deleteRange(lo, hi)
+		} else if st.cursor < len(r) {
+			deleteRange(st.cursor, st.cursor+1)
+		}
+	case key == KeyEscape:
+		*buf = ""
+		st.cursor = 0
+		st.anchor = -1
+		Blur()
+	case key == KeyEnter:
+		// consumed: Enter must never leak to global handlers
+	default:
+		return
+	}
+	FrameInput.Key = KeyCodeNone
+}
+
+// caretBar renders the caret when the blink phase is on and advances the
+// 500ms blink clock (real caret feel: flush with the text, blinking).
+func caretBar(st *editState, focused bool) {
+	if !focused {
+		return
+	}
+	if time.Since(st.blink) > 500*time.Millisecond {
+		st.phase = !st.phase
+		st.blink = time.Now()
+	}
+	if st.phase {
+		Container(Attrs(FixSize(2, 16), BackgroundVec(focusBorder)), func() {})
+	}
+	RequestNextFrame()
+}
+
+// themedInput is themedInputState with the state kept internally; it is
+// THE reusable text field — search, the version field, and the
+// launch-template field all share it.
 func themedInput(buf *string, hint string, icon rune, sizing ...AttrsFn) {
-	box := Attrs(Focusable, Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(sp4, sp12), Clip)
+	themedInputState(buf, hint, icon, nil, sizing...)
+}
+
+// themedInputState is themedInput with a caller-owned edit state (tests
+// drive the same editing flow and assert on st directly).
+func themedInputState(buf *string, hint string, icon rune, st *editState, sizing ...AttrsFn) {
+	box := Attrs(Focusable, Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(2, sp12), Clip)
 	Container(AttrsWith(box, sizing...), func() {
+		if st == nil {
+			st = UseWithInit("edit:"+hint, func() *editState {
+				return &editState{cursor: len([]rune(*buf)), anchor: -1, blink: time.Now(), phase: true}
+			})
+		}
 		CycleFocusOnTab()
 		FocusOnClick()
 		// HasFocus() only reports the container currently being built —
@@ -128,33 +292,39 @@ func themedInput(buf *string, hint string, icon rune, sizing ...AttrsFn) {
 		focused := HasFocus()
 		if focused {
 			ModAttrs(func(a *AttrSet) { a.BorderColor = focusBorder })
-			*buf += FrameInput.Text
-			FrameInput.Text = ""
-			switch FrameInput.Key {
-			case KeyDeleteBackward:
-				if r := []rune(*buf); len(r) > 0 {
-					*buf = string(r[:len(r)-1])
-				}
-				FrameInput.Key = KeyCodeNone
-			case KeyEscape:
-				*buf = ""
-				Blur()
-				FrameInput.Key = KeyCodeNone
-			case KeyEnter:
-				FrameInput.Key = KeyCodeNone
-			}
+			editKeys(buf, st)
 		}
+		r := []rune(*buf)
+		lo, hi, hasSel := st.selRange(len(r))
 		Container(Attrs(Row, Gap(sp8), CrossMid), func() {
 			if icon != 0 {
 				widgets.Icon(icon, FontSize(13), TextColorVec(txtMuted))
 			}
-			if *buf != "" {
-				Label(*buf, FontSize(13), TextColorVec(txtMain))
-			} else if !focused {
+			switch {
+			case hasSel:
+				Container(Attrs(Row, Gap(0), CrossMid), func() {
+					Label(string(r[:lo]), FontSize(13), TextColorVec(txtMain))
+					Container(Attrs(Row, Gap(0), CrossMid, BackgroundVec(selBg), Corners(2)), func() {
+						Label(string(r[lo:hi]), FontSize(13), TextColorVec(txtMain))
+						if st.cursor == hi {
+							caretBar(st, focused)
+						}
+					})
+					if st.cursor == lo {
+						caretBar(st, focused)
+					}
+					Label(string(r[hi:]), FontSize(13), TextColorVec(txtMain))
+				})
+			case len(r) > 0:
+				Container(Attrs(Row, Gap(0), CrossMid), func() {
+					Label(string(r[:st.cursor]), FontSize(13), TextColorVec(txtMain))
+					caretBar(st, focused)
+					Label(string(r[st.cursor:]), FontSize(13), TextColorVec(txtMain))
+				})
+			case focused:
+				caretBar(st, focused)
+			default:
 				Label(hint, FontSize(13), TextColorVec(txtMuted))
-			}
-			if focused {
-				Container(Attrs(FixSize(2, 16), BackgroundVec(focusBorder)), func() {})
 			}
 		})
 	})

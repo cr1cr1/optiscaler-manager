@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -202,11 +203,15 @@ func (m *model) gameCard(e ui.GameRow) {
 
 // coverArt renders the game's cover scaled into the cover box. The covers
 // package hands back a tiny dark placeholder file when a game has no art;
-// that counts as "no cover" and gets the gradient placeholder instead.
+// that counts as "no cover" and gets the gradient placeholder instead. A
+// path whose file was deleted (e.g. the user wiped the cover cache) must
+// not reach shirei's image loader — it nil-dereferences on missing files.
 func (m *model) coverArt(e ui.GameRow, w, h float32) {
 	if e.CoverPath != "" && !isPlaceholderCover(e.CoverPath) {
-		Image(e.CoverPath, Vec2{w, h})
-		return
+		if _, err := os.Stat(e.CoverPath); err == nil {
+			Image(e.CoverPath, Vec2{w, h})
+			return
+		}
 	}
 	coverPlaceholder(e.Title, w, h)
 }

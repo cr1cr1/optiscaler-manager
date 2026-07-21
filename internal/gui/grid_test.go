@@ -1,6 +1,7 @@
 package gui
 
 import (
+	. "go.hasen.dev/shirei"
 	"image"
 	"image/color"
 	"image/png"
@@ -208,4 +209,23 @@ func TestGridToggleRendersListMode(t *testing.T) {
 		t.Fatal("empty list frame")
 	}
 	t.Log("list mode renders after toggle")
+}
+
+// A CoverPath pointing at a deleted file must not crash the render: the
+// vendored image loader nil-dereferences on missing files, so coverArt
+// guards the stat and falls back to the placeholder tile.
+func TestCoverArtMissingFileDoesNotPanic(t *testing.T) {
+	m := newModel(Config{})
+	e := ui.GameRow{Title: "Ghost", CoverPath: filepath.Join(t.TempDir(), "deleted-cover.img")}
+	headlessFrames(t, 400, 400)
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("coverArt panicked on a missing cover file: %v", r)
+		}
+	}()
+	RunFrameFn(func() {
+		Container(Attrs(Viewport), func() {
+			m.coverArt(e, 100, 150)
+		})
+	})
 }

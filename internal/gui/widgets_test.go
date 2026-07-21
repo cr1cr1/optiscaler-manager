@@ -41,6 +41,16 @@ func keyFrame(key KeyCode, mod Modifiers, fn FrameFn) {
 	InputState.Modifiers = 0
 }
 
+// comboFrame is keyFrame with the frame output returned (clipboard
+// assertions need out.Copy/out.Paste).
+func comboFrame(key KeyCode, mod Modifiers, fn FrameFn) FrameOutputData {
+	InputState.Modifiers = mod
+	FrameInput.Key = key
+	out := RunFrameFn(fn)
+	InputState.Modifiers = 0
+	return out
+}
+
 func TestFocusableButtonTabCyclesAndEnterActivates(t *testing.T) {
 	headlessFrames(t, 400, 200)
 	var fired []string
@@ -336,5 +346,114 @@ func TestGUISidebarFullHeight(t *testing.T) {
 	RunFrameFn(m.rootView)
 	if got := m.sidebarShellRect.Size[1]; got != 600 {
 		t.Errorf("sidebar height = %v, want the full 600", got)
+	}
+}
+
+// editField renders one themedInput bound to buf with an explicit edit
+// state and returns it (focus applied), so tests assert on st directly.
+func editField(t *testing.T, buf *string) (*editState, FrameFn) {
+	t.Helper()
+	st := &editState{cursor: len([]rune(*buf)), anchor: -1, blink: time.Now(), phase: true}
+	var searchID ContainerId
+	view := func() {
+		Container(Attrs(Viewport, Pad(8)), func() {
+			themedInputState(buf, "Search…", 0, st, Grow(1), MinSize(140, fieldH), MaxSizeVec(Vec2{420, fieldH}))
+			searchID = GetLastId()
+		})
+	}
+	headlessFrames(t, 460, 60)
+	RunFrameFn(view)
+	FocusImmediateOn(searchID)
+	RunFrameFn(view)
+	return st, view
+}
+
+func textFrame(text string, fn FrameFn) {
+	FrameInput.Text = text
+	RunFrameFn(fn)
+}
+
+func TestEditCursorMotionAndInsert(t *testing.T) {
+	buf := ""
+	st, view := editField(t, &buf)
+	textFrame("abcd", view)
+	keyFrame(KeyLeft, 0, view)
+	keyFrame(KeyLeft, 0, view)
+	if st.cursor != 2 {
+		t.Fatalf("cursor = %d, want 2 after two Left", st.cursor)
+	}
+	textFrame("X", view)
+	if buf != "abXcd" {
+		t.Errorf("buf = %q, want %q (insert at cursor)", buf, "abXcd")
+	}
+	keyFrame(KeyHome, 0, view)
+	textFrame("Y", view)
+	keyFrame(KeyEnd, 0, view)
+	textFrame("Z", view)
+	if buf != "YabXcdZ" {
+		t.Errorf("buf = %q, want %q (Home/End insertion)", buf, "YabXcdZ")
+	}
+}
+
+func TestEditShiftSelectAndReplace(t *testing.T) {
+	buf := ""
+	st, view := editField(t, &buf)
+	textFrame("abcd", view)
+	keyFrame(KeyHome, 0, view)
+	keyFrame(KeyRight, ModShift, view)
+	keyFrame(KeyRight, ModShift, view)
+	if st.anchor != 0 || st.cursor != 2 {
+		t.Fatalf("anchor=%d cursor=%d, want 0/2 (shift-selected 'ab')", st.anchor, st.cursor)
+	}
+	textFrame("X", view)
+	if buf != "Xcd" {
+		t.Errorf("buf = %q, want %q (selection replaced)", buf, "Xcd")
+	}
+	if st.anchor != -1 {
+		t.Errorf("anchor = %d, want -1 (selection collapsed after replace)", st.anchor)
+	}
+}
+
+func TestEditSelectAllCopyCutPaste(t *testing.T) {
+	buf := "hello"
+	st, view := editField(t, &buf)
+	keyFrame(KeyA, ModCtrl, view)
+	if st.anchor != 0 || st.cursor != 5 {
+		t.Fatalf("anchor=%d cursor=%d, want 0/5 (select all)", st.anchor, st.cursor)
+	}
+	out := comboFrame(KeyC, ModCtrl, view)
+	if out.Copy != "hello" {
+		t.Errorf("Copy = %q, want %q", out.Copy, "hello")
+	}
+	out = comboFrame(KeyX, ModCtrl, view)
+	if out.Copy != "hello" || buf != "" {
+		t.Errorf("after cut: Copy = %q buf = %q, want %q/''", out.Copy, buf, "hello")
+	}
+	out = comboFrame(KeyV, ModCtrl, view)
+	if !out.Paste {
+		t.Error("Paste not requested after Ctrl+V")
+	}
+	textFrame("hello", view) // paste arrives as text next frame
+	if buf != "hello" {
+		t.Errorf("buf = %q after paste, want %q", buf, "hello")
+	}
+}
+
+func TestEditBackspaceDeletesSelection(t *testing.T) {
+	buf := "hello"
+	st, view := editField(t, &buf)
+	keyFrame(KeyA, ModCtrl, view)
+	keyFrame(KeyDeleteBackward, 0, view)
+	if buf != "" {
+		t.Errorf("buf = %q, want empty (selection deleted)", buf)
+	}
+	if st.cursor != 0 || st.anchor != -1 {
+		t.Errorf("cursor=%d anchor=%d, want 0/-1", st.cursor, st.anchor)
+	}
+	// A plain backspace at the end deletes one rune.
+	textFrame("ab", view)
+	keyFrame(KeyDeleteBackward, 0, view)
+	if buf != "a" {
+		t.Errorf("buf = %q, want %q (single-rune delete)", buf, "a")
 	}
 }
