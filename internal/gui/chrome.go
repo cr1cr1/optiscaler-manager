@@ -39,7 +39,9 @@ func (m *model) sidebar() {
 	m.sidebarRects = m.sidebarRects[:0]
 	Container(Attrs(FixSize(sidebarW, WindowSize[1]), BackgroundVec(bgPanel), Pad(sp8), Gap(sp12)), func() {
 		m.sidebarShellRect = GetScreenRectOf(CurrentId())
-		Label("✦", FontSize(22), TextColorVec(toneColor(2)))
+		Container(Attrs(Center, Expand), func() {
+			Label("✦", FontSize(22), TextColorVec(toneColor(2)))
+		})
 		Filler(1)
 		m.sidebarItem(SymHome, "Games", !m.about && !m.settingsOpen, func() {
 			m.about = false
