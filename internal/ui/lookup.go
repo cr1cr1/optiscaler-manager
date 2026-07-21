@@ -51,7 +51,9 @@ func (s *Session) enrichOnline(ctx context.Context, rows []GameRow, snap setting
 		if ctx.Err() != nil {
 			return
 		}
-		if s.enrichRow(ctx, &rows[i], st, pdb) {
+		identified := s.identifyRow(ctx, &rows[i], st)
+		enriched := s.enrichRow(ctx, &rows[i], st, pdb)
+		if identified || enriched {
 			live++
 		}
 		done++

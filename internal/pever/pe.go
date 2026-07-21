@@ -344,3 +344,29 @@ func allDigit(v string) bool {
 	}
 	return len(v) > 0
 }
+
+// CompanyFromFile is TitleFromFile for the CompanyName string: the same
+// bounded windowed reads, returning "" when no usable company is present.
+func CompanyFromFile(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	window := make([]byte, headerWindow)
+	n, _ := f.ReadAt(window, 0)
+	off, size, err := resourceRange(window[:n])
+	if err != nil || size < 0 {
+		return ""
+	}
+	if size > maxVersionScan {
+		size = maxVersionScan
+	}
+	buf := make([]byte, size)
+	m, _ := f.ReadAt(buf, int64(off))
+	res := buf[:m]
+	if len(res) > maxVersionScan {
+		res = res[:maxVersionScan]
+	}
+	return scanStringFileInfoKey(res, "CompanyName")
+}

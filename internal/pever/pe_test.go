@@ -489,3 +489,16 @@ func TestExtractTitle_RejectsVendorJunk(t *testing.T) {
 		}
 	}
 }
+
+func TestCompanyFromFile(t *testing.T) {
+	res := concatStringStructs(
+		stringInfoString("CompanyName", "Santa Monica Studio"),
+		stringInfoString("ProductName", "God of War"),
+	)
+	if got := CompanyFromFile(writeTempPE(t, buildPE(false, res))); got != "Santa Monica Studio" {
+		t.Errorf("CompanyFromFile = %q, want %q", got, "Santa Monica Studio")
+	}
+	if got := CompanyFromFile(filepath.Join(t.TempDir(), "missing.exe")); got != "" {
+		t.Errorf("missing: CompanyFromFile = %q, want %q", got, "")
+	}
+}

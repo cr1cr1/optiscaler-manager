@@ -14,7 +14,7 @@ var editionPhrases = []string{
 	"game of the year", "directors cut", "definitive edition",
 	"enhanced edition", "complete edition", "anniversary edition",
 	"collectors edition", "legacy edition", "gold edition",
-	"history edition", "ultimate edition",
+	"history edition", "ultimate edition", "special edition",
 }
 
 // editionTokens are single-word edition/repack markers.
@@ -24,7 +24,7 @@ var editionTokens = map[string]bool{
 	"hd": true, "anniversary": true, "collection": true, "proper": true,
 	"repack": true, "fitgirl": true, "dodi": true, "dlc": true,
 	"update": true, "history": true, "gold": true, "legendary": true,
-	"ultimate": true, "redux": true,
+	"ultimate": true, "redux": true, "special": true,
 }
 
 // platformTokens are store/platform noise words.
