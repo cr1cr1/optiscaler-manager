@@ -39,6 +39,7 @@ func TestStoreEnumOnGame(t *testing.T) {
 		}
 	})
 }
+
 // TitleSource values are persisted in the games cache — the strings are a
 // wire contract and must not drift.
 func TestTitleSourceValues(t *testing.T) {
