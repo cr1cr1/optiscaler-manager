@@ -208,7 +208,7 @@ as fallback), and ProtonDB tiers come from
 `protondb.com` summaries API. Lookups run under a per-scan budget (8), cache results on
 disk (30 days for search, 7 days for summaries), back off on HTTP 429, and
 degrade silently when offline. Privacy note: when enabled, game titles are
-sent to steampowered.com/steamcommunity.com and appids to protondb.com — disable the toggle
+sent to steampowered.com/steamcommunity.com and pcgamingwiki.com, and appids to protondb.com — disable the toggle
 for a fully offline scan.
 
 ### TUI keymap

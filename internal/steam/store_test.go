@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // newStoreTestClient points both API hosts at the test server.
@@ -160,5 +162,30 @@ func TestStoreSearch_RateLimitCooldown(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Errorf("server calls = %d, want 1 (cooldown suppresses live retry)", got)
+	}
+}
+
+// Cached items written before StoreItem.Type existed (v0.8.0-era cache)
+// must keep working: an empty Type serves as "app".
+func TestStoreSearch_CachePreTypeItemsStillServe(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("no live call expected — the stale cache must serve")
+	}))
+	defer srv.Close()
+	c := newStoreTestClient(t, srv)
+	term := "legacy cached term"
+	raw := `{"items":[{"ID":"42","Name":"Legacy Game","Windows":true}],"fetched_at":"` + time.Now().UTC().Format(time.RFC3339) + `"}`
+	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(storeSearchFile(c.cacheDir, term), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	items, live, err := c.StoreSearch(context.Background(), term)
+	if err != nil {
+		t.Fatalf("StoreSearch: %v", err)
+	}
+	if live || len(items) != 1 || items[0].Name != "Legacy Game" || items[0].Type != "app" {
+		t.Errorf("items = %+v live=%v, want the legacy item served as app", items, live)
 	}
 }

@@ -219,6 +219,13 @@ func (c *Client) readStoreSearchCache(term string) (cachedStoreSearch, bool) {
 	if err := json.Unmarshal(data, &cs); err != nil {
 		return cachedStoreSearch{}, false
 	}
+	// Cache entries written before StoreItem.Type existed must keep
+	// working: they were all apps.
+	for i := range cs.Items {
+		if cs.Items[i].Type == "" {
+			cs.Items[i].Type = "app"
+		}
+	}
 	return cs, true
 }
 

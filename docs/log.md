@@ -1373,3 +1373,13 @@ traps). Fix-forward `7ce3fd8`:
   list — keyless, cargoquery HOLDS + opensearch, 30 req/min pacing,
   30d caches with negatives; TheGamesDB/UMU/HLTB/Deck/AppleGamingWiki
   rejected per the feasibility review).
+
+## 2026-07-21 — v0.8.1 gate: R1 PASS after fix-forward
+
+R1 re-review: PASS (HIGH) — all three blocking items verified fixed
+(overrides on AddDirectory + CLI, appid-beats-metadata precedence),
+exact-match corroboration deliberately rejected as a false-negative
+factory per the user's spec. Two WARNs landed same-day: storesearch
+caches written before StoreItem.Type existed now serve their items as
+apps (v0.8.0 warm caches kept working), and the README privacy note
+lists pcgamingwiki.com.
