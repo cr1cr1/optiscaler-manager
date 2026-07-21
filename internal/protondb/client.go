@@ -50,15 +50,16 @@ const (
 	cooldownFile = "cooldown.json"
 )
 
-// Summary mirrors the ProtonDB summary JSON fields actually used.
+// Summary mirrors the ProtonDB summary JSON fields actually used. Score
+// is a float on the live API (0.82), not an int.
 type Summary struct {
-	Tier             string `json:"tier"`
-	Confidence       string `json:"confidence"`
-	Score            int    `json:"score"`
-	Total            int    `json:"total"`
-	BestReportedTier string `json:"bestReportedTier"`
-	TrendingTier     string `json:"trendingTier"`
-	ProvisionalTier  string `json:"provisionalTier,omitempty"`
+	Tier             string  `json:"tier"`
+	Confidence       string  `json:"confidence"`
+	Score            float64 `json:"score"`
+	Total            int     `json:"total"`
+	BestReportedTier string  `json:"bestReportedTier"`
+	TrendingTier     string  `json:"trendingTier"`
+	ProvisionalTier  string  `json:"provisionalTier,omitempty"`
 }
 
 // Client fetches ProtonDB report summaries.

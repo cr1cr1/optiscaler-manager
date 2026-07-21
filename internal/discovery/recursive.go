@@ -30,9 +30,6 @@ func GameTitle(exe, folder string) string {
 	return exeStemTitle(exe, folder)
 }
 
-// gameTitle is the unexported form kept for package-internal callers.
-func gameTitle(exe, folder string) string { return GameTitle(exe, folder) }
-
 // platformStemTokens are trailing exe-name tokens that describe the build,
 // not the game ("TempestRising-Win64-Shipping" → "TempestRising").
 var platformStemTokens = map[string]bool{
@@ -258,6 +255,7 @@ func scanLevel(ctx context.Context, dir string, depth int, seen map[string]bool,
 				ExePath:     exe,
 				SteamAppID:  title.SteamAppID,
 				TitleSource: title.Source,
+				AppName:     title.EpicAppName,
 			})
 		case GameDirContainer:
 			sub, err := scanLevel(ctx, child, depth+1, seen, res)

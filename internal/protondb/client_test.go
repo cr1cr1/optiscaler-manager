@@ -100,12 +100,12 @@ func TestSummary_ParsesTierConfidence(t *testing.T) {
 		t.Errorf("got tier=%q confidence=%q, want gold/strong", sum.Tier, sum.Confidence)
 	}
 	if sum.Score != 82 || sum.Total != 1371 {
-		t.Errorf("got score=%d total=%d, want 82/1371", sum.Score, sum.Total)
+		t.Errorf("got score=%v total=%d, want 82/1371", sum.Score, sum.Total)
 	}
 	if sum.BestReportedTier != "platinum" || sum.TrendingTier != "gold" {
 		t.Errorf("got bestReported=%q trending=%q, want platinum/gold", sum.BestReportedTier, sum.TrendingTier)
 	}
-	t.Logf("appid=1245620 tier=%s confidence=%s score=%d total=%d", sum.Tier, sum.Confidence, sum.Score, sum.Total)
+	t.Logf("appid=1245620 tier=%s confidence=%s score=%v total=%d", sum.Tier, sum.Confidence, sum.Score, sum.Total)
 }
 
 func TestSummary_404HTMLReturnsNotFound(t *testing.T) {
@@ -218,4 +218,22 @@ func TestSummary_RefetchesAfterTTL(t *testing.T) {
 		t.Errorf("server hits = %d, want 2 (expired cache must refetch)", got)
 	}
 	t.Logf("cache expired after TTL: %d server hits", hits.Load())
+}
+
+// The live summaries API returns score as a float (0.78); decoding must
+// not fail on it.
+func TestSummary_FloatScore(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"tier":"gold","confidence":"strong","score":0.82,"total":1371,"bestReportedTier":"platinum","trendingTier":"gold"}`)
+	}))
+	defer srv.Close()
+	c := NewWithBaseURL(srv.Client(), t.TempDir(), srv.URL, "0.8.0")
+	sum, _, err := c.Summary(context.Background(), "1245620")
+	if err != nil {
+		t.Fatalf("Summary: %v", err)
+	}
+	if sum.Tier != "gold" || sum.Total != 1371 {
+		t.Errorf("sum = %+v", sum)
+	}
 }

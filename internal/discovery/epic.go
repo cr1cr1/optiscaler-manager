@@ -11,7 +11,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/gid"
 )
 
-// Epic manifest type and parser moved to internal/gid (v0.8); the aliases
+// EpicManifest and its parser moved to internal/gid (v0.8); the aliases
 // keep this package's API stable while gid stays below discovery.
 type EpicManifest = gid.EpicManifest
 

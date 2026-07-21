@@ -162,3 +162,18 @@ func TestIdentify_StoreRowsSkipped(t *testing.T) {
 		t.Errorf("row = %+v hits = %d, want untouched and zero calls", row, f.hits.Load())
 	}
 }
+
+// A codename short enough to exact-match an unrelated store item ("b1" →
+// "B1") is too ambiguous to query: the fuzzy step skips it and the folder
+// candidate decides instead.
+func TestIdentify_ShortCandidateSkipped(t *testing.T) {
+	f := newIdentifyFixture(t)
+	f.search["b1"] = `{"total":1,"items":[{"type":"app","name":"B1","id":1,"platforms":{"windows":true}}]}`
+	f.search["black myth wukong"] = `{"total":1,"items":[{"type":"app","name":"Black Myth: Wukong","id":2358720,"platforms":{"windows":true}}]}`
+	row := GameRow{Title: "b1", InstallDir: "/games/Black Myth Wukong", Store: domain.StoreManual, TitleSource: "pe"}
+
+	f.sess.identifyRow(context.Background(), &row, f.sess.deps.Steam)
+	if row.Title != "Black Myth: Wukong" || row.SteamAppID != "2358720" {
+		t.Errorf("row = %+v, want the folder-driven match, not the B1 trap", row)
+	}
+}

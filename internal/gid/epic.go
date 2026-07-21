@@ -28,26 +28,49 @@ func (m EpicManifest) IsGame() bool {
 	return false
 }
 
-// egstoreManifestJSON is the newer manifest format real Epic installs
-// write under .egstore: there is no DisplayName or InstallLocation —
-// AppNameString is the catalog id and LaunchExeString the game's exe
-// path relative to the install root.
-type egstoreManifestJSON struct {
-	ManifestFileVersion string `json:"ManifestFileVersion"`
-	AppNameString       string `json:"AppNameString"`
-	LaunchExeString     string `json:"LaunchExeString"`
-}
-
-// ParseEGStoreManifest parses the newer in-dir .egstore manifest format.
+// ParseEGStoreManifest parses the newer in-dir .egstore manifest format
+// by streaming the document header: real markers carry a multi-megabyte
+// FileManifestList, so the fields are read token by token and the walk
+// stops as soon as they are all found.
 func ParseEGStoreManifest(r io.Reader) (appName, launchExe string, err error) {
-	var raw egstoreManifestJSON
-	if err := json.NewDecoder(r).Decode(&raw); err != nil {
+	dec := json.NewDecoder(io.LimitReader(r, 64<<20))
+	tok, err := dec.Token()
+	if err != nil {
 		return "", "", fmt.Errorf("egstore manifest: %w", err)
 	}
-	if raw.ManifestFileVersion == "" || raw.AppNameString == "" {
-		return "", "", fmt.Errorf("egstore manifest: not the in-dir format (AppNameString=%q)", raw.AppNameString)
+	if d, ok := tok.(json.Delim); !ok || d != '{' {
+		return "", "", fmt.Errorf("egstore manifest: not an object")
 	}
-	return raw.AppNameString, raw.LaunchExeString, nil
+	var version string
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		key, _ := keyTok.(string)
+		var decErr error
+		switch key {
+		case "ManifestFileVersion":
+			decErr = dec.Decode(&version)
+		case "AppNameString":
+			decErr = dec.Decode(&appName)
+		case "LaunchExeString":
+			decErr = dec.Decode(&launchExe)
+		default:
+			var raw json.RawMessage
+			decErr = dec.Decode(&raw)
+		}
+		if decErr != nil {
+			return "", "", fmt.Errorf("egstore manifest: %w", decErr)
+		}
+		if version != "" && appName != "" && launchExe != "" {
+			break
+		}
+	}
+	if version == "" || appName == "" {
+		return "", "", fmt.Errorf("egstore manifest: not the in-dir format (AppNameString=%q)", appName)
+	}
+	return appName, launchExe, nil
 }
 
 type epicManifestJSON struct {

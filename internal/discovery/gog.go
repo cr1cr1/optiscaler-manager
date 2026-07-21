@@ -10,9 +10,9 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/gid"
 )
 
-// GOG metadata types and their parser moved to internal/gid (v0.8); the
-// aliases keep this package's API stable while letting gid stay below
-// discovery in the layering.
+// GOGGameInfo and its launch-task entries moved to internal/gid (v0.8)
+// together with their parser; the aliases keep this package's API stable
+// while letting gid stay below discovery in the layering.
 type GOGGameInfo = gid.GOGGameInfo
 type GOGPlayTask = gid.GOGPlayTask
 

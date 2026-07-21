@@ -47,6 +47,11 @@ func (s *Session) identifyRow(ctx context.Context, row *GameRow, st *steam.Clien
 		candidates = append(candidates, base)
 	}
 	for _, cand := range candidates {
+		if len(gid.Normalize(cand)) < 4 {
+			// Too ambiguous to query: a codename this short can
+			// exact-match an unrelated store item ("b1" → "B1").
+			continue
+		}
 		if strings.TrimSpace(cand) == "" {
 			continue
 		}

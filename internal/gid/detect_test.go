@@ -3,6 +3,7 @@ package gid
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
@@ -179,5 +180,26 @@ func TestDetect_EGStoreItemFormatCapturesID(t *testing.T) {
 	got := Detect(root, "")
 	if got.Title != "Prey" || got.Source != domain.SourceEGStore || got.EpicAppName != "PreyApp" {
 		t.Errorf("Detect = %+v, want egstore title + id", got)
+	}
+}
+
+// Real .egstore manifests carry a multi-megabyte FileManifestList after
+// the header fields: parsing must read the header without requiring the
+// whole document.
+func TestDetect_EGStoreHugeManifest(t *testing.T) {
+	root := t.TempDir()
+	var b strings.Builder
+	b.WriteString(`{"ManifestFileVersion":"013000000000","AppNameString":"6b9b4207048a4a5eb98a0803ebbfe7fa","LaunchExeString":"Binaries/Prey.exe","FileManifestList":[`)
+	for i := 0; i < 4000; i++ {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(`{"Filename":"f","FileHash":"h","FileChunkParts":[]}`)
+	}
+	b.WriteString(`]}`)
+	write(t, filepath.Join(root, ".egstore", "X.manifest"), b.String())
+	got := Detect(root, "")
+	if got.EpicAppName != "6b9b4207048a4a5eb98a0803ebbfe7fa" {
+		t.Errorf("EpicAppName = %q, want the catalog id from a huge manifest", got.EpicAppName)
 	}
 }
