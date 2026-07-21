@@ -356,7 +356,15 @@ closed; reopen only with new evidence.
   folders never row and never make their parent a container. A real game
   literally named like one would be skipped; an unusual engine layout
   not covered could still row. Container nesting is bounded (4 levels in
-  the scan, 6 in classification).
+  the scan, 6 in classification), and the main-exe search descends at
+  most 4 levels (deep enough for Prey's
+  `Binaries/Danielle/x64-Epic/Release` layout; anything deeper is
+  invisible). Exe walks never descend pure-plumbing subtrees
+  (`downloading`, `compatdata`, `shadercache`, `temp`, `music`,
+  `sourcemods`, `steamworks*`, `steamvr`) nor a Wine prefix's
+  `drive_c/windows` or `drive_c/users` — a game whose only exe lived
+  there would be missed (none known; Lutris games under
+  `drive_c/Program Files` / `GOG Games` are unaffected).
 - A `steam.exe` + `Steam.dll` pair marks a platform client install,
   which always classifies as a container. A game shipping both files at
   its root would be misclassified (not seen in practice).

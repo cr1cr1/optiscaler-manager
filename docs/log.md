@@ -1234,3 +1234,37 @@ the 128MiB whole-file cap silently dropped its title; Unreal's
 - Docs: README status + scanning paragraph, scope.md v0.7 known limits
   rewritten (two stale v0.7 bullets removed), architecture.md covers-tick
   paragraph, this entry.
+
+## 2026-07-21 — v0.7.2 review gate: fix-forward after R1/R5 FAILs
+
+Five-lane gate on b8ef5ab: R2 QA PASS (13/13 adversarial scenarios),
+R3 quality PASS, R4 security PASS; R1 goal FAIL (two residual junk-row
+paths) and R5 context FAIL (wrong InjectionDir, lost game, stale
+evidence). Fix-forward:
+
+- `24ff154` fix(discovery): exe walks prune plumbing subtrees
+  (`downloading`, `compatdata`, `shadercache`, `temp`, `music`,
+  `sourcemods`, `steamworks*`, `steamvr`) and a Wine prefix's
+  `drive_c/windows` / `drive_c/users` — a game-less steamapps with a
+  partial download no longer rows as "steamapps", and a bare prefix no
+  longer rows via `notepad.exe`. `maxExeDepth` 3 → 4: Prey
+  (`Binaries/Danielle/x64-Epic/Release/Prey.exe`) is back in the
+  library; Days Gone's CRS stays dead (container via BendGame first).
+- `880f700` fix(discovery): separator-insensitive name scoring in
+  `ResolveInstallDir` — Far Cry 5's InjectionDir resolves to `bin/`
+  again (the 60MB .NET installer previously won the tie; an Install
+  click would have targeted a redist folder).
+- `fe177b1` hardening: `resolveGameExe` falls back to FindMainExe when
+  the parent is engine-named; UTF-8-safe stem splitting; TitleFromFile
+  negative-size guard; non-blocking magic-sniff open (FIFO swap race).
+- Real-tree probe re-captured at HEAD (`/tmp/v072-real-rows.log`): 109
+  rows in 13s — PREY restored, Far Cry 5 InjectionDir = `bin`, zero
+  plumbing/junk rows; the earlier 111-row artifact predated the ranking
+  fix and has been replaced. `HELLDIVERS™ 2` shows correctly in
+  production (the exe's own ProductName string is double-encoded by the
+  vendor; the Steam manifest name wins the dedup).
+- Remaining accepted items: codename PE titles (`GoWR`, `b1`, `TOI`,
+  `SilentHill`, `witness64 d3d11`, `Anvil`, `Cardinal`, `STASIS2`,
+  `NobodyWantsToDie`) are metadata-first per the user's contract —
+  presented to the user as an explicit decision; covers phase can clear
+  before its final 100% frame renders (cosmetic).
