@@ -1,215 +1,66 @@
 # optiscaler-manager
 
-Go desktop app that manages [OptiScaler](https://github.com/optiscaler/OptiScaler)
-installations for local games — downloads the current bundle, installs it into
-a game directory with full backup + rollback safety, and uninstalls cleanly.
+A desktop app that manages [OptiScaler](https://github.com/optiscaler/OptiScaler)
+installations for your local games. It downloads the current OptiScaler bundle,
+installs it into a game directory with full backup and rollback safety, and
+uninstalls cleanly when you're done. Available for **Linux and Windows** (amd64).
 
-GUI: [go-shirei](https://github.com/hasenj/go-shirei) (`go.hasen.dev/shirei`,
-pinned v0.5.2). Built and released for **Linux and Windows** (amd64); the GUI
-runs wherever shirei has a backend.
+## Features
 
-The GUI is a thin [go-shirei](https://github.com/hasenj/go-shirei) binding
-over a frontend-agnostic session core (`internal/ui`); the `tui` subcommand
-is a second, terminal frontend on the same session.
+- Scans Steam, Epic, GOG, and manually added folders to build your game library
+- Real game titles and cover art, plus ProtonDB compatibility tiers on Linux
+- One-click install, uninstall, and rollback, with SHA-verified backups of
+  every file it touches
+- Detects and adopts OptiScaler setups you installed by hand, so they become
+  managed without losing your files
+- Launch games straight from the app (Steam, Epic, GOG, or a custom template)
+- Both a graphical interface and a terminal UI over the same core
+- Open a game's `OptiScaler.ini` for editing right from the app
+- Settings for default OptiScaler version, scan directories, launch template,
+  and online lookups
+- Works offline: everything degrades gracefully with no network, and online
+  lookups can be turned off entirely
 
-Status: v0.8. This release gives manually scanned games a real
-identification stack instead of "PE title or bust". Each manual row is
-resolved by priority: a **user-pinned title** (`title_overrides` in
-settings.json, keyed by install dir) always wins; a `steam_appid.txt`
-found in the game dir (even nested under `steam_settings/`) records the
-Steam appid and the store's canonical name replaces the guess during the
-online phase; in-dir store metadata names the game on every platform —
-`goggame-*.info` (GOG), `.egstore` manifests (Epic, verified against
-their own InstallLocation so stale markers are ignored), and Unity
-`*_Data/app.info`; everything else tries a **normalized fuzzy match**
-against the Steam store (edition/platform noise stripped, strict token
-matching with trap guards, developer-vs-PE-company corroboration for
-borderline scores); only then do PE version info, the exe name, and the
-folder name get their say. Rows carry their identification source and
-Steam appid (games cache schema v5), ProtonDB reuses resolved appids
-instead of searching by name, and all of it degrades gracefully offline:
-hard-ID and in-dir metadata rules work with no network, online
-resolution fills in on the next connected scan. v0.7.2 hardened scanning
-against real libraries: platform and plumbing directories can no longer
-become game rows — a Steam client install (`steam.exe` + `Steam.dll`)
-is always a container, a container child outranks a directory's own exe,
-and engine/redist/prefix folders (`bin`, `tools`, `_CommonRedist`,
-`Engine`, `drive_c`, `compatdata`, `shadercache`, versioned
-`Proton*`/`SteamLinuxRuntime*`, …) never row and never turn their
-parent into a container, so games row at their root instead of one
-level too deep (`bin/x64_dx12`, `Bin64`, `Retail`). Exe candidacy on unix requires real PE/ELF magic bytes — an
-execute bit on a shader cache or an appmanifest no longer makes a fake
-"game executable". Game titles follow the reliability contract **binary
-metadata first, then the exe name, then the directory name**: the PE
-reader uses small windowed reads (no whole-file cap, so 400MB-class exes
-keep their metadata titles), placeholder titles (`BootstrapPackagedGame`,
-`UE4Game`) fall through to the exe stem (platform tokens stripped, camel
-humps split), and the folder name is the last resort. The games cache
-moves to schema v4 (older caches carry rows the new scanner rejects).
-v0.7.1 made containers transparent at every scan level: a manually added
-directory is classified
-(`discovery.ClassifyGameDir` — exe at the top or one level down means game;
-game-bearing subdirectories mean container; nothing executable means empty),
-and containers become **scan roots**, not games — adding one registers it
-and surfaces each game inside as its own row, with no phantom self-row for
-the container itself; directories with no games anywhere are refused with a
-clear toast. v0.6 detects **pre-existing OptiScaler installations**
-on scanned games — manual installs dropped in by hand, with no manager
-manifest. During a scan, unmanaged games are probed for an OptiScaler-branded
-injection DLL (dxgi.dll, OptiScaler.dll, winmm.dll, dbghelp.dll, version.dll,
-wininet.dll, winhttp.dll, d3d12.dll); identity comes from PE version info
-(ProductName/CompanyName/OriginalFilename containing "optiscaler"), so renamed
-injection files are still recognized, and the version is recovered from
-OptiScaler's own manifest.json → OptiScaler.log banner → the DLL's PE
-FileVersion. Matches get a derived **external** status (never written to
-manifests) shown in the GUI (blue pill), the TUI (accent), and CLI scan
-output. External installs are first-class: installing over one (the button
-reads **Adopt**) backs the external files up SHA-verified and makes the game
-managed, so a later uninstall or rollback restores the original external
-files byte-identically; uninstalling a never-managed external install is
-refused with a clear toast. v0.5 extracted real game titles from PE version info
-(ProductName → FileDescription, folder-name fallback) so Windows exes get
-proper names even on Linux, resolves ProtonDB compatibility tiers
-(platinum/gold/silver/bronze/borked) through a title → Steam appid → tier
-lookup with per-scan budgets and TTL disk caches, added scan progress
-reporting (phases discover/enrich/covers/lookup, shown as a progress bar in
-the GUI and a progress line in the TUI), made AddDirectory and
-ClearBundleCache non-blocking, and fixed the TUI tab bar (a one-line
-overflow made bubbletea drop it, hiding the Settings screen). GUI polish:
-card buttons fire without opening the detail panel (only card-body clicks
-open it), the detail panel is proportional (30% of the window, clamped
-300–480px), ProtonDB tier pills on cards and the detail panel, an
-online-lookups toggle in Settings, and a dark Wayland CSD titlebar via a
-vendored shirei patch (see `docs/vendor-patches.md`). v0.4 shipped
-cache-first startup (schema-versioned
-`games.json` cache,
-status reconciled from store manifests), in-app settings (scan-directory
-list with add/remove, launch-template editing), GUI polish (sort menu,
-icon view switch, hover states, gradient cover placeholders, empty states
-with CTAs, arrow-key grid navigation, raised toasts), and a multi-screen
-styled TUI. v0.3 shipped multi-store library scan
-(Steam, Epic, GOG, manual folders, with Windows/macOS discovery probes),
-per-game upscaler and OptiScaler versions read from PE resources, one-click
-game launching (Steam `steam://rungameid` with automatic Proton, Epic
-launcher URL, GOG direct exe, custom template for manual games), a bubbletea
-TUI, cancellable install/uninstall operations, and a keyboard-navigable
-responsive cover-grid GUI. See `docs/` for scope, architecture, safety
-model, and the milestone plan.
+## Installation
+
+Download the latest release for your platform (Linux or Windows, amd64) from
+the [releases page](../../releases), unpack it, and run:
+
+```
+optiscaler-manager        # graphical interface
+optiscaler-manager tui    # terminal UI
+```
 
 ## Usage
 
-```
-optiscaler-manager                  # launch the GUI
-optiscaler-manager tui              # launch the terminal UI (same session core)
-optiscaler-manager gui --audit-grid # raw sortable table view
-optiscaler-manager scan             # list installed games (all stores) + upscalers/versions
-optiscaler-manager install <path>   # install OptiScaler into a game directory
-optiscaler-manager uninstall <path> # SHA-verified removal
-optiscaler-manager rollback <path>  # restore after an interrupted/failed install
-optiscaler-manager version
-```
-
 Scanning covers Steam, Epic, GOG (discovery is Windows-only), and manually
-added folders (recursive); game titles come from PE version info
-(ProductName, then FileDescription, then the exe's filename stem, then the
-folder name), so Windows exes get real titles even on Linux — the PE reader
-uses bounded window reads, not whole-file reads, so huge game exes keep
-their titles — and unix scans accept `.exe` files without the execute bit
-while requiring real PE/ELF magic bytes everywhere else. Manually added folders are classified before they
-become rows: a folder that is itself a game gets one row (plus one per
-game it contains); a **container** (a library root whose subdirectories
-are or hold the games, e.g. `Games` or `Steam`) is a scan root — every
-game inside surfaces as its own row at any nesting depth, and the
-container never gets a row of its own; engine folders holding a game's own
-binaries (`bin`, `Binaries/Win64`, …) never become rows; a folder with no
-games anywhere is refused.
-The grid shows each game's store, installed OptiScaler version, detected
-upscaler versions (DLSS/FSR/XeSS marketing names), and ProtonDB tier.
-Scans also detect OptiScaler installs this manager did not make: unmanaged
-games are probed (in the background scan goroutine, with bounded reads — no
-blocking on UI paths) for an OptiScaler-branded injection DLL, identified by
-PE version info rather than filename so renamed shims still count. Matches
-surface as status **external**; their component versions stay hidden (those
-DLLs belong to OptiScaler's bundle, not the game), and the external status
-is cached in `games.json` until the next rescan.
-Adding a directory is non-blocking: a game directory gets a placeholder row
-instantly and is enriched in the background; a container is registered as a
-scan folder and its games surface on the automatic rescan; a directory with
-no games is refused with a warning. Launch a game from its
-card or the detail panel button (GUI) or the `l` key (TUI): Steam games go through
-`steam://rungameid` (Proton is applied by Steam automatically), Epic through
-the launcher URL, GOG and manual games via their exe — manual games use the
-launch template from Settings. Launching is fire-and-forget; the app never
-tracks or kills game processes. Busy install/uninstall operations can be
-cancelled per game (Cancel button or `c` in the TUI) and roll back to the
-pre-op state.
+added folders (recursive). A folder that is itself a game gets one row; a
+container folder (a library root like `Games` or `Steam`) becomes a scan root
+and every game inside it surfaces as its own row. The grid shows each game's
+store, installed OptiScaler version, detected upscaler versions
+(DLSS/FSR/XeSS), and ProtonDB tier. Launch a game from its card or detail
+panel (GUI) or with `l` (TUI); launching is fire-and-forget. Busy installs and
+uninstalls can be cancelled per game and roll back to the pre-operation state.
 
-GUI interactions: the toolbar scans, adds games, filters, sorts
-(Default: actionable first / Name: A–Z), and switches between grid and list
-views; a progress bar under the toolbar tracks the scan phases
-(discover/enrich/covers/lookup). Cards fire their buttons directly — only a
-card-body click opens the detail panel, which docks to the right at 30% of
-the window width (clamped 300–480px). Arrow keys move the card selection,
-Enter opens
-the detail side panel, Esc closes it, and Tab/Shift-Tab cycles
-focus across every button. ProtonDB tier pills (platinum/gold/silver/bronze/
-borked/pending) show on cards and in the detail panel when online lookups
-are enabled. Empty libraries and empty filters show guidance
-with scan/add/clear-search buttons. On Wayland the client-side titlebar is
-dark-themed through a vendored shirei patch (`docs/vendor-patches.md`); X11
-keeps the window manager's decorations.
+Games with a hand-installed OptiScaler setup show as **external**. The install
+action reads **Adopt**: installing backs up the external files SHA-verified
+first, so the game becomes managed without losing your setup, and a later
+uninstall or rollback restores those files byte-identically.
 
-Installing into an EAC-protected game (`start_protected_game.exe`) is refused
-unless `--force` is passed (GUI asks instead). When the GitHub API is
-rate-limited, stale cached release info is refused unless `--allow-cached` is
-passed.
+Your state (manifests, backups, settings, library cache) lives outside game
+directories in `~/.local/share/optiscaler-manager`; downloaded bundles and
+cover art are cached in `~/.cache/optiscaler-manager`.
 
-For games with an **external** OptiScaler install (detected, not managed),
-the install action reads **Adopt**: installing over the external files backs
-them up SHA-verified first, so the game becomes managed without losing the
-hand-installed setup — a later uninstall or rollback restores those external
-files byte-identically and the game shows as external again. Uninstall of a
-never-managed external install is refused outright ("not installed by this
-manager — adopt first or remove manually"), because no SHA-verified removal
-is possible without a manifest. Open INI works on external installs.
+### GUI
 
-State (manifests, backups, `settings.json`, the `games.json` library cache)
-lives outside game directories in
-`$XDG_DATA_HOME/optiscaler-manager` (default `~/.local/share/optiscaler-manager`).
-Startup reads `games.json` first: a warm cache shows the library instantly
-without scanning (status `N games (cached)`, with each game's install status
-reconciled from the store manifests); a missing or corrupt cache falls
-through to a full scan. The cache is rewritten after every scan, directory
-add/remove, and completed operation. Rescan explicitly with the Scan button
-(GUI) or `R` (TUI).
-OptiScaler bundles and cover art are cached in
-`$XDG_CACHE_HOME/optiscaler-manager` (default `~/.cache/optiscaler-manager`) —
-bundles at `optiscaler/<version>/` are reused before any download and can be
-cleared from Settings.
-
-The Settings window (GUI sidebar, TUI screen `2`) holds the default
-OptiScaler version (`latest` or a tag), the scan-directories list, the
-launch template, the online game-info toggle, and the clear-cache action.
-Scan directories are managed
-in-app: "Add directory…" opens the OS directory dialog (zenity or kdialog)
-and each row has a Remove button; in the TUI, `a` adds a path and `d`
-removes the selected one (with a `y`/`n` confirm). Added games persist and
-are scanned recursively. "Add Game" on the GUI toolbar is a shortcut to the
-same OS picker. The launch template for manual games
-(default `"{exe}" {args}`) is edited in-app: the Launch Template field in
-the GUI Settings modal, or `t` on the TUI Settings screen.
-
-The "Online game info (Steam/ProtonDB)" toggle (`online_lookups` in
-`settings.json`, default **true**; GUI Settings checkbox, TUI `o`) gates the
-lookup phase of each scan: canonical titles are resolved from the Steam
-store (steam_appid.txt ids via `store.steampowered.com/api/appdetails`,
-title searches via `/api/storesearch` with `steamcommunity.com/actions/SearchApps`
-as fallback), and ProtonDB tiers come from
-`protondb.com` summaries API. Lookups run under a per-scan budget (8), cache results on
-disk (30 days for search, 7 days for summaries), back off on HTTP 429, and
-degrade silently when offline. Privacy note: when enabled, game titles are
-sent to steampowered.com/steamcommunity.com and pcgamingwiki.com, and appids to protondb.com — disable the toggle
-for a fully offline scan.
+The toolbar scans, adds games, filters, sorts, and switches between grid and
+list views, with a progress bar tracking scan phases. Cards fire their buttons
+directly; clicking a card body opens the detail panel. Arrow keys move the
+selection, Enter opens the detail panel, Esc closes it. The Settings window
+holds the default OptiScaler version, the scan-directory list, the launch
+template, the online game-info toggle, and the clear-cache action. The
+"Online game info" toggle (on by default) gates Steam/ProtonDB lookups;
+turning it off gives you a fully offline scan.
 
 ### TUI keymap
 
@@ -229,10 +80,18 @@ for a fully offline scan.
 | Settings: `e` `t` `a` `d` `x` `o` | Edit version / edit launch template / add dir / remove dir (`y`/`n`) / clear bundle cache / toggle online game info |
 | Confirm modal | `y` proceed, `n` cancel |
 
-Every screen footer shows the screen-switch hints
-(`1 games · 2 settings · 3 help · 4 about`); the About screen shows the
-build version and the TUI stack line. During scans a progress line shows
-the current phase, bar, and percent.
+### Command line
+
+```
+optiscaler-manager                  # launch the GUI
+optiscaler-manager tui              # launch the terminal UI
+optiscaler-manager gui --audit-grid # raw sortable table view
+optiscaler-manager scan             # list installed games + upscalers/versions
+optiscaler-manager install <path>   # install OptiScaler into a game directory
+optiscaler-manager uninstall <path> # SHA-verified removal
+optiscaler-manager rollback <path>  # restore after an interrupted/failed install
+optiscaler-manager version
+```
 
 ### Environment variables
 
@@ -247,15 +106,8 @@ the current phase, bar, and percent.
 
 ## Development
 
-```
-go test ./...        # full verification (the only sanctioned test entrypoint)
-go vet ./...
-golangci-lint run
-```
-
-Conventions: TDD first, zerolog in production code, `t.Log` in tests,
-OKF-formatted docs under `docs/`, vendored dependencies, commit per completed
-task. See `AGENTS.md` and `docs/`.
+Interested in the internals or contributing? See [README.dev.md](README.dev.md)
+for the architecture, stack, conventions, and release process.
 
 ---
 

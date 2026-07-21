@@ -1502,3 +1502,7 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   of tiers when loaded off-Linux (strip-at-load, no schema bump). The
   resolved Steam appid is still kept for identification on every
   platform. Display sites already no-op on an empty tier.
+- README is user-first: the release-history dump is gone (docs/log.md
+  owns history), features are presented for users, and the technical
+  content (architecture, stack, conventions, release process) moved to
+  the new README.dev.md, linked from the README's Development section.
