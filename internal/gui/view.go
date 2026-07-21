@@ -68,6 +68,13 @@ func (m *model) handleGlobalKeys() {
 	if m.sess == nil || m.about || m.settingsOpen || m.state.Confirm != nil {
 		return
 	}
+	// `/` anywhere focuses the search field (unless it is already focused —
+	// then the field consumed the character itself).
+	if FrameInput.Text == "/" && !m.libraryEmpty() {
+		FocusImmediateOn(m.searchID)
+		FrameInput.Text = ""
+		return
+	}
 	rows := m.visibleRows()
 	if n := len(rows); n > 0 && m.selIdx >= n {
 		m.selIdx = n - 1
@@ -120,10 +127,15 @@ func (m *model) actionList() {
 		func(i int, w float32) float32 { return 30 },
 		func(i int, w float32) {
 			e := rows[i]
-			Container(Attrs(Row, CrossMid, Gap(sp12), Pad2(3, sp12), MinSize(w, 30), Corners(radiusS)), func() {
+			Container(Attrs(Row, CrossMid, Gap(sp8), Pad2(3, sp12), MinSize(w, 34), Corners(radiusS)), func() {
 				if IsHovered() {
 					ModAttrs(BackgroundVec(bgRaised))
 				}
+				// List rows keep their cover thumbnails: a small portrait
+				// tile before the status pills.
+				Container(Attrs(FixSize(20, 30), Corners(radiusS), Clip), func() {
+					m.coverArt(e, 20, 30)
+				})
 				Container(Attrs(Row, Gap(sp4)), func() {
 					if b, ok := statusPill(&e); ok {
 						badgePill(b.Label, b.Tone)

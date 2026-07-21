@@ -71,6 +71,7 @@ var (
 	border      = Vec4{230, 12, 32, 1}
 	accent      = Vec4{220, 18, 26, 1}
 	accentHov   = Vec4{220, 22, 34, 1}
+	focusBorder = Vec4{210, 70, 62, 1} // bright: focus rings and the text caret
 	scrolAccent = Vec4{220, 10, 45, 1}
 	txtMain     = Vec4{220, 15, 92, 1}
 	txtMuted    = Vec4{220, 10, 62, 1}

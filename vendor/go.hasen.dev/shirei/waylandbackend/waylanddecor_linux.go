@@ -21,9 +21,12 @@ import (
 
 const titlebarHeight = 34
 
-// csdEnabled gates the client-side titlebar/resize. Always on for now; once
-// xdg-decoration negotiation lands this turns off when the compositor draws SSD.
-var csdEnabled = true
+// csdEnabled gates the client-side titlebar/resize. Disabled at the user's
+// request: the OS window manager keeps its default decorations (SSD where the
+// compositor provides them, none where it does not).
+//
+// PATCHED by optiscaler-manager (v0.8): CSD disabled — reapply after `go mod vendor` (see docs/vendor-patches.md)
+var csdEnabled = false
 
 // drawTitlebar builds the client-side title bar (window title + close button) and
 // starts an interactive move when dragged. It's installed as shirei.DecorationFn,

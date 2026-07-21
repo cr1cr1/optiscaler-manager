@@ -173,13 +173,16 @@ func (m *model) gameCard(e ui.GameRow) {
 				}
 			})
 		}
+		// Buttons pin to the card bottom so cards with and without pill rows
+		// align exactly.
+		Filler(1)
 		var btnRowID ContainerId
 		if m.sess != nil {
 			Container(Attrs(Row, Gap(sp4)), func() {
+				m.cardBtnRect = GetScreenRectOf(CurrentId())
 				if focusableButton(SymIRight, quickLabel(&e)) {
 					m.sess.QuickInstall(e.InstallDir)
 				}
-				m.cardBtnRect = GetScreenRectOf(GetLastId())
 				if launchable(&e) && focusableButton(0, "Launch") {
 					m.launchGame(e)
 				}

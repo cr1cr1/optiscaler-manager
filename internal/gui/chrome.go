@@ -31,12 +31,16 @@ func modal(width float32, dismiss func(), fn func()) {
 	})
 }
 
-// sidebar is the icon navigation column on the left edge: glyph above a
-// short label, with the active section highlighted in the accent color.
+// sidebar is the icon navigation column on the left edge: it fills the
+// full window height, the nav group (glyph above a short label) is centered
+// vertically, and Exit stays pinned to the bottom; the active section is
+// highlighted in the accent color.
 func (m *model) sidebar() {
 	m.sidebarRects = m.sidebarRects[:0]
-	Container(Attrs(FixSize(sidebarW, 0), BackgroundVec(bgPanel), Pad(sp8), Gap(sp12)), func() {
+	Container(Attrs(FixSize(sidebarW, WindowSize[1]), BackgroundVec(bgPanel), Pad(sp8), Gap(sp12)), func() {
+		m.sidebarShellRect = GetScreenRectOf(CurrentId())
 		Label("✦", FontSize(22), TextColorVec(toneColor(2)))
+		Filler(1)
 		m.sidebarItem(SymHome, "Games", !m.about && !m.settingsOpen, func() {
 			m.about = false
 			m.settingsOpen = false
@@ -98,7 +102,7 @@ func (m *model) settingsModal() {
 			Container(Attrs(Expand, Gap(sp4)), func() {
 				sectionTitle("General")
 				muted("Default OptiScaler version (tag or 'latest')")
-				themedInput(&m.versionBuf, "latest", 0, MinSize(260, 34), MaxSizeVec(Vec2{460, 34}))
+				themedInput(&m.versionBuf, "latest", 0, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
 				if m.sess != nil {
 					focusableToggle(&m.onlineBuf, "Online game info (Steam/ProtonDB)")
 					if m.onlineBuf != m.sess.Settings().OnlineLookups {
@@ -115,7 +119,7 @@ func (m *model) settingsModal() {
 			Container(Attrs(Expand, Gap(sp4)), func() {
 				sectionTitle("Launch Template")
 				muted("Command template for manually added games; {exe} and {args} are substituted")
-				themedInput(&m.templateBuf, `"{exe}" {args}`, 0, MinSize(260, 34), MaxSizeVec(Vec2{460, 34}))
+				themedInput(&m.templateBuf, `"{exe}" {args}`, 0, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
 			})
 
 			if m.sess != nil {

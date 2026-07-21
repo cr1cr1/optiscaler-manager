@@ -878,7 +878,8 @@ func ScrollOnInput() {
 		// Wheel input scrolls what's on screen, so clamping against the
 		// previous frame eagerly is right here — unlike SetScrollOffset,
 		// which records a target for this frame's layout to reconcile.
-		desired := Vec2Add(current.ScrollOffset, FrameInput.Scroll)
+		// PATCHED by optiscaler-manager (v0.8): scroll speedup (x2/x3) — reapply after `go mod vendor` (see docs/vendor-patches.md)
+		desired := Vec2Add(current.ScrollOffset, Vec2{FrameInput.Scroll[0] * 2, FrameInput.Scroll[1] * 3})
 
 		var paddingSize Vec2
 		paddingSize[0] = current.Padding[PAD_LEFT] + current.Padding[PAD_RIGHT]

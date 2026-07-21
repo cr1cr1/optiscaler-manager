@@ -37,3 +37,24 @@ tree from the module cache and drops the patch. When that happens:
 
 **Upgrade path.** Remove the patch when upgrading to a shirei release that
 themes its CSD titlebar natively; update this page at the same time.
+
+## shirei: CSD disabled + scroll speedup (v0.8)
+
+- **Files**: `vendor/go.hasen.dev/shirei/waylandbackend/waylanddecor_linux.go` (`csdEnabled = false`), `vendor/go.hasen.dev/shirei/shirei.go` (`ScrollOnInput` ×2/×3 wheel multiplier).
+- **Markers**: `// PATCHED by optiscaler-manager (v0.8)`
+- **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent`).
+
+**What.** Two user-requested changes: the client-side Wayland titlebar is
+turned off entirely (`csdEnabled = false` — the OS window manager keeps its
+default decorations where the compositor provides them, none where it does
+not), and wheel scrolling is sped up 2× horizontally / 3× vertically in
+`ScrollOnInput` (shirei's raw 1:1 deltas felt slow on Linux; Win32's
+30px/notch becomes 90px, roughly three text lines, matching OS conventions).
+
+**Why.** User-facing layout and feel requests; shirei has no theming or
+speed hooks for either behavior.
+
+**Reapplying after `go mod vendor`.** Reapply both edits with the marker
+comments; `TestVendorCSDPatchPresent` fails while either marker is missing.
+The earlier dark-CSD retint (v0.5) is now inert while CSD is disabled; keep
+the v0.5 patch text in place so re-enabling is one flag away.

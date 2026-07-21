@@ -43,12 +43,14 @@ type model struct {
 	cardRect          Rect           // screen rect of the last rendered card (hover test seam)
 	cardBtnRect       Rect           // screen rect of the card's first button (click routing test seam)
 	sidebarRects      []Rect         // screen rects of the sidebar nav items (uniformity test seam)
+	sidebarShellRect  Rect           // screen rect of the sidebar shell (full-height test seam)
 	progressTrackRect Rect           // screen rect of the scan progress track (progress bar test seam)
 	progressFillRect  Rect           // screen rect of the scan progress fill (progress bar test seam)
 	tierPillRect      Rect           // screen rect of the card's ProtonDB tier pill (tier badge test seam)
 	detailPanelRect   Rect           // screen rect of the detail panel shell (panel width test seam)
 	listSegRect       Rect           // screen rect of the List view-switch segment (click test seam)
 	openINIRect       Rect           // screen rect of the detail panel's OpenINI button (visibility test seam)
+	searchID          ContainerId    // the search field's container (`/` focuses it from anywhere)
 	cols              int            // current grid columns, derived from live width
 	cardW             int            // current card width in px, derived from live width
 	cardH             int            // current card height in px

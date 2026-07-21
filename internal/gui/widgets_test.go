@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -257,4 +258,83 @@ launched:
 		t.Errorf("runner calls %d after non-launchable row, want still 1", calls)
 	}
 	t.Logf("launch argv: %v", argv)
+}
+
+// `/` focuses the search field from anywhere; typed text then lands in it.
+func TestGUISlashFocusesSearch(t *testing.T) {
+	sess, _ := guiFakes(t)
+	m := newModel(Config{Session: sess})
+	dir := filepath.Join(t.TempDir(), "GameA")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "game.exe"), []byte("MZGAME"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sess.AddDirectory(dir)
+	deadline := time.Now().Add(15 * time.Second)
+	for len(sess.VisibleRows()) < 1 && time.Now().Before(deadline) {
+		select {
+		case <-sess.Events():
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	if len(sess.VisibleRows()) != 1 {
+		t.Fatalf("rows %d, want 1", len(sess.VisibleRows()))
+	}
+
+	headlessFrames(t, 800, 600)
+	keyFrame(KeyCodeNone, 0, m.rootView) // build; captures m.searchID
+	FrameInput.Text = "/"
+	RunFrameFn(m.rootView)
+	FrameInput.Text = "ab"
+	RunFrameFn(m.rootView)
+	if m.filter != "ab" {
+		t.Errorf("filter = %q, want %q (/ focused the search and typing landed in it)", m.filter, "ab")
+	}
+}
+
+// Cards with and without pill rows pin their buttons to the same bottom Y.
+func TestGUICardButtonsBottomAligned(t *testing.T) {
+	sess, _ := guiFakes(t)
+	m := newModel(Config{Session: sess})
+	m.cardW = 200
+	m.cardH = cardContentH(m.cardW)
+	withPills := ui.GameRow{Title: "Pilled", Status: domain.StatusCommitted, Components: []string{"DLSS 4.0"}}
+	bare := ui.GameRow{Title: "Bare"}
+
+	headlessFrames(t, 800, 600)
+	view := func() {
+		Container(Attrs(Viewport, Row), func() {
+			m.gameCard(withPills)
+			m.gameCard(bare)
+		})
+	}
+	RunFrameFn(view) // build + resolve layout
+	var yA, yB float32
+	RunFrameFn(func() {
+		Container(Attrs(Viewport, Row), func() {
+			m.gameCard(withPills)
+			yA = m.cardBtnRect.Origin[1]
+			m.gameCard(bare)
+			yB = m.cardBtnRect.Origin[1]
+		})
+	})
+	if yA != yB {
+		t.Errorf("button row Y = %v vs %v, want identical bottom alignment", yA, yB)
+	}
+	want := float32(m.cardH - buttonRowH)
+	if yA != want {
+		t.Errorf("button row Y = %v, want %v (pinned to the card bottom)", yA, want)
+	}
+}
+
+// The sidebar shell fills the full window height.
+func TestGUISidebarFullHeight(t *testing.T) {
+	m := newModel(Config{})
+	headlessFrames(t, 800, 600)
+	RunFrameFn(m.rootView)
+	if got := m.sidebarShellRect.Size[1]; got != 600 {
+		t.Errorf("sidebar height = %v, want the full 600", got)
+	}
 }

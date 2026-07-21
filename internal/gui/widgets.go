@@ -28,7 +28,7 @@ func focusableButtonExt(label string, attrs widgets.ButtonAttrs) bool {
 		if HasFocus() {
 			ModAttrs(func(a *AttrSet) {
 				a.BorderWidth = 2
-				a.BorderColor = Vec4{210, 70, 62, 1}
+				a.BorderColor = focusBorder
 			})
 			if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
 				FrameInput.Key = KeyCodeNone
@@ -73,7 +73,7 @@ func focusableToggle(on *bool, label string) {
 		if HasFocus() {
 			ModAttrs(func(a *AttrSet) {
 				a.BorderWidth = 2
-				a.BorderColor = Vec4{210, 70, 62, 1}
+				a.BorderColor = focusBorder
 			})
 			if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
 				FrameInput.Key = KeyCodeNone
@@ -86,10 +86,11 @@ func focusableToggle(on *bool, label string) {
 }
 
 // searchInput is the themed library filter field. Disabled while the
-// library is empty.
+// library is empty. Its container id is captured so `/` can focus it from
+// anywhere in the window.
 func (m *model) searchInput() {
 	if m.libraryEmpty() {
-		Container(Attrs(Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(sp8, sp12), Grow(1), MinSize(140, 34), MaxSizeVec(Vec2{420, 34}), Clip, Trans(0.4)), func() {
+		Container(Attrs(Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(sp4, sp12), Grow(1), MinSize(140, fieldH), MaxSizeVec(Vec2{420, fieldH}), Clip, Trans(0.4)), func() {
 			Container(Attrs(Row, Gap(sp8), CrossMid), func() {
 				widgets.Icon(widgets.SymSearch, FontSize(13), TextColorVec(txtMuted))
 				Label("Search…", FontSize(13), TextColorVec(txtMuted))
@@ -97,24 +98,38 @@ func (m *model) searchInput() {
 		})
 		return
 	}
-	themedInput(&m.filter, "Search…", widgets.SymSearch, Grow(1), MinSize(140, 34), MaxSizeVec(Vec2{420, 34}))
+	themedInput(&m.filter, "Search…", widgets.SymSearch, Grow(1), MinSize(140, fieldH), MaxSizeVec(Vec2{420, fieldH}))
+	m.searchID = GetLastId()
 }
+
+// fieldH is the shared text-field height: compact enough to keep the
+// layout tight while fitting one line of text at the default size.
+const fieldH = 28
 
 // themedInput is the dark single-line text field: shirei's TextInputExt is
 // hardcoded light-on-white with no theme hook, so themed screens use this
-// minimal input instead. Editing is append/backspace on the bound buffer,
-// Esc clears and blurs, Enter is consumed so it cannot leak to global key
-// handlers. It never grabs focus on its own (FocusOnClick + the Tab cycle
-// only), so modals open with nothing focused. The icon is optional (0 for
-// none); sizing attrs set the field's extent.
+// minimal input instead. It is THE reusable text field — search, the
+// version field, and the launch-template field all share it, with sizing
+// attrs as their only variation. Editing is append/backspace on the bound
+// buffer, Esc clears and blurs, Enter is consumed so it cannot leak to
+// global key handlers, and typed text is consumed so `/` cannot leak to the
+// search-focus shortcut while the field itself is focused. The caret is a
+// thin accent bar (a text `|` was effectively invisible). The icon is
+// optional (0 for none); sizing attrs set the field's extent.
 func themedInput(buf *string, hint string, icon rune, sizing ...AttrsFn) {
-	box := Attrs(Focusable, Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(sp8, sp12), Clip)
+	box := Attrs(Focusable, Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(sp4, sp12), Clip)
 	Container(AttrsWith(box, sizing...), func() {
 		CycleFocusOnTab()
 		FocusOnClick()
-		if HasFocus() {
-			ModAttrs(func(a *AttrSet) { a.BorderColor = accent })
+		// HasFocus() only reports the container currently being built —
+		// capture it here, at the box (the focused element), not inside the
+		// row below (where it would always read false and the caret never
+		// rendered).
+		focused := HasFocus()
+		if focused {
+			ModAttrs(func(a *AttrSet) { a.BorderColor = focusBorder })
 			*buf += FrameInput.Text
+			FrameInput.Text = ""
 			switch FrameInput.Key {
 			case KeyDeleteBackward:
 				if r := []rune(*buf); len(r) > 0 {
@@ -133,15 +148,13 @@ func themedInput(buf *string, hint string, icon rune, sizing ...AttrsFn) {
 			if icon != 0 {
 				widgets.Icon(icon, FontSize(13), TextColorVec(txtMuted))
 			}
-			switch {
-			case *buf != "" && HasFocus():
-				Label(*buf+"|", FontSize(13), TextColorVec(txtMain))
-			case *buf != "":
+			if *buf != "" {
 				Label(*buf, FontSize(13), TextColorVec(txtMain))
-			case HasFocus():
-				Label("|", FontSize(13), TextColorVec(txtMuted))
-			default:
+			} else if !focused {
 				Label(hint, FontSize(13), TextColorVec(txtMuted))
+			}
+			if focused {
+				Container(Attrs(FixSize(2, 16), BackgroundVec(focusBorder)), func() {})
 			}
 		})
 	})
