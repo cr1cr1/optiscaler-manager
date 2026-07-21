@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/rs/zerolog/log"
 
@@ -104,9 +105,10 @@ func prettifyStem(stem string) string {
 	var b strings.Builder
 	prev := rune(0)
 	for i, r := range spaced {
+		next, _ := utf8.DecodeRuneInString(spaced[i+len(string(r)):])
 		if i > 0 && r != ' ' && prev != ' ' &&
 			unicode.IsUpper(r) && (unicode.IsLower(prev) ||
-			(unicode.IsUpper(prev) && i+1 < len(spaced) && unicode.IsLower(rune(spaced[i+1])))) {
+			(unicode.IsUpper(prev) && unicode.IsLower(next))) {
 			b.WriteByte(' ')
 		}
 		b.WriteRune(r)

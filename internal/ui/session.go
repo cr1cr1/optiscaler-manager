@@ -1036,7 +1036,9 @@ func launchStore(s domain.Store) launch.Store {
 }
 
 // resolveGameExe reuses the recursive scanner's exe picking for one game
-// directory whose ExePath discovery left blank.
+// directory whose ExePath discovery left blank. When the parent scan
+// yields nothing (e.g. the parent dir is engine-named and refused as a
+// scan root), the game's own directory is searched directly.
 func resolveGameExe(gameDir string) (string, error) {
 	games, err := discovery.ScanRecursive(context.Background(), filepath.Dir(gameDir))
 	if err != nil {
@@ -1047,6 +1049,9 @@ func resolveGameExe(gameDir string) (string, error) {
 		if g.InstallDir == want && g.ExePath != "" {
 			return g.ExePath, nil
 		}
+	}
+	if exe, err := discovery.FindMainExe(context.Background(), gameDir); err == nil && exe != "" {
+		return exe, nil
 	}
 	return "", fmt.Errorf("no executable found under %s", gameDir)
 }

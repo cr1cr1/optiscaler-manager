@@ -268,6 +268,9 @@ func TitleFromFile(path string) string {
 	if err != nil {
 		return ""
 	}
+	if size < 0 {
+		return "" // corrupt header arithmetic; never allocate from it
+	}
 	if size > maxVersionScan {
 		size = maxVersionScan
 	}

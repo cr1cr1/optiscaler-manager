@@ -312,3 +312,20 @@ func TestMergeExtraDirs_TicksEveryNonScanOnlyRoot(t *testing.T) {
 		t.Errorf("rows = %d, want 1 (dedup added nothing)", len(out))
 	}
 }
+
+// TestResolveGameExe_EngineNamedParent: a manually added game whose parent
+// dir is engine-named (e.g. /games/bin/MyGame) makes the parent scan yield
+// nothing (engine-named roots are refused); the launch fallback must still
+// find the exe inside the game dir itself.
+func TestResolveGameExe_EngineNamedParent(t *testing.T) {
+	game := filepath.Join(t.TempDir(), "bin", "MyGame")
+	writeUIFile(t, filepath.Join(game, "solo.exe"), "GAME")
+
+	exe, err := resolveGameExe(game)
+	if err != nil {
+		t.Fatalf("resolveGameExe under engine-named parent: %v", err)
+	}
+	if filepath.Base(exe) != "solo.exe" {
+		t.Errorf("exe = %q, want solo.exe", exe)
+	}
+}

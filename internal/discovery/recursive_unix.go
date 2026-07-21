@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"syscall"
 )
 
 // fileCandidate accepts regular files that are real executables: a Windows
@@ -38,13 +39,24 @@ func fileCandidate(path string, d fs.DirEntry) (bool, int64) {
 }
 
 // isBinaryMagic reports whether the file at path starts with the PE ("MZ")
-// or ELF magic. Unreadable files are not candidates.
+// or ELF magic. Unreadable files are not candidates. The open is
+// non-blocking and re-verified regular: a file swapped for a FIFO between
+// the walk and the open must never hang the scan.
 func isBinaryMagic(path string) bool {
-	f, err := os.Open(path)
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return false
 	}
+	f := os.NewFile(uintptr(fd), path)
+	if f == nil {
+		_ = syscall.Close(fd)
+		return false
+	}
 	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil || !st.Mode().IsRegular() {
+		return false
+	}
 	var magic [4]byte
 	if _, err := f.ReadAt(magic[:], 0); err != nil {
 		return false
