@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/rs/zerolog/log"
 
@@ -13,9 +14,106 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 )
 
-// maxExeTitleRead caps the bounded read used for PE title extraction;
-// executables larger than this keep their folder name.
-const maxExeTitleRead = 128 << 20
+// GameTitle resolves a game's display title by reliability: the PE
+// StringFileInfo title of the main executable first (ProductName, then
+// FileDescription), then the exe's filename stem when it carries more
+// information than the folder, then the folder name. Unreadable or
+// title-less executables move down the chain.
+func GameTitle(exe, folder string) string {
+	if exe == "" {
+		return folder
+	}
+	if title := pever.TitleFromFile(exe); title != "" {
+		return title
+	}
+	return exeStemTitle(exe, folder)
+}
+
+// gameTitle is the unexported form kept for package-internal callers.
+func gameTitle(exe, folder string) string { return GameTitle(exe, folder) }
+
+// platformStemTokens are trailing exe-name tokens that describe the build,
+// not the game ("TempestRising-Win64-Shipping" → "TempestRising").
+var platformStemTokens = map[string]bool{
+	"win64": true, "win32": true, "x64": true, "x86": true, "x86_64": true,
+	"amd64": true, "dx9": true, "dx10": true, "dx11": true, "dx12": true,
+	"vk": true, "vulkan": true, "shipping": true, "master": true,
+	"release": true, "profile": true, "final": true, "retail": true,
+	"rwdi": true, "wingdk": true, "win_gdk": true, "msstore": true,
+}
+
+// genericStemNames are exe stems that carry no title information.
+var genericStemNames = map[string]bool{
+	"game": true, "main": true, "app": true, "start": true,
+	"client": true, "play": true, "run": true,
+}
+
+// exeStemTitle derives a title from the exe's filename stem when it is more
+// informative than the folder name; otherwise it returns the folder.
+func exeStemTitle(exe, folder string) string {
+	base := filepath.Base(exe)
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	// Strip trailing platform tokens iteratively: "game-win64-shipping".
+	for {
+		i := strings.LastIndexAny(stem, "-_. ")
+		if i < 0 || !platformStemTokens[strings.ToLower(stem[i+1:])] {
+			break
+		}
+		stem = stem[:i]
+	}
+	lower := strings.ToLower(stem)
+	if stem == "" || len(stem) < 3 || platformStemTokens[lower] ||
+		genericStemNames[lower] || skippedBinaryName(stem) || allDigitOrSep(stem) {
+		return folder
+	}
+	norm := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			if r == '-' || r == '_' || r == '.' || r == ' ' {
+				return -1
+			}
+			return unicode.ToLower(r)
+		}, s)
+	}
+	fn, sn := norm(folder), norm(stem)
+	if fn == sn || strings.Contains(fn, sn) || strings.Contains(sn, fn) {
+		return folder // the stem only echoes the folder; the folder reads better
+	}
+	return prettifyStem(stem)
+}
+
+// allDigitOrSep reports whether s holds only digits and separators.
+func allDigitOrSep(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < '0' || c > '9') && c != '-' && c != '_' && c != '.' && c != ' ' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
+// prettifyStem turns an exe stem into a display title: separators become
+// spaces, camel humps split, runs of whitespace collapse.
+func prettifyStem(stem string) string {
+	spaced := strings.Map(func(r rune) rune {
+		if r == '-' || r == '_' || r == '.' {
+			return ' '
+		}
+		return r
+	}, stem)
+	var b strings.Builder
+	prev := rune(0)
+	for i, r := range spaced {
+		if i > 0 && r != ' ' && prev != ' ' &&
+			unicode.IsUpper(r) && (unicode.IsLower(prev) ||
+				(unicode.IsUpper(prev) && i+1 < len(spaced) && unicode.IsLower(rune(spaced[i+1])))) {
+			b.WriteByte(' ')
+		}
+		b.WriteRune(r)
+		prev = r
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
 
 // recursiveSkipTokens are substring tokens (case-insensitive) of binaries
 // that are never the game executable: uninstallers, installers, crash
@@ -153,24 +251,6 @@ func scanLevel(ctx context.Context, dir string, depth int, seen map[string]bool)
 		}
 	}
 	return games, nil
-}
-
-// gameTitle prefers the PE StringFileInfo title of the main executable over
-// the folder name; unreadable or title-less executables keep the folder
-// name.
-func gameTitle(exe, folder string) string {
-	if exe == "" {
-		return folder
-	}
-	data, err := pever.ReadBounded(exe, maxExeTitleRead)
-	if err != nil {
-		log.Debug().Err(err).Str("exe", exe).Msg("recursive scan: exe unreadable for title")
-		return folder
-	}
-	if title := pever.ExtractTitle(data); title != "" {
-		return title
-	}
-	return folder
 }
 
 type exeCandidate struct {

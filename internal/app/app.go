@@ -90,23 +90,15 @@ func ManualEntry(dir string, st *store.Store) (LibraryEntry, error) {
 	return e, nil
 }
 
-// manualName prefers the main executable's PE StringFileInfo title over the
-// folder name; unreadable or title-less executables keep the folder name.
+// manualName resolves a manually added game's title through the shared
+// chain (PE metadata → exe stem → folder name).
 func manualName(root string) string {
 	folder := filepath.Base(root)
 	exe, err := discovery.FindMainExe(context.Background(), root)
 	if err != nil || exe == "" {
 		return folder
 	}
-	data, err := pever.ReadBounded(exe, 128<<20)
-	if err != nil {
-		log.Debug().Err(err).Str("exe", exe).Msg("manual entry: exe unreadable for title")
-		return folder
-	}
-	if title := pever.ExtractTitle(data); title != "" {
-		return title
-	}
-	return folder
+	return discovery.GameTitle(exe, folder)
 }
 
 // ErrEACProtected is returned by Install when the game ships an anti-cheat

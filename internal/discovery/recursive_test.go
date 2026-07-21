@@ -62,21 +62,22 @@ func TestRecursiveScan_Depth23AndExeHeuristics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanRecursive: %v", err)
 	}
-	byName := map[string]string{}
+	byDir := map[string]string{}
 	for _, g := range games {
 		t.Logf("game: %+v", g)
-		byName[g.Name] = g.ExePath
+		byDir[g.InstallDir] = g.ExePath
 	}
-	if got := byName["GameAlpha"]; got != alphaExe {
+	if got := byDir[alpha]; got != alphaExe {
 		t.Errorf("GameAlpha exe = %q, want %q (depth-2 real exe over shallow skip-tokens)", got, alphaExe)
 	}
-	if got := byName["GameBeta"]; got != "" {
-		t.Errorf("GameBeta exe = %q, want \"\" (binary beyond depth 3)", got)
+	betaDir := filepath.Join(root, "GameBeta", "a", "b", "c", "d")
+	if got := byDir[betaDir]; got != filepath.Join(betaDir, "gamebeta") {
+		t.Errorf("GameBeta exe = %q, want the depth-4 binary surfaced at its own dir %q", got, betaDir)
 	}
-	if got := byName["GameGamma"]; got != gammaExe {
+	if got := byDir[gamma]; got != gammaExe {
 		t.Errorf("GameGamma exe = %q, want name-match %q", got, gammaExe)
 	}
-	if got := byName["GameDelta"]; got != deltaExe {
+	if got := byDir[delta]; got != deltaExe {
 		t.Errorf("GameDelta exe = %q, want larger %q", got, deltaExe)
 	}
 	for _, g := range games {
