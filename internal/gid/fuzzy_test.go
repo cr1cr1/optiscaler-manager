@@ -7,22 +7,22 @@ import "testing"
 // and separator variants are all removed.
 func TestNormalize(t *testing.T) {
 	cases := map[string]string{
-		"Dead Space Remake":                          "dead space",
-		"Assassin's Creed Shadows":                   "assassins creed shadows",
-		"A Plague Tale: Requiem":                     "a plague tale requiem",
-		"The Witcher 3 - Wild Hunt":                  "the witcher 3 wild hunt",
-		"HELLDIVERS™ 2":                              "helldivers 2",
-		"God of War Ragnarök":                        "god of war ragnarok",
-		"STAR WARS™: Squadrons":                      "star wars squadrons",
-		"Anno 1404 - History Edition":                "anno 1404",
-		"Cyberpunk 2077":                             "cyberpunk 2077",
-		"Grand Theft Auto V":                         "grand theft auto v",
-		"Dead Space (2008)":                          "dead space",
-		"Game [FitGirl Repack]":                      "game",
-		"STASIS BONE TOTEM":                          "stasis bone totem",
-		"The Talos Principle 2: Road to Elysium":     "the talos principle 2 road to elysium",
-		"Some Game v1.0.10.0":                        "some game",
-		"Fallout 4 Game of the Year Edition":         "fallout 4",
+		"Dead Space Remake":                            "dead space",
+		"Assassin's Creed Shadows":                     "assassins creed shadows",
+		"A Plague Tale: Requiem":                       "a plague tale requiem",
+		"The Witcher 3 - Wild Hunt":                    "the witcher 3 wild hunt",
+		"HELLDIVERS™ 2":                                "helldivers 2",
+		"God of War Ragnarök":                          "god of war ragnarok",
+		"STAR WARS™: Squadrons":                        "star wars squadrons",
+		"Anno 1404 - History Edition":                  "anno 1404",
+		"Cyberpunk 2077":                               "cyberpunk 2077",
+		"Grand Theft Auto V":                           "grand theft auto v",
+		"Dead Space (2008)":                            "dead space",
+		"Game [FitGirl Repack]":                        "game",
+		"STASIS BONE TOTEM":                            "stasis bone totem",
+		"The Talos Principle 2: Road to Elysium":       "the talos principle 2 road to elysium",
+		"Some Game v1.0.10.0":                          "some game",
+		"Fallout 4 Game of the Year Edition":           "fallout 4",
 		"Ori and the Blind Forest: Definitive Edition": "ori and the blind forest",
 	}
 	for in, want := range cases {
@@ -43,15 +43,15 @@ func TestScore(t *testing.T) {
 		pc   bool
 		want int
 	}{
-		{"dead space", "Dead Space", true, 110},        // exact + PC
-		{"dead space", "Dead Space", false, 100},       // exact, no PC bonus
-		{"anno 1404 gold", "Anno 1404 Gold", true, 110}, // exact normalized
+		{"dead space", "Dead Space", true, 110},                                          // exact + PC
+		{"dead space", "Dead Space", false, 100},                                         // exact, no PC bonus
+		{"anno 1404 gold", "Anno 1404 Gold", true, 110},                                  // exact normalized
 		{"the talos principle 2 road to elysium", "The Talos Principle 2", true, 0 + 10}, // subset ≠ near-equal (strict jaccard)
-		{"dead space", "Dead Space (2008)", true, 110}, // year tag stripped from item
-		{"prey", "Prey", true, 110},                    // short title, exact ok
-		{"doom", "Doom 3", true, 10},                   // short title: no fuzzy credit
-		{"frostpunk", "Frostpunk 2", true, 10},         // strict jaccard rejects sequel bait
-		{"b1", "Black Myth: Wukong", true, 10},         // no shared tokens
+		{"dead space", "Dead Space (2008)", true, 110},                                   // year tag stripped from item
+		{"prey", "Prey", true, 110},                                                      // short title, exact ok
+		{"doom", "Doom 3", true, 10},                                                     // short title: no fuzzy credit
+		{"frostpunk", "Frostpunk 2", true, 10},                                           // strict jaccard rejects sequel bait
+		{"b1", "Black Myth: Wukong", true, 10},                                           // no shared tokens
 	}
 	for _, tc := range cases {
 		if got := Score(tc.cand, tc.item, tc.pc); got != tc.want {
