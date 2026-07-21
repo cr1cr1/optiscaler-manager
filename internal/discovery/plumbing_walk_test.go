@@ -75,12 +75,13 @@ func TestScan_PreyDeepEnginePathRows(t *testing.T) {
 }
 
 // Days Gone keeps its row at BendGame and CRS stays dead at the deeper
-// depth budget (the engine-named Engine subtree is never consulted).
+// depth budget: the container-via-BendGame precedence and the engine
+// skip protect it even with CRS at the exact depth boundary.
 func TestScan_DaysGoneStillRowsBendGameOnlyAtDepth4(t *testing.T) {
 	root := t.TempDir()
 	game := filepath.Join(root, "Days Gone Broken Road")
 	writePEExe(t, game, "BendGame/Binaries/Win64/DaysGone.exe", "Days Gone")
-	writePEExe(t, game, "Engine/Binaries/ThirdParty/CRS/deep/deeper/crs.exe", "CRS")
+	writePEExe(t, game, "Engine/Binaries/ThirdParty/CRS/crs.exe", "CRS")
 
 	rows := scanRows(t, root)
 	assertOnlyRows(t, rows, filepath.Join(game, "BendGame"))
@@ -102,4 +103,69 @@ func TestResolveInstallDir_SpaceyNamePrefersGameExe(t *testing.T) {
 	if got != want {
 		t.Errorf("ResolveInstallDir = %q, want %q (not the .NET installer dir)", got, want)
 	}
+}
+
+// A steamapps/common holding only Proton tooling is not a game: Proton and
+// Steam Linux Runtime subtrees are platform runtime, never a game's own
+// binary — the exe walk must not descend them.
+func TestScan_CommonWithOnlyProtonDoesNotRow(t *testing.T) {
+	root := t.TempDir()
+	common := filepath.Join(root, "common")
+	writePEExe(t, common, "Proton - Experimental/files/bin/wine.exe", "Wine")
+	writePEExe(t, common, "SteamLinuxRuntime_sniper/files/bin/pressure-vessel.exe", "PV")
+
+	games, err := ScanRecursive(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(games) != 0 {
+		t.Errorf("proton-only common produced rows: %v", games)
+	}
+	assertKind(t, common, GameDirEmpty)
+}
+
+// Steam workshop content (mods) is not standalone game material: it must
+// not row even alongside real installed games.
+func TestScan_SteamWorkshopDoesNotRow(t *testing.T) {
+	root := t.TempDir()
+	apps := filepath.Join(root, "steamapps")
+	writePEExe(t, apps, "common/RealGame/RealGame.exe", "Real Game Title")
+	writePEExe(t, apps, "workshop/content/12345/modtool.exe", "Mod Tool")
+
+	rows := scanRows(t, root)
+	assertOnlyRows(t, rows, filepath.Join(apps, "common", "RealGame"))
+}
+
+// Boundary at the new depth budget: engine-support tooling exactly four
+// levels down (Engine/Binaries/ThirdParty/CRS) must stay unreachable.
+func TestScan_EngineThirdPartyAtDepthBoundaryDoesNotRow(t *testing.T) {
+	root := t.TempDir()
+	folder := filepath.Join(root, "SomeFolder")
+	writePEExe(t, folder, "Engine/Binaries/ThirdParty/CRS/crs.exe", "CRS")
+
+	games, err := ScanRecursive(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(games) != 0 {
+		t.Errorf("engine third-party tooling rowed at the depth boundary: %v", games)
+	}
+	assertKind(t, folder, GameDirEmpty)
+}
+
+// Unreal's CEF helper is never the game exe (the two skip-token lists must
+// agree): an Engine/Binaries/Win64-only folder must not row.
+func TestScan_UnrealCEFSubProcessNotCandidate(t *testing.T) {
+	root := t.TempDir()
+	folder := filepath.Join(root, "UEOnly")
+	writePEExe(t, folder, "Engine/Binaries/Win64/UnrealCEFSubProcess.exe", "CEF")
+
+	games, err := ScanRecursive(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(games) != 0 {
+		t.Errorf("UnrealCEFSubProcess rowed: %v", games)
+	}
+	assertKind(t, folder, GameDirEmpty)
 }

@@ -69,28 +69,31 @@ var engineFolderNames = map[string]bool{
 	"drive_c": true, "compatdata": true, "shadercache": true,
 	"downloading": true, "temp": true, "music": true, "sourcemods": true,
 	"steamworks common redistributables": true, "steamworks shared": true,
-	"steamvr": true,
+	"steamvr": true, "workshop": true,
 }
 
 // plumbingFolderNames are the engineFolderNames whose subtrees no exe walk
 // may descend at all: platform plumbing that can only ever hold download
-// fragments, shader caches, prefixes, and runtimes — never a game's own
-// binary. The remaining engine folders (bin, Binaries/Win64, Retail, …)
-// stay walkable because the game's exe legitimately lives inside them.
+// fragments, shader caches, prefixes, runtimes, mods, and third-party
+// tooling — never a game's own binary. The remaining engine folders (bin,
+// Binaries/Win64, Retail, Engine, …) stay walkable because the game's exe
+// legitimately lives inside them.
 var plumbingFolderNames = map[string]bool{
 	"compatdata": true, "shadercache": true, "downloading": true,
-	"temp": true, "music": true, "sourcemods": true,
+	"temp": true, "music": true, "sourcemods": true, "workshop": true,
+	"thirdparty": true, "third_party": true,
 	"steamworks common redistributables": true, "steamworks shared": true,
 	"steamvr": true,
 }
 
 // plumbingWalkDir reports whether the walker should prune dir (a child of
-// parentBase): plumbing folders always, and the OS subtrees of a Wine
-// prefix (drive_c/windows, drive_c/users) — a prefix's games live under
+// parentBase): plumbing folders and platform tools (Proton, Steam Linux
+// Runtimes) always, and the OS subtrees of a Wine prefix
+// (drive_c/windows, drive_c/users) — a prefix's games live under
 // Program Files / GOG Games, which stay walkable.
 func plumbingWalkDir(name, parentBase string) bool {
 	name = strings.ToLower(name)
-	if plumbingFolderNames[name] {
+	if plumbingFolderNames[name] || platformToolName(name) {
 		return true
 	}
 	if (name == "windows" || name == "users") && strings.ToLower(parentBase) == "drive_c" {
@@ -109,6 +112,12 @@ func engineFolderName(name string) bool {
 	if engineFolderNames[name] {
 		return true
 	}
+	return platformToolName(name)
+}
+
+// platformToolName reports the name-pattern half of engineFolderName:
+// versioned Proton builds and Steam Linux Runtimes.
+func platformToolName(name string) bool {
 	if name == "proton" || strings.HasPrefix(name, "proton - ") ||
 		strings.HasPrefix(name, "proton hotfix") ||
 		strings.HasPrefix(name, "proton easyanticheat") ||

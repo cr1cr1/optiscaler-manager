@@ -119,11 +119,11 @@ func prettifyStem(stem string) string {
 
 // recursiveSkipTokens are substring tokens (case-insensitive) of binaries
 // that are never the game executable: uninstallers, installers, crash
-// handlers, updaters, and helper services.
+// handlers, updaters, helper services, and engine subprocess hosts.
 var recursiveSkipTokens = []string{
 	"unins", "setup", "install", "redist", "vcredist", "dxsetup",
 	"crash", "handler", "launcher", "updater", "patcher", "helper",
-	"service", "report", "benchmark",
+	"service", "report", "benchmark", "unrealcefsubprocess", "prerequisites",
 }
 
 // maxExeDepth is how many directory levels below a game directory the
