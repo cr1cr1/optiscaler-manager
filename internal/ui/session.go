@@ -536,6 +536,7 @@ func (s *Session) runScan(ctx context.Context) {
 	}
 	sortRows(rows)
 	disambiguateTitles(rows)
+	s.refreshCovers(ctx, rows)
 	s.st.Rows = rows
 	s.st.StatusLine = fmt.Sprintf("%d games", len(rows))
 	s.st.Busy = ""
@@ -1316,11 +1317,36 @@ func (s *Session) toRow(ctx context.Context, e app.LibraryEntry) GameRow {
 		row.TechBadges = append(row.TechBadges, badgeForTech(tech))
 	}
 	if s.deps.Covers != nil {
-		if p, err := s.deps.Covers.Cover(ctx, e.Game.AppID, e.Game.Name); err == nil {
+		coverAppID := e.Game.AppID
+		if e.Game.SteamAppID != "" {
+			coverAppID = e.Game.SteamAppID
+		}
+		if p, err := s.deps.Covers.Cover(ctx, coverAppID, e.Game.Name); err == nil {
 			row.CoverPath = p
 		}
 	}
 	return row
+}
+
+// refreshCovers rebinds cover art after the online identification phase
+// has finalized titles and appids: rows with a resolved Steam appid get
+// art for THAT appid (straight from the CDN), so a cover fetched for a
+// codename title is replaced by the correct game's art the same scan.
+func (s *Session) refreshCovers(ctx context.Context, rows []GameRow) {
+	if s.deps.Covers == nil {
+		return
+	}
+	for i := range rows {
+		if rows[i].SteamAppID == "" {
+			continue
+		}
+		if strings.HasSuffix(rows[i].CoverPath, rows[i].SteamAppID+".img") {
+			continue
+		}
+		if p, err := s.deps.Covers.Cover(ctx, rows[i].SteamAppID, rows[i].Title); err == nil {
+			rows[i].CoverPath = p
+		}
+	}
 }
 
 func (s *Session) findRow(dir string) *GameRow {

@@ -2,12 +2,17 @@ package ui
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/app"
+	"github.com/cr1cr1/optiscaler-manager/internal/covers"
 	"github.com/cr1cr1/optiscaler-manager/internal/discovery"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
@@ -414,5 +419,67 @@ func TestDisambiguateTitles_ParentSuffix(t *testing.T) {
 	disambiguateTitles(rows)
 	if rows[0].Title != "Red Dead Redemption 2 (Games)" || rows[1].Title != "Red Dead Redemption 2 (common)" {
 		t.Errorf("titles = %q / %q, want parent-dir suffixes", rows[0].Title, rows[1].Title)
+	}
+}
+
+// Cover resolution prefers the row's resolved Steam appid: no title
+// search, straight to the CDN for the right game's art.
+func TestToRow_CoverPrefersSteamAppID(t *testing.T) {
+	mux := http.NewServeMux()
+	var searchHits int
+	mux.HandleFunc("/api/storesearch/", func(w http.ResponseWriter, r *http.Request) {
+		searchHits++
+		_, _ = fmt.Fprint(w, `{"items":[]}`)
+	})
+	mux.HandleFunc("/steam/apps/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write([]byte("img"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	e := newTestEnv(t)
+	e.sess.deps.Covers = covers.NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+
+	row := e.sess.toRow(context.Background(), app.LibraryEntry{Game: domain.Game{
+		AppID: "manual_Black Myth Wukong", Name: "Black Myth: Wukong",
+		InstallDir: "/games/Black Myth Wukong", Store: domain.StoreManual, SteamAppID: "2358720",
+	}})
+	if !strings.HasSuffix(row.CoverPath, "2358720.img") {
+		t.Errorf("CoverPath = %q, want the steam-appid art", row.CoverPath)
+	}
+	if searchHits != 0 {
+		t.Errorf("search hits = %d, want 0 (appid known)", searchHits)
+	}
+}
+
+// After the fuzzy phase upgrades a title+appid, the cover binding is
+// corrected in the same scan (previously it stayed with the wrong game's
+// art fetched for the codename).
+func TestRefreshCovers_RebindsAfterIdentify(t *testing.T) {
+	e := newTestEnv(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/steam/apps/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write([]byte("img"))
+	})
+	mux.HandleFunc("/api/storesearch/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"items":[]}`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	covDir := t.TempDir()
+	e.sess.deps.Covers = covers.NewWithBase(srv.Client(), covDir, srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+
+	wrongPath := filepath.Join(covDir, "2806940.img")
+	if err := os.WriteFile(wrongPath, []byte("wrong"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rows := []GameRow{{
+		Title: "Black Myth: Wukong", InstallDir: "/games/Black Myth Wukong",
+		Store: domain.StoreManual, SteamAppID: "2358720", CoverPath: wrongPath,
+	}}
+	e.sess.refreshCovers(context.Background(), rows)
+	if !strings.HasSuffix(rows[0].CoverPath, "2358720.img") {
+		t.Errorf("CoverPath = %q, want rebound to the correct appid", rows[0].CoverPath)
 	}
 }

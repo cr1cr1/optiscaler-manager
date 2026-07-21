@@ -24,7 +24,7 @@ var editionTokens = map[string]bool{
 	"hd": true, "anniversary": true, "collection": true, "proper": true,
 	"repack": true, "fitgirl": true, "dodi": true, "dlc": true,
 	"update": true, "history": true, "gold": true, "legendary": true,
-	"ultimate": true, "redux": true, "special": true,
+	"ultimate": true, "redux": true, "special": true, "reloaded": true,
 }
 
 // platformTokens are store/platform noise words.

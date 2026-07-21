@@ -15,6 +15,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/cr1cr1/optiscaler-manager/internal/gid"
 )
 
 const (
@@ -52,23 +55,33 @@ func NewWithBase(httpClient *http.Client, cacheDir, cdnBase, searchBase string) 
 
 // Cover returns the local path of the game's cover image, downloading and
 // caching it if needed. On any miss it returns the shared placeholder (never
-// an error for a missing cover — art is decorative).
+// an error for a missing cover — art is decorative). The appid path goes
+// straight to the CDN (no search); a title search only fires without one,
+// and its candidates are scored — a wrong cover is worse than no cover.
 func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) {
 	if sanitized := sanitize(appID); sanitized != "" {
 		cached := filepath.Join(c.cacheDir, sanitized+".img")
 		if _, err := os.Stat(cached); err == nil {
 			return cached, nil
 		}
-		if err := c.fetch(ctx, fmt.Sprintf(c.cdnBase, url.PathEscape(sanitized)), cached); err == nil {
-			return cached, nil
+		if c.recentMiss(sanitized) {
+			return c.placeholder()
 		}
+		for _, art := range []string{"library_600x900.jpg", "library_hero.jpg"} {
+			if err := c.fetch(ctx, fmt.Sprintf(c.artURL(art), url.PathEscape(sanitized)), cached); err == nil {
+				return cached, nil
+			}
+		}
+		c.markMiss(sanitized)
 	}
 
 	if name != "" {
 		if id, err := c.searchAppID(ctx, name); err == nil && id != "" {
 			cached := filepath.Join(c.cacheDir, id+".img")
-			if err := c.fetch(ctx, fmt.Sprintf(c.cdnBase, url.PathEscape(id)), cached); err == nil {
-				return cached, nil
+			for _, art := range []string{"library_600x900.jpg", "library_hero.jpg"} {
+				if err := c.fetch(ctx, fmt.Sprintf(c.artURL(art), url.PathEscape(id)), cached); err == nil {
+					return cached, nil
+				}
 			}
 		}
 	}
@@ -76,7 +89,38 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 	return c.placeholder()
 }
 
+// artURL formats one of the CDN art variants for an appid. cdnBase carries
+// the portrait pattern; the hero banner swaps the filename.
+func (c *Covers) artURL(variant string) string {
+	return strings.Replace(c.cdnBase, "library_600x900.jpg", variant, 1)
+}
+
+// missTTL is how long a known-artless appid is not re-fetched.
+const missTTL = 7 * 24 * time.Hour
+
+func (c *Covers) recentMiss(appid string) bool {
+	st, err := os.Stat(filepath.Join(c.cacheDir, appid+".miss"))
+	if err != nil {
+		return false
+	}
+	return time.Since(st.ModTime()) < missTTL
+}
+
+func (c *Covers) markMiss(appid string) {
+	if err := c.ensureCacheDir(); err != nil {
+		return
+	}
+	f, err := os.Create(filepath.Join(c.cacheDir, appid+".miss"))
+	if err == nil {
+		_ = f.Close()
+	}
+}
+
 // searchAppID resolves a game name to a Steam appid via the store search API.
+// The first hit is NOT automatically the game: candidates are scored
+// (normalized exact or near-equal, PC bonus, edition penalty) and only an
+// accepted score binds — anything weaker means no cover rather than the
+// wrong one.
 func (c *Covers) searchAppID(ctx context.Context, name string) (string, error) {
 	u := c.searchBase + "?term=" + url.QueryEscape(name) + "&cc=us&l=en"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
@@ -93,17 +137,22 @@ func (c *Covers) searchAppID(ctx context.Context, name string) (string, error) {
 	}
 	var result struct {
 		Items []struct {
-			ID   json.Number `json:"id"`
-			Name string      `json:"name"`
+			ID        json.Number `json:"id"`
+			Name      string      `json:"name"`
+			Platforms struct {
+				Windows bool `json:"windows"`
+			} `json:"platforms"`
 		} `json:"items"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", err
 	}
-	if len(result.Items) == 0 {
-		return "", nil
+	for _, item := range result.Items {
+		if gid.Accept(gid.Score(name, item.Name, item.Platforms.Windows), false) {
+			return sanitize(item.ID.String()), nil
+		}
 	}
-	return sanitize(result.Items[0].ID.String()), nil
+	return "", nil
 }
 
 // fetch downloads url to dest atomically (temp + rename), rejecting non-200
