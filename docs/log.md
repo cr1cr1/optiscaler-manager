@@ -1470,3 +1470,26 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   blue highlight band, Ctrl+C/X/V via RequestTextCopy/RequestPaste);
   per-field keyed editState + themedInputState test seam. Verified by
   behavior tests and rendered-pixel inspection.
+
+## 2026-07-22 — v0.8.7: text fields v3 — centering + mouse editing
+
+- Vertical centering: the field box was a column (text stacked at the
+  top); it is now a Row with CrossMid, and the caret matches the shaped
+  line height exactly (FixSize(2,13) — was 16, which grew the row on
+  focus and re-centered the text by 1.5px: the click-jitter). Row
+  geometry pinned identical across hint/caret/text states.
+- Mouse editing (editMouse): click positions the caret at the clicked
+  glyph, shift+click extends, double-click selects the word,
+  triple-click selects all, click-drag selects the range. Hit-testing
+  shapes through shirei's own ShapeText at the field's exact style and
+  walks glyph advances with a midpoint rule (rune-index clusters,
+  multibyte-verified); the text-flow container records its screen rect
+  per frame (st.textRect) and spans the field width so clicks past the
+  text clamp to the end.
+- Pixel-verified: drag band x-run [35..63] == shaped prefix widths
+  [35.4..63.5]; glyph ink top-y identical (14) in plain and selected
+  states.
+- Incident: an external process ran `go mod tidy` + `go mod vendor`
+  mid-session, bumping pins and wiping the vendored shirei patches;
+  TestVendorCSDPatchPresent caught it and the tree was restored
+  (git checkout + git clean). The guard works — keep it.
