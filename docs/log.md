@@ -1439,3 +1439,21 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   "Wii U emulator") — Zelda is "The Legend of Zelda - Breath of the
   Wild" again.
 - Real-library verified: all listed cases fixed.
+
+## 2026-07-21 — v0.8.5: GUI polish (7 fixes)
+
+- Text fields: single shared `themedInput` at `fieldH=28` everywhere;
+  real caret (2×16 `focusBorder` bar) — the invisible caret's true
+  cause was a `HasFocus()` scope bug (evaluated inside the inner row,
+  always false), now captured at the focused box.
+- `/` focuses the search field from anywhere.
+- Card buttons pin to the bottom (`Filler(1)`); uniform card heights
+  with/without pill rows.
+- Wayland CSD titlebar disabled (vendored `csdEnabled = false`) — OS
+  decorations win; scroll ×2/×3 in vendored `ScrollOnInput`. Both carry
+  patch markers + a guard test + docs/vendor-patches.md entries.
+- List rows keep a 20×30 cover thumbnail.
+- Sidebar fills window height; nav icons vertically centered, Exit at
+  bottom.
+- Verified headlessly (slash-focus, bottom-Y alignment, sidebar height)
+  and by rendered-PNG inspection of all seven items.
