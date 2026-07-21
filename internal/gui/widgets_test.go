@@ -457,3 +457,131 @@ func TestEditBackspaceDeletesSelection(t *testing.T) {
 		t.Errorf("buf = %q, want %q (single-rune delete)", buf, "a")
 	}
 }
+
+// mouseFrame injects one frame of mouse input at (x, y): action is
+// MouseClick, MouseRelease, or 0 for plain motion/hover.
+func mouseFrame(x, y float32, action MouseAction, fn FrameFn) {
+	InputState.MousePoint = Vec2{x, y}
+	FrameInput.Mouse = action
+	RunFrameFn(fn)
+	FrameInput.Mouse = 0
+}
+
+// clickX returns the screen x of the caret at rune index idx inside st's
+// recorded text area (with a nudge right so the midpoint rule lands on idx).
+func clickX(st *editState, text string, idx int) float32 {
+	r := []rune(text)
+	return st.textRect.Origin[0] + textWidth(string(r[:idx])) + 0.01
+}
+
+func TestHitIndex(t *testing.T) {
+	if got := hitIndex("", 10); got != 0 {
+		t.Errorf("hitIndex('', 10) = %d, want 0", got)
+	}
+	if got := hitIndex("hello", -3); got != 0 {
+		t.Errorf("hitIndex(hello, -3) = %d, want 0 (clamped left)", got)
+	}
+	if got := hitIndex("hello", textWidth("hello")+5); got != 5 {
+		t.Errorf("hitIndex past end = %d, want 5 (clamped right)", got)
+	}
+	if got := hitIndex("hello", textWidth("hel")+0.01); got != 3 {
+		t.Errorf("hitIndex at 'hel|' = %d, want 3", got)
+	}
+	// The midpoint of a glyph decides: left half maps before, right half after.
+	mid := textWidth("he") + (textWidth("hel")-textWidth("he"))/2
+	if got := hitIndex("hello", mid-0.01); got != 2 {
+		t.Errorf("hitIndex left of midpoint = %d, want 2", got)
+	}
+	if got := hitIndex("hello", mid+0.01); got != 3 {
+		t.Errorf("hitIndex right of midpoint = %d, want 3", got)
+	}
+	// Multibyte runes: glyph clusters must be rune indices, not byte offsets.
+	if got := hitIndex("héllo", textWidth("hé")+0.01); got != 2 {
+		t.Errorf("hitIndex('héllo', after é) = %d, want 2 (rune index)", got)
+	}
+}
+
+// A plain click moves the caret to the clicked glyph and drops any selection.
+func TestEditMouseClickPositionsCaret(t *testing.T) {
+	buf := "hello world"
+	st, view := editField(t, &buf)
+	x := clickX(st, buf, 3)
+	mouseFrame(x, 20, 0, view) // register hover at the click point
+	mouseFrame(x, 20, MouseClick, view)
+	mouseFrame(x, 20, MouseRelease, view)
+	if st.cursor != 3 || st.anchor != -1 {
+		t.Errorf("cursor=%d anchor=%d, want 3/-1 (caret at clicked glyph, no selection)", st.cursor, st.anchor)
+	}
+}
+
+// Press + drag + release selects the dragged range.
+func TestEditMouseDragSelects(t *testing.T) {
+	buf := "hello world"
+	st, view := editField(t, &buf)
+	x2, x7 := clickX(st, buf, 2), clickX(st, buf, 7)
+	mouseFrame(x2, 20, 0, view)
+	mouseFrame(x2, 20, MouseClick, view)
+	mouseFrame(x7, 20, 0, view) // drag motion with the button held
+	mouseFrame(x7, 20, MouseRelease, view)
+	lo, hi, has := st.selRange(len([]rune(buf)))
+	if !has || lo != 2 || hi != 7 {
+		t.Errorf("selection = (%d,%d,%v), want (2,7,true) after drag", lo, hi, has)
+	}
+	if st.dragging {
+		t.Error("dragging still set after MouseRelease")
+	}
+}
+
+// Shift+click extends the selection from the caret to the clicked glyph.
+func TestEditMouseShiftClickExtends(t *testing.T) {
+	buf := "hello world"
+	st, view := editField(t, &buf)
+	st.cursor = 2
+	x := clickX(st, buf, 7)
+	InputState.Modifiers = ModShift
+	mouseFrame(x, 20, 0, view)
+	mouseFrame(x, 20, MouseClick, view)
+	InputState.Modifiers = 0
+	lo, hi, has := st.selRange(len([]rune(buf)))
+	if !has || lo != 2 || hi != 7 {
+		t.Errorf("selection = (%d,%d,%v), want (2,7,true) after shift+click", lo, hi, has)
+	}
+}
+
+// Double-click selects the word under the cursor.
+func TestEditMouseDoubleClickSelectsWord(t *testing.T) {
+	buf := "hello world"
+	st, view := editField(t, &buf)
+	x := clickX(st, buf, 8) // inside "world"
+	mouseFrame(x, 20, 0, view)
+	mouseFrame(x, 20, MouseClick, view)
+	mouseFrame(x, 20, MouseRelease, view)
+	mouseFrame(x, 20, MouseClick, view) // second click of the streak
+	lo, hi, has := st.selRange(len([]rune(buf)))
+	if !has || lo != 6 || hi != 11 {
+		t.Errorf("selection = (%d,%d,%v), want (6,11,true) — the word 'world'", lo, hi, has)
+	}
+}
+
+// The text row keeps identical geometry across hint, focused-caret, and
+// text states: the caret must not change the row height (click-jitter).
+func TestEditFieldRowGeometryStable(t *testing.T) {
+	buf := ""
+	st, view := editField(t, &buf) // focused + empty: caret visible
+	RunFrameFn(view)
+	focusedRect := st.textRect
+	textFrame("ab", view)
+	RunFrameFn(view)
+	textRect := st.textRect
+	keyFrame(KeyEscape, 0, view) // clears + blurs: hint state
+	RunFrameFn(view)
+	hintRect := st.textRect
+	if focusedRect.Origin[1] != textRect.Origin[1] || textRect.Origin[1] != hintRect.Origin[1] {
+		t.Errorf("text row Y = %v/%v/%v across states, want identical (no jitter on focus)",
+			focusedRect.Origin[1], textRect.Origin[1], hintRect.Origin[1])
+	}
+	if focusedRect.Size[1] != textRect.Size[1] || textRect.Size[1] != hintRect.Size[1] {
+		t.Errorf("text row height = %v/%v/%v across states, want identical",
+			focusedRect.Size[1], textRect.Size[1], hintRect.Size[1])
+	}
+}

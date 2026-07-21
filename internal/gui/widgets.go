@@ -3,6 +3,7 @@ package gui
 import (
 	"strings"
 	"time"
+	"unicode"
 
 	. "go.hasen.dev/shirei"
 	"go.hasen.dev/shirei/widgets"
@@ -110,10 +111,12 @@ const fieldH = 24
 // index into the buffer), the selection anchor (-1 when nothing is
 // selected), and the blink clock. It persists per widget via UseWithInit.
 type editState struct {
-	cursor int
-	anchor int
-	blink  time.Time
-	phase  bool
+	cursor   int
+	anchor   int
+	blink    time.Time
+	phase    bool
+	dragging bool
+	textRect Rect // screen rect of the text area, recorded each frame
 }
 
 // selRange normalizes anchor/cursor into (lo, hi, hasSelection).
@@ -250,6 +253,112 @@ func editKeys(buf *string, st *editState) {
 	FrameInput.Key = KeyCodeNone
 }
 
+// shapedGlyphs shapes text exactly as the field's Label does (FontSize 13,
+// default family) and returns the flattened glyph run.
+func shapedGlyphs(text string) []Glyph {
+	var ta TextAttrSet
+	FontSize(13)(&ta)
+	shaped := ShapeText(text, ta)
+	var gs []Glyph
+	for _, line := range shaped.Lines {
+		for _, seg := range line.Segments {
+			gs = append(gs, seg.Glyphs...)
+		}
+	}
+	return gs
+}
+
+// textWidth is the shaped advance width of text in pixels.
+func textWidth(text string) float32 {
+	w := float32(0)
+	for _, g := range shapedGlyphs(text) {
+		w += g.XAdvance
+	}
+	return w
+}
+
+// hitIndex maps an x offset inside the text area to a rune caret index:
+// each glyph owns the span up to its midpoint (click left of the midpoint
+// lands before it, right lands after). Glyph clusters are rune indices.
+func hitIndex(text string, relX float32) int {
+	r := []rune(text)
+	if relX <= 0 || len(r) == 0 {
+		return 0
+	}
+	acc := float32(0)
+	for _, g := range shapedGlyphs(text) {
+		if relX < acc+g.XAdvance/2 {
+			return int(g.Cluster)
+		}
+		acc += g.XAdvance
+	}
+	return len(r)
+}
+
+// wordRange returns the rune range of the word around idx (letters, digits,
+// underscores); a non-word rune yields just itself.
+func wordRange(r []rune, idx int) (int, int) {
+	if len(r) == 0 {
+		return 0, 0
+	}
+	if idx >= len(r) {
+		idx = len(r) - 1
+	}
+	word := func(c rune) bool { return unicode.IsLetter(c) || unicode.IsDigit(c) || c == '_' }
+	if !word(r[idx]) {
+		return idx, idx + 1
+	}
+	lo, hi := idx, idx+1
+	for lo > 0 && word(r[lo-1]) {
+		lo--
+	}
+	for hi < len(r) && word(r[hi]) {
+		hi++
+	}
+	return lo, hi
+}
+
+// editMouse applies one frame of mouse editing: a click moves the caret to
+// the clicked glyph, shift+click extends the selection, double-click selects
+// the word, triple-click selects all, and dragging extends the selection.
+// Runs whether or not the field is focused so the focusing click also
+// positions the caret.
+func editMouse(buf *string, st *editState) {
+	r := []rune(*buf)
+	relX := InputState.MousePoint[0] - st.textRect.Origin[0]
+	wake := func() { st.phase, st.blink = true, time.Now() }
+	if st.dragging {
+		if FrameInput.Mouse == MouseRelease {
+			st.dragging = false
+			if st.anchor == st.cursor {
+				st.anchor = -1
+			}
+		} else {
+			st.cursor = hitIndex(*buf, relX)
+			wake()
+		}
+		return
+	}
+	if FrameInput.Mouse != MouseClick || !IsHovered() {
+		return
+	}
+	idx := hitIndex(*buf, relX)
+	switch {
+	case InputState.Modifiers&ModShift != 0:
+		if st.anchor < 0 {
+			st.anchor = st.cursor
+		}
+		st.cursor = idx
+	case FrameInput.ClickCount >= 3:
+		st.anchor, st.cursor = 0, len(r)
+	case FrameInput.ClickCount == 2:
+		st.anchor, st.cursor = wordRange(r, idx)
+	default:
+		st.cursor, st.anchor, st.dragging = idx, idx, true
+	}
+	wake()
+}
+
 // caretBar renders the caret when the blink phase is on and advances the
 // 500ms blink clock (real caret feel: flush with the text, blinking).
 func caretBar(st *editState, focused bool) {
@@ -261,7 +370,7 @@ func caretBar(st *editState, focused bool) {
 		st.blink = time.Now()
 	}
 	if st.phase {
-		Container(Attrs(FixSize(2, 16), BackgroundVec(focusBorder)), func() {})
+		Container(Attrs(FixSize(2, 13), BackgroundVec(focusBorder)), func() {})
 	}
 	RequestNextFrame()
 }
@@ -276,7 +385,7 @@ func themedInput(buf *string, hint string, icon rune, sizing ...AttrsFn) {
 // themedInputState is themedInput with a caller-owned edit state (tests
 // drive the same editing flow and assert on st directly).
 func themedInputState(buf *string, hint string, icon rune, st *editState, sizing ...AttrsFn) {
-	box := Attrs(Focusable, Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(2, sp12), Clip)
+	box := Attrs(Focusable, Row, CrossMid, Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(2, sp12), Clip)
 	Container(AttrsWith(box, sizing...), func() {
 		if st == nil {
 			st = UseWithInit("edit:"+hint, func() *editState {
@@ -285,6 +394,7 @@ func themedInputState(buf *string, hint string, icon rune, st *editState, sizing
 		}
 		CycleFocusOnTab()
 		FocusOnClick()
+		editMouse(buf, st)
 		// HasFocus() only reports the container currently being built —
 		// capture it here, at the box (the focused element), not inside the
 		// row below (where it would always read false and the caret never
@@ -296,13 +406,14 @@ func themedInputState(buf *string, hint string, icon rune, st *editState, sizing
 		}
 		r := []rune(*buf)
 		lo, hi, hasSel := st.selRange(len(r))
-		Container(Attrs(Row, Gap(sp8), CrossMid), func() {
+		Container(Attrs(Row, Gap(sp8), CrossMid, Grow(1)), func() {
 			if icon != 0 {
 				widgets.Icon(icon, FontSize(13), TextColorVec(txtMuted))
 			}
-			switch {
-			case hasSel:
-				Container(Attrs(Row, Gap(0), CrossMid), func() {
+			Container(Attrs(Row, Gap(0), CrossMid, Grow(1)), func() {
+				st.textRect = GetScreenRect()
+				switch {
+				case hasSel:
 					Label(string(r[:lo]), FontSize(13), TextColorVec(txtMain))
 					Container(Attrs(Row, Gap(0), CrossMid, BackgroundVec(selBg), Corners(2)), func() {
 						Label(string(r[lo:hi]), FontSize(13), TextColorVec(txtMain))
@@ -314,18 +425,16 @@ func themedInputState(buf *string, hint string, icon rune, st *editState, sizing
 						caretBar(st, focused)
 					}
 					Label(string(r[hi:]), FontSize(13), TextColorVec(txtMain))
-				})
-			case len(r) > 0:
-				Container(Attrs(Row, Gap(0), CrossMid), func() {
+				case len(r) > 0:
 					Label(string(r[:st.cursor]), FontSize(13), TextColorVec(txtMain))
 					caretBar(st, focused)
 					Label(string(r[st.cursor:]), FontSize(13), TextColorVec(txtMain))
-				})
-			case focused:
-				caretBar(st, focused)
-			default:
-				Label(hint, FontSize(13), TextColorVec(txtMuted))
-			}
+				case focused:
+					caretBar(st, focused)
+				default:
+					Label(hint, FontSize(13), TextColorVec(txtMuted))
+				}
+			})
 		})
 	})
 }
