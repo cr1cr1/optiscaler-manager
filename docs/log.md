@@ -1308,3 +1308,36 @@ keep metadata-first, reject objective junk, disambiguate duplicates.
 - Verified on the real library (109 rows): Helldivers recursive title
   is the clean "HELLDIVERS 2" (mojibake guard), Generals/Samorost2/RSI
   correct, codenames (genuine metadata) untouched per the user's call.
+
+## 2026-07-21 — v0.8: priority-ordered game identification
+
+The user supplied a production identification spec (hard IDs → store
+metadata → engine metadata → canonical DB fuzzy → folder last +
+override) after the v0.7.2 title work; scope confirmed interactively
+(Phase A offline + Phase B keyless-online, canonical titles supersede
+codename PE metadata; IGDB/SGDB deferred as user-cred tiers).
+
+- `8da019f` schema: domain.TitleSource (9-value wire contract),
+  Game.SteamAppID, settings.title_overrides, GameRow.TitleSource,
+  games cache v5.
+- `a835826` internal/gid: offline detection — steam_appid.txt (≤2
+  levels, 480 rejected), goggame on all platforms, .egstore with
+  InstallLocation guard, Unity app.info; GOG/Epic parsers moved from
+  discovery (aliases keep its API).
+- `b2032ab` gid fuzzy matcher: NFD-diacritic normalization, edition/
+  platform/version noise stripping, strict Jaccard (no subset credit),
+  ≤4-char exact-only guard, ≥90 / ≥75+corroboration thresholds.
+- `7ed1c01` steam keyless store endpoints: appdetails (appid→name+
+  developer), storesearch (term→items with platform flags); shared
+  pacing/cooldown/30d caches, negatives cached.
+- `80acf40` ChainResolver at row creation (override > in-dir metadata >
+  PE > stem > folder; appid always recorded), threaded through
+  ScanRecursive/ScanAll/ScanAllLibraries/ManualEntry; Steam rows record
+  their appid directly.
+- `604d9e9` enrich-phase identifyRow: appid→canonical upgrade,
+  fuzzy resolution with developer corroboration
+  (pever.CompanyFromFile), ProtonDB reuses resolved appids.
+- Feasibility notes (live-probed): keyless bulk GetAppList is dead
+  (404), so no offline canonical corpus; appdetails ~200 req/5min; the
+  user's Heroic service list was evaluated — only Steam endpoints are
+  keyless and title-relevant today.

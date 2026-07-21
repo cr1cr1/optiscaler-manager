@@ -396,3 +396,29 @@ closed; reopen only with new evidence.
   `internal/gui`; upgrades are deliberate tasks.
 - GitHub API: 15-minute cooldown + cached releases; fallback needs an explicit
   user prompt; requested vs resolved (asset, digest) recorded separately.
+
+### v0.8 identification (rules and limits)
+
+- Manual rows are identified by priority: `title_overrides` (settings,
+  keyed by canonical install dir) > `steam_appid.txt` (root or ≤2
+  levels, appid 480 and non-numeric rejected) > `goggame-*.info` >
+  `.egstore` (InstallLocation must match the dir) > Unity
+  `*_Data/app.info` > normalized fuzzy store match > PE metadata > exe
+  stem > folder. Steam/Epic/GOG store-manifest rows keep their launcher
+  names (untouched).
+- The fuzzy match is deliberately strict: exact normalized equality or
+  Jaccard ≥ 90 on token sets (no subset credit), PC platform bonus,
+  edition-mismatch penalty; scores of 75–89 need the store developer to
+  match the PE CompanyName. Titles of ≤4 chars only ever match exactly.
+  False accepts are still possible for genuinely ambiguous names; the
+  override table is the escape hatch.
+- Normalization strips edition/repack noise for MATCHING only — the
+  canonical store name becomes the display title, so a folder "Dead
+  Space Remake" can legitimately become "Dead Space".
+- Online resolution is keyless Steam only (appdetails, storesearch);
+  IGDB/SteamGridDB need user credentials and are out of scope, and the
+  formerly keyless GetAppList bulk dump no longer works without an API
+  key, so there is no offline canonical corpus — offline scans keep the
+  PE/stem/folder tail (sources recorded; the next online scan upgrades).
+- Rows persist `TitleSource` + `SteamAppID` (games cache v5; v1–v4
+  invalidated).

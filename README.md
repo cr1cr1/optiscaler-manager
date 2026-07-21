@@ -12,15 +12,32 @@ The GUI is a thin [go-shirei](https://github.com/hasenj/go-shirei) binding
 over a frontend-agnostic session core (`internal/ui`); the `tui` subcommand
 is a second, terminal frontend on the same session.
 
-Status: v0.7.2. This release hardens scanning against real libraries:
-platform and plumbing directories can no longer become game rows — a Steam
-client install (`steam.exe` + `Steam.dll`) is always a container, a
-container child outranks a directory's own exe, and engine/redist/prefix
-folders (`bin`, `tools`, `_CommonRedist`, `Engine`, `drive_c`,
-`compatdata`, `shadercache`, versioned `Proton*`/`SteamLinuxRuntime*`,
-…) never row and never turn their parent into a container, so games row
-at their root instead of one level too deep (`bin/x64_dx12`, `Bin64`,
-`Retail`). Exe candidacy on unix requires real PE/ELF magic bytes — an
+Status: v0.8. This release gives manually scanned games a real
+identification stack instead of "PE title or bust". Each manual row is
+resolved by priority: a **user-pinned title** (`title_overrides` in
+settings.json, keyed by install dir) always wins; a `steam_appid.txt`
+found in the game dir (even nested under `steam_settings/`) records the
+Steam appid and the store's canonical name replaces the guess during the
+online phase; in-dir store metadata names the game on every platform —
+`goggame-*.info` (GOG), `.egstore` manifests (Epic, verified against
+their own InstallLocation so stale markers are ignored), and Unity
+`*_Data/app.info`; everything else tries a **normalized fuzzy match**
+against the Steam store (edition/platform noise stripped, strict token
+matching with trap guards, developer-vs-PE-company corroboration for
+borderline scores); only then do PE version info, the exe name, and the
+folder name get their say. Rows carry their identification source and
+Steam appid (games cache schema v5), ProtonDB reuses resolved appids
+instead of searching by name, and all of it degrades gracefully offline:
+hard-ID and in-dir metadata rules work with no network, online
+resolution fills in on the next connected scan. v0.7.2 hardened scanning
+against real libraries: platform and plumbing directories can no longer
+become game rows — a Steam client install (`steam.exe` + `Steam.dll`)
+is always a container, a container child outranks a directory's own exe,
+and engine/redist/prefix folders (`bin`, `tools`, `_CommonRedist`,
+`Engine`, `drive_c`, `compatdata`, `shadercache`, versioned
+`Proton*`/`SteamLinuxRuntime*`, …) never row and never turn their
+parent into a container, so games row at their root instead of one
+level too deep (`bin/x64_dx12`, `Bin64`, `Retail`). Exe candidacy on unix requires real PE/ELF magic bytes — an
 execute bit on a shader cache or an appmanifest no longer makes a fake
 "game executable". Game titles follow the reliability contract **binary
 metadata first, then the exe name, then the directory name**: the PE
@@ -184,13 +201,14 @@ the GUI Settings modal, or `t` on the TUI Settings screen.
 
 The "Online game info (Steam/ProtonDB)" toggle (`online_lookups` in
 `settings.json`, default **true**; GUI Settings checkbox, TUI `o`) gates the
-lookup phase of each scan: manual games are resolved title → Steam appid
-(`steamcommunity.com/actions/SearchApps`) → ProtonDB tier
-(`protondb.com` summaries API), and Steam-library rows get their tier
-directly by appid. Lookups run under a per-scan budget (8), cache results on
+lookup phase of each scan: canonical titles are resolved from the Steam
+store (steam_appid.txt ids via `store.steampowered.com/api/appdetails`,
+title searches via `/api/storesearch` with `steamcommunity.com/actions/SearchApps`
+as fallback), and ProtonDB tiers come from
+`protondb.com` summaries API. Lookups run under a per-scan budget (8), cache results on
 disk (30 days for search, 7 days for summaries), back off on HTTP 429, and
 degrade silently when offline. Privacy note: when enabled, game titles are
-sent to steamcommunity.com and appids to protondb.com — disable the toggle
+sent to steampowered.com/steamcommunity.com and appids to protondb.com — disable the toggle
 for a fully offline scan.
 
 ### TUI keymap

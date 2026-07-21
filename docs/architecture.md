@@ -228,3 +228,25 @@ OptiScaler ≥ 0.9 bundles every satellite component into one archive. Treating
 "OptiScaler" as one artifact removes the C# client's hardest problems
 (version matrices, per-component caches, bundled-vs-separate toggles) and
 collapses its six download pipelines into one.
+
+### v0.8 game identification
+
+`internal/gid` sits below discovery and owns offline identification:
+hard-ID file readers (steam_appid.txt, goggame, .egstore, Unity
+app.info) and the normalized fuzzy scorer. Layering: `ui → app →
+discovery → gid → {domain, pever}`; the GOG/Epic manifest types moved
+there with thin aliases left in discovery.
+
+Row creation resolves titles through `discovery.ChainResolver`:
+settings override → gid offline hits → PE → exe stem → folder, always
+recording a detected Steam appid. The online half lives in the lookup
+phase (`ui/identify.go`): appid rows upgrade to canonical store names
+(appdetails), the rest try the fuzzy store match (storesearch, with
+SearchApps → ProtonDB behind it), all under the existing budget,
+pacing, cooldown, and disk caches.
+
+TitleSource contract: it always names the rule that produced the
+CURRENT displayed title — an offline scan with a detected appid keeps
+`pe`/`stem`/`folder` (never `storeid` next to a tail title), and the
+online upgrade flips it to `storeid`/`fuzzy`. Override rows are frozen;
+store-manifest rows carry no source.
