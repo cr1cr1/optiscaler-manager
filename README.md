@@ -12,8 +12,25 @@ The GUI is a thin [go-shirei](https://github.com/hasenj/go-shirei) binding
 over a frontend-agnostic session core (`internal/ui`); the `tui` subcommand
 is a second, terminal frontend on the same session.
 
-Status: v0.7. This release teaches scanning the difference between a game
-folder and a library root: a manually added directory is classified
+Status: v0.7.2. This release hardens scanning against real libraries:
+platform and plumbing directories can no longer become game rows — a Steam
+client install (`steam.exe` + `Steam.dll`) is always a container, a
+container child outranks a directory's own exe, and engine/redist/prefix
+folders (`bin`, `tools`, `_CommonRedist`, `Engine`, `drive_c`,
+`compatdata`, `shadercache`, versioned `Proton*`/`SteamLinuxRuntime*`,
+…) never row and never turn their parent into a container, so games row
+at their root instead of one level too deep (`bin/x64_dx12`, `Bin64`,
+`Retail`). Exe candidacy on unix requires real PE/ELF magic bytes — an
+execute bit on a shader cache or an appmanifest no longer makes a fake
+"game executable". Game titles follow the reliability contract **binary
+metadata first, then the exe name, then the directory name**: the PE
+reader uses small windowed reads (no whole-file cap, so 400MB-class exes
+keep their metadata titles), placeholder titles (`BootstrapPackagedGame`,
+`UE4Game`) fall through to the exe stem (platform tokens stripped, camel
+humps split), and the folder name is the last resort. The games cache
+moves to schema v4 (older caches carry rows the new scanner rejects).
+v0.7.1 made containers transparent at every scan level: a manually added
+directory is classified
 (`discovery.ClassifyGameDir` — exe at the top or one level down means game;
 game-bearing subdirectories mean container; nothing executable means empty),
 and containers become **scan roots**, not games — adding one registers it
@@ -77,9 +94,11 @@ optiscaler-manager version
 
 Scanning covers Steam, Epic, GOG (discovery is Windows-only), and manually
 added folders (recursive); game titles come from PE version info
-(ProductName, then FileDescription, then the folder name), so Windows exes
-get real titles even on Linux, and Linux scans also accept `.exe` files
-without the execute bit. Manually added folders are classified before they
+(ProductName, then FileDescription, then the exe's filename stem, then the
+folder name), so Windows exes get real titles even on Linux — the PE reader
+uses bounded window reads, not whole-file reads, so huge game exes keep
+their titles — and unix scans accept `.exe` files without the execute bit
+while requiring real PE/ELF magic bytes everywhere else. Manually added folders are classified before they
 become rows: a folder that is itself a game gets one row (plus one per
 game it contains); a **container** (a library root whose subdirectories
 are or hold the games, e.g. `Games` or `Steam`) is a scan root — every

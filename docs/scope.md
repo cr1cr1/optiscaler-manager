@@ -337,34 +337,44 @@ closed; reopen only with new evidence.
   `<base>`" warning; settings untouched, no op slot held. Classification
   failure falls through to the game flow.
 - **Title priority pins** (T2): named characterization tests lock the chain
-  PE ProductName → FileDescription → folder name for manual entries,
-  including the AddDirectory placeholder (folder title) being replaced by
-  the enriched row (PE title).
+  PE ProductName → FileDescription → exe stem → folder name for manual
+  entries, including the AddDirectory placeholder (folder title) being
+  replaced by the enriched row (PE title).
 
 ### v0.7 known limits
 
 - A directory that is both a game and a container (its own exe at top
   level plus game subdirectories) yields its own row AND one row per
-  contained game.
+  contained game — but only when none of its children is a container: a
+  container child outranks the own exe (a Steam client dir with
+  `steam.exe` next to `SteamApps` is a scan root, never a game row).
 - Engine-folder detection is name-based (`bin`, `Binaries`, `Win64`,
-  `x64`, `engine`, `redist`, …). A real game literally named like an
-  engine folder would be skipped; an unusual engine layout not in the
-  list could still row. Container nesting is bounded (4 levels in the
-  scan, 6 in classification).
-- Classification walks each directory tree a bounded number of times
-  (classify, then the scan level itself); the duplication is deliberate
-  to keep the gate independent of scanner internals.
-- A container holding exactly one game whose exe sits at depth ≤ 2 from
-  the container root may classify as a game (getting a self-row) — the
-  heuristic boundary is depth 2 vs 3, and a shallow one-game container is
-  structurally indistinguishable from an engine-layout game dir.
-- Nested containers (e.g. adding a Steam root, whose games live at
-  `steamapps/common/<game>`) surface only one game per intermediate
-  directory per scan: each intermediate level is treated as that scan's
-  single gamey child, so full surfacing takes repeated rescans.
-- Warm caches written by v0.6 (schema v1) are invalidated by the v0.7
-  schema bump (v2): the first v0.7 boot falls through to a real scan
-  instead of resurrecting stale container self-rows.
+  `x64`, `engine`, `redist`, `bin64`, `retail`, `exe`, …) plus platform
+  plumbing (`drive_c`, `compatdata`, `shadercache`, `downloading`,
+  `temp`, `music`, `sourcemods`, `__installer`, `_redist`, `Steamworks
+  Shared`, versioned `Proton*` / `SteamLinuxRuntime*` folders). Engine
+  folders never row and never make their parent a container. A real game
+  literally named like one would be skipped; an unusual engine layout
+  not covered could still row. Container nesting is bounded (4 levels in
+  the scan, 6 in classification).
+- A `steam.exe` + `Steam.dll` pair marks a platform client install,
+  which always classifies as a container. A game shipping both files at
+  its root would be misclassified (not seen in practice).
+- Exe candidacy on unix requires PE/ELF magic bytes, so extensionless
+  scripts and data files with the execute bit are ignored; a game
+  shipped as a raw script (`#!`) is not detected (acceptable: OptiScaler
+  targets Windows binaries).
+- Titles come from PE metadata first (windowed reads, no size cap),
+  then the exe stem (platform tokens stripped), then the folder. Some
+  vendors ship unhelpful metadata (codenames like `Cardinal`, `Anvil`,
+  `b1`; repacked exes with junk strings) — the chain is deliberately
+  metadata-first per the contract.
+- Adding a Proton folder or `compatdata` tree *directly* as a scan
+  directory is refused (engine-named roots hold no games of their own).
+- Warm caches written before v0.7.2 (schemas v1–v3) are invalidated by
+  the v4 schema: the first v0.7.2 boot falls through to a real scan
+  instead of showing rows the new scanner rejects (platform dirs,
+  steamapps plumbing, engine/redist folders, capped-reader titles).
 
 ## Dependencies (settled)
 

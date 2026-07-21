@@ -1188,3 +1188,49 @@ child's PE title while its siblings were dropped.
   rows. TDD: nested container, deep nesting, game-root engine folders.
 - Docs: README scanning section + scope.md v0.7 known limits updated for
   the new semantics.
+
+## 2026-07-21 — v0.7.2: platform dirs, magic candidacy, metadata-first titles
+
+Second field rejection of the scan work, root-caused against the user's
+real `games.json` and filesystem: rows named `Steam` (a Steam *client*
+install dir with `steam.exe` at its top) and `steamapps` (a `-rwxr-xr-x`
+shader cache `.foz` accepted as its "main exe"), a junk-row zoo from
+engine/redist trees (`tools/redmod`, `Engine/.../CRS`,
+`_CommonRedist/DotNet/4.8`, `__Installer`, `_Redist`), wrong-level rows
+(Witcher 3 at `bin/x64_dx12`, Crysis at `Bin64`, 007 at `Retail`), and
+folder-name titles where PE metadata existed (`Dead Space.exe` is 423MB —
+the 128MiB whole-file cap silently dropped its title; Unreal's
+`BootstrapPackagedGame` placeholder rowed Tempest Rising).
+
+- `f30ed02` v0.7.1 review fix-forward baseline: classify visited set
+  (symlink fan-out), unreadable-dir tolerance, cache v3.
+- `5a89eee` fix(discovery): unix exe candidacy requires PE/ELF magic
+  bytes (exec bit alone proved nothing on permissive mounts); fixtures
+  carry MZ magic.
+- `20f59a3` feat(pever): `TitleFromFile` — 64KiB header window + bounded
+  resource read via ReaderAt, no size cap; rejects
+  `BootstrapPackagedGame`.
+- `9fa6edf` fix(discovery): engine folders (`engineFolderName`, extended
+  with plumbing + Proton/SLR prefix rules) are transparent for BOTH game
+  and container kinds in the classifier and scanLevel — support trees
+  never row and never force the parent into a container.
+- `a50818d` fix(discovery): container children outrank a dir's own exe;
+  `steam.exe` + `Steam.dll` platform sentinel; engine-named scan roots
+  refused.
+- `b8b3f2f` feat(discovery,app): title chain PE metadata → exe stem
+  (platform tokens stripped, camel split, echo/generic guards) → folder;
+  `manualName` delegates.
+- `ef21b04` fix(discovery,pever): separator-insensitive exe ranking
+  (`FarCry5.exe` matches "Far Cry 5"); `exe`/`steamworks shared` engine
+  names; `UE4Game` placeholder rejected.
+- `4b0607f` fix(ui): games cache schema v4 — v1–v3 caches carry rows the
+  new scanner rejects; warm boot falls through to a real scan.
+- `8063b7f` fix(ui): covers progress ticks every non-scanOnly extra root
+  (dedup and failure included) — no more stalled phase.
+- Verified against the user's real library (scratch probe, deleted after):
+  111 rows in ~12s — no Steam/steamapps/Proton/compatdata/redist rows;
+  Witcher 3 / Crysis / 007 / Cyberpunk row at their roots; `Dead Space`
+  titled from PE metadata; Tempest Rising and Obduction titled by stem.
+- Docs: README status + scanning paragraph, scope.md v0.7 known limits
+  rewritten (two stale v0.7 bullets removed), architecture.md covers-tick
+  paragraph, this entry.

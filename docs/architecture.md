@@ -168,9 +168,10 @@ The session consumes the classification in two places (T2):
   parsing). Roots classified container/empty are scan roots only:
   `mergeExtraDirs` appends no `ManualEntry` self-row for them, the covers
   progress total excludes them, and the in-flight merge drops stale
-  self-rows left in `games.json` by pre-gating builds. Roots whose
-  classification fails keep the previous row-bearing behavior
-  (conservative).
+  self-rows left in `games.json` by pre-gating builds. Every other root
+  ticks the covers progress once — row appended, deduplicated, or failed
+  — so the phase always reaches its total. Roots whose classification
+  fails keep the previous row-bearing behavior (conservative).
 - **AddDirectory** classifies synchronously — cheap enough for an explicit
   user action — and branches: game dirs take the v0.5 async contract
   unchanged (synchronous persist + placeholder row, goroutine enrichment,
