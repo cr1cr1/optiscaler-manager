@@ -7,6 +7,8 @@
 package gid
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,25 +20,29 @@ import (
 
 // Result is what offline detection found in a game directory: a Steam app
 // id when one is recorded (name resolution is the enrich phase's job, so
-// an appid alone never sets Title), and the title when an in-dir metadata
-// file yields one directly.
+// an appid alone never sets Title), the title when an in-dir metadata
+// file yields one directly, and the Epic catalog id when an .egstore
+// marker is present (the newer manifest format carries no display name —
+// the title falls through the chain).
 type Result struct {
-	SteamAppID string
-	Title      string
-	Source     domain.TitleSource
+	SteamAppID  string
+	Title       string
+	Source      domain.TitleSource
+	EpicAppName string
 }
 
 // Detect scans dir for identity files and returns the best evidence.
-// Title precedence: goggame-*.info > .egstore manifest > Unity app.info
-// (a steam_appid.txt is orthogonal and always reported). exe may be ""
-// and only breaks ties between multiple Unity *_Data dirs.
+// Title precedence: goggame-*.info > .egstore DisplayName > Unity
+// app.info; a steam_appid.txt and an .egstore catalog id are orthogonal
+// captures that are always reported. exe may be "" and only breaks ties
+// between multiple Unity *_Data dirs.
 func Detect(dir, exe string) Result {
-	r := Result{SteamAppID: findSteamAppID(dir)}
+	r := Result{SteamAppID: findSteamAppID(dir), EpicAppName: egstoreID(dir)}
 	if name := gogName(dir); name != "" {
 		r.Title, r.Source = name, domain.SourceGOGInfo
 		return r
 	}
-	if name := egstoreName(dir); name != "" {
+	if name := egstoreTitle(dir); name != "" {
 		r.Title, r.Source = name, domain.SourceEGStore
 		return r
 	}
@@ -45,6 +51,62 @@ func Detect(dir, exe string) Result {
 		return r
 	}
 	return r
+}
+
+// egstoreID returns the Epic catalog id from a .egstore marker, in either
+// manifest format (the newer in-dir format's AppNameString, or an older
+// .item manifest's AppName).
+func egstoreID(dir string) string {
+	for _, data := range egstoreFiles(dir) {
+		if appID, _, err := ParseEGStoreManifest(bytes.NewReader(data)); err == nil {
+			return appID
+		}
+		if m, err := ParseEpicManifest(bytes.NewReader(data)); err == nil {
+			return m.AppName
+		}
+	}
+	return ""
+}
+
+// egstoreTitle returns the DisplayName of an .item-shaped .egstore
+// manifest, but only when its InstallLocation points at this very
+// directory — the marker survives uninstalls, so a stale one is not
+// evidence.
+func egstoreTitle(dir string) string {
+	for _, data := range egstoreFiles(dir) {
+		manifest, err := ParseEpicManifest(bytes.NewReader(data))
+		if err != nil || !manifest.IsGame() || manifest.DisplayName == "" {
+			continue
+		}
+		if !sameDir(manifest.InstallLocation, dir) {
+			continue
+		}
+		return manifest.DisplayName
+	}
+	return ""
+}
+
+// egstoreFiles reads the (bounded) contents of .egstore/*.manifest in
+// deterministic order.
+func egstoreFiles(dir string) [][]byte {
+	matches, err := filepath.Glob(filepath.Join(dir, ".egstore", "*.manifest"))
+	if err != nil || len(matches) == 0 {
+		return nil
+	}
+	sort.Strings(matches)
+	var out [][]byte
+	for _, m := range matches {
+		f, err := os.Open(m)
+		if err != nil {
+			continue
+		}
+		data, err := io.ReadAll(io.LimitReader(f, 1<<20))
+		_ = f.Close()
+		if err == nil {
+			out = append(out, data)
+		}
+	}
+	return out
 }
 
 // findSteamAppID returns the app id recorded in a steam_appid.txt at the
@@ -143,13 +205,15 @@ func gogName(dir string) string {
 	return strings.TrimSpace(info.Name)
 }
 
-// egstoreName returns the DisplayName of a game manifest under .egstore,
-// but only when its InstallLocation points at this very directory — the
-// marker survives uninstalls, so a stale manifest is not evidence.
-func egstoreName(dir string) string {
+// egstoreName reads .egstore manifests: the newer in-dir format yields
+// its catalog id (no display name exists there), an older .item-shaped
+// manifest yields its DisplayName when its InstallLocation points at this
+// very directory — the marker survives uninstalls, so a stale one is not
+// evidence.
+func egstoreName(dir string) (name, appName string) {
 	matches, err := filepath.Glob(filepath.Join(dir, ".egstore", "*.manifest"))
 	if err != nil || len(matches) == 0 {
-		return ""
+		return "", ""
 	}
 	sort.Strings(matches)
 	for _, m := range matches {
@@ -157,17 +221,24 @@ func egstoreName(dir string) string {
 		if err != nil {
 			continue
 		}
-		manifest, err := ParseEpicManifest(f)
+		data, err := io.ReadAll(io.LimitReader(f, 1<<20))
 		_ = f.Close()
+		if err != nil {
+			continue
+		}
+		if appID, _, err := ParseEGStoreManifest(bytes.NewReader(data)); err == nil {
+			return "", appID
+		}
+		manifest, err := ParseEpicManifest(bytes.NewReader(data))
 		if err != nil || !manifest.IsGame() || manifest.DisplayName == "" {
 			continue
 		}
 		if !sameDir(manifest.InstallLocation, dir) {
 			continue
 		}
-		return manifest.DisplayName
+		return manifest.DisplayName, manifest.AppName
 	}
-	return ""
+	return "", ""
 }
 
 // sameDir compares two paths after cleaning and symlink resolution.

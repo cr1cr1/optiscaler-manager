@@ -28,6 +28,28 @@ func (m EpicManifest) IsGame() bool {
 	return false
 }
 
+// egstoreManifestJSON is the newer manifest format real Epic installs
+// write under .egstore: there is no DisplayName or InstallLocation —
+// AppNameString is the catalog id and LaunchExeString the game's exe
+// path relative to the install root.
+type egstoreManifestJSON struct {
+	ManifestFileVersion string `json:"ManifestFileVersion"`
+	AppNameString       string `json:"AppNameString"`
+	LaunchExeString     string `json:"LaunchExeString"`
+}
+
+// ParseEGStoreManifest parses the newer in-dir .egstore manifest format.
+func ParseEGStoreManifest(r io.Reader) (appName, launchExe string, err error) {
+	var raw egstoreManifestJSON
+	if err := json.NewDecoder(r).Decode(&raw); err != nil {
+		return "", "", fmt.Errorf("egstore manifest: %w", err)
+	}
+	if raw.ManifestFileVersion == "" || raw.AppNameString == "" {
+		return "", "", fmt.Errorf("egstore manifest: not the in-dir format (AppNameString=%q)", raw.AppNameString)
+	}
+	return raw.AppNameString, raw.LaunchExeString, nil
+}
+
 type epicManifestJSON struct {
 	AppName         string `json:"AppName"`
 	DisplayName     string `json:"DisplayName"`

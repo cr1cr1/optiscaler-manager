@@ -154,3 +154,30 @@ func TestDetect_Nothing(t *testing.T) {
 		t.Errorf("Detect = %+v, want zero", got)
 	}
 }
+
+// Real Epic installs write a newer .egstore manifest format (no
+// DisplayName, no InstallLocation — AppNameString is the catalog id and
+// LaunchExeString the game exe). It identifies the install without
+// naming it: the id is captured, the title falls through the chain.
+func TestDetect_EGStoreNewFormat(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".egstore", "X.manifest"), `{"ManifestFileVersion":"013000000000","AppNameString":"6b9b4207048a4a5eb98a0803ebbfe7fa","LaunchExeString":"Binaries/Danielle/x64-Epic/Release/Prey.exe","FileManifestList":[]}`)
+	got := Detect(root, "")
+	if got.EpicAppName != "6b9b4207048a4a5eb98a0803ebbfe7fa" {
+		t.Errorf("EpicAppName = %q, want the catalog id", got.EpicAppName)
+	}
+	if got.Title != "" {
+		t.Errorf("Title = %q, want none from the new format", got.Title)
+	}
+}
+
+// The older .item-shaped manifest still yields its DisplayName, and the
+// epic id is captured either way.
+func TestDetect_EGStoreItemFormatCapturesID(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".egstore", "X.manifest"), egstoreJSON("PreyApp", "Prey", root))
+	got := Detect(root, "")
+	if got.Title != "Prey" || got.Source != domain.SourceEGStore || got.EpicAppName != "PreyApp" {
+		t.Errorf("Detect = %+v, want egstore title + id", got)
+	}
+}

@@ -60,6 +60,7 @@ func ManualEntryWithResolver(dir string, st *store.Store, res discovery.TitleRes
 			Store:       domain.StoreManual,
 			SteamAppID:  title.SteamAppID,
 			TitleSource: title.Source,
+			AppName:     title.EpicAppName,
 		},
 		EAC: installer.EACProtected(root),
 	}

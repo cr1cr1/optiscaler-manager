@@ -13,9 +13,10 @@ import (
 // even when the title itself came from the PE/stem/folder tail — the
 // enrich phase upgrades those rows to canonical store names).
 type TitleResult struct {
-	Name       string
-	Source     domain.TitleSource
-	SteamAppID string
+	Name        string
+	Source      domain.TitleSource
+	SteamAppID  string
+	EpicAppName string
 }
 
 // TitleResolver resolves the display title of one game directory; exe is
@@ -32,14 +33,14 @@ func ChainResolver(override func(dir string) string) TitleResolver {
 		det := gid.Detect(dir, exe)
 		if override != nil {
 			if o := override(dir); o != "" {
-				return TitleResult{Name: o, Source: domain.SourceOverride, SteamAppID: det.SteamAppID}
+				return TitleResult{Name: o, Source: domain.SourceOverride, SteamAppID: det.SteamAppID, EpicAppName: det.EpicAppName}
 			}
 		}
 		if det.Title != "" {
-			return TitleResult{Name: det.Title, Source: det.Source, SteamAppID: det.SteamAppID}
+			return TitleResult{Name: det.Title, Source: det.Source, SteamAppID: det.SteamAppID, EpicAppName: det.EpicAppName}
 		}
 		name, src := resolveGameTitle(exe, filepath.Base(dir))
-		return TitleResult{Name: name, Source: src, SteamAppID: det.SteamAppID}
+		return TitleResult{Name: name, Source: src, SteamAppID: det.SteamAppID, EpicAppName: det.EpicAppName}
 	}
 }
 

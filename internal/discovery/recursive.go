@@ -178,6 +178,7 @@ func ScanRecursiveWithResolver(ctx context.Context, root string, res TitleResolv
 			ExePath:     exe,
 			SteamAppID:  title.SteamAppID,
 			TitleSource: title.Source,
+			AppName:     title.EpicAppName,
 		})
 	}
 	sub, err := scanLevel(ctx, root, 0, map[string]bool{root: true}, res)
