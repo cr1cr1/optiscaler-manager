@@ -1402,3 +1402,18 @@ on the real library:
   128-row sanity cap with pacing + 429 cooldown as the rate control; the
   whole library converges in one scan. Verified live: Black Myth →
   "Black Myth: Wukong" in scan 1.
+
+## 2026-07-21 — v0.8.3: cover binding fixes
+
+User report: 11 mismatched covers (CoH3→"Anvil Empires", AC
+Shadows→"Shadows on the Vatican", Black Myth→"B1", …) and missing
+covers (007 First Light, Oblivion, ControlLauncher). Audit of the live
+cache confirmed every binding. Fixes in `2ce79a1`: toRow prefers the
+resolved SteamAppID (direct CDN, no search); store search candidates
+are scored (gid.Score, ≥90 to bind) so first-hit mistakes can't bind;
+art falls back to library_hero.jpg before the placeholder (007,
+Oblivion, Aphelion have banners, no portrait art); refreshCovers
+rebinds after the identification phase each scan; 7-day miss markers
+for artless appids; "reloaded" edition token for store rebrands
+(Dying Light 2). Real-library re-audit: all 14 previously bad covers
+now correct.
