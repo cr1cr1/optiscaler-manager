@@ -125,8 +125,10 @@ var recursiveSkipTokens = []string{
 }
 
 // maxExeDepth is how many directory levels below a game directory the
-// recursive scan descends looking for the main executable.
-const maxExeDepth = 3
+// recursive scan descends looking for the main executable. Four levels
+// cover the deepest real layout seen in the wild (Prey ships
+// Binaries/Danielle/x64-Epic/Release/Prey.exe).
+const maxExeDepth = 4
 
 // ScanRecursive resolves the games under root. When root itself is a game
 // (yields a main executable) it gets its own row; either way its children
@@ -291,6 +293,9 @@ func findMainExeWithin(ctx context.Context, gameDir string, maxDepth int) (strin
 				return nil
 			}
 			if strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			if plumbingWalkDir(d.Name(), filepath.Base(filepath.Dir(path))) {
 				return filepath.SkipDir
 			}
 			if depthOf(gameDir, path) > maxDepth {

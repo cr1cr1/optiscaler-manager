@@ -69,6 +69,34 @@ var engineFolderNames = map[string]bool{
 	"drive_c": true, "compatdata": true, "shadercache": true,
 	"downloading": true, "temp": true, "music": true, "sourcemods": true,
 	"steamworks common redistributables": true, "steamworks shared": true,
+	"steamvr": true,
+}
+
+// plumbingFolderNames are the engineFolderNames whose subtrees no exe walk
+// may descend at all: platform plumbing that can only ever hold download
+// fragments, shader caches, prefixes, and runtimes — never a game's own
+// binary. The remaining engine folders (bin, Binaries/Win64, Retail, …)
+// stay walkable because the game's exe legitimately lives inside them.
+var plumbingFolderNames = map[string]bool{
+	"compatdata": true, "shadercache": true, "downloading": true,
+	"temp": true, "music": true, "sourcemods": true,
+	"steamworks common redistributables": true, "steamworks shared": true,
+	"steamvr": true,
+}
+
+// plumbingWalkDir reports whether the walker should prune dir (a child of
+// parentBase): plumbing folders always, and the OS subtrees of a Wine
+// prefix (drive_c/windows, drive_c/users) — a prefix's games live under
+// Program Files / GOG Games, which stay walkable.
+func plumbingWalkDir(name, parentBase string) bool {
+	name = strings.ToLower(name)
+	if plumbingFolderNames[name] {
+		return true
+	}
+	if (name == "windows" || name == "users") && strings.ToLower(parentBase) == "drive_c" {
+		return true
+	}
+	return false
 }
 
 // engineFolderName reports whether name marks a subdirectory that holds a
