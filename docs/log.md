@@ -1457,3 +1457,16 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   bottom.
 - Verified headlessly (slash-focus, bottom-Y alignment, sidebar height)
   and by rendered-PNG inspection of all seven items.
+
+## 2026-07-21 — v0.8.6: cover-delete crash + text fields v2
+
+- Crash: `shirei.ReadFileContent` nil-derefs on a missing file
+  (`os.Stat` error ignored). Deleting the cover cache panicked startup
+  with cached CoverPaths. coverArt stat-guards → placeholder tile
+  (pinned by TestCoverArtMissingFileDoesNotPanic).
+- Text fields v2: fieldH 24 / Pad2(2,sp12); REAL cursor
+  (arrows/Home/End, 500ms blink, flush against text via Gap(0)); REAL
+  selection (Shift+arrows/Home/End, Ctrl+A, Backspace/type-replace,
+  blue highlight band, Ctrl+C/X/V via RequestTextCopy/RequestPaste);
+  per-field keyed editState + themedInputState test seam. Verified by
+  behavior tests and rendered-pixel inspection.
