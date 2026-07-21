@@ -91,7 +91,7 @@ func writeUIFile(t *testing.T, path, content string) {
 // waitEvent drains the session's events until kind arrives or the deadline.
 func waitEvent(t *testing.T, s *Session, kind EventKind) Event {
 	t.Helper()
-	deadline := time.After(15 * time.Second)
+	deadline := time.After(90 * time.Second)
 	for {
 		select {
 		case ev := <-s.Events():

@@ -176,14 +176,16 @@ func TestScan_EnrichmentFailureDegrades(t *testing.T) {
 }
 
 func TestScan_EnrichmentRespectsBudget(t *testing.T) {
+	t.Cleanup(func() { lookupBudget = 128 })
+	lookupBudget = 8
 	f := newLookupFixture(t, true, http.StatusOK)
-	f.sess.deps.Settings.ExtraDirs = manualDirs(t, 12)
+	f.sess.deps.Settings.ExtraDirs = manualDirs(t, lookupBudget+4)
 
 	st := scanAndWait(t, f.sess)
-	if len(st.Rows) != 12 {
-		t.Fatalf("rows = %d, want 12", len(st.Rows))
+	if len(st.Rows) != lookupBudget+4 {
+		t.Fatalf("rows = %d, want %d", len(st.Rows), lookupBudget+4)
 	}
-	if got := f.steamHits.Load(); got > lookupBudget {
+	if got := f.steamHits.Load(); got > int64(lookupBudget) {
 		t.Errorf("steam search calls = %d, want <= %d (per-scan lookup budget)", got, lookupBudget)
 	}
 	enriched := 0
@@ -281,12 +283,14 @@ func TestScan_EnrichmentBudgetCountsLiveRequestsOnly(t *testing.T) {
 // negative-cached they stop consuming the budget, and a valid row behind 8
 // permanent failures is enriched by the second scan at the latest.
 func TestScan_EnrichmentPermanentFailuresDontStarve(t *testing.T) {
+	t.Cleanup(func() { lookupBudget = 128 })
+	lookupBudget = 8
 	var steamHits, protonHits atomic.Int64
 	steamSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		steamHits.Add(1)
 		title, _ := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/actions/SearchApps/"))
 		w.Header().Set("Content-Type", "application/json")
-		if strings.HasSuffix(title, "08") { // only the 9th title resolves
+		if strings.HasSuffix(title, fmt.Sprintf("%02d", lookupBudget)) { // only the last title resolves
 			fmt.Fprintf(w, `[{"appid":"777","name":%q}]`, title)
 			return
 		}
@@ -310,7 +314,7 @@ func TestScan_EnrichmentPermanentFailuresDontStarve(t *testing.T) {
 		Steam:        steam.NewWithBaseURL(nil, filepath.Join(root, "steamcache"), steamSrv.URL, "test"),
 		ProtonDB:     protondb.NewWithBaseURL(nil, filepath.Join(root, "protoncache"), protonSrv.URL, "test"),
 	})
-	sess.deps.Settings.ExtraDirs = manualDirs(t, 9)
+	sess.deps.Settings.ExtraDirs = manualDirs(t, lookupBudget+1)
 
 	tierOf := func(st State, suffix string) string {
 		t.Helper()
@@ -323,22 +327,23 @@ func TestScan_EnrichmentPermanentFailuresDontStarve(t *testing.T) {
 		return ""
 	}
 
-	st := scanAndWait(t, sess) // scan 1: budget spent on the 8 failures
-	if got := tierOf(st, "FakeGame08"); got != "" {
-		t.Fatalf("scan 1: row 9 tier = %q, want empty (budget went to the 8 live failures)", got)
+	last := fmt.Sprintf("FakeGame%02d", lookupBudget)
+	st := scanAndWait(t, sess) // scan 1: budget spent on the failures
+	if got := tierOf(st, last); got != "" {
+		t.Fatalf("scan 1: last row tier = %q, want empty (budget went to the live failures)", got)
 	}
-	if got := steamHits.Load(); got != lookupBudget {
+	if got := steamHits.Load(); got != int64(lookupBudget) {
 		t.Fatalf("scan 1: steam hits = %d, want %d (8 live failing searches)", got, lookupBudget)
 	}
 
-	st = scanAndWait(t, sess) // scan 2: negatives cached, row 9 resolves
-	if got := tierOf(st, "FakeGame08"); got != "gold" {
-		t.Errorf("scan 2: row 9 tier = %q, want gold (cached negatives freed the budget)", got)
+	st = scanAndWait(t, sess) // scan 2: negatives cached, the last row resolves
+	if got := tierOf(st, last); got != "gold" {
+		t.Errorf("scan 2: last row tier = %q, want gold (cached negatives freed the budget)", got)
 	}
-	if got := steamHits.Load(); got != lookupBudget+1 {
+	if got := steamHits.Load(); got != int64(lookupBudget+1) {
 		t.Errorf("steam hits after scan 2 = %d, want %d (failures served from the negative cache)", got, lookupBudget+1)
 	}
-	t.Logf("row 9 enriched after 2 scans; steam hits %d", steamHits.Load())
+	t.Logf("last row enriched after 2 scans; steam hits %d", steamHits.Load())
 }
 
 // TestEnrichRow_SkipsNonNumericAppID: an appid resolved from a Steam search

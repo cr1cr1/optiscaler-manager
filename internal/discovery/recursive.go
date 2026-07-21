@@ -296,6 +296,7 @@ func findMainExe(ctx context.Context, gameDir string) (string, error) {
 func findMainExeWithin(ctx context.Context, gameDir string, maxDepth int) (string, error) {
 	folder := strings.ToLower(filepath.Base(gameDir))
 	var best *exeCandidate
+	var candidates []*exeCandidate
 	err := filepath.WalkDir(gameDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -317,7 +318,9 @@ func findMainExeWithin(ctx context.Context, gameDir string, maxDepth int) (strin
 				return filepath.SkipDir
 			}
 			if ok, skip := dirCandidate(path); ok {
-				consider(&best, scoreCandidate(path, d.Name(), folder, 0))
+				c := scoreCandidate(path, d.Name(), folder, 0)
+				candidates = append(candidates, c)
+				consider(&best, c)
 				if skip {
 					return filepath.SkipDir
 				}
@@ -331,7 +334,9 @@ func findMainExeWithin(ctx context.Context, gameDir string, maxDepth int) (strin
 		if !ok {
 			return nil
 		}
-		consider(&best, scoreCandidate(path, d.Name(), folder, size))
+		c := scoreCandidate(path, d.Name(), folder, size)
+		candidates = append(candidates, c)
+		consider(&best, c)
 		return nil
 	})
 	if err != nil {
@@ -340,7 +345,67 @@ func findMainExeWithin(ctx context.Context, gameDir string, maxDepth int) (strin
 	if best == nil {
 		return "", nil
 	}
-	return best.path, nil
+	return preferShippingOverShim(gameDir, best, candidates), nil
+}
+
+// shimMaxSize is how small a root-level exe must be to count as a UE
+// bootstrap stub (real shims are hundreds of KB; real games are bigger).
+const shimMaxSize = 8 << 20
+
+// preferShippingOverShim demotes a winning root-level exe that is a UE
+// bootstrap stub: tiny, sitting directly in the game dir, with a much
+// bigger exe deeper down whose stem starts with the same stem and carries
+// the UE shipping signature ("-Shipping" in the name or a Binaries/Win64
+// path). The stub's only merit is its name matching the folder; the real
+// binary is the game.
+func preferShippingOverShim(gameDir string, best *exeCandidate, candidates []*exeCandidate) string {
+	stem := squeezeStem(best.path)
+	if depthOf(gameDir, filepath.Dir(best.path)) != 0 || best.size >= shimMaxSize || stem == "" {
+		return best.path
+	}
+	var ship *exeCandidate
+	for _, c := range candidates {
+		if c == best || c.size <= best.size || c.size < shimMaxSize {
+			continue
+		}
+		cstem := squeezeStem(c.path)
+		if !strings.HasPrefix(cstem, stem) {
+			continue
+		}
+		lower := strings.ToLower(c.path)
+		if !strings.Contains(lower, "shipping") && !hasWin64Segment(c.path) {
+			continue
+		}
+		if ship == nil || consider2(c, ship) {
+			ship = c
+		}
+	}
+	if ship != nil {
+		log.Debug().Str("shim", best.path).Str("exe", ship.path).Msg("exe pick: bootstrap shim demoted for the shipping binary")
+		return ship.path
+	}
+	return best.path
+}
+
+// squeezeStem lowercases an exe's stem with separators removed, for
+// prefix comparison ("LayersOfFear" ≈ "layersoffear-win64-shipping").
+func squeezeStem(path string) string {
+	base := filepath.Base(path)
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	return strings.Map(func(r rune) rune {
+		if r == '-' || r == '_' || r == '.' || r == ' ' {
+			return -1
+		}
+		return unicode.ToLower(r)
+	}, stem)
+}
+
+// consider2 reports whether c beats b by the same ranking as consider.
+func consider2(c, b *exeCandidate) bool {
+	return c.nameScore > b.nameScore ||
+		(c.nameScore == b.nameScore && c.size > b.size) ||
+		(c.nameScore == b.nameScore && c.size == b.size && c.is64 && !b.is64) ||
+		(c.nameScore == b.nameScore && c.size == b.size && c.is64 == b.is64 && c.path < b.path)
 }
 
 // depthOf returns how many directory levels path sits below root (a file

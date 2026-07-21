@@ -13,12 +13,13 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/steam"
 )
 
-// lookupBudget caps how many rows one scan enriches with a live online
-// request; rows answered entirely from the clients' disk caches are free.
-// The rest are skipped silently and retried by a later scan. Combined with
-// the clients' 250ms request pacing this bounds the phase to a few
-// seconds.
-const lookupBudget = 8
+// lookupBudget caps how many rows one scan enriches with live online
+// requests; rows answered entirely from the clients' disk caches are free.
+// The cap is a sanity bound, not a daily ration: pacing (250ms per live
+// request) and the 429 cooldown are the actual rate control, so a full
+// library converges inside one scan (~2 minutes worst case for ~130 rows)
+// instead of over a dozen rescans. Tests pin it lower via t.Cleanup.
+var lookupBudget = 128
 
 // enrichOnline runs the "lookup" scan phase: rows with a Steam appid but a
 // tail-chain title get their canonical store name first (one cheap call,
