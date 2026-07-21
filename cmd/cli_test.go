@@ -12,6 +12,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
 )
@@ -186,5 +187,28 @@ func TestStartupRecoveryFlagsInterruptedManifests(t *testing.T) {
 	}
 	if !strings.Contains(got, "rollback") {
 		t.Errorf("warning does not guide toward rollback")
+	}
+}
+
+// TestScanCommandAppliesTitleOverrides: a pinned title in settings.json
+// wins on the CLI scan path too — the override is global, not GUI-only.
+func TestScanCommandAppliesTitleOverrides(t *testing.T) {
+	d, out := testDeps(t, nil)
+	d.DataRoot = t.TempDir()
+	game := filepath.Join(t.TempDir(), "SomeGame")
+	writeCmdTestFile(t, filepath.Join(game, "game.exe"), "MZGAME")
+	s := settings.Defaults()
+	s.ExtraDirs = []string{game}
+	s.TitleOverrides = map[string]string{game: "CLI Pinned Title"}
+	if err := settings.Save(d.DataRoot, s); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &ScanCmd{SteamRoot: t.TempDir()}
+	if err := cmd.Run(d); err != nil {
+		t.Fatalf("ScanCmd.Run: %v", err)
+	}
+	if !strings.Contains(out.String(), "CLI Pinned Title") {
+		t.Errorf("scan output missing the override title:\n%s", out.String())
 	}
 }

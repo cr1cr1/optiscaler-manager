@@ -86,14 +86,19 @@ func egstoreTitle(dir string) string {
 	return ""
 }
 
-// egstoreFiles reads the (bounded) contents of .egstore/*.manifest in
-// deterministic order.
+// egstoreFiles reads the (bounded) contents of the first few
+// .egstore/*.manifest files in deterministic order: each file is capped
+// at 1MiB and the count is capped, so a hostile dir cannot turn
+// identification into a memory blowout.
 func egstoreFiles(dir string) [][]byte {
 	matches, err := filepath.Glob(filepath.Join(dir, ".egstore", "*.manifest"))
 	if err != nil || len(matches) == 0 {
 		return nil
 	}
 	sort.Strings(matches)
+	if len(matches) > 8 {
+		matches = matches[:8]
+	}
 	var out [][]byte
 	for _, m := range matches {
 		f, err := os.Open(m)
@@ -158,13 +163,26 @@ func findSteamAppID(dir string) string {
 		}
 		return found[i].path < found[j].path
 	})
-	return readAppID(found[0].path)
+	// A rejected parse (a 480 placeholder, garbage) must not mask a real
+	// id in a deeper file.
+	for _, c := range found {
+		if id := readAppID(c.path); id != "" {
+			return id
+		}
+	}
+	return ""
 }
 
 // readAppID parses the first line of a steam_appid.txt: digits only after
 // trimming BOM/whitespace/CR; 480 (Steam's test app) is not a real id.
+// The read is bounded — a giant file is not slurped for one line.
 func readAppID(path string) string {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, 4096))
 	if err != nil {
 		return ""
 	}
@@ -198,7 +216,7 @@ func gogName(dir string) string {
 		return ""
 	}
 	defer func() { _ = f.Close() }()
-	info, err := ParseGOGGameInfo(f)
+	info, err := ParseGOGGameInfo(io.LimitReader(f, 1<<20))
 	if err != nil {
 		return ""
 	}

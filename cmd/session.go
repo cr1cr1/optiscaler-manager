@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
+	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
 	"github.com/cr1cr1/optiscaler-manager/internal/protondb"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/steam"
@@ -33,6 +34,7 @@ func newSession(d *Deps) *ui.Session {
 		SettingsRoot: d.DataRoot,
 		Steam:        steamClient,
 		ProtonDB:     protonClient,
+		PCGW:         pcgw.New(httpClient, filepath.Join(d.CacheDir, "pcgw"), d.Version),
 	})
 }
 

@@ -203,3 +203,35 @@ func TestDetect_EGStoreHugeManifest(t *testing.T) {
 		t.Errorf("EpicAppName = %q, want the catalog id from a huge manifest", got.EpicAppName)
 	}
 }
+
+// A junk shallow file must not mask a real nested id: repack tooling can
+// leave a 480 placeholder at the root while the true id sits in
+// steam_settings/.
+func TestDetect_SteamAppIDRejectedShallowDoesNotMaskNested(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "steam_appid.txt"), "480")
+	write(t, filepath.Join(root, "steam_settings", "steam_appid.txt"), "2322010")
+	if got := Detect(root, ""); got.SteamAppID != "2322010" {
+		t.Errorf("SteamAppID = %q, want the nested real id (480 must not mask)", got.SteamAppID)
+	}
+}
+
+// A garbage shallow file masks nothing either.
+func TestDetect_SteamAppIDGarbageShallowDoesNotMaskNested(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "steam_appid.txt"), "not-a-number")
+	write(t, filepath.Join(root, "cfg", "steam_appid.txt"), "1693980")
+	if got := Detect(root, ""); got.SteamAppID != "1693980" {
+		t.Errorf("SteamAppID = %q, want the nested real id", got.SteamAppID)
+	}
+}
+
+// A multi-megabyte steam_appid.txt must not be slurped: the reader is
+// bounded and still parses the first line.
+func TestDetect_SteamAppIDHugeFileBounded(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "steam_appid.txt"), "2322010\n"+strings.Repeat("x", 4<<20))
+	if got := Detect(root, ""); got.SteamAppID != "2322010" {
+		t.Errorf("SteamAppID = %q, want parsed from the bounded read", got.SteamAppID)
+	}
+}

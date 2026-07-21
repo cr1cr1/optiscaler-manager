@@ -52,6 +52,8 @@ func TestScore(t *testing.T) {
 		{"doom", "Doom 3", true, 10},                                                     // short title: no fuzzy credit
 		{"frostpunk", "Frostpunk 2", true, 10},                                           // strict jaccard rejects sequel bait
 		{"b1", "Black Myth: Wukong", true, 10},                                           // no shared tokens
+		{"samorost2", "Samorost 2", true, 110},                                           // letter→digit boundary is not a mismatch
+		{"cyberpunk 2077", "Cyberpunk 2077", true, 110},                                  // digit tails still match exactly
 	}
 	for _, tc := range cases {
 		if got := Score(tc.cand, tc.item, tc.pc); got != tc.want {

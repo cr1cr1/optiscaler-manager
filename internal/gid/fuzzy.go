@@ -110,7 +110,7 @@ func Score(candRaw, itemName string, pc bool) int {
 	candNorm := Normalize(candRaw)
 	itemNorm := Normalize(itemName)
 	score := 0
-	if candNorm != "" && candNorm == itemNorm {
+	if candNorm != "" && splitLetterDigit(candNorm) == splitLetterDigit(itemNorm) {
 		score += 100
 	} else if len(candNorm) > 4 && tokenSetRatio(candNorm, itemNorm) >= 90 {
 		score += 70
@@ -122,6 +122,22 @@ func Score(candRaw, itemName string, pc bool) int {
 		score -= 20
 	}
 	return score
+}
+
+// splitLetterDigit inserts a space at letter→digit transitions so a title
+// written "Samorost2" matches the store's "Samorost 2". Applied to both
+// sides, "Cyberpunk 2077" still compares equal to itself.
+func splitLetterDigit(s string) string {
+	var b strings.Builder
+	var prev rune
+	for _, r := range s {
+		if unicode.IsDigit(r) && prev != 0 && unicode.IsLetter(prev) {
+			b.WriteByte(' ')
+		}
+		b.WriteRune(r)
+		prev = r
+	}
+	return b.String()
 }
 
 // tokenSetRatio is the strict Jaccard similarity (×100) of the two token

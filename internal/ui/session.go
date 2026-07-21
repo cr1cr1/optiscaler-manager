@@ -22,6 +22,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
 	"github.com/cr1cr1/optiscaler-manager/internal/launch"
+	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
 	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 	"github.com/cr1cr1/optiscaler-manager/internal/pickdir"
 	"github.com/cr1cr1/optiscaler-manager/internal/protondb"
@@ -136,6 +137,10 @@ type Deps struct {
 	// skips enrichment entirely.
 	Steam    *steam.Client
 	ProtonDB *protondb.Client
+
+	// PCGW is the secondary canonical-title source (PCGamingWiki), used
+	// when Steam's storesearch finds nothing; nil disables the fallback.
+	PCGW *pcgw.Client
 }
 
 // Session is the frontend-agnostic interactive core.
@@ -727,7 +732,11 @@ func (s *Session) AddDirectory(dir string) {
 		}
 	}
 	go func() {
-		entry, err := app.ManualEntry(dir, s.deps.Store)
+		snap := s.Settings()
+		resolver := discovery.ChainResolver(func(d string) string {
+			return snap.TitleOverrides[canonicalDir(d)]
+		})
+		entry, err := app.ManualEntryWithResolver(dir, s.deps.Store, resolver)
 		if err != nil {
 			s.finishOp(root)
 			s.removeRow(root)
@@ -1065,7 +1074,9 @@ func resolveGameExe(gameDir string) (string, error) {
 // disambiguateTitles appends a folder suffix to rows that share one
 // title, so games whose exes carry identical metadata titles (both
 // "TOI") stay distinguishable in the library. When the folder name is
-// the title itself, the full install dir is the suffix.
+// the title itself, the parent directory disambiguates ("Red Dead
+// Redemption 2 (Games)" vs "(common)"); the full install dir is the
+// last resort.
 func disambiguateTitles(rows []GameRow) {
 	squeeze := func(s string) string {
 		return strings.Map(func(r rune) rune {
@@ -1087,7 +1098,11 @@ func disambiguateTitles(rows []GameRow) {
 		for _, i := range idxs {
 			suffix := filepath.Base(rows[i].InstallDir)
 			if squeeze(suffix) == squeeze(rows[i].Title) {
-				suffix = rows[i].InstallDir
+				if parent := filepath.Base(filepath.Dir(rows[i].InstallDir)); parent != "" && squeeze(parent) != squeeze(rows[i].Title) {
+					suffix = parent
+				} else {
+					suffix = rows[i].InstallDir
+				}
 			}
 			for seen[suffix] {
 				suffix = rows[i].InstallDir

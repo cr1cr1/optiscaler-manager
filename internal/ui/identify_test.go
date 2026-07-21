@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/steam"
 	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
 )
@@ -49,8 +50,7 @@ func newIdentifyFixture(t *testing.T) *identifyFixture {
 			}
 			_, _ = fmt.Fprint(w, payload)
 		case strings.HasPrefix(r.URL.Path, "/actions/SearchApps/"):
-			title, _ := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/actions/SearchApps/"))
-			fmt.Fprintf(w, `[{"appid":"777","name":%q}]`, title)
+			_, _ = fmt.Fprint(w, `[]`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -175,5 +175,115 @@ func TestIdentify_ShortCandidateSkipped(t *testing.T) {
 	f.sess.identifyRow(context.Background(), &row, f.sess.deps.Steam)
 	if row.Title != "Black Myth: Wukong" || row.SteamAppID != "2358720" {
 		t.Errorf("row = %+v, want the folder-driven match, not the B1 trap", row)
+	}
+}
+
+// A hard Steam appid outranks in-dir metadata: a goggame row with a
+// detected appid upgrades to the canonical store name, while a goggame
+// row without one keeps its metadata title and never goes fuzzy.
+func TestIdentify_AppIDOutranksInDirMetadata(t *testing.T) {
+	f := newIdentifyFixture(t)
+	f.appdetails["1281630"] = [2]string{"Anno 1404 - History Edition", "Ubisoft"}
+
+	withID := GameRow{Title: "Anno 1404", InstallDir: "/games/Anno 1404 Gold Edition", Store: domain.StoreManual, SteamAppID: "1281630", TitleSource: "goggame"}
+	f.sess.identifyRow(context.Background(), &withID, f.sess.deps.Steam)
+	if withID.Title != "Anno 1404 - History Edition" || withID.TitleSource != "storeid" {
+		t.Errorf("withID row = %+v, want canonical upgrade over goggame", withID)
+	}
+
+	hitsBefore := f.hits.Load()
+	noID := GameRow{Title: "Anno 1404", InstallDir: "/games/Anno 1404 Gold Edition", Store: domain.StoreManual, TitleSource: "goggame"}
+	f.sess.identifyRow(context.Background(), &noID, f.sess.deps.Steam)
+	if noID.Title != "Anno 1404" || f.hits.Load() != hitsBefore {
+		t.Errorf("noID row = %+v (+%d calls), want metadata title kept, zero fuzzy", noID, f.hits.Load()-hitsBefore)
+	}
+}
+
+// A hostile cached SteamAppID never reaches the store endpoint (cache
+// filename traversal guard): non-numeric appids are refused before any call.
+func TestIdentify_RejectsNonNumericAppID(t *testing.T) {
+	f := newIdentifyFixture(t)
+	row := GameRow{Title: "X", InstallDir: "/games/x", Store: domain.StoreManual, SteamAppID: "x/../../evil", TitleSource: "pe"}
+	f.sess.identifyRow(context.Background(), &row, f.sess.deps.Steam)
+	if f.hits.Load() != 0 {
+		t.Errorf("hits = %d, want zero calls for a hostile appid", f.hits.Load())
+	}
+}
+
+// A game that only exists as a DLC store page (The Talos Principle 2:
+// Road to Elysium) resolves when no base app matches: dlc items are
+// scored after apps, never instead of them.
+func TestIdentify_DLCItemResolvesWhenNoAppMatches(t *testing.T) {
+	f := newIdentifyFixture(t)
+	f.search["the talos principle 2 road to elysium"] = `{"total":1,"items":[{"type":"dlc","name":"The Talos Principle 2: Road to Elysium","id":101,"platforms":{"windows":true}}]}`
+	row := GameRow{Title: "Talos2", InstallDir: "/games/The Talos Principle 2 Road to Elysium", Store: domain.StoreManual, TitleSource: "pe"}
+
+	f.sess.identifyRow(context.Background(), &row, f.sess.deps.Steam)
+	if row.Title != "The Talos Principle 2: Road to Elysium" || row.SteamAppID != "101" || row.TitleSource != "fuzzy" {
+		t.Errorf("row = %+v, want the dlc store page title", row)
+	}
+}
+
+// An accepted base app still beats any dlc item.
+func TestIdentify_AppBeatsDLC(t *testing.T) {
+	f := newIdentifyFixture(t)
+	f.search["some game"] = `{"total":2,"items":[{"type":"app","name":"Some Game","id":50,"platforms":{"windows":true}},{"type":"dlc","name":"Some Game","id":51,"platforms":{"windows":true}}]}`
+	row := GameRow{Title: "Some Game", InstallDir: "/games/x", Store: domain.StoreManual, TitleSource: "pe"}
+	f.sess.identifyRow(context.Background(), &row, f.sess.deps.Steam)
+	if row.SteamAppID != "50" {
+		t.Errorf("appid = %q, want the app item (50), not the dlc (51)", row.SteamAppID)
+	}
+}
+
+// Appid-bearing rows jump the enrichment queue: the cheap, high-value
+// canonical upgrades must not starve behind a library of fuzzy
+// candidates under the live budget.
+func TestEnrichOnline_PrioritizesAppIDRows(t *testing.T) {
+	f := newIdentifyFixture(t)
+	pdb := newLookupFixture(t, true, http.StatusOK)
+	f.sess.deps.ProtonDB = pdb.sess.deps.ProtonDB
+	for _, id := range []string{"2322010", "1677280", "1693980"} {
+		f.appdetails[id] = [2]string{"Canonical " + id, "Dev"}
+	}
+	rows := make([]GameRow, 0, 12)
+	for i := 0; i < 9; i++ {
+		rows = append(rows, GameRow{Title: fmt.Sprintf("Obscure%d", i), InstallDir: fmt.Sprintf("/games/obscure%d", i), Store: domain.StoreManual, TitleSource: "pe"})
+	}
+	for _, id := range []string{"2322010", "1677280", "1693980"} {
+		rows = append(rows, GameRow{Title: "Codename", InstallDir: "/games/" + id, Store: domain.StoreManual, SteamAppID: id, TitleSource: "pe"})
+	}
+
+	snap := settings.Defaults()
+	f.sess.enrichOnline(context.Background(), rows, snap)
+	for _, r := range rows {
+		if r.SteamAppID != "" && r.TitleSource != "storeid" {
+			t.Errorf("appid row %s NOT upgraded (src=%q) — prioritization failed", r.SteamAppID, r.TitleSource)
+		}
+	}
+}
+
+// PCGamingWiki is the secondary source: when Steam's storesearch finds
+// nothing (GOG/off-store games), the wiki's canonical page title wins.
+func TestIdentify_PCGWFallbackResolves(t *testing.T) {
+	f := newIdentifyFixture(t)
+	wikiSrv := newPCGWStub(t, "A GOG Only Title")
+	f.sess.deps.PCGW = pcgw.NewWithBaseURL(wikiSrv.Client(), t.TempDir(), wikiSrv.URL, "test")
+	row := GameRow{Title: "A GOG Only Title", InstallDir: "/games/A GOG Only Title", Store: domain.StoreManual, TitleSource: "pe"}
+
+	f.sess.identifyRow(context.Background(), &row, f.sess.deps.Steam)
+	if row.Title != "A GOG Only Title" || row.TitleSource != "fuzzy" {
+		t.Errorf("row = %+v, want the wiki title", row)
+	}
+}
+
+// A wiki miss leaves the row alone.
+func TestIdentify_PCGWMissKeepsRow(t *testing.T) {
+	f := newIdentifyFixture(t)
+	wikiSrv := newPCGWStub(t, "")
+	f.sess.deps.PCGW = pcgw.NewWithBaseURL(wikiSrv.Client(), t.TempDir(), wikiSrv.URL, "test")
+	row := GameRow{Title: "zzz nothing", InstallDir: "/games/zzz", Store: domain.StoreManual, TitleSource: "pe"}
+	f.sess.identifyRow(context.Background(), &row, f.sess.deps.Steam)
+	if row.Title != "zzz nothing" {
+		t.Errorf("row = %+v, want unchanged", row)
 	}
 }

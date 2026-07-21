@@ -25,11 +25,17 @@ func (s *Session) identifyRow(ctx context.Context, row *GameRow, st *steam.Clien
 	if row.Store != domain.StoreManual {
 		return false
 	}
-	switch domain.TitleSource(row.TitleSource) {
-	case domain.SourceOverride, domain.SourceStoreID, domain.SourceGOGInfo, domain.SourceEGStore, domain.SourceUnity:
-		return false
+	src := domain.TitleSource(row.TitleSource)
+	if src == domain.SourceOverride || src == domain.SourceStoreID {
+		return false // user-pinned, or already canonical
 	}
 	if row.SteamAppID != "" {
+		if !isNumericAppID(row.SteamAppID) {
+			// A hand-edited cache could carry a hostile appid; it must
+			// never become a URL parameter or a cache filename.
+			log.Debug().Str("appid", row.SteamAppID).Msg("identify: refusing non-numeric appid")
+			return false
+		}
 		name, _, reqLive, err := st.AppDetails(ctx, row.SteamAppID)
 		live = live || reqLive
 		if err != nil {
@@ -41,6 +47,10 @@ func (s *Session) identifyRow(ctx context.Context, row *GameRow, st *steam.Clien
 			row.TitleSource = string(domain.SourceStoreID)
 		}
 		return live
+	}
+	switch src {
+	case domain.SourceGOGInfo, domain.SourceEGStore, domain.SourceUnity:
+		return false // in-dir metadata already fired its rule; no appid to upgrade
 	}
 	candidates := []string{row.Title}
 	if base := filepath.Base(row.InstallDir); base != row.Title {
@@ -59,33 +69,62 @@ func (s *Session) identifyRow(ctx context.Context, row *GameRow, st *steam.Clien
 		live = live || reqLive
 		if err != nil {
 			log.Debug().Err(err).Str("candidate", cand).Msg("identify: storesearch failed")
-			continue
-		}
-		best, bestScore := -1, -1
-		for i, item := range items {
-			score := gid.Score(cand, item.Name, item.Windows)
-			if gid.Accept(score, false) {
-				row.Title = item.Name
-				row.SteamAppID = item.ID
-				row.TitleSource = string(domain.SourceFuzzy)
-				return live
-			}
-			if score > bestScore {
-				best, bestScore = i, score
+		} else {
+			// Apps outrank dlc pages; dlc is only tried when no app accepts.
+			for _, types := range [2]string{"app", "dlc"} {
+				accepted, reqLive := s.tryStoreItems(ctx, row, cand, items, types, st)
+				live = live || reqLive
+				if accepted {
+					return live
+				}
 			}
 		}
-		if best >= 0 && bestScore >= 75 {
-			_, dev, reqLive, err := st.AppDetails(ctx, items[best].ID)
+		// Steam found nothing: PCGamingWiki is the secondary canonical
+		// source (GOG/off-store games).
+		if s.deps.PCGW != nil {
+			title, reqLive, err := s.deps.PCGW.SearchTitle(ctx, cand)
 			live = live || reqLive
-			if err == nil && companyMatches(dev, pever.CompanyFromFile(row.ExePath)) {
-				row.Title = items[best].Name
-				row.SteamAppID = items[best].ID
+			if err == nil && title != "" && gid.Accept(gid.Score(cand, title, true), false) {
+				row.Title = title
 				row.TitleSource = string(domain.SourceFuzzy)
 				return live
 			}
 		}
 	}
 	return live
+}
+
+// tryStoreItems scores the items of one store type against the candidate:
+// the first outright acceptance wins, and a 75-89 best score gets one
+// developer-corroboration attempt. It reports whether the row changed.
+func (s *Session) tryStoreItems(ctx context.Context, row *GameRow, cand string, items []steam.StoreItem, itemType string, st *steam.Client) (accepted, live bool) {
+	best, bestScore := -1, -1
+	for i, item := range items {
+		if item.Type != itemType {
+			continue
+		}
+		score := gid.Score(cand, item.Name, item.Windows)
+		if gid.Accept(score, false) {
+			row.Title = item.Name
+			row.SteamAppID = item.ID
+			row.TitleSource = string(domain.SourceFuzzy)
+			return true, false
+		}
+		if score > bestScore {
+			best, bestScore = i, score
+		}
+	}
+	if best >= 0 && bestScore >= 75 {
+		_, dev, reqLive, err := st.AppDetails(ctx, items[best].ID)
+		live = live || reqLive
+		if err == nil && companyMatches(dev, pever.CompanyFromFile(row.ExePath)) {
+			row.Title = items[best].Name
+			row.SteamAppID = items[best].ID
+			row.TitleSource = string(domain.SourceFuzzy)
+			return true, live
+		}
+	}
+	return false, live
 }
 
 // companyMatches compares a store developer with a PE CompanyName on

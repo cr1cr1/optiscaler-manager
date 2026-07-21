@@ -380,3 +380,39 @@ func TestScan_TitleOverrideWins(t *testing.T) {
 		t.Errorf("row = %+v, want pinned title with override source", r)
 	}
 }
+
+// TestAddDirectory_OverrideAppliedImmediately: a pinned title applies on
+// the add path itself — the row must not flash a PE/folder title until
+// the next scan (manual override always wins).
+func TestAddDirectory_OverrideAppliedImmediately(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	game := filepath.Join(t.TempDir(), "SomeGame")
+	writeUIFile(t, filepath.Join(game, "game.exe"), string(testutil.StringInfoPE(false, map[string]string{"ProductName": "PE Title"}, [4]uint16{1, 0, 0, 0})))
+	canon := canonicalDir(game)
+	e.sess.deps.Settings.TitleOverrides = map[string]string{canon: "Pinned On Add"}
+
+	e.sess.AddDirectory(game)
+	waitEvent(t, e.sess, EvScanDone) // "directory added"
+
+	r, ok := rowDirs(e.sess.Snapshot().Rows)[canon]
+	if !ok {
+		t.Fatal("added row missing")
+	}
+	if r.Title != "Pinned On Add" || r.TitleSource != "override" {
+		t.Errorf("row = %+v, want the override title on the add path", r)
+	}
+}
+
+// When the folder base IS the title, the duplicate suffix uses the parent
+// directory name, not the full install path.
+func TestDisambiguateTitles_ParentSuffix(t *testing.T) {
+	rows := []GameRow{
+		{Title: "Red Dead Redemption 2", InstallDir: "/mnt/linux3/Games/Red Dead Redemption 2"},
+		{Title: "Red Dead Redemption 2", InstallDir: "/mnt/linux3/Games/Steam/steamapps/common/Red Dead Redemption 2"},
+	}
+	disambiguateTitles(rows)
+	if rows[0].Title != "Red Dead Redemption 2 (Games)" || rows[1].Title != "Red Dead Redemption 2 (common)" {
+		t.Errorf("titles = %q / %q, want parent-dir suffixes", rows[0].Title, rows[1].Title)
+	}
+}

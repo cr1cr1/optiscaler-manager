@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/app"
+	"github.com/cr1cr1/optiscaler-manager/internal/discovery"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 )
 
@@ -22,6 +23,9 @@ func (c *ScanCmd) Run(d *Deps) error {
 	entries, err := app.ScanAllLibraries(context.Background(), d.Store, app.ScanAllOptions{
 		SteamRoot: c.SteamRoot,
 		ExtraDirs: s.ExtraDirs,
+		Resolver: discovery.ChainResolver(func(dir string) string {
+			return s.TitleOverrides[discovery.CanonicalPath(dir)]
+		}),
 	})
 	if err != nil {
 		return err

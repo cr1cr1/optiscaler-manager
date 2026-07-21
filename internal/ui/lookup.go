@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"sort"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -19,12 +20,13 @@ import (
 // seconds.
 const lookupBudget = 8
 
-// enrichOnline runs the "lookup" scan phase: manual rows without a Steam
-// appid resolve title → appid via Steam search, rows with a numeric appid
-// (steam-library games) go straight to ProtonDB, and every success sets
-// SteamAppID/ProtonTier on the row. It is a no-op when lookups are disabled
-// or the clients are not wired, and every per-row failure degrades
-// silently. rows is the not-yet-committed scan result, mutated in place.
+// enrichOnline runs the "lookup" scan phase: rows with a Steam appid but a
+// tail-chain title get their canonical store name first (one cheap call,
+// the highest-value upgrade), then fuzzy candidates resolve titles →
+// appids, and every row goes to ProtonDB. It is a no-op when lookups are
+// disabled or the clients are not wired, and every per-row failure
+// degrades silently. rows is the not-yet-committed scan result, mutated
+// in place.
 func (s *Session) enrichOnline(ctx context.Context, rows []GameRow, snap settings.Settings) {
 	if !snap.OnlineLookups {
 		return
@@ -42,6 +44,11 @@ func (s *Session) enrichOnline(ctx context.Context, rows []GameRow, snap setting
 			cands = append(cands, i)
 		}
 	}
+	// Appid-bearing tail rows first: their canonical upgrade is one
+	// appdetails call each and fixes the most visible titles.
+	sort.SliceStable(cands, func(a, b int) bool {
+		return identifyPriority(rows[cands[a]]) > identifyPriority(rows[cands[b]])
+	})
 	live := 0
 	done := 0
 	for _, i := range cands {
@@ -59,6 +66,19 @@ func (s *Session) enrichOnline(ctx context.Context, rows []GameRow, snap setting
 		done++
 		s.scanProgress(phaseLookup, done, len(cands))
 	}
+}
+
+// identifyPriority ranks a row for the lookup queue: rows whose appid is
+// known but whose title still comes from the tail chain get the cheap,
+// high-value canonical upgrade first.
+func identifyPriority(r GameRow) int {
+	if r.SteamAppID != "" {
+		switch domain.TitleSource(r.TitleSource) {
+		case domain.SourcePE, domain.SourceStem, domain.SourceFolder, "":
+			return 1
+		}
+	}
+	return 0
 }
 
 // enrichRow resolves one row's SteamAppID and ProtonTier. Both fields are

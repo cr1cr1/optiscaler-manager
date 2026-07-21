@@ -32,10 +32,13 @@ func NewWithBaseURLs(httpClient *http.Client, cacheDir, baseURL, storeURL, versi
 	return c
 }
 
-// StoreItem is one app row from the storesearch endpoint.
+// StoreItem is one app row from the storesearch endpoint. Type is the
+// store's own classification ("app", "dlc", …); apps always outrank dlc
+// pages, which are only considered when no app matches.
 type StoreItem struct {
 	ID      string
 	Name    string
+	Type    string
 	Windows bool
 	Mac     bool
 	Linux   bool
@@ -116,12 +119,13 @@ func (c *Client) StoreSearch(ctx context.Context, term string) (items []StoreIte
 		return nil, true, fmt.Errorf("steam: decode storesearch for %q: %w", term, err)
 	}
 	for _, it := range payload.Items {
-		if it.Type != "app" || it.Name == "" || it.ID == 0 {
+		if (it.Type != "app" && it.Type != "dlc") || it.Name == "" || it.ID == 0 {
 			continue
 		}
 		items = append(items, StoreItem{
 			ID:      fmt.Sprintf("%d", it.ID),
 			Name:    it.Name,
+			Type:    it.Type,
 			Windows: it.Platforms.Windows,
 			Mac:     it.Platforms.Mac,
 			Linux:   it.Platforms.Linux,

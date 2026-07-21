@@ -421,3 +421,7 @@ func canonicalPath(p string) string {
 	}
 	return filepath.Clean(p)
 }
+
+// CanonicalPath is canonicalPath exported for layers above discovery
+// (title-override key matching must canonicalize the same way everywhere).
+func CanonicalPath(p string) string { return canonicalPath(p) }
