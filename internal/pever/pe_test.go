@@ -473,3 +473,19 @@ func TestExtractTitle_MojibakeFallsToFileDescription(t *testing.T) {
 		t.Errorf("ExtractTitle = %q, want %q (replacement char rejected)", got, "Clean Title")
 	}
 }
+
+// Vendor-junk metadata is not a game title: repacked exes and tool
+// launchers carry strings like "Electronic Arts System Information" that
+// beat the folder name for no good reason. Rejected → the chain falls
+// through to FileDescription/stem/folder.
+func TestExtractTitle_RejectsVendorJunk(t *testing.T) {
+	for _, v := range []string{"Electronic Arts System Information", "Shockwave Flash", "Elevate Application", "Easy MFC Application", "Macromedia Flash Player 8.0  r22", "Elevate"} {
+		res := concatStringStructs(
+			stringInfoString("ProductName", v),
+			stringInfoString("FileDescription", "Real Game"),
+		)
+		if got := ExtractTitle(buildPE(true, res)); got != "Real Game" {
+			t.Errorf("ExtractTitle(%q) = %q, want %q (junk ProductName rejected)", v, got, "Real Game")
+		}
+	}
+}

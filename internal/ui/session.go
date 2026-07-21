@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/rs/zerolog/log"
 
@@ -525,6 +526,7 @@ func (s *Session) runScan(ctx context.Context) {
 		}
 	}
 	sortRows(rows)
+	disambiguateTitles(rows)
 	s.st.Rows = rows
 	s.st.StatusLine = fmt.Sprintf("%d games", len(rows))
 	s.st.Busy = ""
@@ -1054,6 +1056,42 @@ func resolveGameExe(gameDir string) (string, error) {
 		return exe, nil
 	}
 	return "", fmt.Errorf("no executable found under %s", gameDir)
+}
+
+// disambiguateTitles appends a folder suffix to rows that share one
+// title, so games whose exes carry identical metadata titles (both
+// "TOI") stay distinguishable in the library. When the folder name is
+// the title itself, the full install dir is the suffix.
+func disambiguateTitles(rows []GameRow) {
+	squeeze := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			if r == '-' || r == '_' || r == '.' || r == ' ' {
+				return -1
+			}
+			return unicode.ToLower(r)
+		}, s)
+	}
+	groups := map[string][]int{}
+	for i, r := range rows {
+		groups[r.Title] = append(groups[r.Title], i)
+	}
+	for _, idxs := range groups {
+		if len(idxs) < 2 {
+			continue
+		}
+		seen := map[string]bool{}
+		for _, i := range idxs {
+			suffix := filepath.Base(rows[i].InstallDir)
+			if squeeze(suffix) == squeeze(rows[i].Title) {
+				suffix = rows[i].InstallDir
+			}
+			for seen[suffix] {
+				suffix = rows[i].InstallDir
+			}
+			seen[suffix] = true
+			rows[i].Title += " (" + suffix + ")"
+		}
+	}
 }
 
 // canonicalDir mirrors the scanner's path canonicalization so install dirs

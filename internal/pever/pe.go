@@ -310,6 +310,9 @@ func usableTitle(v, company string) string {
 	if strings.ContainsRune(v, '\ufffd') || strings.Contains(v, "\u00ef\u00bf\u00bd") {
 		return "" // vendor-baked encoding damage is not metadata
 	}
+	if junkTitle(v) {
+		return ""
+	}
 	if allDigit(v) {
 		return ""
 	}
@@ -320,6 +323,17 @@ func usableTitle(v, company string) string {
 		return ""
 	}
 	return v
+}
+
+// junkTitle reports vendor metadata that names a tool or platform, never
+// the game (repacked-exe strings, runtime hosts, launcher stubs).
+func junkTitle(v string) bool {
+	switch strings.ToLower(v) {
+	case "electronic arts system information", "shockwave flash",
+		"elevate application", "elevate", "easy mfc application":
+		return true
+	}
+	return strings.HasPrefix(strings.ToLower(v), "macromedia flash player")
 }
 
 func allDigit(v string) bool {

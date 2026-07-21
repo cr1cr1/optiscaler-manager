@@ -1288,3 +1288,23 @@ FileDescription on the manual path. Row counts: the definitive HEAD
 artifact is 109 rows (the historical 111 figure predated the ranking
 fix; the QA lane's independent probe reports 110 including
 manifest-sourced rows outside ScanRecursive's scope).
+
+## 2026-07-21 — v0.7.2: user title decision — junk-list + dedupe
+
+User decision on codename PE titles (GoWR, b1, TOI, SilentHill, …):
+keep metadata-first, reject objective junk, disambiguate duplicates.
+- `usableTitle`/`junkTitle` now rejects vendor-junk strings
+  ("Electronic Arts System Information", "Shockwave Flash",
+  "Elevate Application"/"Elevate", "Easy MFC Application",
+  "Macromedia Flash Player*") so repacked/tool exes fall through to
+  FileDescription → stem → folder: Generals Zero Hour, Samorost2, and
+  RSI Launcher read correctly on the real tree.
+- Duplicate titles get a folder suffix at scan assembly
+  (`disambiguateTitles`): the two "TOI" games are now
+  "TOI (Tails of Iron)" and "TOI (Tails of Iron Bright Fir Forest)";
+  when the folder IS the title, the full install dir disambiguates.
+- "elevate" joins the generic stem set (the RSI updater exe no longer
+  donates its name).
+- Verified on the real library (109 rows): Helldivers recursive title
+  is the clean "HELLDIVERS 2" (mojibake guard), Generals/Samorost2/RSI
+  correct, codenames (genuine metadata) untouched per the user's call.

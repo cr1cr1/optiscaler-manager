@@ -67,7 +67,7 @@ func TestGameTitle_TitlePriorityChain(t *testing.T) {
 	}
 
 	// Generic stems carry no information: folder wins.
-	for _, name := range []string{"game.exe", "x64.exe", "hl.exe", "launcher.exe", "12345.exe"} {
+	for _, name := range []string{"game.exe", "x64.exe", "hl.exe", "launcher.exe", "12345.exe", "elevate.exe"} {
 		generic := writeTitleExe(t, dir, name)
 		if got := GameTitle(generic, "PlainFolder"); got != "PlainFolder" {
 			t.Errorf("generic %s: GameTitle = %q, want %q", name, got, "PlainFolder")

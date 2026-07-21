@@ -46,7 +46,7 @@ var platformStemTokens = map[string]bool{
 // genericStemNames are exe stems that carry no title information.
 var genericStemNames = map[string]bool{
 	"game": true, "main": true, "app": true, "start": true,
-	"client": true, "play": true, "run": true,
+	"client": true, "play": true, "run": true, "elevate": true,
 }
 
 // exeStemTitle derives a title from the exe's filename stem when it is more

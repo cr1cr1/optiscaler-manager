@@ -329,3 +329,29 @@ func TestResolveGameExe_EngineNamedParent(t *testing.T) {
 		t.Errorf("exe = %q, want solo.exe", exe)
 	}
 }
+
+// TestScan_DuplicateTitlesDisambiguated: two games whose exes share one PE
+// ProductName must not be indistinguishable in the library — each row gets
+// its folder name as a suffix.
+func TestScan_DuplicateTitlesDisambiguated(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	root := t.TempDir()
+	pe := testutil.StringInfoPE(false, map[string]string{"ProductName": "TOI"}, [4]uint16{1, 0, 0, 0})
+	writeUIFile(t, filepath.Join(root, "Tails of Iron", "game.exe"), string(pe))
+	writeUIFile(t, filepath.Join(root, "Tails of Iron Bright Fir Forest", "game.exe"), string(pe))
+	e.sess.deps.Settings.ExtraDirs = []string{root}
+
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+
+	titles := map[string]bool{}
+	for _, r := range e.sess.Snapshot().Rows {
+		if strings.HasPrefix(r.Title, "TOI") {
+			titles[r.Title] = true
+		}
+	}
+	if !titles["TOI (Tails of Iron)"] || !titles["TOI (Tails of Iron Bright Fir Forest)"] {
+		t.Errorf("duplicate TOI rows not disambiguated: %v", titles)
+	}
+}
