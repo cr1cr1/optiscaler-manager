@@ -907,3 +907,260 @@ func TestNewCarriesVersionIntoModel(t *testing.T) {
 		t.Errorf("Model.version = %q, want %q", m.version, "v9.9.9-test")
 	}
 }
+
+// drainEvents empties the session event buffer so a following silence
+// window observes only NEW events (mirrors internal/ui's cache_test
+// helper). Only usable with a directly-driven Model: a teatest-run TUI
+// consumes the same single event channel via waitEvent.
+func drainEvents(sess *ui.Session) {
+	for {
+		select {
+		case <-sess.Events():
+		default:
+			return
+		}
+	}
+}
+
+// installCommitted drives the real scan+install flow through the session
+// API (no TUI needed) and returns the installed OptiScaler version.
+func installCommitted(t *testing.T, e *testEnv) string {
+	t.Helper()
+	e.sess.Start(context.Background())
+	pollUntil(t, "initial scan", func() bool { return len(e.sess.Snapshot().Rows) == 1 })
+	e.sess.QuickInstall(e.gameRoot)
+	pollUntil(t, "install committed", func() bool {
+		rows := e.sess.Snapshot().Rows
+		return len(rows) == 1 && rows[0].Status == domain.StatusCommitted
+	})
+	v := e.sess.Snapshot().Rows[0].OptiScalerVersion
+	if v == "" {
+		t.Fatal("committed row has no OptiScalerVersion")
+	}
+	return v
+}
+
+// press feeds one key through the model's Update (Model is a value type).
+func press(m Model, msg tea.KeyMsg) Model {
+	nm, _ := m.Update(msg)
+	return nm.(Model)
+}
+
+func pressRunes(m Model, s string) Model {
+	for _, r := range s {
+		m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	return m
+}
+
+// pinnedSwitchEnv builds the standard cycling fixture: Game One installed
+// at the pinned v0.9.4-test, then the preference retargeted to
+// v0.10.0-test so Versions(dir) = [v0.10.0-test, v0.9.4-test] (the pinned
+// preference is contributed verbatim, no cache/download needed).
+func pinnedSwitchEnv(t *testing.T) (*testEnv, string) {
+	t.Helper()
+	e := newTestEnv(t, func(d *ui.Deps) {
+		d.Settings = settings.Settings{DefaultVersion: "v0.9.4-test", OnlineLookups: true}
+	})
+	installed := installCommitted(t, e)
+	e.sess.SetDefaultVersion("v0.10.0-test")
+	return e, installed
+}
+
+// TestTUIVersionCycleConfirmSwitches (S11): on an installed row, 'v'
+// stages the next Versions(dir) entry in the version cell and Enter
+// confirms — SwitchVersion runs end-to-end and the row lands committed at
+// the candidate version.
+func TestTUIVersionCycleConfirmSwitches(t *testing.T) {
+	e := newTestEnv(t, func(d *ui.Deps) {
+		d.Settings = settings.Settings{DefaultVersion: "v0.9.4-test", OnlineLookups: true}
+	})
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	tm.Type("i")
+	waitFrame(t, tm, "Installed Game One")
+	pollUntil(t, "committed row", func() bool {
+		rows := e.sess.Snapshot().Rows
+		return len(rows) == 1 && rows[0].Status == domain.StatusCommitted
+	})
+	installed := e.sess.Snapshot().Rows[0].OptiScalerVersion
+	if installed != "v0.9.4-test" {
+		t.Fatalf("installed version = %q, want v0.9.4-test", installed)
+	}
+
+	e.sess.SetDefaultVersion("v0.10.0-test")
+
+	tm.Type("v")
+	waitFrame(t, tm, "→ v0.10.0-test") // staged candidate in the version cell
+
+	sendKey(tm, tea.KeyEnter) // confirm the staged switch
+	pollUntil(t, "switched to v0.10.0-test", func() bool {
+		rows := e.sess.Snapshot().Rows
+		return len(rows) == 1 && rows[0].Status == domain.StatusCommitted &&
+			rows[0].OptiScalerVersion == "v0.10.0-test"
+	})
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("frame after version switch %s → v0.10.0-test:\n%s", installed, frame)
+	if !strings.Contains(frame, "v0.10.0-test") {
+		t.Errorf("final frame does not show the switched version:\n%s", frame)
+	}
+}
+
+// TestTUIVersionCycleEscDispatchesNothing: 'v' stages a candidate, Esc
+// cancels the staging — no SwitchVersion dispatch, no events, the staged
+// state cleared, the installed version untouched.
+func TestTUIVersionCycleEscDispatchesNothing(t *testing.T) {
+	e, installed := pinnedSwitchEnv(t)
+	drainEvents(e.sess)
+
+	m := New(e.sess, "test")
+	m = pressRunes(m, "v")
+	if m.cycle == nil {
+		t.Fatal("'v' on an installed row did not stage a version switch")
+	}
+	if got := m.cycle.list[m.cycle.idx]; got != "v0.10.0-test" {
+		t.Fatalf("first candidate = %q, want v0.10.0-test (next after current)", got)
+	}
+	t.Logf("staged-cycle frame (version cell shows the candidate):\n%s", m.View())
+
+	m = press(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.cycle != nil {
+		t.Error("Esc did not cancel the staged switch")
+	}
+
+	select {
+	case ev := <-e.sess.Events():
+		t.Fatalf("Esc-cancelled staging dispatched %v %q, want silence", ev.Kind, ev.Text)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if got := e.sess.Snapshot().Rows[0].OptiScalerVersion; got != installed {
+		t.Errorf("version after Esc = %q, want %q (untouched)", got, installed)
+	}
+	t.Log("Esc cancels the staged switch: nothing dispatched, version unchanged")
+}
+
+// TestTUIVersionCycleWrapToCurrentDispatchesNothing (S13): cycling wraps
+// around the Versions list; landing back on the CURRENT version and
+// confirming dispatches nothing — the model itself suppresses the no-op,
+// not just the session core.
+func TestTUIVersionCycleWrapToCurrentDispatchesNothing(t *testing.T) {
+	e, installed := pinnedSwitchEnv(t)
+	drainEvents(e.sess)
+
+	m := New(e.sess, "test")
+	m = pressRunes(m, "v") // stages v0.10.0-test
+	m = pressRunes(m, "v") // wraps to the current version
+	if m.cycle == nil {
+		t.Fatal("staging vanished after two 'v' presses")
+	}
+	if got := m.cycle.list[m.cycle.idx]; got != installed {
+		t.Fatalf("wrapped candidate = %q, want the current %q", got, installed)
+	}
+
+	m = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.cycle != nil {
+		t.Error("Enter did not clear the staged switch")
+	}
+
+	select {
+	case ev := <-e.sess.Events():
+		t.Fatalf("S13: confirming the current version dispatched %v %q, want silence", ev.Kind, ev.Text)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if e.sess.OpBusy(e.gameRoot) {
+		t.Error("OpBusy true after a same-version confirm: an op was registered")
+	}
+	if got := e.sess.Snapshot().Rows[0].OptiScalerVersion; got != installed {
+		t.Errorf("version after same-version confirm = %q, want %q", got, installed)
+	}
+	t.Log("S13: wrapped-to-current confirm dispatched nothing")
+}
+
+// TestTUIVersionCycleNotInstalledNoOp: 'v' on a never-installed row is a
+// no-op — no staging, no dispatch, no crash.
+func TestTUIVersionCycleNotInstalledNoOp(t *testing.T) {
+	e := newTestEnv(t, nil)
+	e.sess.Start(context.Background())
+	pollUntil(t, "initial scan", func() bool { return len(e.sess.Snapshot().Rows) == 1 })
+	drainEvents(e.sess)
+
+	m := New(e.sess, "test")
+	m = pressRunes(m, "v")
+	if m.cycle != nil {
+		t.Error("'v' staged a switch on a not-installed row")
+	}
+
+	select {
+	case ev := <-e.sess.Events():
+		t.Fatalf("'v' on a not-installed row dispatched %v %q, want silence", ev.Kind, ev.Text)
+	case <-time.After(300 * time.Millisecond):
+	}
+	t.Log("'v' on a not-installed row: no-op")
+}
+
+// TestTUIVersionCycleCursorMoveResets: moving the cursor drops the staged
+// switch (the stage is per-row; a stale stage must not survive navigation).
+func TestTUIVersionCycleCursorMoveResets(t *testing.T) {
+	e, _ := pinnedSwitchEnv(t)
+	drainEvents(e.sess)
+
+	m := New(e.sess, "test")
+	m = pressRunes(m, "v")
+	if m.cycle == nil {
+		t.Fatal("'v' did not stage a version switch")
+	}
+
+	m = pressRunes(m, "j") // cursor-move key cancels the stage
+	if m.cycle != nil {
+		t.Error("cursor move did not drop the staged switch")
+	}
+
+	select {
+	case ev := <-e.sess.Events():
+		t.Fatalf("cursor-move-cancelled staging dispatched %v %q, want silence", ev.Kind, ev.Text)
+	case <-time.After(300 * time.Millisecond):
+	}
+	t.Log("cursor move drops the staged switch without dispatching")
+}
+
+// TestTUIVersionCycleDetailScreen: the detail screen stages and confirms
+// identically — Enter while staging confirms the switch (it does NOT
+// bounce back to the games screen).
+func TestTUIVersionCycleDetailScreen(t *testing.T) {
+	e := newTestEnv(t, func(d *ui.Deps) {
+		d.Settings = settings.Settings{DefaultVersion: "v0.9.4-test", OnlineLookups: true}
+	})
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	tm.Type("i")
+	waitFrame(t, tm, "Installed Game One")
+	pollUntil(t, "committed row", func() bool {
+		rows := e.sess.Snapshot().Rows
+		return len(rows) == 1 && rows[0].Status == domain.StatusCommitted
+	})
+	e.sess.SetDefaultVersion("v0.10.0-test")
+
+	sendKey(tm, tea.KeyEnter) // open the detail screen
+	waitFrame(t, tm, "AppID")
+
+	tm.Type("v")
+	waitFrame(t, tm, "→ v0.10.0-test") // staged candidate in the OptiScaler line
+
+	sendKey(tm, tea.KeyEnter) // confirm (not "back")
+	pollUntil(t, "switched to v0.10.0-test", func() bool {
+		rows := e.sess.Snapshot().Rows
+		return len(rows) == 1 && rows[0].Status == domain.StatusCommitted &&
+			rows[0].OptiScalerVersion == "v0.10.0-test"
+	})
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("detail frame after version switch:\n%s", frame)
+	if !strings.Contains(frame, "v0.10.0-test") {
+		t.Errorf("detail frame does not show the switched version:\n%s", frame)
+	}
+}

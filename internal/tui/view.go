@@ -211,13 +211,13 @@ func (m Model) footerView(w int) string {
 	var hints string
 	switch m.screen {
 	case screenDetail:
-		hints = "i install · l launch · c cancel · r rollback · o open INI · esc back"
+		hints = "i install · v version · l launch · c cancel · r rollback · o open INI · esc back"
 	case screenSettings:
 		hints = "e version · t template · a add · d remove · o online info · x clear cache"
 	case screenHelp, screenAbout:
 		hints = "q quit"
 	default:
-		hints = "enter detail · i install · l launch · / filter · R rescan · s sort · q quit"
+		hints = "enter detail · i install · v version · l launch · / filter · R rescan · s sort · q quit"
 	}
 	lw := w - lipgloss.Width(switchHints) - 3
 	if lw < 0 {
@@ -323,6 +323,14 @@ func (m Model) gameRowLine(r ui.GameRow, tw, w int, selected bool) string {
 	if version == "" {
 		version = "—"
 	}
+	versionCell := cell(version, colVersion)
+	if m.cycle != nil && m.cycle.dir == r.InstallDir {
+		// Staged switch: the candidate replaces the version cell. The
+		// plain text is truncated BEFORE styling (same rule as
+		// badgesCell) so no SGR sequence is ever split or left unclosed.
+		cand := trunc("→ "+m.cycle.list[m.cycle.idx], colVersion)
+		versionCell = lipgloss.NewStyle().Width(colVersion).Render(styleBusy.Render(cand))
+	}
 	status := string(r.Status)
 	if status == "" {
 		status = "not installed"
@@ -351,7 +359,7 @@ func (m Model) gameRowLine(r ui.GameRow, tw, w int, selected bool) string {
 	line := cell(r.Title, tw) +
 		cell(r.Platform, colPlatform) +
 		badgesCell(badges, colBadges) +
-		cell(version, colVersion) +
+		versionCell +
 		lipgloss.NewStyle().Width(colStatus).Render(statusCell)
 	if selected {
 		return styleSelected.Render(lipgloss.NewStyle().Width(w).Render(line))
@@ -401,7 +409,11 @@ func (m Model) detailView(w, contentH int) string {
 		b.WriteString(styleTitle.Render(row.Title) + "\n")
 		fmt.Fprintf(&b, "%s · AppID %s\n", row.Platform, row.AppID)
 		fmt.Fprintf(&b, "Path: %s\n", row.InstallDir)
-		fmt.Fprintf(&b, "OptiScaler: %s\n", version)
+		if m.cycle != nil && m.cycle.dir == row.InstallDir {
+			fmt.Fprintf(&b, "OptiScaler: %s → %s (enter confirm · esc cancel)\n", version, m.cycle.list[m.cycle.idx])
+		} else {
+			fmt.Fprintf(&b, "OptiScaler: %s\n", version)
+		}
 		fmt.Fprintf(&b, "Components: %s\n", components)
 		fmt.Fprintf(&b, "Status: %s · EAC: %s\n", status, eac)
 		if row.ProtonTier != "" {
@@ -419,6 +431,9 @@ func (m Model) detailView(w, contentH int) string {
 			install = "  i  adopt (install over external)"
 		}
 		b.WriteString(install + "\n")
+		if row.Status == "committed" || row.Status == "external" {
+			b.WriteString("  v  switch version (cycle · enter confirm · esc cancel)\n")
+		}
 		b.WriteString("  l  launch\n")
 		b.WriteString("  c  cancel operation\n")
 		rollback := "  r  rollback"
@@ -488,9 +503,9 @@ func (m Model) settingsView(w, contentH int) string {
 func helpView() string {
 	return styleHeader.Render("Keyboard reference") + "\n\n" + strings.Join([]string{
 		"Global    1 games · 2 settings · 3 help · 4 about · q / ctrl+c quit",
-		"Games     j/k move · enter detail · i install/uninstall · l launch · c cancel",
+		"Games     j/k move · enter detail · i install/uninstall · v switch version · l launch · c cancel",
 		"          / filter · R rescan · s sort",
-		"Detail    i install · l launch · c cancel · r rollback · o open INI · esc back",
+		"Detail    i install · v switch version · l launch · c cancel · r rollback · o open INI · esc back",
 		"Settings  e edit version · t edit template · a add dir · d remove dir",
 		"          o toggle online game info · x clear bundle cache",
 		"Confirm   y proceed · n cancel",

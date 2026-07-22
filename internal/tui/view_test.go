@@ -307,6 +307,98 @@ func TestDetailRowMatchesSnapshotRow(t *testing.T) {
 	}
 }
 
+// TestDetailViewSwitchVersionHint: installed rows (committed AND external)
+// advertise the 'v' version-switch action; a never-installed row does not
+// (there is nothing to switch from).
+func TestDetailViewSwitchVersionHint(t *testing.T) {
+	base := ui.GameRow{
+		Title:        "Game One",
+		AppID:        "100",
+		InstallDir:   "/games/one",
+		InjectionDir: "/games/one/bin",
+		Platform:     "Steam",
+	}
+
+	for _, status := range []domain.Status{domain.StatusCommitted, domain.StatusExternal} {
+		t.Run(string(status), func(t *testing.T) {
+			row := base
+			row.Status = status
+			row.OptiScalerVersion = "v0.9.4-test"
+			out := detailModelFor(t, row).detailView(100, 40)
+			plain := sgrRE.ReplaceAllString(out, "")
+			t.Logf("%s detail actions:\n%s", status, plain)
+			if !strings.Contains(plain, "v  switch version") {
+				t.Errorf("%s row lacks the switch-version action: %q", status, plain)
+			}
+		})
+	}
+
+	t.Run("not installed omits it", func(t *testing.T) {
+		row := base
+		row.InjectionDir = ""
+		out := detailModelFor(t, row).detailView(100, 40)
+		plain := sgrRE.ReplaceAllString(out, "")
+		if strings.Contains(plain, "switch version") {
+			t.Errorf("never-installed row shows the switch-version action: %q", plain)
+		}
+	})
+}
+
+// TestGameRowLineCycleIndicator: a staged version candidate replaces the
+// version cell ("→ <candidate>"), truncated BEFORE styling so the row
+// stays ANSI-balanced and exactly one table width wide — same invariant
+// as TestGameRowLineExternalStatus. A candidate longer than the column
+// truncates with an ellipsis instead of breaking the width.
+func TestGameRowLineCycleIndicator(t *testing.T) {
+	forceANSI(t)
+
+	e := newTestEnv(t, nil)
+	row := ui.GameRow{
+		Title:             "Cycle Game",
+		Platform:          "Steam",
+		Status:            domain.StatusCommitted,
+		InstallDir:        "/games/one",
+		OptiScalerVersion: "v0.9.4-test",
+	}
+
+	check := func(t *testing.T, candidate, wantSub string) {
+		t.Helper()
+		m := Model{sess: e.sess, cycle: &versionCycle{
+			dir:  row.InstallDir,
+			list: []string{candidate, "v0.9.4-test"},
+			idx:  0,
+			cur:  "v0.9.4-test",
+		}}
+		line := m.gameRowLine(row, 20, 80, false)
+		t.Logf("rendered cycling row: %q", line)
+
+		if rest := sgrRE.ReplaceAllString(line, ""); strings.Contains(rest, "\x1b") {
+			t.Errorf("truncated escape sequence in rendered row: %q", line)
+		}
+		if !strings.Contains(sgrRE.ReplaceAllString(line, ""), wantSub) {
+			t.Errorf("staged candidate %q missing: %q", wantSub, line)
+		}
+		opens, resets := 0, 0
+		for _, seq := range sgrRE.FindAllString(line, -1) {
+			if seq == "\x1b[0m" {
+				resets++
+			} else {
+				opens++
+			}
+		}
+		if opens != resets {
+			t.Errorf("unbalanced SGR: %d opens, %d resets: %q", opens, resets, line)
+		}
+		want := 20 + colPlatform + colBadges + colVersion + colStatus
+		if w := lipgloss.Width(line); w != want {
+			t.Errorf("row width = %d cells, want %d: %q", w, want, line)
+		}
+	}
+
+	t.Run("candidate fits", func(t *testing.T) { check(t, "v0.10.0-test", "→ v0.10.0-test") })
+	t.Run("long candidate truncates", func(t *testing.T) { check(t, "v0.10.0-test-with-a-very-long-tag", "…") })
+}
+
 // TestProgressViewRendersPhaseBarAndPercent: mid-scan progress renders the
 // phase label, done/total counters, a rune bar, and the percentage.
 func TestProgressViewRendersPhaseBarAndPercent(t *testing.T) {

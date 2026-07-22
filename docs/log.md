@@ -1658,3 +1658,16 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   the current one never dispatches. The card press-guard gained
   overDropdown so the card body can't steal the trigger's activation
   (same fix class as overButtons).
+
+- TUI: per-game version cycling with v on the games and detail screens.
+  The first v stages a switch on installed rows (computed from
+  Session.Versions at the keypress, never per frame), the version cell
+  shows the staged candidate (truncated before styling, width-pinned),
+  further v advances with wraparound, Enter confirms (dispatching
+  SwitchVersion only when the candidate differs from the installed
+  version — wrapping back to current dispatches nothing), Esc cancels,
+  and any other key drops the stage and falls through (cursor moves,
+  screen switches, rescans all reset for free). The detail OptiScaler
+  line shows "cur → candidate" while staging and the Actions block,
+  footers, and help screen document the binding; not-installed rows
+  show no hint and v is a no-op.

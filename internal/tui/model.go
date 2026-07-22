@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/termopen"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
@@ -59,6 +60,88 @@ type Model struct {
 	mode         inputMode
 	spin         spinner.Model
 	confirmRmDir string // directory pending inline remove confirmation
+	cycle        *versionCycle
+}
+
+// versionCycle is a staged per-game version switch: the Versions(dir)
+// snapshot taken at the first 'v', the index of the currently shown
+// candidate, and the version the row had at staging time (so confirming
+// the unchanged version can be suppressed here, not just in the core).
+type versionCycle struct {
+	dir  string
+	list []string
+	idx  int
+	cur  string
+}
+
+// stageCycle starts version staging on dir's row: the first 'v' snapshots
+// Session.Versions(dir) (filesystem+memo reads, so it runs on the keypress
+// only — never per frame) and immediately advances to the first candidate
+// after the installed version. Never-installed rows and rows with fewer
+// than two selectable versions are a no-op.
+func (m *Model) stageCycle(dir string) {
+	row := findRow(m.sess.Snapshot().Rows, dir)
+	if row == nil || !switchable(*row) {
+		return
+	}
+	list := m.sess.Versions(dir)
+	if len(list) < 2 {
+		return
+	}
+	idx := -1 // not found: the advance below lands on the newest entry
+	for i, v := range list {
+		if v == row.OptiScalerVersion {
+			idx = i
+			break
+		}
+	}
+	m.cycle = &versionCycle{dir: dir, list: list, idx: idx, cur: row.OptiScalerVersion}
+	m.advanceCycle()
+}
+
+// advanceCycle moves the staged candidate to the next entry, wrapping
+// around; the stage is dropped if the row lost its install mid-cycle.
+func (m *Model) advanceCycle() {
+	c := m.cycle
+	if c == nil {
+		return
+	}
+	if row := findRow(m.sess.Snapshot().Rows, c.dir); row == nil || !switchable(*row) {
+		m.cycle = nil
+		return
+	}
+	c.idx = (c.idx + 1) % len(c.list)
+}
+
+// confirmCycle dispatches the staged switch when the candidate differs
+// from the version the row had at staging time; wrapping back to the
+// current version (S13) dispatches nothing.
+func (m *Model) confirmCycle() {
+	c := m.cycle
+	m.cycle = nil
+	if c == nil {
+		return
+	}
+	if cand := c.list[c.idx]; cand != c.cur {
+		m.sess.SwitchVersion(c.dir, cand)
+	}
+}
+
+// findRow returns the snapshot row for dir, or nil.
+func findRow(rows []ui.GameRow, dir string) *ui.GameRow {
+	for i := range rows {
+		if rows[i].InstallDir == dir {
+			return &rows[i]
+		}
+	}
+	return nil
+}
+
+// switchable reports whether a row has an OptiScaler install the version
+// cycler may retarget (committed or external — anything else has nothing
+// to switch FROM).
+func switchable(r ui.GameRow) bool {
+	return r.Status == domain.StatusCommitted || r.Status == domain.StatusExternal
 }
 
 // eventMsg carries one session event into the update loop.
@@ -184,6 +267,27 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// A staged version switch is row-modal: 'v' advances the candidate,
+	// Enter confirms (dispatching only when the candidate differs from the
+	// staged-from version), Esc cancels. Any other key drops the stage and
+	// falls through to its normal binding, so cursor moves, screen
+	// switches, and rescans can never carry a stale stage along.
+	if m.cycle != nil {
+		switch msg.String() {
+		case "v":
+			m.advanceCycle()
+			return m, nil
+		case "enter":
+			m.confirmCycle()
+			return m, nil
+		case "esc":
+			m.cycle = nil
+			return m, nil
+		default:
+			m.cycle = nil
+		}
+	}
+
 	switch msg.String() {
 	case "q":
 		return m, tea.Quit
@@ -232,6 +336,10 @@ func (m Model) gamesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if dir := selectedDir(rows, m.cursor); dir != "" {
 			m.sess.QuickInstall(dir)
 		}
+	case "v":
+		if dir := selectedDir(rows, m.cursor); dir != "" {
+			m.stageCycle(dir)
+		}
 	case "l":
 		if dir := selectedDir(rows, m.cursor); dir != "" {
 			m.sess.Launch(dir)
@@ -261,6 +369,8 @@ func (m Model) detailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = screenGames
 	case "i":
 		m.sess.QuickInstall(dir)
+	case "v":
+		m.stageCycle(dir)
 	case "l":
 		m.sess.Launch(dir)
 	case "c":
