@@ -23,10 +23,10 @@ import "strings"
 func Compare(a, b string) int {
 	a, b = normalize(a), normalize(b)
 	if a == "" || b == "" {
-		switch {
-		case a == b:
+		switch a {
+		case b:
 			return 0
-		case a == "":
+		case "":
 			return -1
 		default:
 			return 1
@@ -38,10 +38,10 @@ func Compare(a, b string) int {
 		return c
 	}
 	if aPre == "" || bPre == "" {
-		switch {
-		case aPre == bPre:
+		switch aPre {
+		case bPre:
 			return 0
-		case aPre == "":
+		case "":
 			return 1 // the plain release beats any of its pre-releases
 		default:
 			return -1
