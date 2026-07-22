@@ -1653,7 +1653,8 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   elevateOverlay, below-trigger window-clamped) listing
   Session.Versions: current version ticked, hover accent, Esc and
   click-outside dismissal, one dropdown open at a time. The version list
-  is computed only when the dropdown OPENS (never per card per frame).
+  is computed when the dropdown OPENS and on frames while open (closed
+  triggers do no cache I/O, so idle grids stay free).
   Selecting a different version dispatches SwitchVersion; re-selecting
   the current one never dispatches. The card press-guard gained
   overDropdown so the card body can't steal the trigger's activation
@@ -1671,3 +1672,17 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   line shows "cur → candidate" while staging and the Actions block,
   footers, and help screen document the binding; not-installed rows
   show no hint and v is a no-op.
+
+- Reviewer-driven hardening of the version switch: EAC consent is now
+  PRE-FLIGHTED (new ConfirmVersionSwitch kind carrying the chosen tag) —
+  nothing destructive (ini capture/removal, uninstall) runs before the
+  user answers, so declining leaves the game and its OptiScaler.ini
+  untouched, and accepting re-enters the full switch chain with consent
+  (never a bare install that would drop curated defaults). The ini
+  capture is crash-durable (bytes+mode staged to
+  <data root>/ini-switch-backup-<sha>.tmp before removal, deleted after
+  the write-back; a failed staging aborts the switch), and rollback /
+  cancelled-install paths write the ini back as an orphan in the clean
+  game dir. Dropdown keyboard path pinned by characterization tests
+  (Tab focus ring, Enter/Space toggle, Esc closes the dropdown before
+  the detail panel).

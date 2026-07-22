@@ -64,6 +64,7 @@ type model struct {
 	versionDDItemsFor string                        // install dir owning versionDDItems ("" = no dropdown open)
 	openDropdownDir   string                        // install dir of the single open version dropdown ("" = none)
 	ddTriggerID       ContainerId                   // container id of the card's version-dropdown trigger (click routing seam: the card must not steal its activation)
+	ddFocusRing       bool                          // whether the version-dropdown trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors listFocusRing)
 }
 
 func newModel(cfg Config) *model {

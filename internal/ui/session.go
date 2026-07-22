@@ -92,6 +92,12 @@ type ConfirmKind int
 const (
 	ConfirmEAC ConfirmKind = iota
 	ConfirmCachedRelease
+	// ConfirmVersionSwitch pauses a per-game version switch BEFORE any
+	// destructive step (ini capture/removal, uninstall): Version carries
+	// the chosen tag, and accepting re-enters the full switch chain with
+	// EAC consent already granted — a mid-switch pause used to strand the
+	// game uninstalled with the ini already deleted.
+	ConfirmVersionSwitch
 )
 
 // Confirmation is a pending consent request. Installs never proceed past
@@ -1027,6 +1033,8 @@ func (s *Session) AnswerConfirm(accept bool) {
 		go s.doInstallVersion(c.GameDir, c.Version, true, false)
 	case ConfirmCachedRelease:
 		go s.doInstallVersion(c.GameDir, c.Version, false, true)
+	case ConfirmVersionSwitch:
+		go s.doSwitchVersion(c.GameDir, c.Version, true)
 	}
 }
 
@@ -1227,6 +1235,12 @@ func (s *Session) runInstall(gameDir string, eacOK, cachedOK bool) error {
 	return s.runInstallVersion(gameDir, "", eacOK, cachedOK)
 }
 
+// eacWarning is the single source of the anti-cheat consent wording: the
+// install gate and the version-switch pre-flight must never drift apart.
+func eacWarning(title string) string {
+	return fmt.Sprintf("%s uses Easy Anti-Cheat. Installing OptiScaler may result in a ban.", title)
+}
+
 // runInstallVersion is runInstall's version-parameterized form: version ""
 // installs the configured default (identical behavior in every respect);
 // a concrete tag installs exactly that release (the version-switch path).
@@ -1240,7 +1254,7 @@ func (s *Session) runInstallVersion(gameDir, version string, eacOK, cachedOK boo
 		s.setConfirm(&Confirmation{
 			Kind:    ConfirmEAC,
 			GameDir: gameDir,
-			Message: fmt.Sprintf("%s uses Easy Anti-Cheat. Installing OptiScaler may result in a ban.", row.Title),
+			Message: eacWarning(row.Title),
 			Version: version,
 		})
 		return errInstallPaused

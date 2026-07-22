@@ -645,6 +645,7 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 		st.btnID = CurrentId()
 		activated := false
 		if HasFocus() {
+			m.ddFocusRing = true
 			ModAttrs(func(a *AttrSet) {
 				a.BorderWidth = 2
 				a.BorderColor = focusBorder

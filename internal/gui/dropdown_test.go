@@ -356,6 +356,147 @@ func TestVersionDropdown_OneOpenAtATime(t *testing.T) {
 	t.Log("opening B's dropdown closed A's (one open at a time)")
 }
 
+// focusDDTrigger builds two frames and Tabs until the card's version
+// dropdown trigger holds keyboard focus (the trigger renders before the
+// card's buttons, so it is early in the tab cycle; the loop tolerates
+// sibling focusables without hard-coding a count).
+func focusDDTrigger(t *testing.T, m *model, view FrameFn) {
+	t.Helper()
+	keyFrame(KeyCodeNone, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if m.ddTriggerID == nil {
+		t.Fatal("version dropdown trigger not rendered (ddTriggerID nil)")
+	}
+	for tabs := 1; tabs <= 4; tabs++ {
+		keyFrame(KeyTab, 0, view)      // CycleFocusOnTab moves focus
+		keyFrame(KeyCodeNone, 0, view) // focus change applies
+		if IdHasFocus(m.ddTriggerID) {
+			t.Logf("dropdown trigger focused after %d Tab(s)", tabs)
+			return
+		}
+	}
+	t.Fatalf("version dropdown trigger never took focus via Tab (ddTriggerID %v)", m.ddTriggerID)
+}
+
+// TestVersionDropdown_TabFocusRing: the trigger is a Tab stop (Focusable +
+// CycleFocusOnTab) and draws its focus-ring branch (focusBorder) exactly
+// while it holds keyboard focus (seam: m.ddFocusRing, mirroring
+// m.listFocusRing).
+func TestVersionDropdown_TabFocusRing(t *testing.T) {
+	sess, gameRoot := dropdownFakes(t)
+	markExternal(t, filepath.Join(gameRoot, "bin"), [4]uint16{0, 7, 0, 0})
+	row := scanExternalRow(t, sess)
+	m := newModel(Config{Session: sess})
+
+	headlessFrames(t, 400, 800)
+	InputState.MousePoint = Vec2{-50, -50}
+	view := cardView(m, row)
+	keyFrame(KeyCodeNone, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if m.ddFocusRing {
+		t.Error("focus ring drawn while the trigger is not focused")
+	}
+
+	focusDDTrigger(t, m, view)
+	if !m.ddFocusRing {
+		t.Error("focus ring not drawn while the trigger holds keyboard focus")
+	}
+	t.Log("Tab focused the trigger and the focus ring drew only while focused")
+}
+
+// TestVersionDropdown_EnterSpaceToggle: Enter and Space on the FOCUSED
+// trigger each toggle the dropdown open and closed, dispatching nothing.
+func TestVersionDropdown_EnterSpaceToggle(t *testing.T) {
+	sess, gameRoot := dropdownFakes(t)
+	markExternal(t, filepath.Join(gameRoot, "bin"), [4]uint16{0, 7, 0, 0})
+	row := scanExternalRow(t, sess)
+	m := newModel(Config{Session: sess})
+	var calls int
+	m.switchVersionFn = func(_, _ string) { calls++ }
+
+	headlessFrames(t, 400, 800)
+	InputState.MousePoint = Vec2{-50, -50}
+	view := cardView(m, row)
+	focusDDTrigger(t, m, view)
+
+	toggle := func(key KeyCode) {
+		keyFrame(key, 0, view)
+		keyFrame(KeyCodeNone, 0, view) // popup open/close settles
+	}
+	for _, key := range []KeyCode{KeyEnter, KeySpace} {
+		toggle(key)
+		if m.versionDDItemsFor != row.InstallDir {
+			t.Errorf("%v on the focused trigger did not open the dropdown (owner %q)", key, m.versionDDItemsFor)
+		}
+		toggle(key)
+		if m.versionDDItemsFor != "" {
+			t.Errorf("second %v on the focused trigger did not close the dropdown (owner %q)", key, m.versionDDItemsFor)
+		}
+	}
+	if calls != 0 {
+		t.Errorf("keyboard toggling dispatched %d SwitchVersion calls, want 0", calls)
+	}
+	if !IdHasFocus(m.ddTriggerID) {
+		t.Error("trigger lost keyboard focus across the open/close toggles")
+	}
+	t.Log("Enter and Space each toggled the dropdown open and closed")
+}
+
+// TestVersionDropdown_EscClosesDropdownBeforePanel: with the detail panel
+// open AND its version dropdown open, the first Esc closes the DROPDOWN
+// (consumed at render time, so handleGlobalKeys never sees it) and the
+// panel stays open; the second Esc closes the panel.
+func TestVersionDropdown_EscClosesDropdownBeforePanel(t *testing.T) {
+	sess, gameRoot := dropdownFakes(t)
+	markExternal(t, filepath.Join(gameRoot, "bin"), [4]uint16{0, 7, 0, 0})
+	row := scanExternalRow(t, sess)
+	m := newModel(Config{Session: sess})
+	var calls int
+	m.switchVersionFn = func(_, _ string) { calls++ }
+	sess.Select(row.InstallDir)
+	deadline := time.Now().Add(15 * time.Second)
+	for m.state.Selected != row.InstallDir && time.Now().Before(deadline) {
+		select {
+		case <-sess.Events():
+			m.drain()
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	if m.state.Selected != row.InstallDir {
+		t.Fatalf("detail panel never opened for %q", row.InstallDir)
+	}
+
+	headlessFrames(t, 1100, 1400)
+	InputState.MousePoint = Vec2{-50, -50}
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	openDropdown(t, m, row.InstallDir, m.rootView)
+
+	// First Esc: the open dropdown consumes it at render time.
+	keyFrame(KeyEscape, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if m.versionDDItemsFor != "" {
+		t.Errorf("dropdown still open after the first Esc (owner %q)", m.versionDDItemsFor)
+	}
+	if got := sess.Snapshot().Selected; got != row.InstallDir {
+		t.Errorf("first Esc closed the detail panel (selected %q): the dropdown must consume Esc before handleGlobalKeys", got)
+	}
+	if m.state.Selected != row.InstallDir {
+		t.Errorf("model selection lost after the first Esc (selected %q): the panel must stay open", m.state.Selected)
+	}
+
+	// Second Esc: no dropdown open, so the global handler closes the panel.
+	keyFrame(KeyEscape, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if got := sess.Snapshot().Selected; got != "" {
+		t.Errorf("second Esc did not close the detail panel (selected %q)", got)
+	}
+	if calls != 0 {
+		t.Errorf("Esc dismissal dispatched %d SwitchVersion calls, want 0", calls)
+	}
+	t.Log("Esc closed the dropdown first, the panel second")
+}
+
 // TestVersionDropdown_DetailPanelWired: the detail panel's pill row also
 // renders the dropdown trigger for an installed row.
 func TestVersionDropdown_DetailPanelWired(t *testing.T) {

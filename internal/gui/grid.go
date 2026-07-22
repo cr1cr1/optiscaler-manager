@@ -132,6 +132,7 @@ func (m *model) gameCard(e ui.GameRow) {
 	coverW := float32(cardW - 2*cardPad)
 	m.tierPillRect = Rect{}
 	m.ddTriggerID = nil
+	m.ddFocusRing = false
 	Container(Attrs(Pad(cardPad), Gap(cardGapV), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(radiusM), Clip), func() {
 		if IsHovered() {
 			m.hoveredDir = e.InstallDir
