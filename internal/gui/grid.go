@@ -131,6 +131,7 @@ func (m *model) gameCard(e ui.GameRow) {
 	cardW, cardH := m.cardW, m.cardH
 	coverW := float32(cardW - 2*cardPad)
 	m.tierPillRect = Rect{}
+	m.ddTriggerID = nil
 	Container(Attrs(Pad(cardPad), Gap(cardGapV), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(radiusM), Clip), func() {
 		if IsHovered() {
 			m.hoveredDir = e.InstallDir
@@ -164,7 +165,14 @@ func (m *model) gameCard(e ui.GameRow) {
 		txt(e.Title)
 		if pills := versionPills(&e); len(pills) > 0 {
 			Container(Attrs(Row, Gap(cardGapH)), func() {
-				for _, p := range pills {
+				start := 0
+				// The OptiScaler pill is the version dropdown; component and
+				// Proton pills stay static.
+				if b, ok := optiBadge(&e); ok {
+					m.versionDropdown(&e, b.Label, b.Tone)
+					start = 1
+				}
+				for _, p := range pills[start:] {
 					badgePill(p.Label, p.Tone)
 				}
 			})
@@ -195,9 +203,11 @@ func (m *model) gameCard(e ui.GameRow) {
 		// shirei has a single global active node: on mouse-down over a button the
 		// card's PressAction is built last and would steal activation, swallowing
 		// the button and opening the detail panel instead. While the pointer is
-		// over the button row the card skips its own press gesture entirely.
+		// over the button row or the version-dropdown trigger the card skips its
+		// own press gesture entirely.
 		overButtons := btnRowID != nil && IdIsHovered(btnRowID)
-		if !overButtons && PressAction() && m.sess != nil {
+		overDropdown := m.ddTriggerID != nil && IdIsHovered(m.ddTriggerID)
+		if !overButtons && !overDropdown && PressAction() && m.sess != nil {
 			m.sess.Select(e.InstallDir)
 		}
 	})

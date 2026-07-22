@@ -287,7 +287,14 @@ func (m *model) detailPanel() {
 			})
 			if pills := versionPills(e); len(pills) > 0 {
 				Container(Attrs(Row, Gap(sp4)), func() {
-					for _, p := range pills {
+					start := 0
+					// The OptiScaler pill is the version dropdown; component
+					// and Proton pills stay static.
+					if b, ok := optiBadge(e); ok {
+						m.versionDropdown(e, b.Label, b.Tone)
+						start = 1
+					}
+					for _, p := range pills[start:] {
 						badgePill(p.Label, p.Tone)
 					}
 				})

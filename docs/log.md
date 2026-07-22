@@ -1644,3 +1644,17 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   resolve-only warmBootResolveDefault. GUI quickLabel and the TUI
   badge/hint lost their upgrade branches (plain Uninstall/install
   captions); their redesign lands in the next waves.
+
+- GUI: the OptiScaler version pill is now a per-game version dropdown on
+  grid cards and the detail panel (installed rows only). Composed locally
+  per the modal() precedent — upstream MenuButtonExt is theme-locked
+  light (_menuBG) — from a pill-geometry focusable trigger (13px tall,
+  cardContentH untouched) plus a Popup surface (bgPanel/border/
+  elevateOverlay, below-trigger window-clamped) listing
+  Session.Versions: current version ticked, hover accent, Esc and
+  click-outside dismissal, one dropdown open at a time. The version list
+  is computed only when the dropdown OPENS (never per card per frame).
+  Selecting a different version dispatches SwitchVersion; re-selecting
+  the current one never dispatches. The card press-guard gained
+  overDropdown so the card body can't steal the trigger's activation
+  (same fix class as overButtons).

@@ -37,27 +37,33 @@ type model struct {
 	settingsOpen      bool
 	versionBuf        string
 	templateBuf       string
-	onlineBuf         bool           // settings-modal online-lookups toggle buffer, primed on open
-	selIdx            int            // keyboard-driven selection index into visible rows
-	hoveredDir        string         // install dir of the card under the mouse, "" when none
-	cardRect          Rect           // screen rect of the last rendered card (hover test seam)
-	cardBtnRect       Rect           // screen rect of the card's first button (click routing test seam)
-	sidebarRects      []Rect         // screen rects of the sidebar nav items (uniformity test seam)
-	sidebarShellRect  Rect           // screen rect of the sidebar shell (full-height test seam)
-	progressTrackRect Rect           // screen rect of the scan progress track (progress bar test seam)
-	progressFillRect  Rect           // screen rect of the scan progress fill (progress bar test seam)
-	tierPillRect      Rect           // screen rect of the card's ProtonDB tier pill (tier badge test seam)
-	detailPanelRect   Rect           // screen rect of the detail panel shell (panel width test seam)
-	listSegRect       Rect           // screen rect of the List view-switch segment (click test seam)
-	listSelRect       Rect           // screen rect of the keyboard-selected list row (nav test seam)
-	openINIRect       Rect           // screen rect of the detail panel's OpenINI button (visibility test seam)
-	searchID          ContainerId    // the search field's container (`/` focuses it from anywhere)
-	listID            ContainerId    // the list view's focusable wrapper (Tab focus nav test seam)
-	listFocusRing     bool           // whether the list wrapper drew its focus ring on the last frame (focus ring test seam)
-	cols              int            // current grid columns, derived from live width
-	cardW             int            // current card width in px, derived from live width
-	cardH             int            // current card height in px
-	exitNow           func(code int) // quit seam: os.Exit in production, stubbed in tests
+	onlineBuf         bool                          // settings-modal online-lookups toggle buffer, primed on open
+	selIdx            int                           // keyboard-driven selection index into visible rows
+	hoveredDir        string                        // install dir of the card under the mouse, "" when none
+	cardRect          Rect                          // screen rect of the last rendered card (hover test seam)
+	cardBtnRect       Rect                          // screen rect of the card's first button (click routing test seam)
+	sidebarRects      []Rect                        // screen rects of the sidebar nav items (uniformity test seam)
+	sidebarShellRect  Rect                          // screen rect of the sidebar shell (full-height test seam)
+	progressTrackRect Rect                          // screen rect of the scan progress track (progress bar test seam)
+	progressFillRect  Rect                          // screen rect of the scan progress fill (progress bar test seam)
+	tierPillRect      Rect                          // screen rect of the card's ProtonDB tier pill (tier badge test seam)
+	detailPanelRect   Rect                          // screen rect of the detail panel shell (panel width test seam)
+	listSegRect       Rect                          // screen rect of the List view-switch segment (click test seam)
+	listSelRect       Rect                          // screen rect of the keyboard-selected list row (nav test seam)
+	openINIRect       Rect                          // screen rect of the detail panel's OpenINI button (visibility test seam)
+	searchID          ContainerId                   // the search field's container (`/` focuses it from anywhere)
+	listID            ContainerId                   // the list view's focusable wrapper (Tab focus nav test seam)
+	listFocusRing     bool                          // whether the list wrapper drew its focus ring on the last frame (focus ring test seam)
+	cols              int                           // current grid columns, derived from live width
+	cardW             int                           // current card width in px, derived from live width
+	cardH             int                           // current card height in px
+	exitNow           func(code int)                // quit seam: os.Exit in production, stubbed in tests
+	switchVersionFn   func(gameDir, version string) // version-switch dispatch seam: nil in production (Session.SwitchVersion), stubbed in tests
+	versionDDRects    map[string]Rect               // screen rects of rendered version-dropdown triggers by install dir (dropdown test seam)
+	versionDDItems    []versionDDItem               // rows of the currently open version dropdown (dropdown test seam)
+	versionDDItemsFor string                        // install dir owning versionDDItems ("" = no dropdown open)
+	openDropdownDir   string                        // install dir of the single open version dropdown ("" = none)
+	ddTriggerID       ContainerId                   // container id of the card's version-dropdown trigger (click routing seam: the card must not steal its activation)
 }
 
 func newModel(cfg Config) *model {
@@ -185,4 +191,18 @@ func (m *model) launchGame(e ui.GameRow) {
 		return
 	}
 	m.sess.Launch(e.InstallDir)
+}
+
+// dispatchSwitchVersion forwards a version-dropdown pick to the session's
+// async switcher. Tests inject switchVersionFn to capture the dispatch
+// without running the real uninstall/install chain (mirrors the exitNow
+// seam); production leaves it nil and goes straight to the session.
+func (m *model) dispatchSwitchVersion(gameDir, version string) {
+	if m.switchVersionFn != nil {
+		m.switchVersionFn(gameDir, version)
+		return
+	}
+	if m.sess != nil {
+		m.sess.SwitchVersion(gameDir, version)
+	}
 }

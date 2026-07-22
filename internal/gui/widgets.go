@@ -487,22 +487,33 @@ func shortenPath(p string, max int) string {
 	return "…" + string(r[len(r)-max+1:])
 }
 
+// optiBadge is the OptiScaler pill for a row: versioned when the installed
+// version is known, blue and external-marked for unmanaged on-disk
+// installs. ok=false for rows without an OptiScaler install — those render
+// no pill and no version dropdown.
+func optiBadge(e *ui.GameRow) (ui.Badge, bool) {
+	external := e.Status == domain.StatusExternal
+	switch {
+	case e.OptiScalerVersion != "" && external:
+		return ui.Badge{Label: "✦ OptiScaler " + e.OptiScalerVersion + " · external", Tone: ui.ToneBlue}, true
+	case e.OptiScalerVersion != "":
+		return ui.Badge{Label: "✦ OptiScaler " + e.OptiScalerVersion, Tone: ui.TonePurple}, true
+	case external:
+		return ui.Badge{Label: "✦ OptiScaler · external", Tone: ui.ToneBlue}, true
+	case e.Status == domain.StatusCommitted:
+		return ui.Badge{Label: "✦ OptiScaler", Tone: ui.TonePurple}, true
+	}
+	return ui.Badge{}, false
+}
+
 // versionPills is the install-version badge set for a row: the OptiScaler
 // pill (versioned when the installed version is known, blue and
 // external-marked for unmanaged on-disk installs), one pill per component
 // version, and a Proton marker for prefixed games.
 func versionPills(e *ui.GameRow) []ui.Badge {
 	var out []ui.Badge
-	external := e.Status == domain.StatusExternal
-	switch {
-	case e.OptiScalerVersion != "" && external:
-		out = append(out, ui.Badge{Label: "✦ OptiScaler " + e.OptiScalerVersion + " · external", Tone: ui.ToneBlue})
-	case e.OptiScalerVersion != "":
-		out = append(out, ui.Badge{Label: "✦ OptiScaler " + e.OptiScalerVersion, Tone: ui.TonePurple})
-	case external:
-		out = append(out, ui.Badge{Label: "✦ OptiScaler · external", Tone: ui.ToneBlue})
-	case e.Status == domain.StatusCommitted:
-		out = append(out, ui.Badge{Label: "✦ OptiScaler", Tone: ui.TonePurple})
+	if b, ok := optiBadge(e); ok {
+		out = append(out, b)
 	}
 	for _, c := range e.Components {
 		out = append(out, ui.Badge{Label: c, Tone: componentTone(c)})
@@ -565,4 +576,167 @@ func (m *model) protonTierPill(tier string) {
 // store games go by AppID, manual/GOG games by executable path.
 func launchable(e *ui.GameRow) bool {
 	return e.AppID != "" || e.ExePath != ""
+}
+
+// dropdownState is one version dropdown's per-container state (a shirei
+// Use[T] hook, mirroring widgets/menu.go's MenuState): the open flag plus
+// the trigger and popup container ids the click-outside check needs.
+type dropdownState struct {
+	open   bool
+	btnID  ContainerId
+	menuID ContainerId
+}
+
+// versionDDItem is the dropdown's observability seam: one entry per
+// rendered popup row (version, current-tick, screen rect for click tests).
+type versionDDItem struct {
+	version string
+	ticked  bool
+	rect    Rect
+}
+
+// versionDropdown replaces the static OptiScaler version pill with a
+// per-game version selector: a pill-sized trigger labeled with the badge
+// text (current version) and a sorted-down arrow, opening a dark popup of
+// Session.Versions(dir) — installed ∪ cached ∪ preference, semver-desc —
+// with the current version ticked. Picking a DIFFERENT version dispatches
+// Session.SwitchVersion via dispatchSwitchVersion; re-picking the current
+// one is a deliberate no-op (S13): the widget does not even dispatch.
+//
+// I/O DISCIPLINE: the CLOSED trigger renders only the row's current
+// version (zero I/O — Versions walks the bundle cache with os.ReadDir,
+// which per card per frame would be pathological); the list is computed on
+// the frame the dropdown OPENS and on each frame while it stays open, so a
+// bundle cached mid-session appears on the next open.
+//
+// ONE OPEN AT A TIME: the open flag itself is per-container (the Use hook
+// above), but m.openDropdownDir names the single open dropdown; a dropdown
+// that finds another dir owning the field closes itself, so cards
+// re-rendering every frame can never leave a stale popup behind.
+//
+// The popup renders through Popup (root scope) precisely so it escapes the
+// card's Clip, and floats below the trigger clamped to the window — the
+// local modal()/menu.go anchoring pattern, NOT upstream MenuButtonExt,
+// whose _menuBG surface is theme-locked light.
+func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
+	// Without a session there is nothing to list or dispatch: fall back to
+	// the static pill (the same sess == nil gating the card buttons use).
+	if m.sess == nil {
+		badgePill(label, tone)
+		return
+	}
+	st := Use[dropdownState]("version-dropdown")
+	if st.open && m.openDropdownDir != e.InstallDir {
+		st.open = false
+	}
+	if !st.open && m.versionDDItemsFor == e.InstallDir {
+		m.versionDDItems = nil
+		m.versionDDItemsFor = ""
+	}
+	// Trigger: badgePill geometry (Pad2(1, 6), FontSize 11) so the pill row
+	// height — and with it cardContentH — is untouched.
+	Container(Attrs(Focusable, Row, CrossMid, Gap(sp4), Pad2(1, 6), Corners(radiusS), BackgroundVec(toneColor(tone))), func() {
+		CycleFocusOnTab()
+		m.ddTriggerID = CurrentId()
+		if m.versionDDRects == nil {
+			m.versionDDRects = map[string]Rect{}
+		}
+		m.versionDDRects[e.InstallDir] = GetScreenRectOf(CurrentId())
+		st.btnID = CurrentId()
+		activated := false
+		if HasFocus() {
+			ModAttrs(func(a *AttrSet) {
+				a.BorderWidth = 2
+				a.BorderColor = focusBorder
+			})
+			if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
+				FrameInput.Key = KeyCodeNone
+				activated = true
+			}
+		}
+		Label(label, FontSize(11), TextColor(0, 0, 96, 1))
+		widgets.Icon(widgets.TypArrowSortedDown, FontSize(11), TextColor(0, 0, 96, 1))
+		if PressAction() {
+			activated = true
+		}
+		if activated {
+			st.open = !st.open
+			if st.open {
+				m.openDropdownDir = e.InstallDir
+			} else if m.openDropdownDir == e.InstallDir {
+				m.openDropdownDir = ""
+			}
+		}
+	})
+	if st.open {
+		dir := e.InstallDir
+		current := e.OptiScalerVersion
+		Popup(func() {
+			// Computed here, never on closed frames: Versions walks the
+			// bundle cache (see the I/O note above).
+			versions := m.sess.Versions(dir)
+			triggerW := GetResolvedRectOf(st.btnID).Size[0]
+			Container(Attrs(MinWidth(triggerW), MaxWidth(360), Corners(radiusS), Pad2(sp4, 0), Gap(2), Clip, BackgroundVec(bgPanel), BorderWidth(1), BorderColorVec(border), elevateOverlay), func() {
+				ModAttrs(FloatVec(dropdownPos(st.btnID)))
+				st.menuID = CurrentId()
+				m.versionDDItems = m.versionDDItems[:0]
+				m.versionDDItemsFor = dir
+				for _, v := range versions {
+					v := v
+					Container(Attrs(Row, Expand, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(2)), func() {
+						ticked := v == current
+						m.versionDDItems = append(m.versionDDItems, versionDDItem{version: v, ticked: ticked, rect: GetScreenRectOf(CurrentId())})
+						if IsHovered() {
+							ModAttrs(BackgroundVec(accentHov))
+						}
+						// Fixed-width tick column keeps version labels aligned.
+						tick := " "
+						if ticked {
+							tick = "✓"
+						}
+						Label(tick, FontSize(12), TextColorVec(txtMain))
+						Label(v, FontSize(12), TextColorVec(txtMain))
+						if PressAction() {
+							if v != current {
+								m.dispatchSwitchVersion(dir, v)
+							}
+							st.open = false // close either way (S13 no-op on current)
+						}
+					})
+				}
+			})
+		})
+	}
+	// Dismissal, AFTER the popup rendered so clicks inside it still register
+	// (menu.go:84's ordering): Esc closes without dispatch and is consumed
+	// so the global Esc handler cannot also close the detail panel; a click
+	// outside both trigger and popup closes without dispatch.
+	if st.open && FrameInput.Key == KeyEscape {
+		FrameInput.Key = KeyCodeNone
+		st.open = false
+		m.openDropdownDir = ""
+	}
+	if st.open && !IdIsHovered(st.btnID) && !IdIsHovered(st.menuID) && FrameInput.Mouse == MouseClick {
+		st.open = false
+		m.openDropdownDir = ""
+	}
+}
+
+// dropdownPos anchors the popup below the trigger, clamped to the window —
+// a local copy of widgets/menu.go's unexported _getPositionRelativeTo.
+func dropdownPos(anchorID ContainerId) Vec2 {
+	targetRect := GetResolvedRectOf(anchorID)
+	const sp = 4
+	pos := targetRect.Origin
+	pos[1] += targetRect.Size[1] + sp
+	selfSize := GetResolvedSize()
+	if pos[0]+selfSize[0] > WindowSize[0] {
+		pos[0] = WindowSize[0] - selfSize[0] - sp
+	}
+	if pos[1]+selfSize[1] > WindowSize[1] {
+		pos[1] = WindowSize[1] - selfSize[1] - sp
+	}
+	pos[0] = max(0, pos[0])
+	pos[1] = max(0, pos[1])
+	return pos
 }
