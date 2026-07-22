@@ -96,6 +96,8 @@ func TestEditorArgvChain(t *testing.T) {
 // TestTerminalArgv: known $TERMINAL basenames use their run-a-command
 // convention; unknown $TERMINAL gets the -e best-effort; unset probes the
 // known chain foot→konsole→gnome-terminal→kitty→alacritty→xterm in order.
+// Each want is the first terminalCandidates() prefix plus the editor,
+// assembled by argvFor — the exact per-candidate assembly Open uses.
 func TestTerminalArgv(t *testing.T) {
 	editor := []string{"nano"}
 	tests := []struct {
@@ -175,16 +177,17 @@ func TestTerminalArgv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o := New("linux", tt.lookPath, envMap(tt.env), nil)
-			got, err := o.terminalArgv(editor)
+			cands := o.terminalCandidates()
 			if tt.wantErr != nil {
-				if !errors.Is(err, tt.wantErr) {
-					t.Fatalf("terminalArgv() err = %v, want %v", err, tt.wantErr)
+				if len(cands) != 0 {
+					t.Fatalf("terminalCandidates() = %v, want none (%v)", cands, tt.wantErr)
 				}
 				return
 			}
-			if err != nil {
-				t.Fatalf("terminalArgv() unexpected err: %v", err)
+			if len(cands) == 0 {
+				t.Fatalf("terminalCandidates() empty, want first candidate %v", tt.want)
 			}
+			got := argvFor(cands[0], editor)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("terminalArgv() = %v, want %v", got, tt.want)
 			}

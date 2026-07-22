@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/app"
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
@@ -337,6 +338,81 @@ func TestQuickInstallDispatchesUpgradeWhenEligible(t *testing.T) {
 		t.Fatalf("row status = %q after quick upgrade, want committed", row.Status)
 	}
 	t.Log("quick action on an eligible row upgraded (uninstall+install), game left installed")
+}
+
+// TestUpgradeInstallLegBusyTriggersRollbackCleanup: when another op grabs
+// the game's op slot in the finishOp→registerOp gap between the uninstall
+// and install legs, the install leg never starts (errOpBusy) — but the
+// uninstall leg already completed, so treating that as graceful would
+// leave the game with no OptiScaler and no rollback attempt. The busy
+// outcome must route through the same runRollback cleanup as any other
+// install-leg failure; while the competing op still holds the slot the
+// rollback attempt refuses gracefully (a second busy toast) instead of
+// silently returning.
+func TestUpgradeInstallLegBusyTriggersRollbackCleanup(t *testing.T) {
+	e := newUpgradeEnv(t, "v0.9.4-test")
+	installAt(t, e)
+
+	e.sess.SetDefaultVersion("latest")
+	scanAndWait(t, e.sess)
+	if row := theRow(t, e.sess); !row.UpgradeAvailable {
+		t.Fatalf("row = %+v, want eligible", row)
+	}
+
+	// Occupy the game's op slot the moment the uninstall leg releases it,
+	// so the install leg's registerOp fails with errOpBusy. The hook runs
+	// inside doUpgrade between the legs; grabbing the slot there is
+	// exactly the real-world race, made deterministic.
+	const busyToast = "operation already in progress for this game"
+	e.sess.upgradeGapHook = func(gameDir string) {
+		if _, ok := e.sess.registerOp(gameDir); !ok {
+			t.Errorf("gap hook: op slot not free after the uninstall leg")
+		}
+	}
+	t.Cleanup(func() { e.sess.finishOp(e.gameRoot) })
+
+	e.sess.Upgrade(e.gameRoot)
+	ev := waitEvent(t, e.sess, EvOpDone)
+	if !strings.Contains(ev.Text, "Uninstalled") {
+		t.Fatalf("first settle = %q, want the uninstall leg", ev.Text)
+	}
+	waitToast(t, e.sess, busyToast) // install leg refused: errOpBusy
+
+	// The fix routes errOpBusy through runRollback, which must ATTEMPT the
+	// cleanup; the test's competing op still holds the slot, so the
+	// attempt surfaces as a SECOND busy toast (registerOp refused).
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		n := 0
+		for _, toast := range e.sess.Snapshot().Toasts {
+			if strings.Contains(toast.Text, busyToast) {
+				n++
+			}
+		}
+		if n >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("rollback cleanup never attempted after errOpBusy; toasts: %+v",
+				e.sess.Snapshot().Toasts)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// The game sits in the honest post-uninstall state: no OptiScaler
+	// files, no manifest, row clean — the competing op owns any further
+	// action on it.
+	manifests, err := e.store.List()
+	if err != nil || len(manifests) != 0 {
+		t.Errorf("manifests = %d, err %v; want 0 (uninstalled, install never started)", len(manifests), err)
+	}
+	if row := theRow(t, e.sess); row.Status != "" {
+		t.Errorf("row status = %q, want clean (post-uninstall)", row.Status)
+	}
+	if _, err := os.Stat(filepath.Join(e.bin, "dxgi.dll")); !os.IsNotExist(err) {
+		t.Errorf("dxgi.dll present after busy install leg: err=%v", err)
+	}
+	t.Log("install leg busy: rollback cleanup attempted (second busy toast), game left clean")
 }
 
 // TestUpgradeInstallFailureRestoresBackup: when the install leg fails after

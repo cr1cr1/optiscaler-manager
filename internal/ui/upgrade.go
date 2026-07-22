@@ -153,16 +153,23 @@ func (s *Session) doUpgrade(gameDir string) {
 	if err := s.runUninstall(gameDir); err != nil {
 		return // already surfaced; the old build's state follows uninstall semantics
 	}
+	if s.upgradeGapHook != nil {
+		s.upgradeGapHook(gameDir)
+	}
 	err := s.runInstall(gameDir, false, false)
 	switch {
-	case err == nil, errors.Is(err, errInstallPaused), errors.Is(err, errOpBusy), errors.Is(err, context.Canceled):
+	case err == nil, errors.Is(err, errInstallPaused), errors.Is(err, context.Canceled):
 		// Installed; paused for consent (AnswerConfirm resumes it as a
-		// plain install); never started; or cancelled (the installer's
-		// cancel path already rolled back atomically).
+		// plain install); or cancelled (the installer's cancel path
+		// already rolled back atomically).
 	default:
-		// Install failed AFTER the old build was removed: run the
+		// Install failed AFTER the old build was removed — including
+		// errOpBusy (another op grabbed the game's slot in the
+		// finishOp→registerOp gap, so this leg never started): run the
 		// rollback/backup-restore path so no failed manifest or partial
-		// files linger. The error toast already surfaced.
+		// files linger. runRollback re-registers the slot, so a
+		// still-busy game refuses gracefully with a busy toast. The
+		// install-leg error toast already surfaced.
 		log.Warn().Err(err).Str("gameDir", gameDir).
 			Msg("upgrade: install failed after uninstall; rolling back")
 		s.runRollback(gameDir)

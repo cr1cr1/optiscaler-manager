@@ -1537,3 +1537,9 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   detached (new internal/termopen package, modeled on internal/launch).
   Windows (rundll32) and macOS (open) behavior is unchanged, and the
   session's openExternal seam is preserved.
+- Hardening from the binding review: games.json no longer resurrects
+  stale upgrade offers on warm boot (eligibility is stripped at cache
+  load on every platform and recomputed from a fresh memo on the next
+  scan), and an upgrade whose install leg loses the op-slot race now
+  routes through the same rollback cleanup as other install failures
+  (the game is never silently left without OptiScaler).

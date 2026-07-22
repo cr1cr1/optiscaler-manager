@@ -175,6 +175,13 @@ type Session struct {
 	// ghResolveVersion. Set it before the first Scan, like openExternal.
 	resolveVersion func(ctx context.Context, requested string) (version string, fresh bool, err error)
 
+	// upgradeGapHook is a test seam invoked synchronously between the
+	// uninstall and install legs of a committed-row upgrade (see
+	// doUpgrade); nil in production. It lets a test occupy the game's op
+	// slot in the finishOp→registerOp gap so the install leg's errOpBusy
+	// path is exercised deterministically.
+	upgradeGapHook func(gameDir string)
+
 	// resolvedDefault* memoize the default-version resolution (see
 	// upgrade.go): one Resolve per distinct configured value, never per
 	// row or per frame.

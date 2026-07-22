@@ -10,6 +10,11 @@
 // falls through to the next candidate. The platform default runner spawns
 // detached (Setsid + Start + Release, never Wait); no shell is involved —
 // argv is exec'd directly.
+//
+// Note the asymmetry between the two env vars: arguments in $EDITOR ARE
+// supported (split with strings.Fields), but arguments in $TERMINAL are
+// NOT — a value like "foot -s" is passed verbatim as argv[0], fails to
+// spawn, and silently falls through to the next candidate.
 package termopen
 
 import (
@@ -79,8 +84,7 @@ func (o *Opener) Open(path string) error {
 	}
 	var lastErr error
 	for _, cand := range cands {
-		argv := append(append([]string(nil), cand...), editor...)
-		argv = append(argv, path)
+		argv := append(argvFor(cand, editor), path)
 		log.Info().Str("terminal", argv[0]).Str("path", path).Msg("opening file in terminal editor")
 		if err := o.run(argv[0], argv[1:]...); err != nil {
 			log.Warn().Err(err).Str("terminal", argv[0]).Msg("terminal spawn failed, trying next")
@@ -108,14 +112,11 @@ func (o *Opener) editorArgv() ([]string, error) {
 	return nil, ErrNoEditor
 }
 
-// terminalArgv returns the full argv for the first terminal candidate with
-// the editor appended: [terminal, convention-args..., editor...].
-func (o *Opener) terminalArgv(editor []string) ([]string, error) {
-	cands := o.terminalCandidates()
-	if len(cands) == 0 {
-		return nil, ErrNoTerminal
-	}
-	return append(append([]string(nil), cands[0]...), editor...), nil
+// argvFor assembles the spawn argv for one terminal candidate with the
+// editor appended: [terminal, convention-args..., editor...]. This is the
+// exact assembly Open uses per candidate, before appending the file path.
+func argvFor(cand, editor []string) []string {
+	return append(append([]string(nil), cand...), editor...)
 }
 
 // convention is how a terminal emulator accepts the command to run.
