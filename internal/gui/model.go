@@ -77,6 +77,7 @@ type model struct {
 	versionDDItemsFor   string                        // install dir owning versionDDItems ("" = no dropdown open)
 	openDropdownDir     string                        // install dir of the single open version dropdown ("" = none)
 	ddTriggerID         ContainerId                   // container id of the card's version-dropdown trigger (click routing seam: the card must not steal its activation)
+	panelFirstID        ContainerId                   // container id of the detail panel's FIRST focusable — its version-dropdown trigger — captured each panel frame right after the versionDropdown call (a DEDICATED seam: the grid's cards render dropdowns too and would leave ddTriggerID pointing at a card's trigger). With the panel open, Tab on the selected card jumps straight here instead of walking every remaining grid focusable; Shift+Tab here returns focus to the card.
 	ddFocusRing         bool                          // whether the version-dropdown trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors listFocusRing)
 	sortTriggerID       ContainerId                   // container id of the toolbar sort-dropdown trigger (focus/click test seam, mirrors ddTriggerID)
 	sortFocusRing       bool                          // whether the sort trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors ddFocusRing)

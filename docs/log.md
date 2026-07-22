@@ -1784,3 +1784,11 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   (releaseGridInnerFocus → ClearFocus) so cursor and focus never
   diverge. Click-away exclusivity was already correct and is pinned by a
   regression test.
+
+- Detail-panel Tab continuation: with the panel open, Tab from the
+  selected card jumps straight to the panel's first focusable element
+  (its version dropdown) instead of walking every remaining grid
+  focusable; Shift+Tab from that element returns to the selected card
+  (direct focus when the card's identity is fresh, deferred
+  cardFocusPending when scrolled away). The closed-panel Tab walk and
+  the panel-open focus retention are unchanged.

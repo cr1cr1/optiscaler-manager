@@ -277,6 +277,24 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 				// The panel (un)nests the grid next frame; re-assert focus
 				// on this card's fresh identity (see cardFocusPending).
 				m.cardFocusPending = m.gridRows[m.selIdx].InstallDir
+			case KeyTab:
+				// Panel Tab continuation: with the detail panel open for
+				// THIS card, Tab jumps straight to the panel's first
+				// focusable (its version-dropdown trigger, view.go's
+				// panelFirstID seam) instead of walking every remaining
+				// grid focusable — the focusables registry is
+				// render-ordered, so all cards sit between this card and
+				// the panel. The CycleFocusOnTab above already ran the
+				// default walk; FocusImmediateOn overrides it. Shift+Tab
+				// keeps the default reverse walk, and a nil panelFirstID
+				// (the selected game renders no dropdown) falls through to
+				// the normal walk — both by leaving the key unconsumed.
+				if m.state.Selected == e.InstallDir &&
+					InputState.Modifiers&ModShift == 0 &&
+					m.panelFirstID != nil {
+					FrameInput.Key = KeyCodeNone
+					FocusImmediateOn(m.panelFirstID)
+				}
 			}
 		}
 		Container(Attrs(Row, Gap(cardGapH)), func() {

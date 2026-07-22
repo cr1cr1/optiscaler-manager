@@ -338,6 +338,10 @@ func (m *model) detailPanel() {
 	}
 	panelW := detailPanelWidth(WindowSize[0])
 	m.openINIRect = Rect{}
+	// Re-captured below when the panel renders its version dropdown: a
+	// selected game without an OptiScaler pill renders no trigger, and a
+	// stale id must never steer the panel Tab continuation (grid.go).
+	m.panelFirstID = nil
 	// Viewport on a Row child absorbs leftover main-axis space, defeating
 	// FixWidth — the scrollable column nests inside the fixed-width shell.
 	Container(Attrs(FixWidth(panelW), Expand, BackgroundVec(bgPanel)), func() {
@@ -368,6 +372,31 @@ func (m *model) detailPanel() {
 					// and Proton pills stay static.
 					if b, ok := optiBadge(e); ok {
 						m.versionDropdown(e, b.Label, b.Tone)
+						// Panel Tab continuation seam: the version-dropdown
+						// trigger is the panel's FIRST focusable in the details
+						// render order. versionDropdown left its id in
+						// ddTriggerID; capture a DEDICATED id because the grid's
+						// cards render dropdowns too and would leave ddTriggerID
+						// pointing at a card's trigger.
+						m.panelFirstID = m.ddTriggerID
+						// Shift+Tab on the panel's first focusable reverses the
+						// continuation (grid.go): focus returns to the selected
+						// card. The panel renders after the grid, so the card's
+						// id in this frame's registry is fresh and resolves
+						// directly; a card scrolled out of the virtualized grid
+						// re-asserts via the deferred cardFocusPending on its
+						// next render instead. Grid mode only — list/audit
+						// frames keep the default reverse walk.
+						if !m.auditGrid && m.state.Mode != ui.ViewList &&
+							m.panelFirstID != nil && IdHasFocus(m.panelFirstID) &&
+							FrameInput.Key == KeyTab && InputState.Modifiers&ModShift != 0 {
+							FrameInput.Key = KeyCodeNone
+							if id := m.cardIDs[m.state.Selected]; id != nil {
+								FocusImmediateOn(id)
+							} else {
+								m.cardFocusPending = m.state.Selected
+							}
+						}
 						start = 1
 					}
 					for _, p := range pills[start:] {
