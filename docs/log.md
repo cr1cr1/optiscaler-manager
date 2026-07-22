@@ -1709,7 +1709,8 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   re-asserted on the next frame via a listFocusPending flag because
   shirei identities are path-scoped and the opening detail panel
   re-nests the wrapper, orphaning a focus set mid-click. The
-  session-selected row renders the selBg band (previously unused token)
+  session-selected row renders the selBg band (previously used only for
+  text-selection highlight)
   independently of the cursor row's accent border; selected wins over
   hover so the open game stays visible while the pointer roams. Enter's
   detail toggle is unchanged.

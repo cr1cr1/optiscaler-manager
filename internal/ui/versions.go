@@ -52,6 +52,10 @@ func (s *Session) Versions(gameDir string) []string {
 			// installed form must survive — the frontends' tick/no-op and
 			// SwitchVersion's guard are exact-string against it.
 			if version.Compare(existing, v) == 0 {
+				// Defensive: unreachable while the installed version is
+				// add()ed first (every collision then resolves with
+				// v != current) — guards a future reordering of the
+				// add() calls below.
 				if v == current {
 					out[i] = v
 				}

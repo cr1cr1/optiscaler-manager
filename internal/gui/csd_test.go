@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestVendorPatchesPresent: the vendored shirei carries the
+// TestVendorCSDPatchPresent: the vendored shirei carries the
 // optiscaler-manager patch markers (CSD disabled, scroll speedup, Wayland
 // Shift+Tab), so a `go mod vendor` refresh that silently drops them fails
 // loudly here.

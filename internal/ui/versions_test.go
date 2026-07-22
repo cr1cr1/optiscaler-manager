@@ -123,9 +123,10 @@ func TestVersionsPinnedPreferenceIncludedOffline(t *testing.T) {
 
 // TestVersionsIncludesMixedFormatsVerbatim: installed version evidence can
 // be a bare PE-probe version ("0.7.9") while cached tags are v-prefixed.
-// Dedupe is exact-string only — NO cross-format normalization — so both
-// forms may legitimately coexist; each appears verbatim, sorted by
-// version.Compare (which already equates "0.7.9" and "v0.7.9" for ORDER).
+// Mixed string forms coexist only for semantically DISTINCT versions
+// ("0.7.9" vs "v0.9.4-test"); semantic twins ("0.7.9" vs "v0.7.9") are
+// deduped (see TestVersionsDedupeSemanticPrefersInstalled). Each entry
+// appears verbatim, sorted by version.Compare.
 func TestVersionsIncludesMixedFormatsVerbatim(t *testing.T) {
 	e := newUpgradeEnvLookups(t, "v0.9.4-test", false)
 	writeCachedBundle(t, e.sess.deps.CacheDir, "v0.9.4-test")
