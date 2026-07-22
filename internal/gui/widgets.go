@@ -445,10 +445,33 @@ func themedInputState(buf *string, hint string, icon rune, st *editState, sizing
 }
 
 // viewSwitch is the grid/list segmented toggle with icon segments; disabled
-// while the library is empty.
+// while the library is empty. The OUTER wrapper is the single Tab stop for
+// the binary choice (Focusable + CycleFocusOnTab + FocusOnClick, mirroring
+// the sortDropdown trigger): Tab reaches it with a focus ring (BorderWidth
+// stays at 1 — only the color flips, so the ring never shifts layout), and
+// Enter/Space — consumed so nothing downstream re-triggers — toggle the
+// view through the session, honoring the same disabled guard as the
+// segment PressAction. The segments themselves stay unfocusable.
 func (m *model) viewSwitch() {
 	disabled := m.libraryEmpty()
-	Container(Attrs(Row, Corners(radiusM), Clip, BorderWidth(1), BorderColorVec(border)), func() {
+	// Per-frame seam reset, mirroring the sortDropdown's sortTriggerID /
+	// sortFocusRing discipline: the seams describe the frame being built.
+	m.viewSwitchID = nil
+	m.viewSwitchFocusRing = false
+	Container(Attrs(Focusable, Row, Corners(radiusM), Clip, BorderWidth(1), BorderColorVec(border)), func() {
+		CycleFocusOnTab()
+		FocusOnClick()
+		m.viewSwitchID = CurrentId()
+		if HasFocus() {
+			m.viewSwitchFocusRing = true
+			ModAttrs(func(a *AttrSet) { a.BorderColor = focusBorder })
+			if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
+				FrameInput.Key = KeyCodeNone
+				if !disabled && m.sess != nil {
+					m.sess.ToggleView()
+				}
+			}
+		}
 		m.viewSegment(widgets.SymGrid, "Grid", ui.ViewGrid, disabled)
 		m.viewSegment(widgets.SymList, "List", ui.ViewList, disabled)
 	})

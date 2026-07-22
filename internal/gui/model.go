@@ -27,50 +27,52 @@ type Config struct {
 // model is the shirei-side binding state: the latest session snapshot plus
 // widget-local buffers.
 type model struct {
-	cfg               Config
-	sess              *ui.Session
-	ctx               context.Context // boot/launch context; Background in tests
-	state             ui.State
-	filter            string
-	auditGrid         bool
-	about             bool
-	settingsOpen      bool
-	versionBuf        string
-	templateBuf       string
-	onlineBuf         bool                          // settings-modal online-lookups toggle buffer, primed on open
-	selIdx            int                           // keyboard-driven selection index into visible rows
-	hoveredDir        string                        // install dir of the card under the mouse, "" when none
-	cardRect          Rect                          // screen rect of the last rendered card (hover test seam)
-	cardBtnRect       Rect                          // screen rect of the card's first button (click routing test seam)
-	sidebarRects      []Rect                        // screen rects of the sidebar nav items (uniformity test seam)
-	sidebarShellRect  Rect                          // screen rect of the sidebar shell (full-height test seam)
-	progressTrackRect Rect                          // screen rect of the scan progress track (progress bar test seam)
-	progressFillRect  Rect                          // screen rect of the scan progress fill (progress bar test seam)
-	tierPillRect      Rect                          // screen rect of the card's ProtonDB tier pill (tier badge test seam)
-	detailPanelRect   Rect                          // screen rect of the detail panel shell (panel width test seam)
-	listSegRect       Rect                          // screen rect of the List view-switch segment (click test seam)
-	listSelRect       Rect                          // screen rect of the keyboard-selected list row (nav test seam)
-	listRowRects      []Rect                        // screen rects of rendered list rows by row index, rebuilt each list frame (row-click test seam)
-	listSelectedRect  Rect                          // screen rect of the session-selected list row's selection band (selected-highlight test seam)
-	openINIRect       Rect                          // screen rect of the detail panel's OpenINI button (visibility test seam)
-	searchID          ContainerId                   // the search field's container (`/` focuses it from anywhere)
-	listID            ContainerId                   // the list view's focusable wrapper (Tab focus nav test seam)
-	listFocusPending  bool                          // deferred row-click focus grab: consumed once by actionList with the wrapper's fresh identity
-	listFocusRing     bool                          // whether the list wrapper drew its focus ring on the last frame (focus ring test seam)
-	cols              int                           // current grid columns, derived from live width
-	cardW             int                           // current card width in px, derived from live width
-	cardH             int                           // current card height in px
-	exitNow           func(code int)                // quit seam: os.Exit in production, stubbed in tests
-	switchVersionFn   func(gameDir, version string) // version-switch dispatch seam: nil in production (Session.SwitchVersion), stubbed in tests
-	versionDDRects    map[string]Rect               // screen rects of rendered version-dropdown triggers by install dir (dropdown test seam)
-	versionDDItems    []versionDDItem               // rows of the currently open version dropdown (dropdown test seam)
-	versionDDItemsFor string                        // install dir owning versionDDItems ("" = no dropdown open)
-	openDropdownDir   string                        // install dir of the single open version dropdown ("" = none)
-	ddTriggerID       ContainerId                   // container id of the card's version-dropdown trigger (click routing seam: the card must not steal its activation)
-	ddFocusRing       bool                          // whether the version-dropdown trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors listFocusRing)
-	sortTriggerID     ContainerId                   // container id of the toolbar sort-dropdown trigger (focus/click test seam, mirrors ddTriggerID)
-	sortFocusRing     bool                          // whether the sort trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors ddFocusRing)
-	sortMenuItems     []sortMenuItem                // rows of the currently open sort dropdown, rebuilt each popup frame and emptied while closed (sort dropdown test seam, mirrors versionDDItems)
+	cfg                 Config
+	sess                *ui.Session
+	ctx                 context.Context // boot/launch context; Background in tests
+	state               ui.State
+	filter              string
+	auditGrid           bool
+	about               bool
+	settingsOpen        bool
+	versionBuf          string
+	templateBuf         string
+	onlineBuf           bool                          // settings-modal online-lookups toggle buffer, primed on open
+	selIdx              int                           // keyboard-driven selection index into visible rows
+	hoveredDir          string                        // install dir of the card under the mouse, "" when none
+	cardRect            Rect                          // screen rect of the last rendered card (hover test seam)
+	cardBtnRect         Rect                          // screen rect of the card's first button (click routing test seam)
+	sidebarRects        []Rect                        // screen rects of the sidebar nav items (uniformity test seam)
+	sidebarShellRect    Rect                          // screen rect of the sidebar shell (full-height test seam)
+	progressTrackRect   Rect                          // screen rect of the scan progress track (progress bar test seam)
+	progressFillRect    Rect                          // screen rect of the scan progress fill (progress bar test seam)
+	tierPillRect        Rect                          // screen rect of the card's ProtonDB tier pill (tier badge test seam)
+	detailPanelRect     Rect                          // screen rect of the detail panel shell (panel width test seam)
+	listSegRect         Rect                          // screen rect of the List view-switch segment (click test seam)
+	listSelRect         Rect                          // screen rect of the keyboard-selected list row (nav test seam)
+	listRowRects        []Rect                        // screen rects of rendered list rows by row index, rebuilt each list frame (row-click test seam)
+	listSelectedRect    Rect                          // screen rect of the session-selected list row's selection band (selected-highlight test seam)
+	openINIRect         Rect                          // screen rect of the detail panel's OpenINI button (visibility test seam)
+	searchID            ContainerId                   // the search field's container (`/` focuses it from anywhere)
+	listID              ContainerId                   // the list view's focusable wrapper (Tab focus nav test seam)
+	listFocusPending    bool                          // deferred row-click focus grab: consumed once by actionList with the wrapper's fresh identity
+	listFocusRing       bool                          // whether the list wrapper drew its focus ring on the last frame (focus ring test seam)
+	cols                int                           // current grid columns, derived from live width
+	cardW               int                           // current card width in px, derived from live width
+	cardH               int                           // current card height in px
+	exitNow             func(code int)                // quit seam: os.Exit in production, stubbed in tests
+	switchVersionFn     func(gameDir, version string) // version-switch dispatch seam: nil in production (Session.SwitchVersion), stubbed in tests
+	versionDDRects      map[string]Rect               // screen rects of rendered version-dropdown triggers by install dir (dropdown test seam)
+	versionDDItems      []versionDDItem               // rows of the currently open version dropdown (dropdown test seam)
+	versionDDItemsFor   string                        // install dir owning versionDDItems ("" = no dropdown open)
+	openDropdownDir     string                        // install dir of the single open version dropdown ("" = none)
+	ddTriggerID         ContainerId                   // container id of the card's version-dropdown trigger (click routing seam: the card must not steal its activation)
+	ddFocusRing         bool                          // whether the version-dropdown trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors listFocusRing)
+	sortTriggerID       ContainerId                   // container id of the toolbar sort-dropdown trigger (focus/click test seam, mirrors ddTriggerID)
+	sortFocusRing       bool                          // whether the sort trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors ddFocusRing)
+	sortMenuItems       []sortMenuItem                // rows of the currently open sort dropdown, rebuilt each popup frame and emptied while closed (sort dropdown test seam, mirrors versionDDItems)
+	viewSwitchID        ContainerId                   // container id of the view switch's outer wrapper (focus/click test seam, mirrors sortTriggerID)
+	viewSwitchFocusRing bool                          // whether the view-switch wrapper drew its focus ring on the last frame (keyboard focus test seam, mirrors sortFocusRing)
 }
 
 func newModel(cfg Config) *model {
