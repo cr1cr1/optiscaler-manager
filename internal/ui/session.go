@@ -1012,17 +1012,34 @@ func (s *Session) AnswerConfirm(accept bool) {
 	}
 }
 
-// OpenINI opens the game's OptiScaler.ini in the system editor.
-func (s *Session) OpenINI(gameDir string) {
+// INIPath returns the game's OptiScaler.ini path, or "" when the game has
+// no OptiScaler install (managed or external). Pure resolver with no side
+// effects — the GUI's external opener and the TUI's in-process editor both
+// build on it.
+func (s *Session) INIPath(gameDir string) string {
 	row := s.findRow(gameDir)
 	if row == nil || row.InjectionDir == "" {
+		return ""
+	}
+	return filepath.Join(row.InjectionDir, "OptiScaler.ini")
+}
+
+// OpenINI opens the game's OptiScaler.ini in the system editor (GUI path:
+// a terminal editor inside a terminal emulator on Linux via termopen).
+func (s *Session) OpenINI(gameDir string) {
+	path := s.INIPath(gameDir)
+	if path == "" {
 		s.toast("no OptiScaler.ini (not installed?)", true)
 		return
 	}
-	if err := s.openExternal(filepath.Join(row.InjectionDir, "OptiScaler.ini")); err != nil {
+	if err := s.openExternal(path); err != nil {
 		s.toast("cannot open editor: "+err.Error(), true)
 	}
 }
+
+// Toast surfaces a short message in the active frontend; the TUI uses it
+// to report outcomes of work it drives itself (the in-process editor).
+func (s *Session) Toast(text string, warn bool) { s.toast(text, warn) }
 
 // Launch requests a fire-and-forget game launch: it never blocks, never
 // waits on the child, and a successful request proves nothing about the

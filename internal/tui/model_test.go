@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -264,28 +266,30 @@ func TestTUIQuitsOnQ(t *testing.T) {
 	t.Logf("quit cleanly; final status line %q", m.View())
 }
 
-// TestDetailKeyOpenINIAllowedForExternal: pressing o on the detail screen of
-// an external row (CanOpenINI true) reaches the opener seam — on Linux the
-// session opens the ini in a terminal editor inside a terminal emulator, so
-// a fake $TERMINAL earlier in PATH records the argv it was spawned with
-// (editor argv + the ini path); a never-installed row stays gated off.
+// TestDetailKeyOpenINIAllowedForExternal: pressing o on the detail screen
+// of an external row (CanOpenINI true) suspends the TUI and runs the
+// user's terminal editor via tea.ExecProcess — $EDITOR verbatim (here
+// "fakeedit --wait"), the ini path as the editor's LAST argument — and a
+// never-installed row stays gated off (no cmd).
 func TestDetailKeyOpenINIAllowedForExternal(t *testing.T) {
 	binDir := t.TempDir()
-	logPath := filepath.Join(t.TempDir(), "opened.log")
-	fakeTerm := filepath.Join(binDir, "faketerm")
-	writeFile(t, fakeTerm, "#!/bin/sh\nprintf '%s\n' \"$@\" >> \"$TERM_OPEN_LOG\"\n")
-	if err := os.Chmod(fakeTerm, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	logPath := filepath.Join(t.TempDir(), "editor.log")
 	fakeEdit := filepath.Join(binDir, "fakeedit")
-	writeFile(t, fakeEdit, "#!/bin/sh\nexit 0\n")
+	writeFile(t, fakeEdit, "#!/bin/sh\nprintf '%s\n' \"$@\" >> \"$TERM_OPEN_LOG\"\n")
 	if err := os.Chmod(fakeEdit, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("TERM_OPEN_LOG", logPath)
-	t.Setenv("TERMINAL", "faketerm")
 	t.Setenv("EDITOR", "fakeedit --wait")
+
+	var gotArgv []string
+	oldExec := execEditor
+	t.Cleanup(func() { execEditor = oldExec })
+	execEditor = func(c *exec.Cmd, fn tea.ExecCallback) tea.Cmd {
+		gotArgv = append([]string(nil), c.Args...)
+		return func() tea.Msg { return fn(c.Run()) }
+	}
 
 	opened := func() string {
 		data, err := os.ReadFile(logPath)
@@ -317,30 +321,31 @@ func TestDetailKeyOpenINIAllowedForExternal(t *testing.T) {
 		return Model{sess: e.sess, screen: screenDetail, detailDir: e.gameRoot}, e.bin
 	}
 
-	t.Run("external row opens", func(t *testing.T) {
+	t.Run("external row opens in the TUI's own editor", func(t *testing.T) {
 		m, bin := externalDetail(t, domain.StatusExternal, true)
-		m.detailKey(oKey)
+		_, cmd := m.detailKey(oKey)
+		if cmd == nil {
+			t.Fatal("no cmd returned for an external row")
+		}
+		msg := cmd()
+		if em, ok := msg.(iniEditorMsg); !ok || em.err != nil {
+			t.Fatalf("editor msg = %#v, want iniEditorMsg{nil}", msg)
+		}
 		iniPath := filepath.Join(bin, "OptiScaler.ini")
-		pollUntil(t, "opener seam invoked for an external row", func() bool {
-			return strings.Contains(opened(), iniPath)
-		})
-		lines := strings.Split(strings.TrimSpace(opened()), "\n")
-		if got := lines[len(lines)-1]; got != iniPath {
-			t.Errorf("last terminal argv element = %q, want ini path %q", got, iniPath)
+		want := []string{"fakeedit", "--wait", iniPath}
+		if !reflect.DeepEqual(gotArgv, want) {
+			t.Errorf("editor argv = %v, want %v (ini path last)", gotArgv, want)
 		}
-		if !strings.Contains(opened(), "fakeedit\n--wait\n") {
-			t.Errorf("terminal argv missing editor argv %q; recorded:\n%s", "fakeedit --wait", opened())
+		if !strings.Contains(opened(), iniPath) {
+			t.Errorf("fake editor never ran with the ini path; recorded:\n%s", opened())
 		}
-		t.Logf("terminal recorded argv:\n%s", opened())
+		t.Logf("editor exec'd with argv %v", gotArgv)
 	})
 
 	t.Run("never-installed row stays gated", func(t *testing.T) {
 		m, _ := externalDetail(t, "", false)
-		before := opened()
-		m.detailKey(oKey)
-		time.Sleep(100 * time.Millisecond)
-		if got := opened(); got != before {
-			t.Errorf("opener seam invoked for a never-installed row; opened log %q", got)
+		if _, cmd := m.detailKey(oKey); cmd != nil {
+			t.Error("never-installed row produced an editor cmd, want gated off")
 		}
 	})
 }

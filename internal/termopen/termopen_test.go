@@ -74,19 +74,18 @@ func TestEditorArgvChain(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			o := New("linux", tt.lookPath, envMap(tt.env), nil)
-			got, err := o.editorArgv()
+			got, err := Editor(envMap(tt.env), tt.lookPath)
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
-					t.Fatalf("editorArgv() err = %v, want %v", err, tt.wantErr)
+					t.Fatalf("Editor() err = %v, want %v", err, tt.wantErr)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("editorArgv() unexpected err: %v", err)
+				t.Fatalf("Editor() unexpected err: %v", err)
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("editorArgv() = %v, want %v", got, tt.want)
+				t.Errorf("Editor() = %v, want %v", got, tt.want)
 			}
 			t.Logf("editor argv: %v", got)
 		})

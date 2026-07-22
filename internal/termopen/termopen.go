@@ -96,20 +96,33 @@ func (o *Opener) Open(path string) error {
 	return fmt.Errorf("termopen %q: every terminal emulator failed: %w", path, lastErr)
 }
 
-// editorArgv resolves the editor command: $EDITOR verbatim, split with
-// strings.Fields (documented: no shell quoting — `EDITOR="code --wait"`
-// works, quoted metacharacters do not); unset falls to the first of micro,
-// nano, vi found via lookPath.
-func (o *Opener) editorArgv() ([]string, error) {
-	if ed := strings.TrimSpace(o.getenv("EDITOR")); ed != "" {
+// Editor resolves the user's terminal editor: $EDITOR verbatim (split with
+// strings.Fields — documented, no shell quoting), else the first of micro,
+// nano, vi found on PATH. Nil getenv/lookPath default to os.Getenv and
+// exec.LookPath. Shared by the GUI's terminal spawn and the TUI's own
+// in-process editor (tea.ExecProcess).
+// exec.LookPath. Shared by the GUI's terminal spawn and the TUI's own
+// in-process editor (tea.ExecProcess).
+func Editor(getenv func(string) string, lookPath func(string) (string, error)) ([]string, error) {
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	if lookPath == nil {
+		lookPath = exec.LookPath
+	}
+	if ed := strings.TrimSpace(getenv("EDITOR")); ed != "" {
 		return strings.Fields(ed), nil
 	}
 	for _, ed := range []string{"micro", "nano", "vi"} {
-		if _, err := o.lookPath(ed); err == nil {
+		if _, err := lookPath(ed); err == nil {
 			return []string{ed}, nil
 		}
 	}
 	return nil, ErrNoEditor
+}
+
+func (o *Opener) editorArgv() ([]string, error) {
+	return Editor(o.getenv, o.lookPath)
 }
 
 // argvFor assembles the spawn argv for one terminal candidate with the

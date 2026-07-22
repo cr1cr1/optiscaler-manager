@@ -244,6 +244,26 @@ func TestOpenINICallsOpener(t *testing.T) {
 	t.Logf("opened %s", e.opened[0])
 }
 
+// TestINIPath: the ini path resolver backs both the GUI opener and the
+// TUI's in-process editor — installed game → path ending OptiScaler.ini;
+// unknown game → "" (pure resolver, no side effects).
+func TestINIPath(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+	e.sess.QuickInstall(e.gameRoot)
+	waitEvent(t, e.sess, EvOpDone)
+
+	got := e.sess.INIPath(e.gameRoot)
+	if got == "" || !strings.HasSuffix(got, "OptiScaler.ini") {
+		t.Errorf("INIPath = %q, want a path ending OptiScaler.ini", got)
+	}
+	if got := e.sess.INIPath("/nonexistent"); got != "" {
+		t.Errorf("INIPath(/nonexistent) = %q, want ''", got)
+	}
+	t.Logf("ini path: %s", got)
+}
+
 func TestVisibleRowsFilterAndSort(t *testing.T) {
 	now := time.Now()
 	rows := []GameRow{

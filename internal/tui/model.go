@@ -6,6 +6,7 @@ package tui
 
 import (
 	"context"
+	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -13,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/termopen"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
@@ -109,6 +111,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
 		return m, cmd
+	case iniEditorMsg:
+		if msg.err != nil {
+			m.sess.Toast("editor: "+msg.err.Error(), true)
+		}
+		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -264,10 +271,38 @@ func (m Model) detailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "o":
 		if row := m.detailRow(); row != nil && row.CanOpenINI() {
-			m.sess.OpenINI(dir)
+			return m, openINIEditor(m.sess, dir)
 		}
 	}
 	return m, nil
+}
+
+// execEditor runs an external editor over the TUI (tea.ExecProcess in
+// production); tests substitute a capture.
+var execEditor = tea.ExecProcess
+
+// iniEditorMsg reports the external editor's exit.
+type iniEditorMsg struct{ err error }
+
+// openINIEditor suspends the TUI and runs the user's terminal editor
+// ($EDITOR → micro → nano → vi via termopen.Editor) on the game's
+// OptiScaler.ini, resuming when it exits. tea.ExecProcess is the
+// charmbracelet mechanism for external TUIs — an external process cannot
+// render inside a subwindow, so the editor takes over the terminal as a
+// modal and the TUI repaints on return.
+func openINIEditor(sess *ui.Session, dir string) tea.Cmd {
+	path := sess.INIPath(dir)
+	if path == "" {
+		return nil
+	}
+	argv, err := termopen.Editor(nil, nil)
+	if err != nil {
+		return func() tea.Msg { return iniEditorMsg{err} }
+	}
+	argv = append(argv, path)
+	return execEditor(exec.Command(argv[0], argv[1:]...), func(err error) tea.Msg {
+		return iniEditorMsg{err}
+	})
 }
 
 func (m Model) settingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

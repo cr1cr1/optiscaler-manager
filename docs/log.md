@@ -1550,3 +1550,16 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   (TestCardButtonClick_FiresActionNotSelect,
   TestGUICardButtonsBottomAligned) are red again with their pre-fix
   signature, owned by the in-flight card rework.
+
+## 2026-07-22 — v0.9.1: TUI opens the ini in its own editor
+
+- The TUI's "open INI" (`o` on the detail screen) no longer spawns a
+  terminal emulator: it suspends the TUI and runs the user's terminal
+  editor in place via tea.ExecProcess — the charmbracelet mechanism for
+  external TUIs — resuming when the editor exits (an external process
+  cannot render inside a subwindow, so the editor takes over the
+  terminal as a modal). The editor chain is shared with the GUI via the
+  newly exported termopen.Editor ($EDITOR → micro → nano → vi), and the
+  ini path resolver is Session.INIPath (pure, no side effects).
+  Session.Toast lets the frontend report editor failures. The GUI keeps
+  the termopen spawn (no terminal to suspend there).
