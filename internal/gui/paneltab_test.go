@@ -20,10 +20,11 @@ import (
 // is render-ordered, and ALL grid cards register before the panel (the panel
 // renders after the content view), so a plain Tab from a focused card walks
 // every remaining card and inner control before ever reaching the panel.
-// The continuation jumps focus straight to the panel's FIRST focusable — its
-// version-dropdown trigger (seam: m.panelFirstID) — and Shift+Tab there
-// returns focus to the selected card. With the panel closed the Tab walk is
-// untouched.
+// The continuation jumps focus straight to the panel's FIRST focusable in
+// render order — its header Close button (seam: m.panelFirstID), which every
+// panel renders, so the jump works for clean games with no version dropdown
+// too — and Shift+Tab there returns focus to the selected card. With the
+// panel closed the Tab walk is untouched and the seam resets to nil.
 
 // seedExternalPanelSession scans a library whose first manual game carries
 // an external OptiScaler install, so both its card AND its detail panel
@@ -81,7 +82,7 @@ func focusSelectedCardWithPanel(t *testing.T, m *model, sess *ui.Session, dir st
 		t.Fatalf("detail panel not open for %q (Selected %q)", dir, got)
 	}
 	if m.panelFirstID == nil {
-		t.Fatal("panel's first focusable (version-dropdown trigger) id not captured while the panel is open")
+		t.Fatal("panel's first focusable (header Close button) id not captured while the panel is open")
 	}
 }
 
@@ -104,7 +105,7 @@ func TestPanelTab_CardTabJumpsToPanelFirst(t *testing.T) {
 	keyFrame(KeyCodeNone, 0, m.rootView) // focus change applies
 
 	if !IdHasFocus(m.panelFirstID) {
-		t.Error("Tab from the selected card did not land on the panel's first focusable (its version-dropdown trigger)")
+		t.Error("Tab from the selected card did not land on the panel's first focusable (its header Close button)")
 	}
 	if IdHasFocus(cardDD) {
 		t.Error("Tab landed on the card's own dropdown trigger; the jump must skip the remaining grid focusables")
@@ -170,10 +171,11 @@ func TestPanelTab_ShiftTabFromPanelFirstReturnsToCard(t *testing.T) {
 	}
 }
 
-// TestPanelTab_PanelFirstIsVersionDropdown: the continuation seam names the
-// panel's OWN version-dropdown trigger — not a card's trigger (cards render
-// dropdowns too, and the grid registers before the panel).
-func TestPanelTab_PanelFirstIsVersionDropdown(t *testing.T) {
+// TestPanelTab_PanelFirstIsCloseButton: the continuation seam names the
+// panel's header Close button — the FIRST focusable in the panel's render
+// order (rendered before the version pills/dropdown), so the jump works
+// for every panel, clean games included — and never a card's control.
+func TestPanelTab_PanelFirstIsCloseButton(t *testing.T) {
 	sess, extDir := seedExternalPanelSession(t)
 	m := newModel(Config{Session: sess})
 
@@ -183,17 +185,77 @@ func TestPanelTab_PanelFirstIsVersionDropdown(t *testing.T) {
 	keyFrame(KeyCodeNone, 0, m.rootView) // settle
 
 	if m.panelFirstID == nil {
-		t.Fatal("open panel captured no first-focusable id (its version-dropdown trigger did not render?)")
+		t.Fatal("open panel captured no first-focusable id (its header Close button did not render?)")
 	}
 	if m.ddTriggerID == nil {
 		t.Fatal("no version-dropdown trigger rendered at all")
 	}
 	// The panel renders last among dropdown renderers, so ddTriggerID holds
-	// the panel's trigger id at frame end.
-	if m.panelFirstID != m.ddTriggerID {
-		t.Error("panelFirstID != the panel's version-dropdown trigger id; the seam captured the wrong element")
+	// the panel's dropdown trigger id at frame end — and the Close button
+	// renders BEFORE it, so the seam must NOT be the dropdown trigger.
+	if m.panelFirstID == m.ddTriggerID {
+		t.Error("panelFirstID == the panel's version-dropdown trigger; the first focusable in render order is the header Close button")
 	}
 	if cardDD := m.cardDDTrigger[extDir]; cardDD != nil && m.panelFirstID == cardDD {
-		t.Error("panelFirstID equals the CARD's dropdown trigger; the seam must capture the panel's own trigger")
+		t.Error("panelFirstID equals the CARD's dropdown trigger; the seam must capture the panel's own first focusable")
 	}
+}
+
+// TestPanelTab_CleanGameTabJumpsToPanel: a clean game renders no version
+// dropdown, but every panel renders the header Close button — so the Tab
+// continuation must still jump into the panel (the reviewer finding: the
+// old dropdown-trigger seam left clean games with no jump target at all).
+func TestPanelTab_CleanGameTabJumpsToPanel(t *testing.T) {
+	sess, extDir := seedExternalPanelSession(t)
+	m := newModel(Config{Session: sess})
+	// The seed library's other manual game is clean (no OptiScaler pill,
+	// hence no version dropdown in its panel).
+	cleanDir := ""
+	for _, r := range sess.VisibleRows() {
+		if r.InstallDir != extDir {
+			cleanDir = r.InstallDir
+		}
+	}
+	if cleanDir == "" {
+		t.Fatal("no clean game found beside the external one")
+	}
+
+	headlessFrames(t, 1200, 700)
+	focusSelectedCardWithPanel(t, m, sess, cleanDir) // fatals if panelFirstID is nil
+
+	keyFrame(KeyTab, 0, m.rootView)      // focused selected card: Tab continues into the panel
+	keyFrame(KeyCodeNone, 0, m.rootView) // focus change applies
+
+	if !IdHasFocus(m.panelFirstID) {
+		t.Error("Tab from a CLEAN game's selected card did not land on the panel's first focusable; the jump must not depend on the version dropdown")
+	}
+	for dir, id := range m.cardIDs {
+		if IdHasFocus(id) {
+			t.Errorf("card %q holds focus after the panel jump; want the panel's first focusable exclusively", dir)
+		}
+	}
+}
+
+// TestPanelTab_PanelFirstIDClearsOnClose: the seam resets to nil whenever
+// the panel is absent — a stale id must never steer the Tab continuation
+// into a detached node on the first frame of a reopen.
+func TestPanelTab_PanelFirstIDClearsOnClose(t *testing.T) {
+	sess, extDir := seedExternalPanelSession(t)
+	m := newModel(Config{Session: sess})
+
+	headlessFrames(t, 1200, 700)
+	sess.Select(extDir)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if m.panelFirstID == nil {
+		t.Fatal("setup: open panel captured no first-focusable id")
+	}
+
+	sess.Select("") // close the panel
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if m.panelFirstID != nil {
+		t.Error("panelFirstID survived the panel closing; a stale id can steer Tab into a detached node on reopen")
+	}
+	t.Log("panelFirstID reset to nil with the panel closed")
 }

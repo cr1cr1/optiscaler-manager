@@ -30,6 +30,10 @@ func (m *model) rootView() {
 					m.detailPanel()
 				})
 			} else {
+				// Panel absent (never rendered this frame): reset the Tab
+				// continuation seam so a stale id cannot steer a Tab on the
+				// first frame of a reopen into a detached node.
+				m.panelFirstID = nil
 				m.contentView()
 			}
 			// Bottom breathing room: rows clip at the list viewport edge,
@@ -329,6 +333,13 @@ func (m *model) actionList() {
 // dashboard modal: the grid stays visible beside it. Escape (global keys)
 // and the close button both dismiss it.
 func (m *model) detailPanel() {
+	// Reset whenever the panel is absent (the e == nil early return below)
+	// or re-rendering: a stale id must never steer the panel Tab
+	// continuation (grid.go) into a detached node on the first frame of a
+	// reopen. Re-captured below by the header Close button — the panel's
+	// FIRST focusable in render order, which every panel renders, so the
+	// continuation works for clean games (no version dropdown) too.
+	m.panelFirstID = nil
 	e := m.selectedRow()
 	if e == nil {
 		if m.sess != nil {
@@ -338,10 +349,6 @@ func (m *model) detailPanel() {
 	}
 	panelW := detailPanelWidth(WindowSize[0])
 	m.openINIRect = Rect{}
-	// Re-captured below when the panel renders its version dropdown: a
-	// selected game without an OptiScaler pill renders no trigger, and a
-	// stale id must never steer the panel Tab continuation (grid.go).
-	m.panelFirstID = nil
 	// Viewport on a Row child absorbs leftover main-axis space, defeating
 	// FixWidth — the scrollable column nests inside the fixed-width shell.
 	Container(Attrs(FixWidth(panelW), Expand, BackgroundVec(bgPanel)), func() {
@@ -350,8 +357,26 @@ func (m *model) detailPanel() {
 			Container(Attrs(Row, CrossMid, Gap(sp8)), func() {
 				Label(e.Title, FontSize(16), TextColorVec(txtMain), FontWeight(WeightBold))
 				Filler(1)
-				if m.sess != nil && focusableButton(TypCancel, "Close") {
+				if m.sess != nil && m.panelCloseButton() {
 					m.sess.Select("")
+				}
+				// Shift+Tab on the panel's first focusable (the header Close
+				// button) reverses the continuation (grid.go): focus returns
+				// to the selected card. The panel renders after the grid, so
+				// the card's id in this frame's registry is fresh and
+				// resolves directly; a card scrolled out of the virtualized
+				// grid re-asserts via the deferred cardFocusPending on its
+				// next render instead. Grid mode only — list/audit frames
+				// keep the default reverse walk.
+				if !m.auditGrid && m.state.Mode != ui.ViewList &&
+					m.panelFirstID != nil && IdHasFocus(m.panelFirstID) &&
+					FrameInput.Key == KeyTab && InputState.Modifiers&ModShift != 0 {
+					FrameInput.Key = KeyCodeNone
+					if id := m.cardIDs[m.state.Selected]; id != nil {
+						FocusImmediateOn(id)
+					} else {
+						m.cardFocusPending = m.state.Selected
+					}
 				}
 			})
 			coverW := panelW - 2*sp16
@@ -372,31 +397,6 @@ func (m *model) detailPanel() {
 					// and Proton pills stay static.
 					if b, ok := optiBadge(e); ok {
 						m.versionDropdown(e, b.Label, b.Tone)
-						// Panel Tab continuation seam: the version-dropdown
-						// trigger is the panel's FIRST focusable in the details
-						// render order. versionDropdown left its id in
-						// ddTriggerID; capture a DEDICATED id because the grid's
-						// cards render dropdowns too and would leave ddTriggerID
-						// pointing at a card's trigger.
-						m.panelFirstID = m.ddTriggerID
-						// Shift+Tab on the panel's first focusable reverses the
-						// continuation (grid.go): focus returns to the selected
-						// card. The panel renders after the grid, so the card's
-						// id in this frame's registry is fresh and resolves
-						// directly; a card scrolled out of the virtualized grid
-						// re-asserts via the deferred cardFocusPending on its
-						// next render instead. Grid mode only — list/audit
-						// frames keep the default reverse walk.
-						if !m.auditGrid && m.state.Mode != ui.ViewList &&
-							m.panelFirstID != nil && IdHasFocus(m.panelFirstID) &&
-							FrameInput.Key == KeyTab && InputState.Modifiers&ModShift != 0 {
-							FrameInput.Key = KeyCodeNone
-							if id := m.cardIDs[m.state.Selected]; id != nil {
-								FocusImmediateOn(id)
-							} else {
-								m.cardFocusPending = m.state.Selected
-							}
-						}
 						start = 1
 					}
 					for _, p := range pills[start:] {
@@ -448,6 +448,36 @@ func (m *model) detailPanel() {
 			scrollBars()
 		})
 	})
+}
+
+// panelCloseButton renders the detail panel's header Close button as a
+// focusable control (focusableButton's pattern) and captures its container
+// id in m.panelFirstID: the Close button is the panel's FIRST focusable in
+// render order — rendered before the version pills/dropdown — so the panel
+// Tab continuation (grid.go) jumps here, for clean games with no version
+// dropdown too. focusableButton cannot serve here: it does not expose its
+// wrapper's container id, which the continuation seam needs.
+func (m *model) panelCloseButton() bool {
+	activated := false
+	Container(Attrs(Focusable, Corners(6)), func() {
+		CycleFocusOnTab()
+		FocusOnClick()
+		m.panelFirstID = CurrentId()
+		if HasFocus() {
+			ModAttrs(func(a *AttrSet) {
+				a.BorderWidth = 2
+				a.BorderColor = focusBorder
+			})
+			if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
+				FrameInput.Key = KeyCodeNone
+				activated = true
+			}
+		}
+		if ButtonExt("Close", ButtonAttrs{Icon: TypCancel}) {
+			activated = true
+		}
+	})
+	return activated
 }
 
 // detailField is one label/value metadata row in the detail panel.

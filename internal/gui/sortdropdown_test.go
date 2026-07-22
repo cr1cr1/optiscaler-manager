@@ -248,6 +248,38 @@ func TestSortDropdown_HoverMovesHighlight(t *testing.T) {
 	t.Log("hover moved the highlight; keyboard and mouse stay in sync")
 }
 
+// TestSortDropdown_StationaryMouseKeepsKeyboardHighlight (reviewer
+// finding): with the mouse RESTING over row k — present but not moving —
+// the trigger's arrow-key move must win. The old hover-on-presence adoption
+// re-rendered the popup under the resting mouse and overwrote the arrow
+// move in the same frame, defeating keyboard navigation.
+func TestSortDropdown_StationaryMouseKeepsKeyboardHighlight(t *testing.T) {
+	_, m, _ := sortPopulated(t)
+	focusOpenSortDropdown(t, m, m.rootView)
+
+	// Move the mouse onto row 1 and let the hover adopt it (mouse motion is
+	// the intended sync); the mouse then stays EXACTLY there.
+	r := m.sortMenuItems[1].rect
+	if r.Size[0] == 0 {
+		t.Fatalf("menu item rect unresolved: %+v", r)
+	}
+	InputState.MousePoint = Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if got := sortHlIndex(t, m); got != 1 {
+		t.Fatalf("setup: hovering row 1 gave highlight row %d, want 1", got)
+	}
+
+	// Stationary mouse + Down (wraps from row 1 to row 0): the arrow move
+	// must not be overwritten by the resting mouse's mere presence.
+	keyFrame(KeyDown, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if got := sortHlIndex(t, m); got != 0 {
+		t.Errorf("highlight after Down with a stationary mouse over row 1 = row %d, want 0 (keyboard must win against hover presence)", got)
+	}
+	t.Log("stationary mouse did not overwrite the arrow-key move")
+}
+
 // TestSortDropdown_EnterActivatesHighlighted: Enter on the focused trigger
 // with the dropdown open activates the highlighted row exactly like a
 // click pick: setSort fires, the menu closes, and focus returns to the

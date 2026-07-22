@@ -611,12 +611,16 @@ func launchable(e *ui.GameRow) bool {
 // the trigger and popup container ids the click-outside check needs. hl is
 // the keyboard-highlight row index; -1 means "re-initialize on the next
 // popup frame" (set on every open, so the highlight starts on the current
-// item and never leaks across opens).
+// item and never leaks across opens). prevMouse is the mouse position seen
+// by the previous popup frame: hover adopts the highlight only when the
+// mouse actually MOVED, so a mouse resting over a row cannot overwrite the
+// trigger's arrow-key navigation.
 type dropdownState struct {
-	open   bool
-	btnID  ContainerId
-	menuID ContainerId
-	hl     int
+	open      bool
+	btnID     ContainerId
+	menuID    ContainerId
+	hl        int
+	prevMouse Vec2
 }
 
 // versionDDItem is the dropdown's observability seam: one entry per
@@ -734,6 +738,14 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 		dir := e.InstallDir
 		current := e.OptiScalerVersion
 		Popup(func() {
+			// Mouse-motion gate, once per popup frame: hover below adopts
+			// the highlight ONLY when the mouse actually moved since the
+			// last popup frame. A mouse resting over a row fires IsHovered
+			// on presence every frame and would overwrite the trigger's
+			// arrow-key move in the same frame; a MOVED mouse still wins
+			// (the intended mouse/keyboard sync).
+			mouseMoved := InputState.MousePoint != st.prevMouse
+			st.prevMouse = InputState.MousePoint
 			// Computed here, never on closed frames: Versions walks the
 			// bundle cache (see the I/O note above).
 			versions := m.sess.Versions(dir)
@@ -759,10 +771,11 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 					Container(Attrs(Row, Expand, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(2)), func() {
 						ticked := version.Compare(v, current) == 0
 						// Mouse/keyboard sync: hovering a row adopts it as
-						// the highlight, so the two input modes never fight;
-						// the highlighted row paints the hover accent even
-						// when the mouse is elsewhere.
-						if IsHovered() {
+						// the highlight, but only on mouse MOTION (see the
+						// gate above) — a stationary mouse must not fight
+						// the arrow keys; the highlighted row paints the
+						// hover accent even when the mouse is elsewhere.
+						if IsHovered() && mouseMoved {
 							st.hl = i
 						}
 						hl := i == st.hl
@@ -929,6 +942,12 @@ func (m *model) sortDropdown() {
 	})
 	if st.open {
 		Popup(func() {
+			// Mouse-motion gate, once per popup frame (versionDropdown's
+			// pattern): hover adopts the highlight only when the mouse
+			// actually moved, so a resting mouse cannot overwrite the
+			// trigger's arrow-key move in the same frame.
+			mouseMoved := InputState.MousePoint != st.prevMouse
+			st.prevMouse = InputState.MousePoint
 			triggerW := GetResolvedRectOf(st.btnID).Size[0]
 			Container(Attrs(MinWidth(triggerW), Corners(radiusS), Pad2(sp4, 0), Gap(2), Clip, BackgroundVec(bgPanel), BorderWidth(1), BorderColorVec(border), elevateOverlay), func() {
 				ModAttrs(FloatVec(dropdownPos(st.btnID)))
@@ -942,8 +961,8 @@ func (m *model) sortDropdown() {
 					}
 				}
 				m.sortMenuItems = m.sortMenuItems[:0]
-				m.sortItem(st, widgets.SymStar, "Default (actionable first)", ui.SortDefault, enterPick)
-				m.sortItem(st, 0, "Name (A–Z)", ui.SortName, enterPick)
+				m.sortItem(st, widgets.SymStar, "Default (actionable first)", ui.SortDefault, enterPick, mouseMoved)
+				m.sortItem(st, 0, "Name (A–Z)", ui.SortName, enterPick, mouseMoved)
 			})
 		})
 	}
@@ -965,13 +984,16 @@ func (m *model) sortDropdown() {
 // sortMenuItems seam, calling setSort and closing on a pick. The
 // highlighted row (keyboard or hover) paints the hover accent; enterPick
 // is the trigger's "Enter was pressed while open" signal and activates the
-// highlighted row exactly like a click.
-func (m *model) sortItem(st *dropdownState, icon rune, label string, mode ui.SortMode, enterPick bool) {
+// highlighted row exactly like a click. hoverAdopt is the popup frame's
+// mouse-motion gate: hover adopts the highlight only on actual mouse
+// motion, so a resting mouse cannot overwrite an arrow-key move.
+func (m *model) sortItem(st *dropdownState, icon rune, label string, mode ui.SortMode, enterPick, hoverAdopt bool) {
 	Container(Attrs(Row, Expand, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(2)), func() {
 		idx := len(m.sortMenuItems)
 		// Mouse/keyboard sync: hovering a row adopts it as the highlight,
-		// so the two input modes never fight.
-		if IsHovered() {
+		// but only on mouse MOTION — a stationary mouse must not fight
+		// the arrow keys.
+		if IsHovered() && hoverAdopt {
 			st.hl = idx
 		}
 		hl := idx == st.hl

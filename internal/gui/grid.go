@@ -280,7 +280,7 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 			case KeyTab:
 				// Panel Tab continuation: with the detail panel open for
 				// THIS card, Tab jumps straight to the panel's first
-				// focusable (its version-dropdown trigger, view.go's
+				// focusable (the header Close button, view.go's
 				// panelFirstID seam) instead of walking every remaining
 				// grid focusable — the focusables registry is
 				// render-ordered, so all cards sit between this card and

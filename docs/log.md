@@ -1792,3 +1792,13 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   (direct focus when the card's identity is fresh, deferred
   cardFocusPending when scrolled away). The closed-panel Tab walk and
   the panel-open focus retention are unchanged.
+
+- Reviewer round: menu hover now adopts the highlight only on mouse
+  MOTION (a stationary mouse over a row no longer defeats the arrow
+  keys; a moved mouse still wins). panelFirstID resets whenever the
+  panel is absent (a stale id could strand focus in a detached node on
+  reopen), and the panel jump target is the true first focusable in
+  render order — the header Close button — so Tab continuation works
+  for games without an OptiScaler pill too. Accepted cosmetic: a
+  transient ~2-frame double ring when clicking a card's button (focus
+  lands mid-frame; the last-frame suppression catches up next frame).

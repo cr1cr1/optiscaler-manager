@@ -756,6 +756,75 @@ func TestVersionDropdown_EscClosesDropdownBeforePanel(t *testing.T) {
 	t.Log("Esc closed the dropdown first, the panel second")
 }
 
+// TestVersionDropdown_HoverMovesHighlight: moving the mouse onto a row
+// adopts it as the highlight (the intended mouse→keyboard sync), and the
+// highlight sticks when the mouse leaves (no snap-back).
+func TestVersionDropdown_HoverMovesHighlight(t *testing.T) {
+	m, row, view := ddArrowSetup(t)
+	focusOpenDropdown(t, m, row.InstallDir, view)
+	n := len(m.versionDDItems)
+	if n < 2 {
+		t.Fatalf("need at least 2 rows, got %d", n)
+	}
+
+	// Move the mouse onto row 0's center: the highlight must follow.
+	r := m.versionDDItems[0].rect
+	if r.Size[0] == 0 {
+		t.Fatalf("dropdown row rect unresolved: %+v", r)
+	}
+	InputState.MousePoint = Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
+	keyFrame(KeyCodeNone, 0, view) // hover settles
+	keyFrame(KeyCodeNone, 0, view)
+	if got := versionHlIndex(t, m); got != 0 {
+		t.Errorf("highlight after hovering row 0 = row %d, want 0 (a moved mouse must adopt the hovered row)", got)
+	}
+
+	// Mouse leaves: the last highlight position sticks.
+	InputState.MousePoint = Vec2{-50, -50}
+	keyFrame(KeyCodeNone, 0, view)
+	if got := versionHlIndex(t, m); got != 0 {
+		t.Errorf("highlight after the mouse left = row %d, want 0 (last position sticks)", got)
+	}
+	t.Log("a moved mouse adopted the hovered row; the highlight stuck on leave")
+}
+
+// TestVersionDropdown_StationaryMouseKeepsKeyboardHighlight (reviewer
+// finding): with the mouse RESTING over row k — present but not moving —
+// the trigger's arrow-key move must win. The old hover-on-presence adoption
+// re-rendered the popup under the resting mouse and overwrote the arrow
+// move in the same frame, defeating keyboard navigation (and painting a
+// transient double highlight on wrap-around).
+func TestVersionDropdown_StationaryMouseKeepsKeyboardHighlight(t *testing.T) {
+	m, row, view := ddArrowSetup(t)
+	focusOpenDropdown(t, m, row.InstallDir, view)
+	n := len(m.versionDDItems)
+	if n < 2 {
+		t.Fatalf("need at least 2 rows, got %d", n)
+	}
+
+	// Move the mouse onto row 0 and let the hover adopt it (mouse motion is
+	// the intended sync); the mouse then stays EXACTLY there.
+	r := m.versionDDItems[0].rect
+	if r.Size[0] == 0 {
+		t.Fatalf("dropdown row rect unresolved: %+v", r)
+	}
+	InputState.MousePoint = Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
+	keyFrame(KeyCodeNone, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if got := versionHlIndex(t, m); got != 0 {
+		t.Fatalf("setup: hovering row 0 gave highlight row %d, want 0", got)
+	}
+
+	// Stationary mouse + Down: the arrow move must not be overwritten by
+	// the resting mouse's mere presence over row 0.
+	keyFrame(KeyDown, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if got := versionHlIndex(t, m); got != 1 {
+		t.Errorf("highlight after Down with a stationary mouse over row 0 = row %d, want 1 (keyboard must win against hover presence)", got)
+	}
+	t.Log("stationary mouse did not overwrite the arrow-key move")
+}
+
 // TestVersionDropdown_DetailPanelWired: the detail panel's pill row also
 // renders the dropdown trigger for an installed row.
 func TestVersionDropdown_DetailPanelWired(t *testing.T) {
