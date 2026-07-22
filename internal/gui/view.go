@@ -76,6 +76,29 @@ func (m *model) moveListSel(rows []ui.GameRow, d int) {
 	}
 }
 
+// moveGridSel moves the keyboard cursor by d cards (clamped at both ends)
+// and scrolls the cursor card's chunk into view. Shared by the global key
+// fallback and the focused grid wrapper so both paths behave identically.
+// The grid's virtual list keys items by chunk index (grid.go), so the
+// scroll target is the cursor card's chunk: selIdx/cols. In audit mode the
+// "grid" list does not exist and the scroll request simply expires.
+func (m *model) moveGridSel(rows []ui.GameRow, d int) {
+	m.selIdx += d
+	if m.selIdx < 0 {
+		m.selIdx = 0
+	}
+	if n := len(rows); n > 0 && m.selIdx >= n {
+		m.selIdx = n - 1
+	}
+	if len(rows) > 0 {
+		cols := m.cols
+		if cols < 1 {
+			cols = 1
+		}
+		VirtualListScrollIntoView("grid", m.selIdx/cols)
+	}
+}
+
 // toggleListDetail opens the detail panel for the selected row, or closes
 // it when the panel already shows that row (Enter toggles). Shared by the
 // global key fallback and the focused list wrapper.
@@ -117,40 +140,31 @@ func (m *model) handleGlobalKeys() {
 		cols = 1
 	}
 	listMode := m.state.Mode == ui.ViewList && !m.auditGrid
-	move := func(d int) {
-		m.selIdx += d
-		if m.selIdx < 0 {
-			m.selIdx = 0
-		}
-		if n := len(rows); n > 0 && m.selIdx >= n {
-			m.selIdx = n - 1
-		}
-	}
 	switch FrameInput.Key {
 	case KeyRight:
 		if listMode {
 			return
 		}
-		move(1)
+		m.moveGridSel(rows, 1)
 	case KeyLeft:
 		if listMode {
 			return
 		}
-		move(-1)
+		m.moveGridSel(rows, -1)
 	case KeyDown:
 		if listMode {
 			m.moveListSel(rows, 1)
 			FrameInput.Key = KeyCodeNone
 			return
 		}
-		move(cols)
+		m.moveGridSel(rows, cols)
 	case KeyUp:
 		if listMode {
 			m.moveListSel(rows, -1)
 			FrameInput.Key = KeyCodeNone
 			return
 		}
-		move(-cols)
+		m.moveGridSel(rows, -cols)
 	case KeyEnter:
 		m.toggleListDetail(rows)
 	case KeyEscape:

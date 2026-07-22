@@ -86,8 +86,14 @@ func gridItemCount(chunks int) int { return chunks + 1 }
 
 // gridView is the cover-card grid (the reference client's main view).
 // Columns and card size are recomputed from the live width each frame.
+// The Focusable wrapper makes the grid a single Tab stop: while focused it
+// draws the focus ring and owns the arrows/Enter (consumed so the global
+// fallback at frame end cannot double-fire); Tab/Shift-Tab always cycle
+// focus away. Individual cards are never Tab stops — the wrapper is the one
+// stop, and arrows move the cursor inside it.
 func (m *model) gridView() {
 	rows := m.visibleRows()
+	m.gridFocusRing = false
 	if len(rows) == 0 {
 		m.emptyState()
 		return
@@ -97,37 +103,80 @@ func (m *model) gridView() {
 		cols = 1
 	}
 	chunks := chunkRows(rows, cols)
-	VirtualListView("grid", gridItemCount(len(chunks)),
-		func(i int) any {
-			if i == len(chunks) {
-				return "spacer"
+	// Grow(1)+Expand are required: virtualized lists render nothing inside
+	// auto-sized wrappers (see the rootView comment). BorderWidth stays 1 so
+	// the focus ring never shifts card layout; only the color flips when
+	// focused.
+	Container(Attrs(Focusable, Grow(1), Expand, BorderWidth(1), BorderColorVec(Vec4{0, 0, 0, 0})), func() {
+		m.gridID = CurrentId()
+		// Card clicks set gridFocusPending because opening the detail panel
+		// re-nests this wrapper — shirei identities are path-scoped, so focus
+		// grabbed mid-click would be orphaned. Re-assert once, on the fresh id.
+		if m.gridFocusPending {
+			m.gridFocusPending = false
+			FocusImmediateOn(m.gridID)
+		}
+		CycleFocusOnTab()
+		FocusOnClick()
+		// HasFocus only reports the container currently being built — capture
+		// it here, at the wrapper (see the themedInput comment).
+		focused := HasFocus()
+		if focused {
+			m.gridFocusRing = true
+			ModAttrs(func(a *AttrSet) { a.BorderColor = focusBorder })
+			switch FrameInput.Key {
+			case KeyRight:
+				m.moveGridSel(rows, 1)
+				FrameInput.Key = KeyCodeNone
+			case KeyLeft:
+				m.moveGridSel(rows, -1)
+				FrameInput.Key = KeyCodeNone
+			case KeyDown:
+				m.moveGridSel(rows, cols)
+				FrameInput.Key = KeyCodeNone
+			case KeyUp:
+				m.moveGridSel(rows, -cols)
+				FrameInput.Key = KeyCodeNone
+			case KeyEnter:
+				m.toggleListDetail(rows)
+				FrameInput.Key = KeyCodeNone
 			}
-			return i
-		},
-		func(i int, w float32) float32 {
-			if i == len(chunks) {
-				return sp24
-			}
-			return float32(m.cardH) + 8
-		},
-		func(i int, w float32) {
-			if i == len(chunks) {
-				return
-			}
-			m.fitCards(int(w))
-			Container(Attrs(Row, Gap(cardGap), Pad2(0, rowPadH), MinSize(w, float32(m.cardH)), Clip), func() {
-				for j := range chunks[i] {
-					m.gameCard(chunks[i][j])
+		}
+		VirtualListView("grid", gridItemCount(len(chunks)),
+			func(i int) any {
+				if i == len(chunks) {
+					return "spacer"
 				}
+				return i
+			},
+			func(i int, w float32) float32 {
+				if i == len(chunks) {
+					return sp24
+				}
+				return float32(m.cardH) + 8
+			},
+			func(i int, w float32) {
+				if i == len(chunks) {
+					return
+				}
+				m.fitCards(int(w))
+				Container(Attrs(Row, Gap(cardGap), Pad2(0, rowPadH), MinSize(w, float32(m.cardH)), Clip), func() {
+					for j := range chunks[i] {
+						m.gameCard(chunks[i][j], i*cols+j)
+					}
+				})
 			})
-		})
+	})
 }
 
 // gameCard renders one cover card: platform pill, status badges, cover,
 // title, version pills, tech pills, and the install/launch buttons. Hover
 // lifts the card with an accent border and a soft shadow and records the
-// hovered game on the model.
-func (m *model) gameCard(e ui.GameRow) {
+// hovered game on the model. idx is the card's flat index into the visible
+// rows: when it matches the keyboard cursor the card wears the focus ring
+// instead (cursor wins over hover; both are 1.5px borders, so the ring
+// never shifts card geometry).
+func (m *model) gameCard(e ui.GameRow, idx int) {
 	cardW, cardH := m.cardW, m.cardH
 	coverW := float32(cardW - 2*cardPad)
 	m.tierPillRect = Rect{}
@@ -147,6 +196,19 @@ func (m *model) gameCard(e ui.GameRow) {
 			m.hoveredDir = ""
 		}
 		m.cardRect = GetScreenRectOf(CurrentId())
+		// The keyboard-cursor card wears the focusBorder ring; hover keeps the
+		// accent border. This ModAttrs runs after the hover one, so when both
+		// land on one card the cursor wins (a focused cursor must stay visible
+		// under the pointer). BorderWidth matches hover's 1.5 so the ring never
+		// shifts card layout. Grid cards deliberately get no selBg band: the
+		// docked detail panel is the selection indicator in grid mode.
+		if idx == m.selIdx {
+			m.gridCursorRect = m.cardRect
+			ModAttrs(func(a *AttrSet) {
+				a.BorderWidth = 1.5
+				a.BorderColor = focusBorder
+			})
+		}
 		Container(Attrs(Row, Gap(cardGapH)), func() {
 			if e.Platform != "" {
 				badgePill(e.Platform, ui.ToneGray)
@@ -209,6 +271,13 @@ func (m *model) gameCard(e ui.GameRow) {
 		overButtons := btnRowID != nil && IdIsHovered(btnRowID)
 		overDropdown := m.ddTriggerID != nil && IdIsHovered(m.ddTriggerID)
 		if !overButtons && !overDropdown && PressAction() && m.sess != nil {
+			// A card click is also a cursor move and a focus grab: the
+			// wrapper's FocusOnClick is hover-timing dependent, so the press
+			// sets both deterministically. The pending flag re-asserts focus
+			// after the panel re-nests the wrapper (see gridView).
+			m.selIdx = idx
+			FocusImmediateOn(m.gridID)
+			m.gridFocusPending = true
 			m.sess.Select(e.InstallDir)
 		}
 	})

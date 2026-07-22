@@ -57,6 +57,10 @@ type model struct {
 	listID              ContainerId                   // the list view's focusable wrapper (Tab focus nav test seam)
 	listFocusPending    bool                          // deferred row-click focus grab: consumed once by actionList with the wrapper's fresh identity
 	listFocusRing       bool                          // whether the list wrapper drew its focus ring on the last frame (focus ring test seam)
+	gridID              ContainerId                   // the grid view's focusable wrapper (Tab focus nav test seam, mirrors listID)
+	gridFocusPending    bool                          // deferred card-click focus grab: consumed once by gridView with the wrapper's fresh identity (mirrors listFocusPending)
+	gridFocusRing       bool                          // whether the grid wrapper drew its focus ring on the last frame (focus ring test seam, mirrors listFocusRing)
+	gridCursorRect      Rect                          // screen rect of the keyboard-cursor grid card (cursor chrome test seam, mirrors listSelRect)
 	cols                int                           // current grid columns, derived from live width
 	cardW               int                           // current card width in px, derived from live width
 	cardH               int                           // current card height in px

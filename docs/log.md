@@ -1738,3 +1738,14 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   library is empty, matching the segments' disabled guard). Focus is
   retained across toggles — the toolbar's identity is stable above the
   conditional detail-panel row.
+
+- Grid keyboard focus, mirroring the list model: the grid is one Tab
+  stop with a focus ring; while focused, arrows move the card cursor and
+  Enter opens the detail pane for the cursor card (consumed, no double
+  fire from the global fallback). Clicking a card moves the cursor onto
+  it and grabs grid focus, retained through the detail panel opening via
+  a deferred gridFocusPending re-assert (the panel re-nests the grid and
+  shirei identities are path-scoped). The cursor card shows a
+  focusBorder ring distinct from the hover accent; grid-mode arrows now
+  scroll the cursor card into view (previously list-only). Card layout
+  and geometry untouched.

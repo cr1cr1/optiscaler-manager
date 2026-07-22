@@ -381,8 +381,8 @@ func TestVersionDropdown_OneOpenAtATime(t *testing.T) {
 	view := func() {
 		Container(Attrs(Viewport, Row), func() {
 			m.fitCards(800)
-			m.gameCard(rowA)
-			m.gameCard(rowB)
+			m.gameCard(rowA, 0)
+			m.gameCard(rowB, 1)
 		})
 	}
 

@@ -450,17 +450,17 @@ func TestGUICardButtonsBottomAligned(t *testing.T) {
 	headlessFrames(t, 800, 600)
 	view := func() {
 		Container(Attrs(Viewport, Row), func() {
-			m.gameCard(withPills)
-			m.gameCard(bare)
+			m.gameCard(withPills, 0)
+			m.gameCard(bare, 1)
 		})
 	}
 	RunFrameFn(view) // build + resolve layout
 	var yA, yB float32
 	RunFrameFn(func() {
 		Container(Attrs(Viewport, Row), func() {
-			m.gameCard(withPills)
+			m.gameCard(withPills, 0)
 			yA = m.cardBtnRect.Origin[1]
-			m.gameCard(bare)
+			m.gameCard(bare, 1)
 			yB = m.cardBtnRect.Origin[1]
 		})
 	})

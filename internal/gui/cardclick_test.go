@@ -34,7 +34,7 @@ func cardView(m *model, row ui.GameRow) FrameFn {
 	return func() {
 		Container(Attrs(Viewport), func() {
 			m.fitCards(400)
-			m.gameCard(row)
+			m.gameCard(row, 0)
 		})
 	}
 }

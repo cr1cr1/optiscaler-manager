@@ -31,7 +31,7 @@ func TestTierBadge_RendersWhenPresent(t *testing.T) {
 	view := func() {
 		Container(Attrs(Viewport), func() {
 			m.fitCards(400)
-			m.gameCard(row)
+			m.gameCard(row, 0)
 		})
 	}
 	keyFrame(KeyCodeNone, 0, view) // build
