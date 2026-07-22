@@ -608,19 +608,25 @@ func launchable(e *ui.GameRow) bool {
 
 // dropdownState is one version dropdown's per-container state (a shirei
 // Use[T] hook, mirroring widgets/menu.go's MenuState): the open flag plus
-// the trigger and popup container ids the click-outside check needs.
+// the trigger and popup container ids the click-outside check needs. hl is
+// the keyboard-highlight row index; -1 means "re-initialize on the next
+// popup frame" (set on every open, so the highlight starts on the current
+// item and never leaks across opens).
 type dropdownState struct {
 	open   bool
 	btnID  ContainerId
 	menuID ContainerId
+	hl     int
 }
 
 // versionDDItem is the dropdown's observability seam: one entry per
-// rendered popup row (version, current-tick, screen rect for click tests).
+// rendered popup row (version, current-tick, screen rect for click tests,
+// keyboard highlight).
 type versionDDItem struct {
 	version string
 	ticked  bool
 	rect    Rect
+	hl      bool
 }
 
 // versionDropdown replaces the static OptiScaler version pill with a
@@ -663,6 +669,7 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 	}
 	// Trigger: badgePill geometry (Pad2(1, 6), FontSize 11) so the pill row
 	// height — and with it cardContentH — is untouched.
+	enterPick := false
 	Container(Attrs(Focusable, Row, CrossMid, Gap(sp4), Pad2(1, 6), Corners(radiusS), BackgroundVec(toneColor(tone))), func() {
 		CycleFocusOnTab()
 		FocusOnClick()
@@ -679,7 +686,31 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 				a.BorderWidth = 2
 				a.BorderColor = focusBorder
 			})
-			if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
+			if st.open {
+				// With the popup open the trigger owns menu navigation:
+				// Up/Down move the highlight (wrapping), Enter activates the
+				// highlighted row below, Space still toggles closed. All
+				// consumed so no frame-end fallback can also see them.
+				switch FrameInput.Key {
+				case KeyDown, KeyUp:
+					if n := len(m.versionDDItems); n > 0 {
+						if st.hl < 0 {
+							st.hl = 0
+						} else if FrameInput.Key == KeyDown {
+							st.hl = (st.hl + 1) % n
+						} else {
+							st.hl = (st.hl - 1 + n) % n
+						}
+						FrameInput.Key = KeyCodeNone
+					}
+				case KeyEnter:
+					FrameInput.Key = KeyCodeNone
+					enterPick = true
+				case KeySpace:
+					FrameInput.Key = KeyCodeNone
+					activated = true
+				}
+			} else if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
 				FrameInput.Key = KeyCodeNone
 				activated = true
 			}
@@ -693,6 +724,7 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 			st.open = !st.open
 			if st.open {
 				m.openDropdownDir = e.InstallDir
+				st.hl = -1 // re-initialize the highlight on the popup frame
 			} else if m.openDropdownDir == e.InstallDir {
 				m.openDropdownDir = ""
 			}
@@ -705,18 +737,37 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 			// Computed here, never on closed frames: Versions walks the
 			// bundle cache (see the I/O note above).
 			versions := m.sess.Versions(dir)
+			if st.hl < 0 {
+				// Open-time init: the highlight starts on the ticked
+				// (current version) row, 0 when nothing is ticked.
+				st.hl = 0
+				for i, v := range versions {
+					if version.Compare(v, current) == 0 {
+						st.hl = i
+						break
+					}
+				}
+			}
 			triggerW := GetResolvedRectOf(st.btnID).Size[0]
 			Container(Attrs(MinWidth(triggerW), MaxWidth(360), Corners(radiusS), Pad2(sp4, 0), Gap(2), Clip, BackgroundVec(bgPanel), BorderWidth(1), BorderColorVec(border), elevateOverlay), func() {
 				ModAttrs(FloatVec(dropdownPos(st.btnID)))
 				st.menuID = CurrentId()
 				m.versionDDItems = m.versionDDItems[:0]
 				m.versionDDItemsFor = dir
-				for _, v := range versions {
+				for i, v := range versions {
 					v := v
 					Container(Attrs(Row, Expand, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(2)), func() {
 						ticked := version.Compare(v, current) == 0
-						m.versionDDItems = append(m.versionDDItems, versionDDItem{version: v, ticked: ticked, rect: GetScreenRectOf(CurrentId())})
+						// Mouse/keyboard sync: hovering a row adopts it as
+						// the highlight, so the two input modes never fight;
+						// the highlighted row paints the hover accent even
+						// when the mouse is elsewhere.
 						if IsHovered() {
+							st.hl = i
+						}
+						hl := i == st.hl
+						m.versionDDItems = append(m.versionDDItems, versionDDItem{version: v, ticked: ticked, rect: GetScreenRectOf(CurrentId()), hl: hl})
+						if hl {
 							ModAttrs(BackgroundVec(accentHov))
 						}
 						// Fixed-width tick column keeps version labels aligned.
@@ -731,6 +782,16 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 								m.dispatchSwitchVersion(dir, v)
 							}
 							st.open = false // close either way (S13 no-op on current)
+						} else if enterPick && hl {
+							// Enter on the trigger picks the highlighted row:
+							// the same dispatch guard as the click pick above
+							// (S13 no-op on current), plus focus back on the
+							// trigger since keyboard focus never left it.
+							if version.Compare(v, current) != 0 {
+								m.dispatchSwitchVersion(dir, v)
+							}
+							st.open = false
+							FocusImmediateOn(st.btnID)
 						}
 					})
 				}
@@ -772,11 +833,12 @@ func dropdownPos(anchorID ContainerId) Vec2 {
 }
 
 // sortMenuItem is the sort dropdown's observability seam: one entry per
-// rendered popup row (label plus screen rect for click tests), mirroring
-// versionDDItem.
+// rendered popup row (label, screen rect for click tests, keyboard
+// highlight), mirroring versionDDItem.
 type sortMenuItem struct {
 	label string
 	rect  Rect
+	hl    bool
 }
 
 // sortDropdown replaces the toolbar's upstream MenuButtonExt sort control —
@@ -813,6 +875,7 @@ func (m *model) sortDropdown() {
 	if !st.open {
 		m.sortMenuItems = nil
 	}
+	enterPick := false
 	Container(Attrs(Focusable, Corners(6)), func() {
 		CycleFocusOnTab()
 		FocusOnClick()
@@ -825,7 +888,31 @@ func (m *model) sortDropdown() {
 				a.BorderWidth = 2
 				a.BorderColor = focusBorder
 			})
-			if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
+			if st.open {
+				// With the popup open the trigger owns menu navigation:
+				// Up/Down move the highlight (wrapping), Enter activates the
+				// highlighted row below, Space still toggles closed. All
+				// consumed so no frame-end fallback can also see them.
+				switch FrameInput.Key {
+				case KeyDown, KeyUp:
+					if n := len(m.sortMenuItems); n > 0 {
+						if st.hl < 0 {
+							st.hl = 0
+						} else if FrameInput.Key == KeyDown {
+							st.hl = (st.hl + 1) % n
+						} else {
+							st.hl = (st.hl - 1 + n) % n
+						}
+						FrameInput.Key = KeyCodeNone
+					}
+				case KeyEnter:
+					FrameInput.Key = KeyCodeNone
+					enterPick = true
+				case KeySpace:
+					FrameInput.Key = KeyCodeNone
+					activated = !disabled
+				}
+			} else if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
 				FrameInput.Key = KeyCodeNone
 				activated = !disabled
 			}
@@ -835,6 +922,9 @@ func (m *model) sortDropdown() {
 		}
 		if activated {
 			st.open = !st.open
+			if st.open {
+				st.hl = -1 // re-initialize the highlight on the popup frame
+			}
 		}
 	})
 	if st.open {
@@ -843,9 +933,17 @@ func (m *model) sortDropdown() {
 			Container(Attrs(MinWidth(triggerW), Corners(radiusS), Pad2(sp4, 0), Gap(2), Clip, BackgroundVec(bgPanel), BorderWidth(1), BorderColorVec(border), elevateOverlay), func() {
 				ModAttrs(FloatVec(dropdownPos(st.btnID)))
 				st.menuID = CurrentId()
+				if st.hl < 0 {
+					// Open-time init: the highlight starts on the current
+					// sort mode's row.
+					st.hl = 0
+					if m.state.Sort == ui.SortName {
+						st.hl = 1
+					}
+				}
 				m.sortMenuItems = m.sortMenuItems[:0]
-				m.sortItem(st, widgets.SymStar, "Default (actionable first)", ui.SortDefault)
-				m.sortItem(st, 0, "Name (A–Z)", ui.SortName)
+				m.sortItem(st, widgets.SymStar, "Default (actionable first)", ui.SortDefault, enterPick)
+				m.sortItem(st, 0, "Name (A–Z)", ui.SortName, enterPick)
 			})
 		})
 	}
@@ -863,19 +961,29 @@ func (m *model) sortDropdown() {
 	}
 }
 
-// sortItem is one row of the sort dropdown's popup: hover-highlighted,
-// recorded in the sortMenuItems seam, calling setSort and closing on a pick.
-func (m *model) sortItem(st *dropdownState, icon rune, label string, mode ui.SortMode) {
+// sortItem is one row of the sort dropdown's popup: recorded in the
+// sortMenuItems seam, calling setSort and closing on a pick. The
+// highlighted row (keyboard or hover) paints the hover accent; enterPick
+// is the trigger's "Enter was pressed while open" signal and activates the
+// highlighted row exactly like a click.
+func (m *model) sortItem(st *dropdownState, icon rune, label string, mode ui.SortMode, enterPick bool) {
 	Container(Attrs(Row, Expand, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(2)), func() {
-		m.sortMenuItems = append(m.sortMenuItems, sortMenuItem{label: label, rect: GetScreenRectOf(CurrentId())})
+		idx := len(m.sortMenuItems)
+		// Mouse/keyboard sync: hovering a row adopts it as the highlight,
+		// so the two input modes never fight.
 		if IsHovered() {
+			st.hl = idx
+		}
+		hl := idx == st.hl
+		m.sortMenuItems = append(m.sortMenuItems, sortMenuItem{label: label, rect: GetScreenRectOf(CurrentId()), hl: hl})
+		if hl {
 			ModAttrs(BackgroundVec(accentHov))
 		}
 		if icon != 0 {
 			widgets.Icon(icon, FontSize(12), TextColorVec(txtMain))
 		}
 		Label(label, FontSize(12), TextColorVec(txtMain))
-		if PressAction() {
+		if PressAction() || (enterPick && hl) {
 			m.setSort(mode)
 			st.open = false
 			// A pick is a click outside the trigger, so FocusOnClick blurred

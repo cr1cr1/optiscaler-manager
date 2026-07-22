@@ -411,6 +411,210 @@ func TestVersionDropdown_OneOpenAtATime(t *testing.T) {
 	t.Log("opening B's dropdown closed A's (one open at a time)")
 }
 
+// ddArrowSetup builds the standard single-external-row card view for
+// keyboard-navigation tests.
+func ddArrowSetup(t *testing.T) (*model, ui.GameRow, FrameFn) {
+	t.Helper()
+	sess, gameRoot := dropdownFakes(t)
+	markExternal(t, filepath.Join(gameRoot, "bin"), [4]uint16{0, 7, 0, 0})
+	row := scanExternalRow(t, sess)
+	m := newModel(Config{Session: sess})
+	headlessFrames(t, 400, 800)
+	InputState.MousePoint = Vec2{-50, -50}
+	return m, row, cardView(m, row)
+}
+
+// focusOpenDropdown Tabs to the card's version-dropdown trigger and opens
+// it with Enter, so arrow-key tests start from keyboard focus on the
+// trigger with the popup open and the highlight initialized.
+func focusOpenDropdown(t *testing.T, m *model, dir string, view FrameFn) {
+	t.Helper()
+	focusDDTrigger(t, m, view)
+	keyFrame(KeyEnter, 0, view)
+	keyFrame(KeyCodeNone, 0, view) // popup frame settles, highlight initializes
+	if m.versionDDItemsFor != dir {
+		t.Fatalf("Enter on the focused trigger did not open the dropdown for %q (owner %q)", dir, m.versionDDItemsFor)
+	}
+	if !IdHasFocus(m.ddTriggerID) {
+		t.Fatal("trigger lost keyboard focus on open")
+	}
+}
+
+// versionHlIndex returns the highlighted version-dropdown row index,
+// requiring exactly one highlighted row.
+func versionHlIndex(t *testing.T, m *model) int {
+	t.Helper()
+	found := -1
+	for i, it := range m.versionDDItems {
+		if it.hl {
+			if found >= 0 {
+				t.Fatalf("multiple highlighted rows (%d and %d)", found, i)
+			}
+			found = i
+		}
+	}
+	if found < 0 {
+		t.Fatalf("no highlighted row: %+v", m.versionDDItems)
+	}
+	return found
+}
+
+// TestVersionDropdown_InitialHighlightIsTicked: opening the dropdown
+// initializes the highlight on the ticked (current version) row.
+func TestVersionDropdown_InitialHighlightIsTicked(t *testing.T) {
+	m, row, view := ddArrowSetup(t)
+	focusOpenDropdown(t, m, row.InstallDir, view)
+
+	hl := versionHlIndex(t, m)
+	if !m.versionDDItems[hl].ticked {
+		t.Errorf("initial highlight on row %d (%q), want the ticked current version", hl, m.versionDDItems[hl].version)
+	}
+	t.Logf("initial highlight on the ticked row %d", hl)
+}
+
+// TestVersionDropdown_ArrowNavigatesHighlight: with the dropdown open and
+// the trigger focused, Down/Up move the highlight one row at a time and
+// wrap around both ends, dispatching nothing.
+func TestVersionDropdown_ArrowNavigatesHighlight(t *testing.T) {
+	m, row, view := ddArrowSetup(t)
+	var calls int
+	m.switchVersionFn = func(_, _ string) { calls++ }
+	focusOpenDropdown(t, m, row.InstallDir, view)
+	n := len(m.versionDDItems)
+	if n < 2 {
+		t.Fatalf("need at least 2 rows for arrow navigation, got %d", n)
+	}
+	start := versionHlIndex(t, m)
+
+	keyFrame(KeyDown, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if want := (start + 1) % n; versionHlIndex(t, m) != want {
+		t.Errorf("highlight after Down = row %d, want %d", versionHlIndex(t, m), want)
+	}
+	keyFrame(KeyUp, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if got := versionHlIndex(t, m); got != start {
+		t.Errorf("highlight after Up = row %d, want %d", got, start)
+	}
+
+	// Wrap both ways: Up from row 0 lands on the last row, Down from the
+	// last row lands back on row 0.
+	for versionHlIndex(t, m) != 0 {
+		keyFrame(KeyUp, 0, view)
+		keyFrame(KeyCodeNone, 0, view)
+	}
+	keyFrame(KeyUp, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if got := versionHlIndex(t, m); got != n-1 {
+		t.Errorf("Up from row 0 = row %d, want %d (wrap to the last row)", got, n-1)
+	}
+	keyFrame(KeyDown, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if got := versionHlIndex(t, m); got != 0 {
+		t.Errorf("Down from the last row = row %d, want 0 (wrap to the first row)", got)
+	}
+	if calls != 0 {
+		t.Errorf("arrow navigation dispatched %d SwitchVersion calls, want 0", calls)
+	}
+	if m.versionDDItemsFor != row.InstallDir {
+		t.Errorf("arrow navigation closed the dropdown (owner %q)", m.versionDDItemsFor)
+	}
+	t.Log("arrows move the highlight with wrap-around; nothing dispatched")
+}
+
+// TestVersionDropdown_EnterActivatesHighlighted: Enter on the focused
+// trigger with the dropdown open activates the highlighted row exactly
+// like a click pick — a non-ticked row dispatches SwitchVersion, the
+// ticked row is the S13 no-op — closing either way and returning focus to
+// the trigger.
+func TestVersionDropdown_EnterActivatesHighlighted(t *testing.T) {
+	t.Run("non-ticked row dispatches and closes", func(t *testing.T) {
+		m, row, view := ddArrowSetup(t)
+		type call struct{ dir, version string }
+		var calls []call
+		m.switchVersionFn = func(dir, version string) { calls = append(calls, call{dir, version}) }
+		focusOpenDropdown(t, m, row.InstallDir, view)
+
+		// Exactly one row is ticked, so one Down always lands non-ticked.
+		keyFrame(KeyDown, 0, view)
+		keyFrame(KeyCodeNone, 0, view)
+		picked := m.versionDDItems[versionHlIndex(t, m)]
+		if picked.ticked {
+			t.Fatalf("setup: Down landed on the ticked row (%q)", picked.version)
+		}
+
+		keyFrame(KeyEnter, 0, view)
+		keyFrame(KeyCodeNone, 0, view)
+		if len(calls) != 1 {
+			t.Fatalf("SwitchVersion dispatches %d, want 1", len(calls))
+		}
+		if calls[0].dir != row.InstallDir || calls[0].version != picked.version {
+			t.Errorf("SwitchVersion(%q, %q), want (%q, %q)", calls[0].dir, calls[0].version, row.InstallDir, picked.version)
+		}
+		if m.versionDDItemsFor != "" {
+			t.Errorf("dropdown still open after Enter (owner %q)", m.versionDDItemsFor)
+		}
+		if !IdHasFocus(m.ddTriggerID) {
+			t.Error("trigger lost keyboard focus after the Enter pick")
+		}
+		t.Logf("Enter dispatched the highlighted %q, closed, and returned focus", picked.version)
+	})
+
+	t.Run("ticked row is a no-op (S13)", func(t *testing.T) {
+		m, row, view := ddArrowSetup(t)
+		var calls int
+		m.switchVersionFn = func(_, _ string) { calls++ }
+		focusOpenDropdown(t, m, row.InstallDir, view)
+		if hl := versionHlIndex(t, m); !m.versionDDItems[hl].ticked {
+			t.Fatalf("setup: initial highlight on non-ticked row %d", hl)
+		}
+
+		keyFrame(KeyEnter, 0, view)
+		keyFrame(KeyCodeNone, 0, view)
+		if calls != 0 {
+			t.Errorf("Enter on the ticked row dispatched %d SwitchVersion calls, want 0 (S13)", calls)
+		}
+		if m.versionDDItemsFor != "" {
+			t.Errorf("dropdown still open after Enter on the ticked row (owner %q)", m.versionDDItemsFor)
+		}
+		if !IdHasFocus(m.ddTriggerID) {
+			t.Error("trigger lost keyboard focus after the no-op Enter")
+		}
+		t.Log("S13: Enter on the ticked row closed without dispatching")
+	})
+}
+
+// TestVersionDropdown_HighlightResetsOnReopen: the highlight re-initializes
+// on the ticked row at each open — a highlight moved with the arrows and
+// dismissed with Esc does not leak into the next open.
+func TestVersionDropdown_HighlightResetsOnReopen(t *testing.T) {
+	m, row, view := ddArrowSetup(t)
+	focusOpenDropdown(t, m, row.InstallDir, view)
+	ticked := versionHlIndex(t, m)
+
+	keyFrame(KeyDown, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if got := versionHlIndex(t, m); got == ticked {
+		t.Fatalf("setup: Down did not move the highlight off row %d", ticked)
+	}
+
+	keyFrame(KeyEscape, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if m.versionDDItemsFor != "" {
+		t.Fatalf("Esc did not close the dropdown (owner %q)", m.versionDDItemsFor)
+	}
+
+	keyFrame(KeyEnter, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if m.versionDDItemsFor != row.InstallDir {
+		t.Fatalf("reopen failed (owner %q)", m.versionDDItemsFor)
+	}
+	if got := versionHlIndex(t, m); got != ticked {
+		t.Errorf("highlight after reopen = row %d, want %d (the ticked row; re-initialized on open)", got, ticked)
+	}
+	t.Log("highlight re-initializes on the ticked row at each open")
+}
+
 // focusDDTrigger builds two frames and Tabs until the card's version
 // dropdown trigger holds keyboard focus (the trigger renders before the
 // card's buttons, so it is early in the tab cycle; the loop tolerates

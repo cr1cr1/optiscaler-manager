@@ -1762,3 +1762,12 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   edge and the chunk row's Clip sat flush with zero vertical padding,
   scissoring the top/bottom half-strokes — 1px of vertical row padding
   (spacing only, card geometry untouched).
+
+## 2026-07-22 — dropdown arrow nav + focus exclusivity
+
+- Both dropdowns are keyboard navigable: with the menu open and the
+  trigger focused, Up/Down move a highlight (wrapping), Enter activates
+  the highlighted item (reusing the exact click-pick path), and the
+  highlight initializes on the current item at each open (sort mode /
+  ticked version) and follows the mouse so input modes never fight.
+  Applies to the sort menu and the per-game version dropdown alike.

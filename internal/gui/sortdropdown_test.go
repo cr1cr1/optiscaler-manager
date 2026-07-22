@@ -81,6 +81,229 @@ func openSortDropdown(t *testing.T, m *model, view FrameFn) {
 	}
 }
 
+// focusOpenSortDropdown Tabs to the sort trigger and opens the dropdown
+// with Enter, so arrow-key tests start from keyboard focus on the trigger
+// with the popup open and the highlight initialized.
+func focusOpenSortDropdown(t *testing.T, m *model, view FrameFn) {
+	t.Helper()
+	focusSortTrigger(t, m, view)
+	keyFrame(KeyEnter, 0, view)
+	keyFrame(KeyCodeNone, 0, view) // popup frame settles, highlight initializes
+	if len(m.sortMenuItems) != 2 {
+		t.Fatalf("Enter on the focused trigger did not open the dropdown (items %d, want 2)", len(m.sortMenuItems))
+	}
+	if !IdHasFocus(m.sortTriggerID) {
+		t.Fatal("trigger lost keyboard focus on open")
+	}
+}
+
+// sortHlIndex returns the highlighted sort-menu row index, requiring
+// exactly one highlighted row.
+func sortHlIndex(t *testing.T, m *model) int {
+	t.Helper()
+	found := -1
+	for i, it := range m.sortMenuItems {
+		if it.hl {
+			if found >= 0 {
+				t.Fatalf("multiple highlighted sort rows (%d and %d)", found, i)
+			}
+			found = i
+		}
+	}
+	if found < 0 {
+		t.Fatalf("no highlighted sort row: %+v", m.sortMenuItems)
+	}
+	return found
+}
+
+// TestSortDropdown_InitialHighlightIsCurrentMode: opening the dropdown
+// initializes the highlight on the CURRENT sort mode's row — row 0 while
+// SortDefault is active, and the "Name (A–Z)" row after switching to
+// SortName and reopening.
+func TestSortDropdown_InitialHighlightIsCurrentMode(t *testing.T) {
+	sess, m, _ := sortPopulated(t)
+	focusOpenSortDropdown(t, m, m.rootView)
+	if got := sortHlIndex(t, m); got != 0 {
+		t.Errorf("initial highlight row %d, want 0 (current mode is SortDefault)", got)
+	}
+
+	// Switch to SortName via a mouse pick, then reopen: the highlight must
+	// initialize on the NEW current mode's row.
+	target := -1
+	for i, it := range m.sortMenuItems {
+		if it.label == "Name (A–Z)" {
+			target = i
+		}
+	}
+	if target < 0 {
+		t.Fatalf("no \"Name (A–Z)\" item offered: %+v", m.sortMenuItems)
+	}
+	clickRect(m.sortMenuItems[target].rect, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	m.drain()
+	if got := sess.Snapshot().Sort; got != ui.SortName {
+		t.Fatalf("sort after pick = %v, want %v", got, ui.SortName)
+	}
+	if m.state.Sort != ui.SortName {
+		t.Fatalf("model sort state %v, want %v after drain", m.state.Sort, ui.SortName)
+	}
+	if !IdHasFocus(m.sortTriggerID) {
+		t.Fatal("trigger lost focus after the pick; cannot reopen with Enter")
+	}
+	// Park the mouse off the popup so hover cannot move the highlight and
+	// mask a missing open-time init.
+	InputState.MousePoint = Vec2{-50, -50}
+	keyFrame(KeyEnter, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if len(m.sortMenuItems) != 2 {
+		t.Fatalf("reopen failed (items %d, want 2)", len(m.sortMenuItems))
+	}
+	if got := sortHlIndex(t, m); got != target {
+		t.Errorf("highlight after reopen = row %d, want %d (current mode is SortName)", got, target)
+	}
+	t.Log("highlight initializes on the current sort mode at each open")
+}
+
+// TestSortDropdown_ArrowNavigatesHighlight: with the dropdown open and the
+// trigger focused, Down/Up move the highlight one row at a time without
+// dispatching anything.
+func TestSortDropdown_ArrowNavigatesHighlight(t *testing.T) {
+	sess, m, _ := sortPopulated(t)
+	focusOpenSortDropdown(t, m, m.rootView)
+	if got := sortHlIndex(t, m); got != 0 {
+		t.Fatalf("initial highlight row %d, want 0", got)
+	}
+
+	keyFrame(KeyDown, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if got := sortHlIndex(t, m); got != 1 {
+		t.Errorf("highlight after Down = row %d, want 1", got)
+	}
+	keyFrame(KeyUp, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if got := sortHlIndex(t, m); got != 0 {
+		t.Errorf("highlight after Up = row %d, want 0", got)
+	}
+	if got := sess.Snapshot().Sort; got != ui.SortDefault {
+		t.Errorf("arrow navigation changed the sort to %v, want unchanged (no dispatch)", got)
+	}
+	if len(m.sortMenuItems) != 2 {
+		t.Errorf("arrow navigation closed the dropdown (items %d, want 2)", len(m.sortMenuItems))
+	}
+	t.Log("Down/Up moved the highlight one row at a time; nothing dispatched")
+}
+
+// TestSortDropdown_HighlightWraps: Up from the first row wraps to the last,
+// Down from the last row wraps to the first (no clamping).
+func TestSortDropdown_HighlightWraps(t *testing.T) {
+	_, m, _ := sortPopulated(t)
+	focusOpenSortDropdown(t, m, m.rootView)
+	if got := sortHlIndex(t, m); got != 0 {
+		t.Fatalf("initial highlight row %d, want 0", got)
+	}
+
+	keyFrame(KeyUp, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if got := sortHlIndex(t, m); got != 1 {
+		t.Errorf("Up from row 0 = row %d, want 1 (wrap to the last row)", got)
+	}
+	keyFrame(KeyDown, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if got := sortHlIndex(t, m); got != 0 {
+		t.Errorf("Down from the last row = row %d, want 0 (wrap to the first row)", got)
+	}
+	t.Log("highlight wraps around both ends")
+}
+
+// TestSortDropdown_HoverMovesHighlight: hovering a row with the mouse
+// adopts it as the highlight (input modes never fight), and the highlight
+// sticks when the mouse leaves.
+func TestSortDropdown_HoverMovesHighlight(t *testing.T) {
+	_, m, _ := sortPopulated(t)
+	focusOpenSortDropdown(t, m, m.rootView)
+	keyFrame(KeyDown, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if got := sortHlIndex(t, m); got != 1 {
+		t.Fatalf("setup: highlight after Down = row %d, want 1", got)
+	}
+
+	// Hover row 0 (no click): the highlight must follow the mouse.
+	r := m.sortMenuItems[0].rect
+	if r.Size[0] == 0 {
+		t.Fatalf("menu item rect unresolved: %+v", r)
+	}
+	InputState.MousePoint = Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
+	keyFrame(KeyCodeNone, 0, m.rootView) // hover settles
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if got := sortHlIndex(t, m); got != 0 {
+		t.Errorf("highlight after hovering row 0 = row %d, want 0 (mouse must move the highlight)", got)
+	}
+
+	// Mouse leaves: the last highlight position sticks (no snap-back).
+	InputState.MousePoint = Vec2{-50, -50}
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if got := sortHlIndex(t, m); got != 0 {
+		t.Errorf("highlight after the mouse left = row %d, want 0 (last position sticks)", got)
+	}
+	t.Log("hover moved the highlight; keyboard and mouse stay in sync")
+}
+
+// TestSortDropdown_EnterActivatesHighlighted: Enter on the focused trigger
+// with the dropdown open activates the highlighted row exactly like a
+// click pick: setSort fires, the menu closes, and focus returns to the
+// trigger.
+func TestSortDropdown_EnterActivatesHighlighted(t *testing.T) {
+	sess, m, _ := sortPopulated(t)
+	focusOpenSortDropdown(t, m, m.rootView)
+	keyFrame(KeyDown, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if got := sortHlIndex(t, m); got != 1 {
+		t.Fatalf("setup: highlight after Down = row %d, want 1 (\"Name (A–Z)\")", got)
+	}
+
+	keyFrame(KeyEnter, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if got := sess.Snapshot().Sort; got != ui.SortName {
+		t.Errorf("sort after Enter = %v, want %v (Enter must activate the highlighted row)", got, ui.SortName)
+	}
+	if len(m.sortMenuItems) != 0 {
+		t.Errorf("dropdown still open after Enter (items %d, want 0)", len(m.sortMenuItems))
+	}
+	if !IdHasFocus(m.sortTriggerID) {
+		t.Error("trigger lost keyboard focus after the Enter pick")
+	}
+	t.Log("Enter activated the highlighted row, closed, and returned focus")
+}
+
+// TestSortDropdown_HighlightResetsOnReopen: the highlight re-initializes on
+// the current mode's row at each open — a highlight moved with the arrows
+// and dismissed with Esc does not leak into the next open.
+func TestSortDropdown_HighlightResetsOnReopen(t *testing.T) {
+	_, m, _ := sortPopulated(t)
+	focusOpenSortDropdown(t, m, m.rootView)
+	keyFrame(KeyDown, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if got := sortHlIndex(t, m); got != 1 {
+		t.Fatalf("setup: highlight after Down = row %d, want 1", got)
+	}
+
+	keyFrame(KeyEscape, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if len(m.sortMenuItems) != 0 {
+		t.Fatalf("Esc did not close the dropdown (items %d)", len(m.sortMenuItems))
+	}
+
+	keyFrame(KeyEnter, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if len(m.sortMenuItems) != 2 {
+		t.Fatalf("reopen failed (items %d, want 2)", len(m.sortMenuItems))
+	}
+	if got := sortHlIndex(t, m); got != 0 {
+		t.Errorf("highlight after reopen = row %d, want 0 (re-initialized on the current mode)", got)
+	}
+	t.Log("highlight re-initializes on each open")
+}
+
 // TestSortDropdown_TriggerRendered: the toolbar renders the sort trigger
 // (seam set, rect resolved) and the closed menu exposes no items.
 func TestSortDropdown_TriggerRendered(t *testing.T) {
