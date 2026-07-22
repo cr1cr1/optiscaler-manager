@@ -1582,3 +1582,17 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   matching the GUI's quickLabel). Tests drive the real session flow
   (install at an older tag, retarget, rescan) because the games cache
   strips offers on load by design.
+
+## 2026-07-22 — v0.9.3: warm boot recomputes upgrade offers
+
+- Session.Start's warm-cache path now re-resolves the default version and
+  recomputes upgrade offers on the cached rows (async, EvOffersRefreshed
+  poke): the games cache strips offers on load as a stale-offer defense,
+  so before this fix a restarted app showed NO upgrade offers until a
+  manual rescan — reproducible on the real library (UNCHARTED committed
+  at 0.7.9 with default "latest"=v0.9.4 showed nothing). Offline behavior
+  matches scans: pinned defaults offer, "latest" stays silent.
+- The TUI upgrade badge now LEADS the badges cell: appended last it was
+  the first badge the fixed-width truncation ate on tech-heavy rows
+  (real-row evidence: "[DLSS] [DLSS-FG]…" with the offer invisible), so
+  "[↑v0.9.4]" now renders ahead of the tech badges.

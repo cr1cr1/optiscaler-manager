@@ -229,7 +229,9 @@ func TestDetailViewUpgradeHint(t *testing.T) {
 
 // TestGameRowLineUpgradeBadge: the games list surfaces an available
 // upgrade as a badge with the concrete target, so the offer is visible
-// without opening the detail screen.
+// without opening the detail screen. The badge leads the cell: on
+// badge-heavy rows (tech badges + ProtonDB tier) a trailing badge would
+// be truncated into the ellipsis and the offer would never be seen.
 func TestGameRowLineUpgradeBadge(t *testing.T) {
 	forceANSI(t)
 
@@ -240,15 +242,22 @@ func TestGameRowLineUpgradeBadge(t *testing.T) {
 		Platform:          "Steam",
 		Status:            domain.StatusCommitted,
 		OptiScalerVersion: "v0.9.4-test",
+		TechBadges:        []ui.Badge{{Label: "DLSS", Tone: ui.ToneGreen}},
 		UpgradeAvailable:  true,
-		UpgradeTarget:     "v0.10.0-test",
+		UpgradeTarget:     "v1.0.0",
 	}
 
 	line := m.gameRowLine(row, 20, 80, false)
 	t.Logf("rendered upgrade row: %q", line)
 	plain := sgrRE.ReplaceAllString(line, "")
-	if !strings.Contains(plain, "v0.10.0-test") {
+	if !strings.Contains(plain, "↑v1.0.0") {
 		t.Fatalf("upgrade target badge missing: %q", plain)
+	}
+	if !strings.Contains(plain, "DLSS") {
+		t.Fatalf("test fixture overflowed the badges cell; shorten it: %q", plain)
+	}
+	if strings.Index(plain, "↑v1.0.0") > strings.Index(plain, "DLSS") {
+		t.Errorf("upgrade badge trails the tech badges (truncation eats it on busy rows): %q", plain)
 	}
 	if rest := plain; strings.Contains(rest, "\x1b") {
 		t.Errorf("truncated escape sequence in rendered row: %q", line)

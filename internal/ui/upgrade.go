@@ -81,6 +81,40 @@ func (s *Session) refreshResolvedDefault(ctx context.Context, requested string) 
 	s.mu.Unlock()
 }
 
+// recomputeCachedOffers restores upgrade offers after a warm boot: the
+// games cache strips offers on load (stale-offer defense), so without a
+// recompute no upgrade would surface until the next manual scan. Resolves
+// the default exactly like a scan does (online: one bounded resolve;
+// offline: pinned tags only), then rewrites offers in place and pokes
+// frontends when anything changed.
+func (s *Session) recomputeCachedOffers(ctx context.Context) {
+	snap := s.Settings()
+	if snap.OnlineLookups {
+		s.refreshResolvedDefault(ctx, snap.DefaultVersion)
+	} else {
+		s.memoizePinnedDefault(snap.DefaultVersion)
+	}
+	resolved := s.resolvedDefault()
+	if resolved == "" {
+		return
+	}
+	s.mu.Lock()
+	changed := false
+	for i := range s.st.Rows {
+		avail, target := upgradeOffer(s.st.Rows[i].Status, s.st.Rows[i].OptiScalerVersion, resolved)
+		if s.st.Rows[i].UpgradeAvailable != avail || s.st.Rows[i].UpgradeTarget != target {
+			s.st.Rows[i].UpgradeAvailable = avail
+			s.st.Rows[i].UpgradeTarget = target
+			changed = true
+		}
+	}
+	s.mu.Unlock()
+	if changed {
+		s.persistCache()
+		s.emit(Event{Kind: EvOffersRefreshed})
+	}
+}
+
 // memoizePinnedDefault serves a pinned concrete default without the
 // network: an exact tag needs no resolution (gh would only exact-match
 // it), so with online lookups off the upgrade comparison can still run.

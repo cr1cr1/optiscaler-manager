@@ -56,6 +56,9 @@ const (
 	EvOpCancelled
 	EvConfirm
 	EvScanProgress
+	// EvOffersRefreshed pokes frontends after a warm boot recomputed
+	// upgrade offers on cached rows; the snapshot carries the change.
+	EvOffersRefreshed
 )
 
 // Scan progress phases, in pipeline order. "covers" includes the manual
@@ -415,6 +418,10 @@ func (s *Session) Start(ctx context.Context) {
 	s.st.StatusLine = fmt.Sprintf("%d games (cached)", len(rows))
 	s.st.Busy = ""
 	s.mu.Unlock()
+	// The cache stripped upgrade offers on load; recompute them now or no
+	// upgrade would surface until a manual rescan. Async: Start must not
+	// block on the resolve network call.
+	go s.recomputeCachedOffers(ctx)
 }
 
 // reconcileStatuses overrides cached row status from store manifests keyed

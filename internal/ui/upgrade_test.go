@@ -220,6 +220,39 @@ func installAt(t *testing.T, e *upgradeEnv) {
 	}
 }
 
+// TestWarmBootRecomputesUpgradeOffers: a restarted app boots warm from the
+// games cache, which strips upgrade offers on load (stale-offer defense).
+// Start must re-resolve the default and recompute offers on the cached
+// rows, or no upgrade is ever offered until a manual rescan.
+func TestWarmBootRecomputesUpgradeOffers(t *testing.T) {
+	e := newUpgradeEnv(t, "v0.9.4-test")
+	e.sess.deps.SettingsRoot = t.TempDir()
+	installAt(t, e)
+	e.sess.SetDefaultVersion("latest")
+	scanAndWait(t, e.sess)
+	if row := theRow(t, e.sess); !row.UpgradeAvailable || row.UpgradeTarget != "v0.10.0-test" {
+		t.Fatalf("precondition: row = %+v, want offer to v0.10.0-test", row)
+	}
+
+	// Restart: a fresh session over the same roots boots warm from cache.
+	restarted := NewSession(e.sess.deps)
+	restarted.resolveVersion = e.sess.resolveVersion
+	restarted.Start(context.Background())
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		rows := restarted.Snapshot().Rows
+		if len(rows) == 1 && rows[0].UpgradeAvailable && rows[0].UpgradeTarget == "v0.10.0-test" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("warm boot: rows = %+v, want recomputed offer to v0.10.0-test", rows)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Log("warm boot recomputes offers on cached rows")
+}
+
 // TestOfflinePinnedDefaultStillOffers: with online lookups off, a pinned
 // concrete default (an exact tag) needs no resolution, so the upgrade
 // comparison still runs — without touching the resolver seam. "latest"
