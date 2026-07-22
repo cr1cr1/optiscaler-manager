@@ -7,9 +7,6 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
-
-	"github.com/cr1cr1/optiscaler-manager/internal/domain"
-	"github.com/cr1cr1/optiscaler-manager/internal/version"
 )
 
 // resolvedDefaultFreshWindow mirrors the gh client's 15-minute rate-limit
@@ -31,8 +28,8 @@ var errOpBusy = errors.New("ui: operation already in progress")
 // resolvedDefault returns the memoized concrete tag the configured default
 // version resolved to, or "" when unknown: never resolved, resolution
 // failed (offline), or DefaultVersion changed since — a memo is only valid
-// for the exact configured value it was resolved from, so a stale target
-// can never be offered for a new setting.
+// for the exact configured value it was resolved from, so a stale tag can
+// never be served for a new setting.
 func (s *Session) resolvedDefault() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -49,7 +46,7 @@ func (s *Session) resolvedDefault() string {
 // once on the next scan. Failures are NOT memoized — the next scan
 // retries — and leave the memo keyed to the old value, which
 // resolvedDefault refuses to serve for the new one (safe offline
-// degradation: no target, no offer).
+// degradation: the memo stays empty for the new value).
 func (s *Session) refreshResolvedDefault(ctx context.Context, requested string) {
 	if requested == "" {
 		return
@@ -70,7 +67,7 @@ func (s *Session) refreshResolvedDefault(ctx context.Context, requested string) 
 	resolved, fresh, err := resolve(ctx, requested)
 	if err != nil {
 		log.Debug().Err(err).Str("requested", requested).
-			Msg("default version resolution failed; upgrade offers suppressed this scan")
+			Msg("default version resolution failed; memo left empty this scan")
 		return
 	}
 	s.mu.Lock()
@@ -81,44 +78,23 @@ func (s *Session) refreshResolvedDefault(ctx context.Context, requested string) 
 	s.mu.Unlock()
 }
 
-// recomputeCachedOffers restores upgrade offers after a warm boot: the
-// games cache strips offers on load (stale-offer defense), so without a
-// recompute no upgrade would surface until the next manual scan. Resolves
-// the default exactly like a scan does (online: one bounded resolve;
-// offline: pinned tags only), then rewrites offers in place and pokes
-// frontends when anything changed.
-func (s *Session) recomputeCachedOffers(ctx context.Context) {
+// warmBootResolveDefault populates the resolved-default memo after a warm
+// boot from the games cache, exactly like a scan would (online: one
+// bounded resolve; offline: pinned tags only) — the version dropdown
+// needs the memo before the next manual scan.
+func (s *Session) warmBootResolveDefault(ctx context.Context) {
 	snap := s.Settings()
 	if snap.OnlineLookups {
 		s.refreshResolvedDefault(ctx, snap.DefaultVersion)
 	} else {
 		s.memoizePinnedDefault(snap.DefaultVersion)
 	}
-	resolved := s.resolvedDefault()
-	if resolved == "" {
-		return
-	}
-	s.mu.Lock()
-	changed := false
-	for i := range s.st.Rows {
-		avail, target := upgradeOffer(s.st.Rows[i].Status, s.st.Rows[i].OptiScalerVersion, resolved)
-		if s.st.Rows[i].UpgradeAvailable != avail || s.st.Rows[i].UpgradeTarget != target {
-			s.st.Rows[i].UpgradeAvailable = avail
-			s.st.Rows[i].UpgradeTarget = target
-			changed = true
-		}
-	}
-	s.mu.Unlock()
-	if changed {
-		s.persistCache()
-		s.emit(Event{Kind: EvOffersRefreshed})
-	}
 }
 
 // memoizePinnedDefault serves a pinned concrete default without the
 // network: an exact tag needs no resolution (gh would only exact-match
-// it), so with online lookups off the upgrade comparison can still run.
-// "latest" is unresolvable offline — no memo, no offer. The memo is
+// it), so with online lookups off the resolved default is still known.
+// "latest" is unresolvable offline — no memo. The memo is
 // provisional (zero timestamp): refreshResolvedDefault re-resolves it
 // for real once lookups are back on, and defaultRecentlyResolved stays
 // false so installs keep their stale-cache consent semantics.
@@ -157,77 +133,4 @@ func (s *Session) defaultRecentlyResolved() bool {
 	return s.resolvedDefaultFresh &&
 		!s.resolvedDefaultAt.IsZero() &&
 		s.now().Sub(s.resolvedDefaultAt) < resolvedDefaultFreshWindow
-}
-
-// upgradeOffer computes a row's upgrade eligibility: a committed or
-// external install whose known version is older than the resolved default
-// gets the offer; everything else (unmanaged, failed/in-progress, unknown
-// installed version, unknown default, up-to-date) gets none.
-func upgradeOffer(status domain.Status, installed, resolvedDefault string) (bool, string) {
-	if installed == "" || resolvedDefault == "" {
-		return false, ""
-	}
-	if status != domain.StatusCommitted && status != domain.StatusExternal {
-		return false, ""
-	}
-	if version.Compare(installed, resolvedDefault) >= 0 {
-		return false, ""
-	}
-	return true, resolvedDefault
-}
-
-// Upgrade starts an upgrade of an eligible row. Committed rows chain
-// uninstall-then-install; external rows adopt-install directly. Ineligible
-// rows are a silent no-op (the offer raced a state change).
-func (s *Session) Upgrade(gameDir string) {
-	go s.doUpgrade(gameDir)
-}
-
-func (s *Session) doUpgrade(gameDir string) {
-	row := s.findRow(gameDir)
-	if row == nil || !row.UpgradeAvailable || row.UpgradeTarget == "" {
-		return
-	}
-	log.Info().Str("gameDir", gameDir).
-		Str("from", row.OptiScalerVersion).Str("to", row.UpgradeTarget).
-		Msg("upgrade started")
-	if row.Status == domain.StatusExternal {
-		// Adopt path: the install backs the external files up SHA-verified
-		// first — nothing is uninstalled, and a failed adopt keeps the
-		// usual failed-manifest + manual-rollback semantics.
-		_ = s.runInstall(gameDir, false, false)
-		return
-	}
-	if row.Status != domain.StatusCommitted {
-		return
-	}
-	// The installer refuses to install over a committed manifest, so the
-	// old build is uninstalled first and the new one installed right
-	// after. NOT ATOMIC: a crash (or a declined consent gate) between the
-	// two steps leaves the game with NO OptiScaler installed; the next
-	// scan shows it clean and installable.
-	if err := s.runUninstall(gameDir); err != nil {
-		return // already surfaced; the old build's state follows uninstall semantics
-	}
-	if s.upgradeGapHook != nil {
-		s.upgradeGapHook(gameDir)
-	}
-	err := s.runInstall(gameDir, false, false)
-	switch {
-	case err == nil, errors.Is(err, errInstallPaused), errors.Is(err, context.Canceled):
-		// Installed; paused for consent (AnswerConfirm resumes it as a
-		// plain install); or cancelled (the installer's cancel path
-		// already rolled back atomically).
-	default:
-		// Install failed AFTER the old build was removed — including
-		// errOpBusy (another op grabbed the game's slot in the
-		// finishOp→registerOp gap, so this leg never started): run the
-		// rollback/backup-restore path so no failed manifest or partial
-		// files linger. runRollback re-registers the slot, so a
-		// still-busy game refuses gracefully with a busy toast. The
-		// install-leg error toast already surfaced.
-		log.Warn().Err(err).Str("gameDir", gameDir).
-			Msg("upgrade: install failed after uninstall; rolling back")
-		s.runRollback(gameDir)
-	}
 }

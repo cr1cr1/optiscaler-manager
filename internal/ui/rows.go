@@ -52,13 +52,6 @@ type GameRow struct {
 	CompatPrefix      string       // Proton prefix (linux only); "" when absent
 	OptiScalerVersion string       // "" when not installed or unknown
 	Components        []string     // marketing names, e.g. ["DLSS 3.7.10","FSR 3.1.4"]
-
-	// Upgrade offer: set at scan time when the installed OptiScaler is
-	// older than the resolved default version (see upgrade.go). Frontends
-	// surface UpgradeTarget in the quick-action label; QuickInstall
-	// dispatches to the upgrade chain while UpgradeAvailable holds.
-	UpgradeAvailable bool
-	UpgradeTarget    string // concrete tag the upgrade installs; "" when not eligible
 }
 
 // SortMode selects the row ordering VisibleRows applies.

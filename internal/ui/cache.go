@@ -34,12 +34,7 @@ func gamesCachePath(root string) string { return filepath.Join(root, "games.json
 // stale-schema cache yields nil — never an error — so callers fall through
 // to a real scan. goos follows the launch.New idiom ("" = runtime.GOOS):
 // proton tiers are linux-only, so off-linux loads strip them in place (no
-// schema bump — the next save self-heals the file). Upgrade offers are
-// stripped on EVERY platform: they were computed from the resolved default
-// version at save time and can go stale while the app is closed (a changed
-// DefaultVersion or a newer release retargets them), and a warm boot
-// rehydrates rows without revalidation — the next scan recomputes
-// eligibility from a fresh memo.
+// schema bump — the next save self-heals the file).
 func loadGamesCache(root, goos string) []GameRow {
 	if goos == "" {
 		goos = runtime.GOOS
@@ -59,10 +54,6 @@ func loadGamesCache(root, goos string) []GameRow {
 	}
 	if c.Version != cacheSchemaVersion {
 		return nil
-	}
-	for i := range c.Rows {
-		c.Rows[i].UpgradeAvailable = false
-		c.Rows[i].UpgradeTarget = ""
 	}
 	if goos != "linux" {
 		for i := range c.Rows {

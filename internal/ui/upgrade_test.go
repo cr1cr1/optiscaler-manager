@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cr1cr1/optiscaler-manager/internal/app"
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
@@ -107,68 +106,56 @@ func theRow(t *testing.T, s *Session) GameRow {
 	return rows[0]
 }
 
-// TestToRowSetsUpgradeFields pins row-level eligibility: committed and
-// external rows with an installed version older than the resolved default
-// expose the offer; equal versions, unknown installed versions, unmanaged
-// rows, and an unknown (offline) resolved default never do.
-func TestToRowSetsUpgradeFields(t *testing.T) {
-	entry := func(status domain.Status, installed string) app.LibraryEntry {
-		return app.LibraryEntry{
-			Game:              domain.Game{Name: "Game", InstallDir: "/nonexistent"},
-			Status:            status,
-			OptiScalerVersion: installed,
-		}
-	}
-	sessWithDefault := func(resolved string) *Session {
-		sess := NewSession(Deps{})
-		sess.resolvedDefaultKey = sess.deps.Settings.DefaultVersion
-		sess.resolvedDefaultVersion = resolved
-		return sess
-	}
+// TestQuickInstallCommittedUninstalls: the one-click action on a committed
+// row UNINSTALLS — always, even when the resolved default is newer than the
+// installed build (the setup that once produced an upgrade offer). Version
+// changes belong to SwitchVersion; QuickInstall is the plain toggle.
+func TestQuickInstallCommittedUninstalls(t *testing.T) {
+	e := newUpgradeEnv(t, "v0.9.4-test")
+	installAt(t, e)
 
-	t.Run("committed older is eligible with target", func(t *testing.T) {
-		row := sessWithDefault("0.10.0").toRow(context.Background(), entry(domain.StatusCommitted, "0.9.4"))
-		if !row.UpgradeAvailable || row.UpgradeTarget != "0.10.0" {
-			t.Errorf("row = %+v, want eligible with target 0.10.0", row)
+	e.sess.SetDefaultVersion("latest")
+	scanAndWait(t, e.sess)
+
+	e.sess.QuickInstall(e.gameRoot)
+	ev := waitEvent(t, e.sess, EvOpDone)
+	if !strings.Contains(ev.Text, "Uninstalled") {
+		t.Fatalf("settle event = %q, want Uninstalled", ev.Text)
+	}
+	// The uninstall is the WHOLE op: no install leg may follow (the retired
+	// upgrade dispatch chained uninstall-then-install here).
+	drain := time.After(2 * time.Second)
+	for {
+		select {
+		case ev := <-e.sess.Events():
+			t.Logf("event: %v %q", ev.Kind, ev.Text)
+			if ev.Kind == EvOpDone {
+				t.Fatalf("second settle event %q: quick action dispatched an install leg, want plain uninstall", ev.Text)
+			}
+		case <-drain:
+			goto drained
 		}
-	})
-	t.Run("equal versions not eligible", func(t *testing.T) {
-		row := sessWithDefault("0.10.0").toRow(context.Background(), entry(domain.StatusCommitted, "0.10.0"))
-		if row.UpgradeAvailable {
-			t.Errorf("row = %+v, want not eligible (installed == default)", row)
-		}
-	})
-	t.Run("external older is eligible", func(t *testing.T) {
-		row := sessWithDefault("0.10.0").toRow(context.Background(), entry(domain.StatusExternal, "0.9.4"))
-		if !row.UpgradeAvailable || row.UpgradeTarget != "0.10.0" {
-			t.Errorf("row = %+v, want eligible with target 0.10.0", row)
-		}
-	})
-	t.Run("not installed not eligible", func(t *testing.T) {
-		row := sessWithDefault("0.10.0").toRow(context.Background(), entry(domain.Status(""), ""))
-		if row.UpgradeAvailable {
-			t.Errorf("row = %+v, want not eligible (never installed)", row)
-		}
-	})
-	t.Run("unknown installed version not eligible", func(t *testing.T) {
-		row := sessWithDefault("0.10.0").toRow(context.Background(), entry(domain.StatusCommitted, ""))
-		if row.UpgradeAvailable {
-			t.Errorf("row = %+v, want not eligible (installed version unknown)", row)
-		}
-	})
-	t.Run("unknown resolved default degrades safe", func(t *testing.T) {
-		row := sessWithDefault("").toRow(context.Background(), entry(domain.StatusCommitted, "0.9.4"))
-		if row.UpgradeAvailable {
-			t.Errorf("row = %+v, want not eligible (resolved default unknown, offline)", row)
-		}
-	})
+	}
+drained:
+	row := theRow(t, e.sess)
+	if row.Status != "" {
+		t.Fatalf("row status = %q after quick action, want clean (uninstalled)", row.Status)
+	}
+	manifests, err := e.store.List()
+	if err != nil || len(manifests) != 0 {
+		t.Fatalf("manifests = %d, err %v; want 0 (uninstalled)", len(manifests), err)
+	}
+	if _, err := os.Stat(filepath.Join(e.bin, "dxgi.dll")); !os.IsNotExist(err) {
+		t.Errorf("dxgi.dll still present after quick uninstall: err=%v", err)
+	}
+	t.Log("quick action on a committed row uninstalled; no upgrade dispatched")
 }
 
 // TestResolvedDefaultCachedOnce: the default version is resolved through
 // the seam exactly once per distinct configured value — two scans share
 // one resolution, changing Settings.DefaultVersion re-resolves once, and
 // a failed resolution is NOT memoized (the next scan retries) while
-// suppressing offers (safe offline degradation).
+// leaving the memo empty (safe offline degradation).
 func TestResolvedDefaultCachedOnce(t *testing.T) {
 	e := newUpgradeEnv(t, "latest")
 
@@ -199,13 +186,13 @@ func TestResolvedDefaultCachedOnce(t *testing.T) {
 		t.Fatalf("resolves after offline scan = %d, want 3", got)
 	}
 	if got := e.sess.resolvedDefault(); got != "" {
-		t.Fatalf("resolved default offline = %q, want empty (offers suppressed)", got)
+		t.Fatalf("resolved default offline = %q, want empty (memo unserved)", got)
 	}
 	scanAndWait(t, e.sess)
 	if got := e.resolves.Load(); got != 4 {
 		t.Fatalf("resolves after second offline scan = %d, want 4 (failure not memoized)", got)
 	}
-	t.Log("default resolved once per value; failures retry; offline suppresses offers")
+	t.Log("default resolved once per value; failures retry; offline leaves the memo empty")
 }
 
 // installAt pins the library at an installed version: scan, quick-install,
@@ -220,54 +207,52 @@ func installAt(t *testing.T, e *upgradeEnv) {
 	}
 }
 
-// TestWarmBootRecomputesUpgradeOffers: a restarted app boots warm from the
-// games cache, which strips upgrade offers on load (stale-offer defense).
-// Start must re-resolve the default and recompute offers on the cached
-// rows, or no upgrade is ever offered until a manual rescan.
-func TestWarmBootRecomputesUpgradeOffers(t *testing.T) {
+// TestWarmBootResolvesDefault: a restarted app boots warm from the games
+// cache and no scan runs — Start must still resolve the default version so
+// the resolvedDefault memo is populated (the version dropdown reads it)
+// without waiting for a manual rescan.
+func TestWarmBootResolvesDefault(t *testing.T) {
 	e := newUpgradeEnv(t, "v0.9.4-test")
 	e.sess.deps.SettingsRoot = t.TempDir()
 	installAt(t, e)
 	e.sess.SetDefaultVersion("latest")
 	scanAndWait(t, e.sess)
-	if row := theRow(t, e.sess); !row.UpgradeAvailable || row.UpgradeTarget != "v0.10.0-test" {
-		t.Fatalf("precondition: row = %+v, want offer to v0.10.0-test", row)
-	}
 
 	// Restart: a fresh session over the same roots boots warm from cache.
 	restarted := NewSession(e.sess.deps)
 	restarted.resolveVersion = e.sess.resolveVersion
 	restarted.Start(context.Background())
+	if rows := restarted.Snapshot().Rows; len(rows) != 1 {
+		t.Fatalf("warm boot rows = %d, want 1 (hydrated from cache, no scan)", len(rows))
+	}
 
+	before := e.resolves.Load()
 	deadline := time.Now().Add(5 * time.Second)
-	for {
-		rows := restarted.Snapshot().Rows
-		if len(rows) == 1 && rows[0].UpgradeAvailable && rows[0].UpgradeTarget == "v0.10.0-test" {
-			break
-		}
+	for restarted.resolvedDefault() != "v0.10.0-test" {
 		if time.Now().After(deadline) {
-			t.Fatalf("warm boot: rows = %+v, want recomputed offer to v0.10.0-test", rows)
+			t.Fatalf("warm boot: resolved default = %q, want v0.10.0-test (memo populated)",
+				restarted.resolvedDefault())
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Log("warm boot recomputes offers on cached rows")
+	if got := e.resolves.Load() - before; got != 1 {
+		t.Fatalf("resolves during warm boot = %d, want 1", got)
+	}
+	t.Log("warm boot resolves the default without a manual scan")
 }
 
-// TestOfflinePinnedDefaultStillOffers: with online lookups off, a pinned
-// concrete default (an exact tag) needs no resolution, so the upgrade
-// comparison still runs — without touching the resolver seam. "latest"
-// stays unresolvable offline: no memo, no offer, no network. And the
-// provisional offline memo must NOT block real resolution once lookups
-// are back on.
-func TestOfflinePinnedDefaultStillOffers(t *testing.T) {
+// TestOfflinePinnedDefaultStillResolves: with online lookups off, a pinned
+// concrete default (an exact tag) needs no resolution, so the memo is
+// populated without touching the resolver seam — and the provisional
+// offline memo must NOT block real resolution once lookups are back on.
+func TestOfflinePinnedDefaultStillResolves(t *testing.T) {
 	e := newUpgradeEnvLookups(t, "v0.9.4-test", false)
 	installAt(t, e)
 
 	e.sess.SetDefaultVersion("v0.10.0-test")
 	scanAndWait(t, e.sess)
-	row := theRow(t, e.sess)
-	if !row.UpgradeAvailable || row.UpgradeTarget != "v0.10.0-test" {
-		t.Fatalf("offline pinned: row = %+v, want offer to v0.10.0-test", row)
+	if got := e.sess.resolvedDefault(); got != "v0.10.0-test" {
+		t.Fatalf("offline pinned: resolved default = %q, want v0.10.0-test", got)
 	}
 	if got := e.resolves.Load(); got != 0 {
 		t.Fatalf("resolves = %d, want 0 (offline scan must not resolve)", got)
@@ -278,317 +263,56 @@ func TestOfflinePinnedDefaultStillOffers(t *testing.T) {
 	if got := e.resolves.Load(); got != 1 {
 		t.Fatalf("resolves after going back online = %d, want 1 (provisional memo re-resolved)", got)
 	}
-	t.Log("offline pinned default offers without network; online re-resolves")
+	t.Log("offline pinned default resolves without network; online re-resolves")
 }
 
-// TestOfflineLatestDefaultOffersNothing: "latest" cannot be resolved
-// without the network, so an offline scan produces no memo and no offer —
-// and must not try (the resolver seam stays untouched).
-func TestOfflineLatestDefaultOffersNothing(t *testing.T) {
+// TestOfflineLatestDefaultResolvesNothing: "latest" cannot be resolved
+// without the network, so an offline scan produces no memo — and must not
+// try (the resolver seam stays untouched).
+func TestOfflineLatestDefaultResolvesNothing(t *testing.T) {
 	e := newUpgradeEnvLookups(t, "v0.9.4-test", false)
 	installAt(t, e)
 
 	e.sess.SetDefaultVersion("latest")
 	scanAndWait(t, e.sess)
-	if row := theRow(t, e.sess); row.UpgradeAvailable {
-		t.Fatalf("offline latest: row = %+v, want no offer", row)
+	if got := e.sess.resolvedDefault(); got != "" {
+		t.Fatalf("offline latest: resolved default = %q, want empty (no memo)", got)
 	}
 	if got := e.resolves.Load(); got != 0 {
 		t.Fatalf("resolves = %d, want 0 (offline scan must not resolve)", got)
 	}
-	t.Log("offline latest: no offer, no resolution attempt")
+	t.Log("offline latest: no memo, no resolution attempt")
 }
 
-// TestSetDefaultVersionClearsStaleOffers: changing the default version
-// invalidates every live offer instantly — the row caption promises a
-// target, and doUpgrade installs the CURRENT default, so a stale caption
-// would lie (offer old target, install new one). Offers are recomputed on
-// the next scan against the re-resolved default. Re-writing the SAME value
-// is a no-op: offers survive.
-func TestSetDefaultVersionClearsStaleOffers(t *testing.T) {
+// TestSetDefaultVersionInvalidatesMemo: changing the default version
+// invalidates the resolved-default memo instantly — it is keyed by the
+// configured value, so the old tag is never served for the new setting —
+// and the next scan re-resolves against the new value. Re-writing the SAME
+// value is a no-op: the memo survives, no re-resolution.
+func TestSetDefaultVersionInvalidatesMemo(t *testing.T) {
 	e := newUpgradeEnv(t, "v0.9.4-test")
 	installAt(t, e)
 
 	e.sess.SetDefaultVersion("latest")
 	scanAndWait(t, e.sess)
-	if row := theRow(t, e.sess); !row.UpgradeAvailable {
-		t.Fatalf("precondition: row = %+v, want upgrade offer", row)
+	if got := e.sess.resolvedDefault(); got != "v0.10.0-test" {
+		t.Fatalf("precondition: resolved default = %q, want v0.10.0-test", got)
 	}
 
 	e.sess.SetDefaultVersion("v0.9.4-test")
-	if row := theRow(t, e.sess); row.UpgradeAvailable || row.UpgradeTarget != "" {
-		t.Fatalf("row after default change = %+v, want offer cleared immediately", row)
+	if got := e.sess.resolvedDefault(); got != "" {
+		t.Fatalf("resolved default after change = %q, want empty (memo keyed to the old value)", got)
 	}
-
-	e.sess.SetDefaultVersion("latest")
-	scanAndWait(t, e.sess)
-	if row := theRow(t, e.sess); !row.UpgradeAvailable {
-		t.Fatalf("precondition: row = %+v, want upgrade offer again", row)
-	}
-	e.sess.SetDefaultVersion("latest")
-	if row := theRow(t, e.sess); !row.UpgradeAvailable {
-		t.Fatalf("same-value SetDefaultVersion cleared the offer: %+v", row)
-	}
-	t.Log("default change clears live offers; same-value write keeps them")
-}
-
-// TestUpgradeCommittedChainsUninstallThenInstall: upgrading a committed row
-// removes the old build first and only then installs the resolved default —
-// the events surface in that order and the final manifest records the
-// upgrade target.
-func TestUpgradeCommittedChainsUninstallThenInstall(t *testing.T) {
-	e := newUpgradeEnv(t, "v0.9.4-test")
-	installAt(t, e)
-
-	e.sess.SetDefaultVersion("latest")
-	scanAndWait(t, e.sess)
-	row := theRow(t, e.sess)
-	if !row.UpgradeAvailable || row.UpgradeTarget != "v0.10.0-test" {
-		t.Fatalf("row after retarget = %+v, want eligible for v0.10.0-test", row)
-	}
-	t.Logf("eligible: installed %q -> target %q", row.OptiScalerVersion, row.UpgradeTarget)
-
-	e.sess.Upgrade(e.gameRoot)
-	ev := waitEvent(t, e.sess, EvOpDone)
-	if !strings.Contains(ev.Text, "Uninstalled") {
-		t.Fatalf("first settle event = %q, want the uninstall leg first", ev.Text)
-	}
-	ev = waitEvent(t, e.sess, EvOpDone)
-	if !strings.Contains(ev.Text, "Installed") {
-		t.Fatalf("second settle event = %q, want the install leg second", ev.Text)
-	}
-
-	row = theRow(t, e.sess)
-	if row.Status != domain.StatusCommitted {
-		t.Fatalf("row status after upgrade = %q, want committed", row.Status)
-	}
-	if row.UpgradeAvailable {
-		t.Errorf("row still offers an upgrade after upgrading: %+v", row)
-	}
-	manifests, err := e.store.List()
-	if err != nil || len(manifests) != 1 {
-		t.Fatalf("manifests = %d, err %v; want 1", len(manifests), err)
-	}
-	if manifests[0].Resolved.Version != "v0.10.0-test" {
-		t.Errorf("manifest version = %q, want v0.10.0-test", manifests[0].Resolved.Version)
-	}
-	t.Log("committed upgrade: uninstall settled before install; manifest at target")
-}
-
-// TestUpgradeExternalInstallsDirectly: an external row is never uninstalled
-// (the manager does not own it); Upgrade goes straight to the adopt
-// install, which backs the external files up SHA-verified.
-func TestUpgradeExternalInstallsDirectly(t *testing.T) {
-	e := newUpgradeEnv(t, "latest")
-	marker := writeExternalMarker(t, e.bin)
 
 	scanAndWait(t, e.sess)
-	row := theRow(t, e.sess)
-	if row.Status != domain.StatusExternal {
-		t.Fatalf("row status = %q, want external", row.Status)
+	if got := e.sess.resolvedDefault(); got != "v0.9.4-test" {
+		t.Fatalf("resolved default after rescan = %q, want v0.9.4-test", got)
 	}
-	if !row.UpgradeAvailable || row.UpgradeTarget != "v0.10.0-test" {
-		t.Fatalf("external row = %+v, want eligible for v0.10.0-test", row)
-	}
-	t.Logf("external version %q eligible for %q", row.OptiScalerVersion, row.UpgradeTarget)
-
-	e.sess.Upgrade(e.gameRoot)
-	ev := waitEvent(t, e.sess, EvOpDone)
-	if !strings.Contains(ev.Text, "Installed") {
-		t.Fatalf("settle event = %q, want a direct install (no uninstall leg)", ev.Text)
-	}
-	for _, toast := range e.sess.Snapshot().Toasts {
-		if strings.Contains(toast.Text, "Uninstalled") || strings.Contains(toast.Text, notManagedRefusal) {
-			t.Fatalf("external upgrade touched the uninstall path: %q", toast.Text)
-		}
-	}
-
-	row = theRow(t, e.sess)
-	if row.Status != domain.StatusCommitted {
-		t.Fatalf("row status after adopt-upgrade = %q, want committed", row.Status)
-	}
-	manifests, err := e.store.List()
-	if err != nil || len(manifests) != 1 {
-		t.Fatalf("manifests = %d, err %v; want 1", len(manifests), err)
-	}
-	// The adopt path's backup holds the exact external bytes.
-	backup := filepath.Join(e.store.BackupDir(manifests[0].ID), "files", "dxgi.dll")
-	data, err := os.ReadFile(backup)
-	if err != nil {
-		t.Fatalf("external backup missing: %v", err)
-	}
-	if string(data) != string(marker) {
-		t.Error("external backup bytes differ from the planted marker")
-	}
-	t.Log("external upgrade: direct adopt install, external bytes SHA-backed-up, no uninstall")
-}
-
-// TestQuickInstallDispatchesUpgradeWhenEligible: on an eligible committed
-// row the one-click action must UPGRADE — not run the plain toggle, which
-// would leave the game with no OptiScaler at all.
-func TestQuickInstallDispatchesUpgradeWhenEligible(t *testing.T) {
-	e := newUpgradeEnv(t, "v0.9.4-test")
-	installAt(t, e)
-
-	e.sess.SetDefaultVersion("latest")
+	before := e.resolves.Load()
+	e.sess.SetDefaultVersion("v0.9.4-test")
 	scanAndWait(t, e.sess)
-	if row := theRow(t, e.sess); !row.UpgradeAvailable {
-		t.Fatalf("row = %+v, want eligible", row)
+	if got := e.resolves.Load() - before; got != 0 {
+		t.Fatalf("same-value SetDefaultVersion triggered %d re-resolves, want 0", got)
 	}
-
-	e.sess.QuickInstall(e.gameRoot)
-	ev := waitEvent(t, e.sess, EvOpDone)
-	if !strings.Contains(ev.Text, "Uninstalled") {
-		t.Fatalf("first settle = %q, want upgrade chain (uninstall leg)", ev.Text)
-	}
-	ev = waitEvent(t, e.sess, EvOpDone)
-	if !strings.Contains(ev.Text, "Installed") {
-		t.Fatalf("second settle = %q, want upgrade chain (install leg)", ev.Text)
-	}
-
-	// The plain toggle would have stopped after the uninstall; the upgrade
-	// dispatch leaves a working new install instead.
-	if _, err := os.Stat(filepath.Join(e.bin, "dxgi.dll")); err != nil {
-		t.Fatalf("dxgi.dll missing after quick action — the toggle uninstalled instead of upgrading: %v", err)
-	}
-	if row := theRow(t, e.sess); row.Status != domain.StatusCommitted {
-		t.Fatalf("row status = %q after quick upgrade, want committed", row.Status)
-	}
-	t.Log("quick action on an eligible row upgraded (uninstall+install), game left installed")
-}
-
-// TestUpgradeInstallLegBusyTriggersRollbackCleanup: when another op grabs
-// the game's op slot in the finishOp→registerOp gap between the uninstall
-// and install legs, the install leg never starts (errOpBusy) — but the
-// uninstall leg already completed, so treating that as graceful would
-// leave the game with no OptiScaler and no rollback attempt. The busy
-// outcome must route through the same runRollback cleanup as any other
-// install-leg failure; while the competing op still holds the slot the
-// rollback attempt refuses gracefully (a second busy toast) instead of
-// silently returning.
-func TestUpgradeInstallLegBusyTriggersRollbackCleanup(t *testing.T) {
-	e := newUpgradeEnv(t, "v0.9.4-test")
-	installAt(t, e)
-
-	e.sess.SetDefaultVersion("latest")
-	scanAndWait(t, e.sess)
-	if row := theRow(t, e.sess); !row.UpgradeAvailable {
-		t.Fatalf("row = %+v, want eligible", row)
-	}
-
-	// Occupy the game's op slot the moment the uninstall leg releases it,
-	// so the install leg's registerOp fails with errOpBusy. The hook runs
-	// inside doUpgrade between the legs; grabbing the slot there is
-	// exactly the real-world race, made deterministic.
-	const busyToast = "operation already in progress for this game"
-	e.sess.upgradeGapHook = func(gameDir string) {
-		if _, ok := e.sess.registerOp(gameDir); !ok {
-			t.Errorf("gap hook: op slot not free after the uninstall leg")
-		}
-	}
-	t.Cleanup(func() { e.sess.finishOp(e.gameRoot) })
-
-	e.sess.Upgrade(e.gameRoot)
-	ev := waitEvent(t, e.sess, EvOpDone)
-	if !strings.Contains(ev.Text, "Uninstalled") {
-		t.Fatalf("first settle = %q, want the uninstall leg", ev.Text)
-	}
-	waitToast(t, e.sess, busyToast) // install leg refused: errOpBusy
-
-	// The fix routes errOpBusy through runRollback, which must ATTEMPT the
-	// cleanup; the test's competing op still holds the slot, so the
-	// attempt surfaces as a SECOND busy toast (registerOp refused).
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		n := 0
-		for _, toast := range e.sess.Snapshot().Toasts {
-			if strings.Contains(toast.Text, busyToast) {
-				n++
-			}
-		}
-		if n >= 2 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("rollback cleanup never attempted after errOpBusy; toasts: %+v",
-				e.sess.Snapshot().Toasts)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	// The game sits in the honest post-uninstall state: no OptiScaler
-	// files, no manifest, row clean — the competing op owns any further
-	// action on it.
-	manifests, err := e.store.List()
-	if err != nil || len(manifests) != 0 {
-		t.Errorf("manifests = %d, err %v; want 0 (uninstalled, install never started)", len(manifests), err)
-	}
-	if row := theRow(t, e.sess); row.Status != "" {
-		t.Errorf("row status = %q, want clean (post-uninstall)", row.Status)
-	}
-	if _, err := os.Stat(filepath.Join(e.bin, "dxgi.dll")); !os.IsNotExist(err) {
-		t.Errorf("dxgi.dll present after busy install leg: err=%v", err)
-	}
-	t.Log("install leg busy: rollback cleanup attempted (second busy toast), game left clean")
-}
-
-// TestUpgradeInstallFailureRestoresBackup: when the install leg fails after
-// the old build was already uninstalled, the rollback/backup-restore path
-// runs and an error toast surfaces — no failed manifest, no partial files,
-// no silent half-state.
-func TestUpgradeInstallFailureRestoresBackup(t *testing.T) {
-	e := newUpgradeEnv(t, "v0.9.4-test")
-	installAt(t, e)
-
-	e.sess.SetDefaultVersion("latest")
-	scanAndWait(t, e.sess)
-	if row := theRow(t, e.sess); !row.UpgradeAvailable {
-		t.Fatalf("row = %+v, want eligible", row)
-	}
-
-	// Fault injection: a dangling symlink at the injection target passes the
-	// uninstall leg (the file reads as vanished) but breaks the install
-	// leg's first copy mid-swap, after earlier bundle files already landed.
-	dxgi := filepath.Join(e.bin, "dxgi.dll")
-	if err := os.Remove(dxgi); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(filepath.Join(e.bin, "no-such-dir", "dxgi.dll"), dxgi); err != nil {
-		t.Fatal(err)
-	}
-
-	e.sess.Upgrade(e.gameRoot)
-	ev := waitEvent(t, e.sess, EvOpDone)
-	if !strings.Contains(ev.Text, "Uninstalled") {
-		t.Fatalf("first settle = %q, want the uninstall leg", ev.Text)
-	}
-	waitEvent(t, e.sess, EvOpFailed) // install leg failed mid-swap
-	toast := waitToast(t, e.sess, "Failed:")
-	if !toast.Warn {
-		t.Errorf("failure toast Warn = false, want true: %+v", toast)
-	}
-	ev = waitEvent(t, e.sess, EvOpDone)
-	if !strings.Contains(ev.Text, "Rolled back") {
-		t.Fatalf("cleanup settle = %q, want the rollback/backup-restore leg", ev.Text)
-	}
-
-	// No silent half-state: the failed manifest is rolled back, partial
-	// bundle files are gone, and even the planted symlink is cleaned up.
-	manifests, err := e.store.List()
-	if err != nil || len(manifests) != 1 {
-		t.Fatalf("manifests = %d, err %v; want 1", len(manifests), err)
-	}
-	if manifests[0].Status != domain.StatusRolledBack {
-		t.Errorf("manifest status = %q, want rolled_back (rollback path ran)", manifests[0].Status)
-	}
-	if _, err := os.Lstat(dxgi); !os.IsNotExist(err) {
-		t.Errorf("dxgi.dll (symlink) survived the rollback: err=%v", err)
-	}
-	if _, err := os.Stat(filepath.Join(e.bin, "fakenvapi.dll")); !os.IsNotExist(err) {
-		t.Error("partial bundle file fakenvapi.dll survived the rollback")
-	}
-	if _, err := os.Stat(filepath.Join(e.bin, "D3D12_Optiscaler")); !os.IsNotExist(err) {
-		t.Error("partial bundle dir D3D12_Optiscaler survived the rollback")
-	}
-	t.Log("install leg failed after uninstall: error toast surfaced, rollback cleaned the half-state")
+	t.Log("default change invalidates the memo; same-value write keeps it")
 }

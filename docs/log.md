@@ -1633,3 +1633,14 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   exact-string (installed "0.7.9" may coexist with cached "v0.9.4");
   unknown game dirs yield cached ∪ preference; empty everywhere yields
   an empty non-nil slice.
+
+- The upgrade-offer model is retired in favor of explicit per-game
+  version management: GameRow.UpgradeAvailable/UpgradeTarget,
+  upgradeOffer, Session.Upgrade/doUpgrade, QuickInstall's offer dispatch
+  (a quick click on an upgrade-eligible committed game now UNINSTALLS —
+  the caption and the action agree again), the cache-load offer strip,
+  and EvOffersRefreshed are gone. The resolved-default machinery stays
+  (the version dropdown reads the memo): the warm boot now performs a
+  resolve-only warmBootResolveDefault. GUI quickLabel and the TUI
+  badge/hint lost their upgrade branches (plain Uninstall/install
+  captions); their redesign lands in the next waves.

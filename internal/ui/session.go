@@ -56,9 +56,6 @@ const (
 	EvOpCancelled
 	EvConfirm
 	EvScanProgress
-	// EvOffersRefreshed pokes frontends after a warm boot recomputed
-	// upgrade offers on cached rows; the snapshot carries the change.
-	EvOffersRefreshed
 )
 
 // Scan progress phases, in pipeline order. "covers" includes the manual
@@ -184,10 +181,10 @@ type Session struct {
 	resolveVersion func(ctx context.Context, requested string) (version string, fresh bool, err error)
 
 	// upgradeGapHook is a test seam invoked synchronously between the
-	// uninstall and install legs of a committed-row upgrade (see
-	// doUpgrade); nil in production. It lets a test occupy the game's op
-	// slot in the finishOp→registerOp gap so the install leg's errOpBusy
-	// path is exercised deterministically.
+	// uninstall and install legs of a committed-row version switch (see
+	// doSwitchVersion); nil in production. It lets a test occupy the
+	// game's op slot in the finishOp→registerOp gap so the install leg's
+	// errOpBusy path is exercised deterministically.
 	upgradeGapHook func(gameDir string)
 
 	// switchINIHook is a test seam invoked synchronously after a version
@@ -277,14 +274,6 @@ func (s *Session) SetDefaultVersion(v string) {
 	}
 	s.deps.Settings.DefaultVersion = v
 	snap := s.deps.Settings
-	// Live offers were computed against the old default, but doUpgrade
-	// installs the CURRENT one — a stale caption would promise a target
-	// the action no longer installs. Drop every offer now; the next scan
-	// re-resolves and recomputes them.
-	for i := range s.st.Rows {
-		s.st.Rows[i].UpgradeAvailable = false
-		s.st.Rows[i].UpgradeTarget = ""
-	}
 	s.mu.Unlock()
 	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
 		s.toast("settings not saved: "+err.Error(), true)
@@ -430,10 +419,10 @@ func (s *Session) Start(ctx context.Context) {
 	s.st.StatusLine = fmt.Sprintf("%d games (cached)", len(rows))
 	s.st.Busy = ""
 	s.mu.Unlock()
-	// The cache stripped upgrade offers on load; recompute them now or no
-	// upgrade would surface until a manual rescan. Async: Start must not
-	// block on the resolve network call.
-	go s.recomputeCachedOffers(ctx)
+	// Resolve the default version so the memo is populated for the version
+	// dropdown before the next manual scan. Async: Start must not block on
+	// the resolve network call.
+	go s.warmBootResolveDefault(ctx)
 }
 
 // reconcileStatuses overrides cached row status from store manifests keyed
@@ -655,15 +644,10 @@ func (s *Session) clearProgress() {
 }
 
 // QuickInstall installs when not installed, uninstalls when installed —
-// the one-click toggle from the reference client, with our defaults. An
-// upgrade-eligible row is UPGRADED instead: the plain toggle would
-// uninstall a committed row and leave the game with no OptiScaler at all.
+// the one-click toggle from the reference client, with our defaults.
+// Version changes are SwitchVersion's job, never the toggle's.
 func (s *Session) QuickInstall(gameDir string) {
 	row := s.findRow(gameDir)
-	if row != nil && row.UpgradeAvailable {
-		go s.doUpgrade(gameDir)
-		return
-	}
 	if row != nil && row.Status == domain.StatusCommitted {
 		go s.doUninstall(gameDir)
 		return
@@ -687,7 +671,7 @@ func (s *Session) Rollback(gameDir string) {
 }
 
 // runRollback is Rollback's body, callable synchronously by chained ops
-// (the upgrade chain runs it as cleanup after a failed install leg).
+// (the version-switch chain runs it as cleanup after a failed install leg).
 func (s *Session) runRollback(gameDir string) {
 	pre := preOpStatus(s.findRow(gameDir))
 	ctx, ok := s.registerOp(gameDir)
@@ -1237,8 +1221,8 @@ func (s *Session) doInstallVersion(gameDir, version string, eacOK, cachedOK bool
 // runInstall is doInstall's body with an outcome: nil on success,
 // errInstallPaused when a consent gate owns the continuation, errOpBusy
 // when the game already has an op, the context cause on cancel, and the
-// surfaced error on failure. Callers that chain ops (upgrade) branch on
-// the outcome; fire-and-forget callers discard it.
+// surfaced error on failure. Callers that chain ops (version switch)
+// branch on the outcome; fire-and-forget callers discard it.
 func (s *Session) runInstall(gameDir string, eacOK, cachedOK bool) error {
 	return s.runInstallVersion(gameDir, "", eacOK, cachedOK)
 }
@@ -1448,7 +1432,6 @@ func (s *Session) toRow(ctx context.Context, e app.LibraryEntry) GameRow {
 		SteamAppID:        e.Game.SteamAppID,
 		TitleSource:       string(e.Game.TitleSource),
 	}
-	row.UpgradeAvailable, row.UpgradeTarget = upgradeOffer(e.Status, e.OptiScalerVersion, s.resolvedDefault())
 	keys := make([]string, 0, len(e.ComponentVersions))
 	for k := range e.ComponentVersions {
 		keys = append(keys, k)
@@ -1512,15 +1495,6 @@ func (s *Session) setRowStatus(dir string, status domain.Status) {
 		if s.st.Rows[i].InstallDir == dir {
 			s.st.Rows[i].Status = status
 			s.st.Rows[i].Actionable = actionableStatus(status)
-			// A row leaving the installed states can no longer honor an
-			// upgrade offer computed against the old one — drop it rather
-			// than let a stale offer dispatch a no-op upgrade. Committed
-			// and external rows keep theirs (a restored external install
-			// is exactly as old as it was when the offer was computed).
-			if status != domain.StatusCommitted && status != domain.StatusExternal {
-				s.st.Rows[i].UpgradeAvailable = false
-				s.st.Rows[i].UpgradeTarget = ""
-			}
 			sortRows(s.st.Rows)
 			changed = true
 			break
@@ -1533,9 +1507,7 @@ func (s *Session) setRowStatus(dir string, status domain.Status) {
 }
 
 // setRowInstalled settles a row after a successful install: committed at
-// the just-installed version, with any upgrade offer consumed — a fresh
-// install IS the resolved default, so offering an upgrade right after it
-// would re-dispatch the chain on every quick click until the next scan.
+// the just-installed version.
 func (s *Session) setRowInstalled(dir, version string) {
 	s.mu.Lock()
 	changed := false
@@ -1544,8 +1516,6 @@ func (s *Session) setRowInstalled(dir, version string) {
 			s.st.Rows[i].Status = domain.StatusCommitted
 			s.st.Rows[i].Actionable = false
 			s.st.Rows[i].OptiScalerVersion = version
-			s.st.Rows[i].UpgradeAvailable = false
-			s.st.Rows[i].UpgradeTarget = ""
 			sortRows(s.st.Rows)
 			changed = true
 			break

@@ -348,11 +348,6 @@ func (m Model) gameRowLine(r ui.GameRow, tw, w int, selected bool) string {
 	if r.ProtonTier != "" {
 		badges = append(append([]ui.Badge(nil), badges...), ui.Badge{Label: r.ProtonTier, Tone: tierTone(r.ProtonTier)})
 	}
-	if r.UpgradeAvailable && r.UpgradeTarget != "" {
-		// The offer leads the cell: appended last it would be the first
-		// badge the fixed-width truncation eats on tech-heavy rows.
-		badges = append([]ui.Badge{{Label: "↑" + r.UpgradeTarget, Tone: ui.ToneGreen}}, badges...)
-	}
 	line := cell(r.Title, tw) +
 		cell(r.Platform, colPlatform) +
 		badgesCell(badges, colBadges) +
@@ -422,9 +417,6 @@ func (m Model) detailView(w, contentH int) string {
 		install := "  i  install/uninstall"
 		if row.Status == "external" {
 			install = "  i  adopt (install over external)"
-		}
-		if row.UpgradeAvailable && row.UpgradeTarget != "" {
-			install = "  i  upgrade to " + row.UpgradeTarget
 		}
 		b.WriteString(install + "\n")
 		b.WriteString("  l  launch\n")

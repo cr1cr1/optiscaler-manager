@@ -114,20 +114,13 @@ func TestLoadGamesCacheStripsProtonTierOffLinux(t *testing.T) {
 	t.Log("cache load: tier stripped on darwin, preserved on linux")
 }
 
-// TestLoadGamesCacheClearsUpgradeFields: games.json serializes the full
-// row, including upgrade eligibility computed from the resolved default
-// version at save time. That target can go stale while the app is closed
-// (DefaultVersion changed, a newer release published), and a warm boot
-// rehydrates rows without revalidation — a stale offer would dispatch an
-// upgrade against the wrong target. Loading clears the offer on every
-// platform (unlike the linux-only ProtonTier strip); the next scan
-// recomputes eligibility from a fresh memo.
-func TestLoadGamesCacheClearsUpgradeFields(t *testing.T) {
+// TestLoadGamesCacheRoundTrip: games.json serializes the full row; loading
+// returns the stable fields intact on every platform.
+func TestLoadGamesCacheRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	writeGamesCache(t, root, []GameRow{
 		{Title: "Outdated", AppID: "100", InstallDir: "/games/outdated",
-			Status: domain.StatusCommitted, OptiScalerVersion: "0.9.4",
-			UpgradeAvailable: true, UpgradeTarget: "0.10.0"},
+			Status: domain.StatusCommitted, OptiScalerVersion: "0.9.4"},
 		{Title: "Plain", AppID: "101", InstallDir: "/games/plain"},
 	})
 
@@ -136,16 +129,11 @@ func TestLoadGamesCacheClearsUpgradeFields(t *testing.T) {
 		if len(rows) != 2 {
 			t.Fatalf("%s: rows = %d, want 2", goos, len(rows))
 		}
-		for _, r := range rows {
-			if r.UpgradeAvailable || r.UpgradeTarget != "" {
-				t.Errorf("%s: row %+v kept a stale upgrade offer", goos, r)
-			}
-		}
 		if rows[0].Status != domain.StatusCommitted || rows[0].OptiScalerVersion != "0.9.4" {
-			t.Errorf("%s: strip clobbered stable fields: %+v", goos, rows[0])
+			t.Errorf("%s: stable fields clobbered on load: %+v", goos, rows[0])
 		}
 	}
-	t.Log("cache load: stale upgrade offers cleared on linux and off-linux")
+	t.Log("cache load: stable fields round-trip on linux and off-linux")
 }
 
 // TestScanPersistsCache: a completed scan writes games.json whose rows match

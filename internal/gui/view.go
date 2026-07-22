@@ -469,13 +469,8 @@ func statusLabel(e *ui.GameRow) string {
 	return string(e.Status)
 }
 
-// quickLabel is the toggle caption matching the reference client; an
-// upgrade-eligible row offers the upgrade instead (QuickInstall dispatches
-// on the same fields, so caption and action never disagree).
+// quickLabel is the toggle caption matching the reference client.
 func quickLabel(e *ui.GameRow) string {
-	if e.UpgradeAvailable && e.UpgradeTarget != "" {
-		return "Upgrade to " + e.UpgradeTarget
-	}
 	switch e.Status {
 	case domain.StatusCommitted:
 		return "Uninstall"
