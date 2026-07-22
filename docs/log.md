@@ -1721,3 +1721,13 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   it), so click-then-type/Enter flows work without a manual Tab first;
   clicking empty space blurs the focused control. Activations are
   untouched (FocusOnClick only moves focus).
+
+## 2026-07-22 — toolbar + grid keyboard focus
+
+- The toolbar Sort button is now a local focusable dropdown (replacing
+  the upstream MenuButtonExt, which was keyboard-unreachable and painted
+  the theme-locked light _menuBG popup): a Tab stop with a focus ring,
+  click-to-focus, Enter/Space toggling a dark Popup with the same two
+  sort items, Esc/click-outside dismissal, disabled when the library is
+  empty. A pick calls setSort and keeps focus on the trigger (explicit
+  FocusImmediateOn — the pick click blurs it on the down-frame).

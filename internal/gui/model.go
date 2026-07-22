@@ -68,6 +68,9 @@ type model struct {
 	openDropdownDir   string                        // install dir of the single open version dropdown ("" = none)
 	ddTriggerID       ContainerId                   // container id of the card's version-dropdown trigger (click routing seam: the card must not steal its activation)
 	ddFocusRing       bool                          // whether the version-dropdown trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors listFocusRing)
+	sortTriggerID     ContainerId                   // container id of the toolbar sort-dropdown trigger (focus/click test seam, mirrors ddTriggerID)
+	sortFocusRing     bool                          // whether the sort trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors ddFocusRing)
+	sortMenuItems     []sortMenuItem                // rows of the currently open sort dropdown, rebuilt each popup frame and emptied while closed (sort dropdown test seam, mirrors versionDDItems)
 }
 
 func newModel(cfg Config) *model {

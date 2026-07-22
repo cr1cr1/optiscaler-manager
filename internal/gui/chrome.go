@@ -190,14 +190,7 @@ func (m *model) toolbar() {
 		}
 		m.searchInput()
 		if m.sess != nil {
-			MenuButtonExt("Sort: "+sortLabel(m.state.Sort), ButtonAttrs{Icon: TypArrowSortedDown, Disabled: m.libraryEmpty()}, func() {
-				if MenuItem(SymStar, "Default (actionable first)") {
-					m.setSort(ui.SortDefault)
-				}
-				if MenuItem(0, "Name (A–Z)") {
-					m.setSort(ui.SortName)
-				}
-			})
+			m.sortDropdown()
 			m.viewSwitch()
 		}
 		Filler(1)

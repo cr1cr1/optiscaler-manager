@@ -747,3 +747,120 @@ func dropdownPos(anchorID ContainerId) Vec2 {
 	pos[1] = max(0, pos[1])
 	return pos
 }
+
+// sortMenuItem is the sort dropdown's observability seam: one entry per
+// rendered popup row (label plus screen rect for click tests), mirroring
+// versionDDItem.
+type sortMenuItem struct {
+	label string
+	rect  Rect
+}
+
+// sortDropdown replaces the toolbar's upstream MenuButtonExt sort control —
+// unfocusable, keyboard-unreachable, and theme-locked to a light popup via
+// widgets._menuBG — with a local focusable trigger and a dark popup, modeled
+// line-for-line on versionDropdown.
+//
+// The trigger keeps the old button's exact look by wrapping widgets.ButtonExt
+// in a Focusable container (the focusableButtonExt pattern): Tab reaches it,
+// clicking focuses it, Enter/Space (consumed) toggles the popup, and the
+// library-empty Disabled attr still greys it out and blocks activation.
+//
+// The popup renders through Popup (root scope) with the dark panel tokens and
+// floats below the trigger via dropdownPos. The items are the two sort modes
+// with the same icons, labels, and setSort calls the old MenuItems used —
+// composed locally instead of via widgets.MenuItem because MenuItem paints
+// its row with the theme-locked light _menuBG.
+func (m *model) sortDropdown() {
+	st := Use[dropdownState]("sort-dropdown")
+	disabled := m.libraryEmpty()
+	if st.open && disabled {
+		// The trigger is inert while the library is empty, so an open
+		// dropdown makes no sense: a state left open across the empty
+		// transition (or inherited via a hook slot retained on the
+		// process-wide identity tree) closes instead of floating over
+		// a trigger that can no longer own it.
+		st.open = false
+	}
+	// Per-frame seam reset, mirroring gameCard's ddTriggerID/ddFocusRing
+	// discipline: the seams describe the frame being built, so a closed
+	// dropdown exposes no items.
+	m.sortTriggerID = nil
+	m.sortFocusRing = false
+	if !st.open {
+		m.sortMenuItems = nil
+	}
+	Container(Attrs(Focusable, Corners(6)), func() {
+		CycleFocusOnTab()
+		FocusOnClick()
+		m.sortTriggerID = CurrentId()
+		st.btnID = CurrentId()
+		activated := false
+		if HasFocus() {
+			m.sortFocusRing = true
+			ModAttrs(func(a *AttrSet) {
+				a.BorderWidth = 2
+				a.BorderColor = focusBorder
+			})
+			if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
+				FrameInput.Key = KeyCodeNone
+				activated = !disabled
+			}
+		}
+		if widgets.ButtonExt("Sort: "+sortLabel(m.state.Sort), widgets.ButtonAttrs{Icon: widgets.TypArrowSortedDown, Disabled: disabled}) {
+			activated = true
+		}
+		if activated {
+			st.open = !st.open
+		}
+	})
+	if st.open {
+		Popup(func() {
+			triggerW := GetResolvedRectOf(st.btnID).Size[0]
+			Container(Attrs(MinWidth(triggerW), Corners(radiusS), Pad2(sp4, 0), Gap(2), Clip, BackgroundVec(bgPanel), BorderWidth(1), BorderColorVec(border), elevateOverlay), func() {
+				ModAttrs(FloatVec(dropdownPos(st.btnID)))
+				st.menuID = CurrentId()
+				m.sortMenuItems = m.sortMenuItems[:0]
+				m.sortItem(st, widgets.SymStar, "Default (actionable first)", ui.SortDefault)
+				m.sortItem(st, 0, "Name (A–Z)", ui.SortName)
+			})
+		})
+	}
+	// Dismissal, AFTER the popup rendered so clicks inside it still register
+	// (versionDropdown's ordering): Esc closes without dispatch and is
+	// consumed here — the toolbar renders before handleGlobalKeys, so the
+	// global Esc handler cannot also close the detail panel; a click outside
+	// both trigger and popup closes without dispatch.
+	if st.open && FrameInput.Key == KeyEscape {
+		FrameInput.Key = KeyCodeNone
+		st.open = false
+	}
+	if st.open && !IdIsHovered(st.btnID) && !IdIsHovered(st.menuID) && FrameInput.Mouse == MouseClick {
+		st.open = false
+	}
+}
+
+// sortItem is one row of the sort dropdown's popup: hover-highlighted,
+// recorded in the sortMenuItems seam, calling setSort and closing on a pick.
+func (m *model) sortItem(st *dropdownState, icon rune, label string, mode ui.SortMode) {
+	Container(Attrs(Row, Expand, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(2)), func() {
+		m.sortMenuItems = append(m.sortMenuItems, sortMenuItem{label: label, rect: GetScreenRectOf(CurrentId())})
+		if IsHovered() {
+			ModAttrs(BackgroundVec(accentHov))
+		}
+		if icon != 0 {
+			widgets.Icon(icon, FontSize(12), TextColorVec(txtMain))
+		}
+		Label(label, FontSize(12), TextColorVec(txtMain))
+		if PressAction() {
+			m.setSort(mode)
+			st.open = false
+			// A pick is a click outside the trigger, so FocusOnClick blurred
+			// it on the down frame of this gesture; hand focus back. The
+			// toolbar renders at a stable path every frame (above the
+			// conditional detail-panel Row), so the id resolves immediately —
+			// no deferred re-assert (unlike actionList's listFocusPending).
+			FocusImmediateOn(st.btnID)
+		}
+	})
+}
