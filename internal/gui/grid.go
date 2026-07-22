@@ -186,8 +186,9 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 		FocusOnClick()
 		// Cursor follows focus: Tabbing onto a card moves the keyboard
 		// cursor onto it, so focus and cursor can never diverge. Click and
-		// arrow paths set selIdx directly; ReceivedFocusNow only fires for
-		// registry-driven (Tab) focus moves.
+		// arrow paths set selIdx directly too — ReceivedFocusNow fires on any
+		// focus grab (Tab, click, same-frame re-assert), but always writes the
+		// identical value those paths already set, so there is no race.
 		if ReceivedFocusNow() {
 			m.selIdx = idx
 		}
