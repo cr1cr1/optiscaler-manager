@@ -42,6 +42,12 @@ store, installed OptiScaler version, detected upscaler versions
 panel (GUI) or with `l` (TUI); launching is fire-and-forget. Busy installs and
 uninstalls can be cancelled per game and roll back to the pre-operation state.
 
+Each installed game manages its own OptiScaler version: the version selector
+(a dropdown on the card and detail panel in the GUI, the `v` key in the TUI)
+offers the versions already downloaded in the bundle cache plus the default
+version from preferences, and switching installs the chosen version while
+keeping the game's existing `OptiScaler.ini` tweaks.
+
 Games with a hand-installed OptiScaler setup show as **external**. The install
 action reads **Adopt**: installing backs up the external files SHA-verified
 first, so the game becomes managed without losing your setup, and a later
@@ -55,7 +61,10 @@ cover art are cached in `~/.cache/optiscaler-manager`.
 
 The toolbar scans, adds games, filters, sorts, and switches between grid and
 list views, with a progress bar tracking scan phases. Cards fire their buttons
-directly; clicking a card body opens the detail panel. Arrow keys move the
+directly; clicking a card body opens the detail panel. An installed game's
+version pill is a dropdown: pick any cached bundle version (or the preference
+default, shown resolved) to switch to it, keeping your `OptiScaler.ini`.
+Arrow keys move the
 selection, Enter opens the detail panel, Esc closes it. The Settings window
 holds the default OptiScaler version, the scan-directory list, the launch
 template, the online game-info toggle, and the clear-cache action. The
@@ -71,12 +80,13 @@ turning it off gives you a fully offline scan.
 | `j`/`k` or `↓`/`↑` | Move cursor |
 | `enter` | Open the detail screen (`esc` back) |
 | `i` | Install / uninstall (quick toggle) |
+| `v` | Switch OptiScaler version (cycle candidates, `enter` confirm, `esc` cancel) |
 | `l` | Launch game |
 | `c` | Cancel the busy operation |
 | `/` | Filter, live as you type (`esc` clears) |
 | `s` | Toggle sort (default / name) |
 | `R` | Rescan the library |
-| Detail: `i` `l` `c` `r` `o` | Install / launch / cancel / rollback / open OptiScaler.ini |
+| Detail: `i` `v` `l` `c` `r` `o` | Install / switch version / launch / cancel / rollback / open OptiScaler.ini |
 | Settings: `e` `t` `a` `d` `x` `o` | Edit version / edit launch template / add dir / remove dir (`y`/`n`) / clear bundle cache / toggle online game info |
 | Confirm modal | `y` proceed, `n` cancel |
 
