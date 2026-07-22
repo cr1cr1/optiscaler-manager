@@ -182,6 +182,13 @@ func (m *model) actionList() {
 	// the focus ring never shifts layout; only the color flips when focused.
 	Container(Attrs(Focusable, Grow(1), Expand, BorderWidth(1), BorderColorVec(Vec4{0, 0, 0, 0})), func() {
 		m.listID = CurrentId()
+		// Row clicks set listFocusPending because opening the detail panel
+		// re-nests this wrapper — shirei identities are path-scoped, so focus
+		// grabbed mid-click would be orphaned. Re-assert once, on the fresh id.
+		if m.listFocusPending {
+			m.listFocusPending = false
+			FocusImmediateOn(m.listID)
+		}
 		CycleFocusOnTab()
 		FocusOnClick()
 		// HasFocus only reports the container currently being built — capture
@@ -202,20 +209,32 @@ func (m *model) actionList() {
 				FrameInput.Key = KeyCodeNone
 			}
 		}
+		// Row-rect seams rebuild every frame the list renders: indexes track
+		// the current row set, and the selection band clears when nothing is
+		// selected.
+		m.listRowRects = make([]Rect, len(rows))
+		m.listSelectedRect = Rect{}
 		VirtualListView("games", len(rows),
 			func(i int) any { return rows[i].InstallDir },
 			func(i int, w float32) float32 { return 30 },
 			func(i int, w float32) {
 				e := rows[i]
 				Container(Attrs(Row, CrossMid, Gap(sp8), Pad2(3, sp12), MinSize(w, 34), Corners(radiusS)), func() {
+					m.listRowRects[i] = GetScreenRectOf(CurrentId())
 					if i == m.selIdx {
-						m.listSelRect = GetScreenRectOf(CurrentId())
+						m.listSelRect = m.listRowRects[i]
 						ModAttrs(func(a *AttrSet) {
 							a.BorderWidth = 1.5
 							a.BorderColor = accent
 						})
 					}
-					if IsHovered() {
+					// The session-selected row keeps its selBg band even under
+					// the pointer: selection wins over hover so the open game
+					// stays visible while the mouse roams.
+					if m.state.Selected == e.InstallDir {
+						m.listSelectedRect = m.listRowRects[i]
+						ModAttrs(BackgroundVec(selBg))
+					} else if IsHovered() {
 						ModAttrs(BackgroundVec(bgRaised))
 					}
 					// List rows keep their cover thumbnails: a small portrait
@@ -242,6 +261,14 @@ func (m *model) actionList() {
 						muted(strings.Join(tech, ","))
 					}
 					if PressAction() && m.sess != nil {
+						// A row click is also a cursor move and a focus grab:
+						// the wrapper's FocusOnClick is hover-timing dependent,
+						// so the press sets both deterministically. The pending
+						// flag re-asserts focus after the panel re-nests the
+						// wrapper (see actionList).
+						m.selIdx = i
+						FocusImmediateOn(m.listID)
+						m.listFocusPending = true
 						m.sess.Select(e.InstallDir)
 					}
 				})

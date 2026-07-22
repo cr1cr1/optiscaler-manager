@@ -326,6 +326,67 @@ func TestListTabExitsFocus(t *testing.T) {
 	}
 }
 
+// TestListRowClickFocusesAndSelects: clicking a list row selects the game
+// (detail panel), moves the keyboard cursor onto the clicked row, and puts
+// keyboard focus on the list wrapper — the row gesture must not leave the
+// list unfocused with the cursor stranded on another row.
+func TestListRowClickFocusesAndSelects(t *testing.T) {
+	sess, rows := seedNavSession(t, 3)
+	m := newModel(Config{Session: sess})
+
+	headlessFrames(t, 800, 600)
+	keyFrame(KeyCodeNone, 0, m.rootView) // build; captures m.listID
+	keyFrame(KeyCodeNone, 0, m.rootView) // capture row rects from the previous frame
+	const k = 2
+	if len(m.listRowRects) <= k || m.listRowRects[k].Size[0] == 0 {
+		t.Fatalf("row %d rect not recorded: %+v", k, m.listRowRects)
+	}
+	clickRect(m.listRowRects[k], m.rootView)
+
+	if got := sess.Snapshot().Selected; got != rows[k].InstallDir {
+		t.Errorf("row click Selected %q, want %q", got, rows[k].InstallDir)
+	}
+	if m.selIdx != k {
+		t.Errorf("row click left cursor selIdx %d, want %d (clicked row)", m.selIdx, k)
+	}
+	keyFrame(KeyCodeNone, 0, m.rootView) // focus settles
+	if !IdHasFocus(m.listID) {
+		t.Error("row click did not move keyboard focus to the list wrapper")
+	}
+}
+
+// TestListSelectedRowHighlighted: the session-selected row renders the selBg
+// selection band (seam: m.listSelectedRect) independently of the keyboard
+// cursor row (seam: m.listSelRect) — two distinct rows, two distinct visuals.
+func TestListSelectedRowHighlighted(t *testing.T) {
+	sess, rows := seedNavSession(t, 3)
+	m := newModel(Config{Session: sess})
+
+	headlessFrames(t, 800, 600)
+	keyFrame(KeyCodeNone, 0, m.rootView) // build
+	keyFrame(KeyCodeNone, 0, m.rootView) // capture row rects
+	const j = 1                          // selected row; the cursor stays on row 0
+	if m.selIdx != 0 {
+		t.Fatalf("initial cursor selIdx %d, want 0 (distinct from selected row %d)", m.selIdx, j)
+	}
+	sess.Select(rows[j].InstallDir)
+	keyFrame(KeyCodeNone, 0, m.rootView) // drain the selection; render with the panel open
+	keyFrame(KeyCodeNone, 0, m.rootView) // capture the selected row's band rect
+
+	if m.listSelectedRect.Size[0] == 0 {
+		t.Fatal("selected row never recorded a selection-band rect (selBg branch not rendering)")
+	}
+	if m.listSelectedRect != m.listRowRects[j] {
+		t.Errorf("selection band rect %+v, want row %d rect %+v", m.listSelectedRect, j, m.listRowRects[j])
+	}
+	if m.listSelRect != m.listRowRects[0] {
+		t.Errorf("cursor border rect %+v, want row 0 rect %+v", m.listSelRect, m.listRowRects[0])
+	}
+	if m.listSelectedRect == m.listSelRect {
+		t.Error("selection band and cursor border recorded on the same rect; want two distinct rows")
+	}
+}
+
 // TestListFocusRingVisible: the list wrapper draws its focus ring only
 // while it holds keyboard focus (seam: m.listFocusRing is captured when the
 // wrapper applies the focus border color during the build).

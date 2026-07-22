@@ -1703,3 +1703,13 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   (v0.9), guarded by the extended csd_test marker check, registered in
   docs/vendor-patches.md). X11/Win32/Cocoa needed nothing; the toolkit's
   reverse cycling was already correct.
+
+- List view navigation: clicking a row now also moves the keyboard
+  cursor onto it (selIdx) and focuses the list — the focus grab is
+  re-asserted on the next frame via a listFocusPending flag because
+  shirei identities are path-scoped and the opening detail panel
+  re-nests the wrapper, orphaning a focus set mid-click. The
+  session-selected row renders the selBg band (previously unused token)
+  independently of the cursor row's accent border; selected wins over
+  hover so the open game stays visible while the pointer roams. Enter's
+  detail toggle is unchanged.
