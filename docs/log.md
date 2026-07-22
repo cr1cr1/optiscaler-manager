@@ -1543,3 +1543,10 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   scan), and an upgrade whose install leg loses the op-slot race now
   routes through the same rollback cleanup as other install failures
   (the game is never silently left without OptiScaler).
+- The card consistency fix (slimmer padding, measured button height,
+  first-button click seam) was REVERTED on request (74b0b39): the zero
+  vertical padding made card top margins too tight. Cards are back to
+  10px padding on all sides; the two card tests
+  (TestCardButtonClick_FiresActionNotSelect,
+  TestGUICardButtonsBottomAligned) are red again with their pre-fix
+  signature, owned by the in-flight card rework.
