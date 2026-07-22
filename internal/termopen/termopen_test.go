@@ -269,6 +269,24 @@ func TestOpenNoEditor(t *testing.T) {
 	}
 }
 
+// TestOpenNoTerminal: with no $TERMINAL and no known emulator on PATH, Open
+// fails with ErrNoTerminal before anything is spawned.
+func TestOpenNoTerminal(t *testing.T) {
+	called := false
+	r := func(name string, args ...string) error {
+		called = true
+		return nil
+	}
+	o := New("linux", lookPathSet(), envMap(map[string]string{"EDITOR": "nano"}), r)
+	err := o.Open("/game/OptiScaler.ini")
+	if !errors.Is(err, ErrNoTerminal) {
+		t.Fatalf("Open() err = %v, want %v", err, ErrNoTerminal)
+	}
+	if called {
+		t.Error("runner invoked despite no terminal emulator being available")
+	}
+}
+
 // TestOpenAllTerminalsFail: every candidate failing surfaces an error
 // mentioning the last failure.
 func TestOpenAllTerminalsFail(t *testing.T) {
