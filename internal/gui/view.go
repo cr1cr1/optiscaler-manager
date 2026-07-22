@@ -113,6 +113,24 @@ func (m *model) toggleListDetail(rows []ui.GameRow) {
 	}
 }
 
+// focusCursorCard hands keyboard focus to the cursor card after a focused
+// card's arrow move, so focus and cursor never diverge. The target's fresh
+// id is in the registry only when it already rendered this frame (backward
+// moves); otherwise — forward moves (the card renders later this frame) or
+// a card scrolled away — the deferred cardFocusPending re-assert lands
+// focus on the first frame the target card renders.
+func (m *model) focusCursorCard() {
+	if len(m.gridRows) == 0 {
+		return
+	}
+	dir := m.gridRows[m.selIdx].InstallDir
+	if id := m.cardIDs[dir]; id != nil {
+		FocusImmediateOn(id)
+		return
+	}
+	m.cardFocusPending = dir
+}
+
 // handleGlobalKeys runs at the very end of the frame so focused widgets get
 // first pick of the key stream. In grid mode arrows move the card selection
 // (±1 across, ±cols up/down); in list mode Up/Down move one row (and scroll

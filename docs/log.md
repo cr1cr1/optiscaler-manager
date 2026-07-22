@@ -1749,3 +1749,16 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   focusBorder ring distinct from the hover accent; grid-mode arrows now
   scroll the cursor card into view (previously list-only). Card layout
   and geometry untouched.
+
+- Grid focus reworked per-user: the grid CONTAINER is no longer
+  focusable — the cards themselves are. Clicking a card focuses it
+  exclusively (inner controls still win their own clicks), Tab cycles
+  card → its dropdown → its buttons → next card, Enter on a focused card
+  opens the detail pane, and arrows on a focused card move cursor and
+  focus together (immediate for backward moves, deferred cardFocusPending
+  for forward/off-screen and for surviving the detail panel's re-nest).
+  One ring only: the focused card, or the selIdx cursor when nothing is
+  focused. Ring clipping fixed: shirei draws borders straddling the rect
+  edge and the chunk row's Clip sat flush with zero vertical padding,
+  scissoring the top/bottom half-strokes — 1px of vertical row padding
+  (spacing only, card geometry untouched).

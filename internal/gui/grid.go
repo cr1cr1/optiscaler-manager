@@ -86,14 +86,12 @@ func gridItemCount(chunks int) int { return chunks + 1 }
 
 // gridView is the cover-card grid (the reference client's main view).
 // Columns and card size are recomputed from the live width each frame.
-// The Focusable wrapper makes the grid a single Tab stop: while focused it
-// draws the focus ring and owns the arrows/Enter (consumed so the global
-// fallback at frame end cannot double-fire); Tab/Shift-Tab always cycle
-// focus away. Individual cards are never Tab stops — the wrapper is the one
-// stop, and arrows move the cursor inside it.
+// Focus is PER-CARD: the grid region itself is no Tab stop — every card is
+// Focusable, and Tab walks card → its version-dropdown trigger → its
+// buttons → the next card (shirei's focusables registry is render-ordered).
 func (m *model) gridView() {
 	rows := m.visibleRows()
-	m.gridFocusRing = false
+	m.cardRingClip = Rect{}
 	if len(rows) == 0 {
 		m.emptyState()
 		return
@@ -103,86 +101,96 @@ func (m *model) gridView() {
 		cols = 1
 	}
 	chunks := chunkRows(rows, cols)
-	// Grow(1)+Expand are required: virtualized lists render nothing inside
-	// auto-sized wrappers (see the rootView comment). BorderWidth stays 1 so
-	// the focus ring never shifts card layout; only the color flips when
-	// focused.
-	Container(Attrs(Focusable, Grow(1), Expand, BorderWidth(1), BorderColorVec(Vec4{0, 0, 0, 0})), func() {
-		m.gridID = CurrentId()
-		// Card clicks set gridFocusPending because opening the detail panel
-		// re-nests this wrapper — shirei identities are path-scoped, so focus
-		// grabbed mid-click would be orphaned. Re-assert once, on the fresh id.
-		if m.gridFocusPending {
-			m.gridFocusPending = false
-			FocusImmediateOn(m.gridID)
+	// One-ring rule: the selIdx cursor ring is suppressed while any card
+	// holds keyboard focus (the focused card wears the ring instead). The
+	// check uses LAST frame's id registry — the fresh one is rebuilt below
+	// as the visible cards render.
+	m.gridCardFocused = false
+	for _, id := range m.cardIDs {
+		if IdHasFocus(id) {
+			m.gridCardFocused = true
+			break
 		}
-		CycleFocusOnTab()
-		FocusOnClick()
-		// HasFocus only reports the container currently being built — capture
-		// it here, at the wrapper (see the themedInput comment).
-		focused := HasFocus()
-		if focused {
-			m.gridFocusRing = true
-			ModAttrs(func(a *AttrSet) { a.BorderColor = focusBorder })
-			switch FrameInput.Key {
-			case KeyRight:
-				m.moveGridSel(rows, 1)
-				FrameInput.Key = KeyCodeNone
-			case KeyLeft:
-				m.moveGridSel(rows, -1)
-				FrameInput.Key = KeyCodeNone
-			case KeyDown:
-				m.moveGridSel(rows, cols)
-				FrameInput.Key = KeyCodeNone
-			case KeyUp:
-				m.moveGridSel(rows, -cols)
-				FrameInput.Key = KeyCodeNone
-			case KeyEnter:
-				m.toggleListDetail(rows)
-				FrameInput.Key = KeyCodeNone
+	}
+	// The id registries rebuild every grid frame: shirei identities are
+	// path-scoped, so the detail panel re-nesting the grid invalidates them.
+	m.cardIDs = make(map[string]ContainerId, len(rows))
+	m.cardDDTrigger = make(map[string]ContainerId, len(rows))
+	m.gridRows = rows
+	VirtualListView("grid", gridItemCount(len(chunks)),
+		func(i int) any {
+			if i == len(chunks) {
+				return "spacer"
 			}
-		}
-		VirtualListView("grid", gridItemCount(len(chunks)),
-			func(i int) any {
-				if i == len(chunks) {
-					return "spacer"
+			return i
+		},
+		func(i int, w float32) float32 {
+			if i == len(chunks) {
+				return sp24
+			}
+			return float32(m.cardH) + 8
+		},
+		func(i int, w float32) {
+			if i == len(chunks) {
+				return
+			}
+			m.fitCards(int(w))
+			// 1px vertical padding: shirei draws a container's border
+			// straddling its edge (half the stroke outside the rect), and
+			// this row's Clip used to sit flush against the card, scissoring
+			// the outer half of the top/bottom focus ring (the visible
+			// "thin ring" bug — the sides survived because rowPadH/cardGap
+			// already gave them room). 1px of row padding clears the stroke
+			// without touching card geometry; the chunk item's 8px height
+			// slack absorbs the taller row.
+			Container(Attrs(Row, Gap(cardGap), Pad2(1, rowPadH), MinSize(w, float32(m.cardH)), Clip), func() {
+				m.rowClipRect = GetScreenRectOf(CurrentId())
+				for j := range chunks[i] {
+					m.gameCard(chunks[i][j], i*cols+j)
 				}
-				return i
-			},
-			func(i int, w float32) float32 {
-				if i == len(chunks) {
-					return sp24
-				}
-				return float32(m.cardH) + 8
-			},
-			func(i int, w float32) {
-				if i == len(chunks) {
-					return
-				}
-				m.fitCards(int(w))
-				Container(Attrs(Row, Gap(cardGap), Pad2(0, rowPadH), MinSize(w, float32(m.cardH)), Clip), func() {
-					for j := range chunks[i] {
-						m.gameCard(chunks[i][j], i*cols+j)
-					}
-				})
 			})
-	})
+		})
 }
 
 // gameCard renders one cover card: platform pill, status badges, cover,
 // title, version pills, tech pills, and the install/launch buttons. Hover
 // lifts the card with an accent border and a soft shadow and records the
-// hovered game on the model. idx is the card's flat index into the visible
-// rows: when it matches the keyboard cursor the card wears the focus ring
-// instead (cursor wins over hover; both are 1.5px borders, so the ring
-// never shifts card geometry).
+// hovered game on the model. The card itself is the focus stop (Focusable +
+// CycleFocusOnTab + FocusOnClick): click AND Tab focus it, and Tab then
+// walks its inner focusables in render order (version dropdown, buttons).
+// The card wears the focus ring when it holds focus, or when it is the
+// keyboard cursor (idx == selIdx) while no card is focused — one ring only
+// (cursor wins over hover; both are 1.5px borders, so the ring never
+// shifts card geometry).
 func (m *model) gameCard(e ui.GameRow, idx int) {
 	cardW, cardH := m.cardW, m.cardH
 	coverW := float32(cardW - 2*cardPad)
 	m.tierPillRect = Rect{}
 	m.ddTriggerID = nil
 	m.ddFocusRing = false
-	Container(Attrs(Pad(cardPad), Gap(cardGapV), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(radiusM), Clip), func() {
+	Container(Attrs(Focusable, Pad(cardPad), Gap(cardGapV), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(radiusM), Clip), func() {
+		if m.cardIDs != nil {
+			m.cardIDs[e.InstallDir] = CurrentId()
+		}
+		// Deferred re-assert: clicks and Enter set cardFocusPending because
+		// opening/closing the detail panel re-nests the grid — shirei
+		// identities are path-scoped, so focus grabbed mid-gesture would be
+		// orphaned. Re-assert once, on this card's fresh identity, the first
+		// frame the card re-renders (mirrors listFocusPending, per-card). A
+		// card scrolled away simply re-asserts when it next renders.
+		if m.cardFocusPending == e.InstallDir {
+			m.cardFocusPending = ""
+			FocusImmediateOn(CurrentId())
+		}
+		CycleFocusOnTab()
+		FocusOnClick()
+		// Cursor follows focus: Tabbing onto a card moves the keyboard
+		// cursor onto it, so focus and cursor can never diverge. Click and
+		// arrow paths set selIdx directly; ReceivedFocusNow only fires for
+		// registry-driven (Tab) focus moves.
+		if ReceivedFocusNow() {
+			m.selIdx = idx
+		}
 		if IsHovered() {
 			m.hoveredDir = e.InstallDir
 			ModAttrs(func(a *AttrSet) {
@@ -196,18 +204,52 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 			m.hoveredDir = ""
 		}
 		m.cardRect = GetScreenRectOf(CurrentId())
-		// The keyboard-cursor card wears the focusBorder ring; hover keeps the
-		// accent border. This ModAttrs runs after the hover one, so when both
-		// land on one card the cursor wins (a focused cursor must stay visible
-		// under the pointer). BorderWidth matches hover's 1.5 so the ring never
-		// shifts card layout. Grid cards deliberately get no selBg band: the
-		// docked detail panel is the selection indicator in grid mode.
-		if idx == m.selIdx {
+		// The ring: focusBorder on the focused card, or on the cursor card
+		// while no card is focused (unfocused global-arrow nav keeps its
+		// cursor visual). This ModAttrs runs after the hover one, so when
+		// both land on one card the ring wins (a focused cursor must stay
+		// visible under the pointer). BorderWidth matches hover's 1.5 so the
+		// ring never shifts card layout. Grid cards deliberately get no
+		// selBg band: the docked detail panel is the selection indicator in
+		// grid mode.
+		focused := HasFocus()
+		if focused || (idx == m.selIdx && !m.gridCardFocused) {
 			m.gridCursorRect = m.cardRect
+			m.cardRingClip = m.rowClipRect
 			ModAttrs(func(a *AttrSet) {
 				a.BorderWidth = 1.5
 				a.BorderColor = focusBorder
 			})
+		}
+		// A focused card owns the arrows and Enter (consumed so the global
+		// fallback at frame end cannot double-fire): arrows move the cursor
+		// via the shared moveGridSel AND hand focus to the new cursor card;
+		// Enter toggles the detail panel for the focused==cursor card.
+		if focused && len(m.gridRows) > 0 {
+			switch FrameInput.Key {
+			case KeyRight:
+				m.moveGridSel(m.gridRows, 1)
+				FrameInput.Key = KeyCodeNone
+				m.focusCursorCard()
+			case KeyLeft:
+				m.moveGridSel(m.gridRows, -1)
+				FrameInput.Key = KeyCodeNone
+				m.focusCursorCard()
+			case KeyDown:
+				m.moveGridSel(m.gridRows, m.cols)
+				FrameInput.Key = KeyCodeNone
+				m.focusCursorCard()
+			case KeyUp:
+				m.moveGridSel(m.gridRows, -m.cols)
+				FrameInput.Key = KeyCodeNone
+				m.focusCursorCard()
+			case KeyEnter:
+				m.toggleListDetail(m.gridRows)
+				FrameInput.Key = KeyCodeNone
+				// The panel (un)nests the grid next frame; re-assert focus
+				// on this card's fresh identity (see cardFocusPending).
+				m.cardFocusPending = m.gridRows[m.selIdx].InstallDir
+			}
 		}
 		Container(Attrs(Row, Gap(cardGapH)), func() {
 			if e.Platform != "" {
@@ -240,6 +282,11 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 				}
 			})
 		}
+		// versionDropdown left this card's trigger in ddTriggerID (the next
+		// card resets it); capture it per install dir for the Tab-order seam.
+		if m.cardDDTrigger != nil && m.ddTriggerID != nil {
+			m.cardDDTrigger[e.InstallDir] = m.ddTriggerID
+		}
 		if len(e.TechBadges) > 0 {
 			Container(Attrs(Row, Gap(cardGapH)), func() {
 				for _, b := range e.TechBadges {
@@ -271,13 +318,11 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 		overButtons := btnRowID != nil && IdIsHovered(btnRowID)
 		overDropdown := m.ddTriggerID != nil && IdIsHovered(m.ddTriggerID)
 		if !overButtons && !overDropdown && PressAction() && m.sess != nil {
-			// A card click is also a cursor move and a focus grab: the
-			// wrapper's FocusOnClick is hover-timing dependent, so the press
-			// sets both deterministically. The pending flag re-asserts focus
-			// after the panel re-nests the wrapper (see gridView).
+			// A card click is also a cursor move. The focus grab itself is
+			// FocusOnClick's job (mouse-down frame); cardFocusPending
+			// re-asserts it after the panel re-nests the grid (see above).
 			m.selIdx = idx
-			FocusImmediateOn(m.gridID)
-			m.gridFocusPending = true
+			m.cardFocusPending = e.InstallDir
 			m.sess.Select(e.InstallDir)
 		}
 	})

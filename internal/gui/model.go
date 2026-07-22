@@ -57,10 +57,14 @@ type model struct {
 	listID              ContainerId                   // the list view's focusable wrapper (Tab focus nav test seam)
 	listFocusPending    bool                          // deferred row-click focus grab: consumed once by actionList with the wrapper's fresh identity
 	listFocusRing       bool                          // whether the list wrapper drew its focus ring on the last frame (focus ring test seam)
-	gridID              ContainerId                   // the grid view's focusable wrapper (Tab focus nav test seam, mirrors listID)
-	gridFocusPending    bool                          // deferred card-click focus grab: consumed once by gridView with the wrapper's fresh identity (mirrors listFocusPending)
-	gridFocusRing       bool                          // whether the grid wrapper drew its focus ring on the last frame (focus ring test seam, mirrors listFocusRing)
-	gridCursorRect      Rect                          // screen rect of the keyboard-cursor grid card (cursor chrome test seam, mirrors listSelRect)
+	gridCursorRect      Rect                          // screen rect of the ringed grid card: the focused card, or the keyboard-cursor card when no card is focused (cursor chrome test seam, mirrors listSelRect)
+	cardFocusPending    string                        // deferred per-card focus grab: install dir of the card that re-asserts focus on its next render (the detail panel re-nests the grid, orphaning path-scoped ids; mirrors listFocusPending)
+	cardIDs             map[string]ContainerId        // rendered card ids by install dir, rebuilt each grid frame: arrow moves retarget focus through it (a card's id is only known while it renders)
+	cardDDTrigger       map[string]ContainerId        // rendered version-dropdown trigger ids by install dir, rebuilt each grid frame (Tab-order test seam, mirrors cardIDs)
+	gridCardFocused     bool                          // whether any grid card held focus at gridView build time (suppresses the selIdx cursor ring: exactly one ring)
+	cardRingClip        Rect                          // chunk-row clip rect of the ringed card (ring-clearance test seam: the ring needs 1px of room inside the clip on every side)
+	gridRows            []ui.GameRow                  // the row set of the grid frame being built: the focused card's arrow/Enter handlers share it with moveGridSel/toggleListDetail
+	rowClipRect         Rect                          // chunk-row rect of the card row being built (transient: copied to cardRingClip on the ringed card)
 	cols                int                           // current grid columns, derived from live width
 	cardW               int                           // current card width in px, derived from live width
 	cardH               int                           // current card height in px
