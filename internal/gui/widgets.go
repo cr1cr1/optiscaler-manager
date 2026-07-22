@@ -22,11 +22,13 @@ func focusableButton(icon rune, label string) bool {
 }
 
 // focusableButtonExt is focusableButton with full ButtonAttrs control
-// (disabled state, accent, sizing).
+// (disabled state, accent, sizing). Clicking the wrapper grabs keyboard
+// focus; clicking elsewhere while focused blurs it (FocusOnClick).
 func focusableButtonExt(label string, attrs widgets.ButtonAttrs) bool {
 	var activated bool
 	Container(Attrs(Focusable, Corners(6)), func() {
 		CycleFocusOnTab()
+		FocusOnClick()
 		if HasFocus() {
 			ModAttrs(func(a *AttrSet) {
 				a.BorderWidth = 2
@@ -68,10 +70,12 @@ func spinnerGlyph() {
 // focusableToggle renders widgets.ToggleSwitchExt inside a Focusable row so
 // the Tab cycle reaches it (the switch itself is not focusable): Enter or
 // Space while focused flips the bound value, and the key is consumed. Mouse
-// clicks flip via the switch itself.
+// clicks flip via the switch itself and grab keyboard focus on the row;
+// clicking elsewhere while focused blurs it (FocusOnClick).
 func focusableToggle(on *bool, label string) {
 	Container(Attrs(Focusable, Row, CrossMid, Gap(sp8), Corners(6)), func() {
 		CycleFocusOnTab()
+		FocusOnClick()
 		if HasFocus() {
 			ModAttrs(func(a *AttrSet) {
 				a.BorderWidth = 2
@@ -638,6 +642,7 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 	// height — and with it cardContentH — is untouched.
 	Container(Attrs(Focusable, Row, CrossMid, Gap(sp4), Pad2(1, 6), Corners(radiusS), BackgroundVec(toneColor(tone))), func() {
 		CycleFocusOnTab()
+		FocusOnClick()
 		m.ddTriggerID = CurrentId()
 		if m.versionDDRects == nil {
 			m.versionDDRects = map[string]Rect{}

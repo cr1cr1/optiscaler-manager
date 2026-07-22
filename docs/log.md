@@ -1713,3 +1713,10 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   independently of the cursor row's accent border; selected wins over
   hover so the open game stays visible while the pointer roams. Enter's
   detail toggle is unchanged.
+
+- Clicking a focusable control now moves keyboard focus to it:
+  focusableButton, focusableToggle, and the version-dropdown trigger all
+  call FocusOnClick (previously only the search input and the list had
+  it), so click-then-type/Enter flows work without a manual Tab first;
+  clicking empty space blurs the focused control. Activations are
+  untouched (FocusOnClick only moves focus).

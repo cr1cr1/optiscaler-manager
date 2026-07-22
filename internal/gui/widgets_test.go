@@ -84,6 +84,140 @@ func TestFocusableButtonTabCyclesAndEnterActivates(t *testing.T) {
 	t.Logf("tab cycle + activation order: %v", fired)
 }
 
+// TestFocusableButtonClickFocuses: clicking a focusable button hands it
+// keyboard focus (FocusOnClick) AND still activates it — grabbing focus
+// must not eat the click's PressAction.
+func TestFocusableButtonClickFocuses(t *testing.T) {
+	headlessFrames(t, 400, 200)
+	var fired []string
+	var alphaID, betaID ContainerId
+	var alphaRect Rect
+	view := func() {
+		Container(Attrs(Viewport), func() {
+			if focusableButton(0, "Alpha") {
+				fired = append(fired, "Alpha")
+			}
+			alphaID = GetLastId()
+			alphaRect = GetScreenRectOf(alphaID)
+			if focusableButton(0, "Beta") {
+				fired = append(fired, "Beta")
+			}
+			betaID = GetLastId()
+		})
+	}
+
+	keyFrame(KeyCodeNone, 0, view) // build + register focusables
+	keyFrame(KeyCodeNone, 0, view) // screen rects resolve from the prior frame
+	if alphaRect.Size[0] == 0 {
+		t.Fatalf("Alpha button rect not resolved: %+v", alphaRect)
+	}
+	clickRect(alphaRect, view)
+	if !IdHasFocus(alphaID) {
+		t.Error("click did not focus the Alpha button")
+	}
+	if IdHasFocus(betaID) {
+		t.Error("Beta took focus without being clicked")
+	}
+	if !slices.Equal(fired, []string{"Alpha"}) {
+		t.Errorf("click activation %v, want [Alpha] (FocusOnClick must not eat the activation)", fired)
+	}
+	t.Log("click focused and activated the button")
+}
+
+// TestFocusableToggleClickFocuses: clicking a focusable toggle hands it
+// keyboard focus (FocusOnClick) AND still flips the bound value via the
+// switch itself.
+func TestFocusableToggleClickFocuses(t *testing.T) {
+	headlessFrames(t, 400, 200)
+	on := false
+	var toggleID ContainerId
+	var toggleRect Rect
+	view := func() {
+		Container(Attrs(Viewport), func() {
+			focusableToggle(&on, "Online lookups")
+			toggleID = GetLastId()
+			toggleRect = GetScreenRectOf(toggleID)
+		})
+	}
+
+	keyFrame(KeyCodeNone, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if toggleRect.Size[0] == 0 {
+		t.Fatalf("toggle rect not resolved: %+v", toggleRect)
+	}
+	// Aim at the switch itself: it sits at the row's leading edge, left of
+	// the label (the wrapper's center is over the label, which is inert).
+	clickRect(Rect{Origin: toggleRect.Origin, Size: Vec2{24, toggleRect.Size[1]}}, view)
+	if !IdHasFocus(toggleID) {
+		t.Error("click did not focus the toggle")
+	}
+	if !on {
+		t.Error("click did not flip the toggle on (FocusOnClick must not eat the switch click)")
+	}
+	t.Log("click focused and flipped the toggle")
+}
+
+// TestFocusableClickOutsideBlurs: with a control focused by a click, a
+// click landing OUTSIDE it blurs it — FocusOnClick's second branch
+// (focused && !hovered -> Blur).
+func TestFocusableClickOutsideBlurs(t *testing.T) {
+	headlessFrames(t, 400, 200)
+	var btnID ContainerId
+	var btnRect Rect
+	view := func() {
+		Container(Attrs(Viewport), func() {
+			focusableButton(0, "Only")
+			btnID = GetLastId()
+			btnRect = GetScreenRectOf(btnID)
+		})
+	}
+
+	keyFrame(KeyCodeNone, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if btnRect.Size[0] == 0 {
+		t.Fatalf("button rect not resolved: %+v", btnRect)
+	}
+	clickRect(btnRect, view)
+	if !IdHasFocus(btnID) {
+		t.Fatal("setup: click did not focus the button")
+	}
+	// Click empty space in the viewport's far corner.
+	clickRect(Rect{Origin: Vec2{370, 170}, Size: Vec2{10, 10}}, view)
+	if IdHasFocus(btnID) {
+		t.Error("clicking outside the focused button did not blur it")
+	}
+	t.Log("click outside blurred the focused control")
+}
+
+// TestVersionDropdown_ClickFocusesTrigger: clicking the version-dropdown
+// trigger hands it keyboard focus (FocusOnClick) AND still toggles the
+// popup open.
+func TestVersionDropdown_ClickFocusesTrigger(t *testing.T) {
+	sess, gameRoot := dropdownFakes(t)
+	markExternal(t, filepath.Join(gameRoot, "bin"), [4]uint16{0, 7, 0, 0})
+	row := scanExternalRow(t, sess)
+	m := newModel(Config{Session: sess})
+
+	headlessFrames(t, 400, 800)
+	InputState.MousePoint = Vec2{-50, -50}
+	view := cardView(m, row)
+	keyFrame(KeyCodeNone, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	r := m.versionDDRects[row.InstallDir]
+	if r.Size[0] == 0 || r.Size[1] == 0 {
+		t.Fatalf("version dropdown trigger not rendered for %q (rect %+v)", row.InstallDir, r)
+	}
+	clickRect(r, view)
+	keyFrame(KeyCodeNone, 0, view) // popup frame settles
+	if !IdHasFocus(m.ddTriggerID) {
+		t.Error("click did not focus the version-dropdown trigger")
+	}
+	if m.versionDDItemsFor != row.InstallDir {
+		t.Error("click did not open the dropdown (FocusOnClick must not eat the activation)")
+	}
+	t.Log("click focused the trigger and opened the dropdown")
+}
+
 func TestFocusableButtonConsumesKey(t *testing.T) {
 	headlessFrames(t, 300, 120)
 	var fired bool
