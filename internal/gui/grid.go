@@ -112,10 +112,25 @@ func (m *model) gridView() {
 			break
 		}
 	}
+	// The one-ring rule covers grid DESCENDANTS too: a focused inner
+	// control (button, dropdown trigger) wears its own ring, so the
+	// selIdx cursor ring must stay off. cardIDs holds only card
+	// containers, so the check falls back to last frame's per-card
+	// focus-within record (same staleness contract as the id registry).
+	if !m.gridCardFocused {
+		for _, within := range m.cardFocusWithin {
+			if within {
+				m.gridCardFocused = true
+				break
+			}
+		}
+	}
+	m.gridFocusWithin = false
 	// The id registries rebuild every grid frame: shirei identities are
 	// path-scoped, so the detail panel re-nesting the grid invalidates them.
 	m.cardIDs = make(map[string]ContainerId, len(rows))
 	m.cardDDTrigger = make(map[string]ContainerId, len(rows))
+	m.cardFocusWithin = make(map[string]bool, len(rows))
 	m.gridRows = rows
 	VirtualListView("grid", gridItemCount(len(chunks)),
 		func(i int) any {
@@ -171,6 +186,18 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 	Container(Attrs(Focusable, Pad(cardPad), Gap(cardGapV), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(radiusM), Clip), func() {
 		if m.cardIDs != nil {
 			m.cardIDs[e.InstallDir] = CurrentId()
+		}
+		// Record whether keyboard focus sits anywhere inside THIS card
+		// (the card itself or an inner control): next frame's one-ring
+		// check widens gridCardFocused with it, and the global arrow
+		// handler releases an inner control's focus on a cursor move
+		// only when focus is inside the grid (gridFocusWithin).
+		within := HasFocusWithin()
+		if m.cardFocusWithin != nil {
+			m.cardFocusWithin[e.InstallDir] = within
+		}
+		if within {
+			m.gridFocusWithin = true
 		}
 		// Deferred re-assert: clicks and Enter set cardFocusPending because
 		// opening/closing the detail panel re-nests the grid — shirei

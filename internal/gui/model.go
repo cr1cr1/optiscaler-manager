@@ -61,7 +61,9 @@ type model struct {
 	cardFocusPending    string                        // deferred per-card focus grab: install dir of the card that re-asserts focus on its next render (the detail panel re-nests the grid, orphaning path-scoped ids; mirrors listFocusPending)
 	cardIDs             map[string]ContainerId        // rendered card ids by install dir, rebuilt each grid frame: arrow moves retarget focus through it (a card's id is only known while it renders)
 	cardDDTrigger       map[string]ContainerId        // rendered version-dropdown trigger ids by install dir, rebuilt each grid frame (Tab-order test seam, mirrors cardIDs)
-	gridCardFocused     bool                          // whether any grid card held focus at gridView build time (suppresses the selIdx cursor ring: exactly one ring)
+	gridCardFocused     bool                          // whether any grid card OR any grid-descendant focusable (inner button, dropdown trigger) held focus at gridView build time (suppresses the selIdx cursor ring: exactly one ring)
+	cardFocusWithin     map[string]bool               // per-card "focus held within this card (card or an inner control)" from the LAST grid frame, keyed by install dir: widens gridCardFocused to grid descendants (rebuilt per frame, checked pre-render like cardIDs)
+	gridFocusWithin     bool                          // whether keyboard focus sat anywhere inside the grid during THIS frame's render (a focused card consumes arrows itself, so an arrow reaching the global handler with this set means an inner control holds focus and must release it on the cursor move)
 	cardRingClip        Rect                          // chunk-row clip rect of the ringed card (ring-clearance test seam: the ring needs 1px of room inside the clip on every side)
 	gridRows            []ui.GameRow                  // the row set of the grid frame being built: the focused card's arrow/Enter handlers share it with moveGridSel/toggleListDetail
 	rowClipRect         Rect                          // chunk-row rect of the card row being built (transient: copied to cardRingClip on the ringed card)

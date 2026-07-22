@@ -1771,3 +1771,16 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   highlight initializes on the current item at each open (sort mode /
   ticked version) and follows the mouse so input modes never fight.
   Applies to the sort menu and the per-game version dropdown alike.
+
+- Card focus is exclusive again, two confirmed mechanisms fixed
+  (hypothesis-driven: the stale-hover click theory was REFUTED with code
+  evidence — hover resolves against the current mouse point): (1) the
+  one-ring suppression only tracked card containers, so a focused inner
+  button left the prior card's cursor ring lit beside the button's own
+  ring — suppression now covers any grid-descendant focus
+  (cardFocusWithin via HasFocusWithin); (2) with an inner control
+  focused, arrow keys moved the cursor but kept the button focused (it
+  even ate Enter) — grid-mode arrow moves now release inner-grid focus
+  (releaseGridInnerFocus → ClearFocus) so cursor and focus never
+  diverge. Click-away exclusivity was already correct and is pinned by a
+  regression test.
