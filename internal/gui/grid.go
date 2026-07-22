@@ -32,7 +32,7 @@ const (
 	badgeRowH  = 18
 	textRowH   = 18
 	pillRowH   = 18
-	buttonRowH = 30
+	buttonRowH = 24
 )
 
 // cardContentH sizes a card so every element fits: badge row, cover,
@@ -131,7 +131,7 @@ func (m *model) gameCard(e ui.GameRow) {
 	cardW, cardH := m.cardW, m.cardH
 	coverW := float32(cardW - 2*cardPad)
 	m.tierPillRect = Rect{}
-	Container(Attrs(Pad(cardPad), Gap(cardGapV), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(radiusM), Clip), func() {
+	Container(Attrs(Pad2(0, cardPad), Gap(cardGapV), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(radiusM), Clip), func() {
 		if IsHovered() {
 			m.hoveredDir = e.InstallDir
 			ModAttrs(func(a *AttrSet) {
@@ -182,10 +182,13 @@ func (m *model) gameCard(e ui.GameRow) {
 		var btnRowID ContainerId
 		if m.sess != nil {
 			Container(Attrs(Row, Gap(cardGapH)), func() {
-				m.cardBtnRect = GetScreenRectOf(CurrentId())
 				if focusableButton(SymIRight, quickLabel(&e)) {
 					m.sess.QuickInstall(e.InstallDir)
 				}
+				// The seam's contract is the FIRST button's rect, not the
+				// row's: the gap between buttons is a dead zone clicks must
+				// not target.
+				m.cardBtnRect = GetScreenRectOf(GetLastId())
 				if launchable(&e) && focusableButton(0, "Launch") {
 					m.launchGame(e)
 				}
