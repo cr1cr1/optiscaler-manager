@@ -10,6 +10,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
+	"github.com/cr1cr1/optiscaler-manager/internal/version"
 )
 
 // focusableButton renders widgets.Button inside a Focusable wrapper so the
@@ -685,7 +686,7 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 				for _, v := range versions {
 					v := v
 					Container(Attrs(Row, Expand, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(2)), func() {
-						ticked := v == current
+						ticked := version.Compare(v, current) == 0
 						m.versionDDItems = append(m.versionDDItems, versionDDItem{version: v, ticked: ticked, rect: GetScreenRectOf(CurrentId())})
 						if IsHovered() {
 							ModAttrs(BackgroundVec(accentHov))
@@ -698,7 +699,7 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 						Label(tick, FontSize(12), TextColorVec(txtMain))
 						Label(v, FontSize(12), TextColorVec(txtMain))
 						if PressAction() {
-							if v != current {
+							if version.Compare(v, current) != 0 {
 								m.dispatchSwitchVersion(dir, v)
 							}
 							st.open = false // close either way (S13 no-op on current)

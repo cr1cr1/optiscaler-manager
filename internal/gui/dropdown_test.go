@@ -237,6 +237,61 @@ func TestVersionDropdown_ReselectCurrentNoOp(t *testing.T) {
 	t.Log("S13: current-version click closed without dispatching")
 }
 
+// TestVersionDropdown_SemanticEqualItemTickedNoDispatch (B1 defense in
+// depth): Session.Versions dedupes semantically with the installed form
+// preferred, so a semantic-equal-but-string-different item cannot reach the
+// widget in production. The widget itself must still be robust if one ever
+// does: the tick and the dispatch guard compare SEMANTICALLY
+// (version.Compare), not exact-string. Construction: the session row has
+// the bare PE-probe form "0.9.4.0" (so Versions offers "0.9.4.0"), while
+// the row handed to the view carries the v-prefixed form "v0.9.4" as
+// current — the item is semantic-equal to current but string-different.
+func TestVersionDropdown_SemanticEqualItemTickedNoDispatch(t *testing.T) {
+	sess, gameRoot := dropdownFakes(t)
+	markExternal(t, filepath.Join(gameRoot, "bin"), [4]uint16{0, 9, 4, 0})
+	row := scanExternalRow(t, sess)
+	if row.OptiScalerVersion != "0.9.4.0" {
+		t.Fatalf("row installed version %q, want \"0.9.4.0\" from the PE probe", row.OptiScalerVersion)
+	}
+	m := newModel(Config{Session: sess})
+	var calls int
+	m.switchVersionFn = func(_, _ string) { calls++ }
+
+	// The row the VIEW sees claims the v-prefixed current; Versions(dir)
+	// still comes from the session and offers the bare "0.9.4" item.
+	row.OptiScalerVersion = "v0.9.4"
+
+	headlessFrames(t, 400, 800)
+	InputState.MousePoint = Vec2{-50, -50}
+	view := cardView(m, row)
+	openDropdown(t, m, row.InstallDir, view)
+
+	target := -1
+	for i, it := range m.versionDDItems {
+		if it.version == "0.9.4.0" {
+			target = i
+			if !it.ticked {
+				t.Errorf("item \"0.9.4.0\" not ticked against current \"v0.9.4\": the tick must be semantic (version.Compare == 0)")
+			}
+		} else if it.ticked {
+			t.Errorf("item %q ticked, want only the semantic-equal \"0.9.4.0\" ticked", it.version)
+		}
+	}
+	if target < 0 {
+		t.Fatalf("item \"0.9.4.0\" not offered: %+v", m.versionDDItems)
+	}
+
+	clickRect(m.versionDDItems[target].rect, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if calls != 0 {
+		t.Errorf("clicking a semantic-equal item dispatched %d SwitchVersion calls, want 0 (same-version no-op)", calls)
+	}
+	if m.versionDDItemsFor != "" {
+		t.Errorf("dropdown still open after the no-op click (owner %q)", m.versionDDItemsFor)
+	}
+	t.Log("semantic-equal item ticked; click closed without dispatching")
+}
+
 // TestVersionDropdown_Dismissal: Esc and click-outside both close the
 // dropdown without dispatching anything.
 func TestVersionDropdown_Dismissal(t *testing.T) {

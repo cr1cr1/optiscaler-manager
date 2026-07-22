@@ -143,6 +143,72 @@ func TestVersionsIncludesMixedFormatsVerbatim(t *testing.T) {
 	assertSortedDesc(t, got)
 }
 
+// TestVersionsDedupeSemanticPrefersInstalled (B1): an installed bare
+// PE-probe version ("0.9.4") and a cached v-prefixed tag ("v0.9.4") are the
+// SAME version (version.Compare == 0), so the list must carry exactly ONE
+// entry — the INSTALLED form. The frontends' tick and same-version no-op
+// are exact-string against the row's OptiScalerVersion; keeping the
+// installed form verbatim keeps the dropdown ticked and re-selection a
+// no-op. The cached duplicate must not appear.
+func TestVersionsDedupeSemanticPrefersInstalled(t *testing.T) {
+	e := newUpgradeEnvLookups(t, "v0.8.0", false)
+	writeCachedBundle(t, e.sess.deps.CacheDir, "v0.9.4")
+	scanAndWait(t, e.sess)
+	e.sess.setRowInstalled(e.gameRoot, "0.9.4") // bare PE-probe style
+
+	got := e.sess.Versions(e.gameRoot)
+	t.Logf("Versions = %v", got)
+	if countOccurrences(got, "0.9.4") != 1 {
+		t.Errorf("Versions = %v, want installed form \"0.9.4\" exactly once", got)
+	}
+	if countOccurrences(got, "v0.9.4") != 0 {
+		t.Errorf("Versions = %v, semantic duplicate \"v0.9.4\" must not appear (installed form wins)", got)
+	}
+	assertSortedDesc(t, got)
+}
+
+// TestVersionsDedupeSemanticPrefersInstalledVForm (B1, mirrored): the
+// installed evidence itself can be v-prefixed (e.g. adopted from a
+// manifest) while a cache directory is literally named "0.9.4" — again one
+// version, and again the INSTALLED form ("v0.9.4") survives.
+func TestVersionsDedupeSemanticPrefersInstalledVForm(t *testing.T) {
+	e := newUpgradeEnvLookups(t, "v0.8.0", false)
+	writeCachedBundle(t, e.sess.deps.CacheDir, "0.9.4") // bare-named cache dir
+	scanAndWait(t, e.sess)
+	e.sess.setRowInstalled(e.gameRoot, "v0.9.4")
+
+	got := e.sess.Versions(e.gameRoot)
+	t.Logf("Versions = %v", got)
+	if countOccurrences(got, "v0.9.4") != 1 {
+		t.Errorf("Versions = %v, want installed form \"v0.9.4\" exactly once", got)
+	}
+	if countOccurrences(got, "0.9.4") != 0 {
+		t.Errorf("Versions = %v, semantic duplicate \"0.9.4\" must not appear (installed form wins)", got)
+	}
+	assertSortedDesc(t, got)
+}
+
+// TestVersionsDedupeKeepsPrereleaseDistinct (B1 guard): a pre-release is a
+// DIFFERENT version from the plain release (version.Compare != 0), so
+// installed "0.9.4" and cached "v0.9.4-test" must BOTH stay in the list —
+// semantic dedupe must not over-collapse.
+func TestVersionsDedupeKeepsPrereleaseDistinct(t *testing.T) {
+	e := newUpgradeEnvLookups(t, "v0.8.0", false)
+	writeCachedBundle(t, e.sess.deps.CacheDir, "v0.9.4-test")
+	scanAndWait(t, e.sess)
+	e.sess.setRowInstalled(e.gameRoot, "0.9.4")
+
+	got := e.sess.Versions(e.gameRoot)
+	t.Logf("Versions = %v", got)
+	if countOccurrences(got, "0.9.4") != 1 {
+		t.Errorf("Versions = %v, want installed \"0.9.4\" exactly once", got)
+	}
+	if countOccurrences(got, "v0.9.4-test") != 1 {
+		t.Errorf("Versions = %v, want prerelease \"v0.9.4-test\" exactly once (a different version, not a duplicate)", got)
+	}
+	assertSortedDesc(t, got)
+}
+
 // TestVersionsUnknownGameDir: a defensive call for a dir with no row still
 // gets the row-independent part of the list (cached ∪ preference) — the
 // same data a row-less dropdown needs. Documented behavior, not an error.

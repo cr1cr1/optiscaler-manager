@@ -1686,3 +1686,12 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   game dir. Dropdown keyboard path pinned by characterization tests
   (Tab focus ring, Enter/Space toggle, Esc closes the dropdown before
   the detail panel).
+
+## 2026-07-22 — v0.10.x: version-dropdown dedupe, Shift+Tab, click focus, list nav
+
+- Session.Versions dedupes SEMANTICALLY (version.Compare == 0) instead of
+  exact-string: an installed "0.9.4" and a cached/resolved "v0.9.4" no
+  longer appear twice; on collision the installed form survives so the
+  dropdown tick and same-version no-op keep working. The dropdown's tick
+  and dispatch guard compare semantically too. Pre-release tags stay
+  distinct ("v0.9.4-test" never merges with "0.9.4").

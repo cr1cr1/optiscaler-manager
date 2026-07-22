@@ -23,11 +23,15 @@ import (
 // cached or not, online or not.
 //
 // Composition notes for callers:
-//   - Dedupe is EXACT-STRING only: installed evidence may be a bare
-//     PE-probe version ("0.7.9") while cached and resolved tags are
-//     v-prefixed ("v0.9.4"); both forms may legitimately coexist in the
-//     list, each verbatim. Sorting uses version.Compare, which already
-//     equates the two forms for ORDER.
+//   - Dedupe is SEMANTIC: entries colliding under version.Compare == 0
+//     (e.g. a bare PE-probe "0.9.4" and a cached tag "v0.9.4") collapse to
+//     ONE entry, and the row's installed form is preferred when it is one
+//     of the colliding forms. WHY: the frontends' dropdown tick and
+//     same-version no-op (and SwitchVersion's guard) are exact-string
+//     against the row's OptiScalerVersion — the installed form must be
+//     the survivor so the current version stays ticked and re-selecting
+//     it stays a no-op. Distinct versions keep their verbatim forms
+//     (a pre-release like "v0.9.4-test" never collapses into "0.9.4").
 //   - An unknown gameDir (no row) still returns cached ∪ preference —
 //     the same data a row-less dropdown would render — with no installed
 //     entry.
@@ -35,12 +39,25 @@ import (
 //     so frontends can range over it without a nil check.
 func (s *Session) Versions(gameDir string) []string {
 	out := []string{}
-	seen := map[string]bool{}
+	current := ""
+	if row := s.findRow(gameDir); row != nil {
+		current = row.OptiScalerVersion
+	}
 	add := func(v string) {
-		if v == "" || seen[v] {
+		if v == "" {
 			return
 		}
-		seen[v] = true
+		for i, existing := range out {
+			// Semantic dedupe: same version, different string form. The
+			// installed form must survive — the frontends' tick/no-op and
+			// SwitchVersion's guard are exact-string against it.
+			if version.Compare(existing, v) == 0 {
+				if v == current {
+					out[i] = v
+				}
+				return
+			}
+		}
 		out = append(out, v)
 	}
 
