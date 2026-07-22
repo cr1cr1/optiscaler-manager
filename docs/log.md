@@ -1695,3 +1695,11 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   dropdown tick and same-version no-op keep working. The dropdown's tick
   and dispatch guard compare semantically too. Pre-release tags stay
   distinct ("v0.9.4-test" never merges with "0.9.4").
+
+- Shift+Tab now reverse-cycles focus on Wayland: the backend's xkb
+  KeyGetOneSym returns ISO_Left_Tab (0xfe20) with Shift held, which
+  mapKeysym didn't know, so the keypress vanished. One-line vendored
+  patch maps xkISOLeftTab to KeyTab (marked PATCHED by optiscaler-manager
+  (v0.9), guarded by the extended csd_test marker check, registered in
+  docs/vendor-patches.md). X11/Win32/Cocoa needed nothing; the toolkit's
+  reverse cycling was already correct.

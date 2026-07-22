@@ -9,8 +9,9 @@ import (
 )
 
 // TestVendorPatchesPresent: the vendored shirei carries the
-// optiscaler-manager patch markers (CSD disabled, scroll speedup), so a
-// `go mod vendor` refresh that silently drops them fails loudly here.
+// optiscaler-manager patch markers (CSD disabled, scroll speedup, Wayland
+// Shift+Tab), so a `go mod vendor` refresh that silently drops them fails
+// loudly here.
 func TestVendorCSDPatchPresent(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
@@ -35,5 +36,14 @@ func TestVendorCSDPatchPresent(t *testing.T) {
 	if !strings.Contains(string(b), "PATCHED by optiscaler-manager") {
 		t.Error("vendored shirei.go lacks the scroll-speedup patch; reapply it (docs/vendor-patches.md)")
 	}
-	t.Log("vendored patches present (CSD disabled, scroll speedup)")
+
+	kbd := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "waylandbackend", "waylandkeyboard_linux.go")
+	b, err = os.ReadFile(kbd)
+	if err != nil {
+		t.Fatalf("vendored waylandkeyboard_linux.go unreadable: %v", err)
+	}
+	if !strings.Contains(string(b), "PATCHED by optiscaler-manager") || !strings.Contains(string(b), "xkISOLeftTab") {
+		t.Error("vendored waylandkeyboard_linux.go lacks the ISO_Left_Tab (Shift+Tab) patch; reapply it (docs/vendor-patches.md)")
+	}
+	t.Log("vendored patches present (CSD disabled, scroll speedup, Shift+Tab ISO_Left_Tab)")
 }

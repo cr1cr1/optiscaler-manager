@@ -58,3 +58,25 @@ speed hooks for either behavior.
 comments; `TestVendorCSDPatchPresent` fails while either marker is missing.
 The earlier dark-CSD retint (v0.5) is now inert while CSD is disabled; keep
 the v0.5 patch text in place so re-enabling is one flag away.
+
+## shirei: Wayland Shift+Tab reverse focus cycling (v0.9)
+
+- **File**: `vendor/go.hasen.dev/shirei/waylandbackend/waylandkeyboard_linux.go` (`xkISOLeftTab` const + `mapKeysym` case).
+- **Marker**: `// PATCHED by optiscaler-manager (v0.9)` (trailing on both added lines; guard also looks for `xkISOLeftTab`).
+- **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent`); behavior covered by `internal/gui/widgets_test.go` (`TestFocusableButtonTabCyclesAndEnterActivates` — Shift+Tab reverse-cycles).
+
+**What.** shirei v0.5.2's Wayland backend resolves keysyms with
+`xkbState.KeyGetOneSym`; with Shift held, Tab yields `ISO_Left_Tab`
+(0xFE20), which `mapKeysym` did not know, so `FrameInput.Key` was never
+set and the keypress vanished. The patch adds the `xkISOLeftTab = 0xfe20`
+const and a `mapKeysym` case mapping it to `shirei.KeyTab` — the toolkit's
+`_cycleFocusOnTab` already reads `ModShift` and reverse-cycles, so no
+toolkit change is needed. X11, Win32, and Cocoa deliver Shift+Tab
+correctly unpatched.
+
+**Why.** Keyboard-only users could not reverse-cycle focus on Wayland;
+every other backend handles it.
+
+**Reapplying after `go mod vendor`.** Re-add the const next to `xkTab`
+and the case next to `case xkTab:`, each with the trailing marker comment;
+`TestVendorCSDPatchPresent` fails while the marker is missing.

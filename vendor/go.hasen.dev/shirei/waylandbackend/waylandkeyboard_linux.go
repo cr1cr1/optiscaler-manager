@@ -200,22 +200,23 @@ func syncModKey(m, bit shirei.Modifiers, k shirei.KeyCode) {
 // X11 keysym constants (xkb uses the same values). Mirrors x11backend; a shared
 // keysym->KeyCode helper is a candidate cleanup.
 const (
-	xkBackSpace = 0xff08
-	xkTab       = 0xff09
-	xkReturn    = 0xff0d
-	xkEscape    = 0xff1b
-	xkHome      = 0xff50
-	xkLeft      = 0xff51
-	xkUp        = 0xff52
-	xkRight     = 0xff53
-	xkDown      = 0xff54
-	xkPrior     = 0xff55 // Page Up
-	xkNext      = 0xff56 // Page Down
-	xkEnd       = 0xff57
-	xkDelete    = 0xffff
-	xkSpace     = 0x0020
-	xkF1        = 0xffbe
-	xkF12       = 0xffc9
+	xkBackSpace  = 0xff08
+	xkTab        = 0xff09
+	xkISOLeftTab = 0xfe20 // PATCHED by optiscaler-manager (v0.9): Shift+Tab keysym — reapply after `go mod vendor` (see docs/vendor-patches.md)
+	xkReturn     = 0xff0d
+	xkEscape     = 0xff1b
+	xkHome       = 0xff50
+	xkLeft       = 0xff51
+	xkUp         = 0xff52
+	xkRight      = 0xff53
+	xkDown       = 0xff54
+	xkPrior      = 0xff55 // Page Up
+	xkNext       = 0xff56 // Page Down
+	xkEnd        = 0xff57
+	xkDelete     = 0xffff
+	xkSpace      = 0x0020
+	xkF1         = 0xffbe
+	xkF12        = 0xffc9
 )
 
 func mapKeysym(ks uint32) shirei.KeyCode {
@@ -245,6 +246,8 @@ func mapKeysym(ks uint32) shirei.KeyCode {
 	case xkNext:
 		return shirei.KeyPageDown
 	case xkTab:
+		return shirei.KeyTab
+	case xkISOLeftTab: // PATCHED by optiscaler-manager (v0.9): Shift+Tab -> KeyTab so the toolkit reverse-cycles focus
 		return shirei.KeyTab
 	case xkSpace:
 		return shirei.KeySpace
