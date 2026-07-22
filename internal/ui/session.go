@@ -255,8 +255,21 @@ func (s *Session) SetDefaultVersion(v string) {
 		v = "latest"
 	}
 	s.mu.Lock()
+	if s.deps.Settings.DefaultVersion == v {
+		s.mu.Unlock()
+		s.toast("default version: "+v, false)
+		return
+	}
 	s.deps.Settings.DefaultVersion = v
 	snap := s.deps.Settings
+	// Live offers were computed against the old default, but doUpgrade
+	// installs the CURRENT one — a stale caption would promise a target
+	// the action no longer installs. Drop every offer now; the next scan
+	// re-resolves and recomputes them.
+	for i := range s.st.Rows {
+		s.st.Rows[i].UpgradeAvailable = false
+		s.st.Rows[i].UpgradeTarget = ""
+	}
 	s.mu.Unlock()
 	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
 		s.toast("settings not saved: "+err.Error(), true)
@@ -487,6 +500,8 @@ func (s *Session) runScan(ctx context.Context) {
 	// Gated on online lookups like the rest of the scan's network work.
 	if snap.OnlineLookups {
 		s.refreshResolvedDefault(ctx, snap.DefaultVersion)
+	} else {
+		s.memoizePinnedDefault(snap.DefaultVersion)
 	}
 	resolver := discovery.ChainResolver(func(dir string) string {
 		return snap.TitleOverrides[canonicalDir(dir)]

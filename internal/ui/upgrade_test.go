@@ -39,6 +39,11 @@ type upgradeEnv struct {
 
 func newUpgradeEnv(t *testing.T, defaultVersion string) *upgradeEnv {
 	t.Helper()
+	return newUpgradeEnvLookups(t, defaultVersion, true)
+}
+
+func newUpgradeEnvLookups(t *testing.T, defaultVersion string, online bool) *upgradeEnv {
+	t.Helper()
 	e := &upgradeEnv{}
 	e.resolveFn = func(requested string) (string, error) {
 		if requested == "latest" {
@@ -82,7 +87,7 @@ func newUpgradeEnv(t *testing.T, defaultVersion string) *upgradeEnv {
 		Covers:    covers.NewWithBase(nil, filepath.Join(root, "covers"), e.srv.URL+"/cdn/%s", e.srv.URL+"/search/"),
 		CacheDir:  filepath.Join(root, "cache"),
 		SteamRoot: steamRoot,
-		Settings:  settings.Settings{DefaultVersion: defaultVersion, OnlineLookups: true},
+		Settings:  settings.Settings{DefaultVersion: defaultVersion, OnlineLookups: online},
 	})
 	e.sess.resolveVersion = func(ctx context.Context, requested string) (string, bool, error) {
 		e.resolves.Add(1)
@@ -213,6 +218,85 @@ func installAt(t *testing.T, e *upgradeEnv) {
 	if row := theRow(t, e.sess); row.Status != domain.StatusCommitted {
 		t.Fatalf("row status = %q after install, want committed", row.Status)
 	}
+}
+
+// TestOfflinePinnedDefaultStillOffers: with online lookups off, a pinned
+// concrete default (an exact tag) needs no resolution, so the upgrade
+// comparison still runs — without touching the resolver seam. "latest"
+// stays unresolvable offline: no memo, no offer, no network. And the
+// provisional offline memo must NOT block real resolution once lookups
+// are back on.
+func TestOfflinePinnedDefaultStillOffers(t *testing.T) {
+	e := newUpgradeEnvLookups(t, "v0.9.4-test", false)
+	installAt(t, e)
+
+	e.sess.SetDefaultVersion("v0.10.0-test")
+	scanAndWait(t, e.sess)
+	row := theRow(t, e.sess)
+	if !row.UpgradeAvailable || row.UpgradeTarget != "v0.10.0-test" {
+		t.Fatalf("offline pinned: row = %+v, want offer to v0.10.0-test", row)
+	}
+	if got := e.resolves.Load(); got != 0 {
+		t.Fatalf("resolves = %d, want 0 (offline scan must not resolve)", got)
+	}
+
+	e.sess.SetOnlineLookups(true)
+	scanAndWait(t, e.sess)
+	if got := e.resolves.Load(); got != 1 {
+		t.Fatalf("resolves after going back online = %d, want 1 (provisional memo re-resolved)", got)
+	}
+	t.Log("offline pinned default offers without network; online re-resolves")
+}
+
+// TestOfflineLatestDefaultOffersNothing: "latest" cannot be resolved
+// without the network, so an offline scan produces no memo and no offer —
+// and must not try (the resolver seam stays untouched).
+func TestOfflineLatestDefaultOffersNothing(t *testing.T) {
+	e := newUpgradeEnvLookups(t, "v0.9.4-test", false)
+	installAt(t, e)
+
+	e.sess.SetDefaultVersion("latest")
+	scanAndWait(t, e.sess)
+	if row := theRow(t, e.sess); row.UpgradeAvailable {
+		t.Fatalf("offline latest: row = %+v, want no offer", row)
+	}
+	if got := e.resolves.Load(); got != 0 {
+		t.Fatalf("resolves = %d, want 0 (offline scan must not resolve)", got)
+	}
+	t.Log("offline latest: no offer, no resolution attempt")
+}
+
+// TestSetDefaultVersionClearsStaleOffers: changing the default version
+// invalidates every live offer instantly — the row caption promises a
+// target, and doUpgrade installs the CURRENT default, so a stale caption
+// would lie (offer old target, install new one). Offers are recomputed on
+// the next scan against the re-resolved default. Re-writing the SAME value
+// is a no-op: offers survive.
+func TestSetDefaultVersionClearsStaleOffers(t *testing.T) {
+	e := newUpgradeEnv(t, "v0.9.4-test")
+	installAt(t, e)
+
+	e.sess.SetDefaultVersion("latest")
+	scanAndWait(t, e.sess)
+	if row := theRow(t, e.sess); !row.UpgradeAvailable {
+		t.Fatalf("precondition: row = %+v, want upgrade offer", row)
+	}
+
+	e.sess.SetDefaultVersion("v0.9.4-test")
+	if row := theRow(t, e.sess); row.UpgradeAvailable || row.UpgradeTarget != "" {
+		t.Fatalf("row after default change = %+v, want offer cleared immediately", row)
+	}
+
+	e.sess.SetDefaultVersion("latest")
+	scanAndWait(t, e.sess)
+	if row := theRow(t, e.sess); !row.UpgradeAvailable {
+		t.Fatalf("precondition: row = %+v, want upgrade offer again", row)
+	}
+	e.sess.SetDefaultVersion("latest")
+	if row := theRow(t, e.sess); !row.UpgradeAvailable {
+		t.Fatalf("same-value SetDefaultVersion cleared the offer: %+v", row)
+	}
+	t.Log("default change clears live offers; same-value write keeps them")
 }
 
 // TestUpgradeCommittedChainsUninstallThenInstall: upgrading a committed row

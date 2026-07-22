@@ -1563,3 +1563,22 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   ini path resolver is Session.INIPath (pure, no side effects).
   Session.Toast lets the frontend report editor failures. The GUI keeps
   the termopen spawn (no terminal to suspend there).
+
+## 2026-07-22 — v0.9.2: upgrade-offer gaps closed (oracle review)
+
+- SetDefaultVersion now clears every live upgrade offer the moment the
+  default changes (previously rows kept showing "Upgrade to <old target>"
+  until the next scan while a click would install the NEW default — a
+  caption/action lie; a same-value write is a no-op and keeps offers).
+- Offline scans no longer suppress upgrade offers for a PINNED default:
+  an exact tag needs no resolution, so runScan memoizes it directly with
+  online lookups off (never touching the resolver; "latest" still yields
+  no offer offline). The offline memo is provisional — a zero timestamp
+  lets refreshResolvedDefault re-resolve for real once lookups are back
+  on, and installs keep their stale-cache consent semantics.
+- The TUI advertises upgrades: the games list renders an accent
+  "↑<target>" badge on eligible rows and the detail screen's i action
+  reads "upgrade to <target>" (overriding the external "adopt" caption,
+  matching the GUI's quickLabel). Tests drive the real session flow
+  (install at an older tag, retarget, rescan) because the games cache
+  strips offers on load by design.

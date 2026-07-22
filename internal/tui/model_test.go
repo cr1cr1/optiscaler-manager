@@ -56,7 +56,7 @@ func newTestEnv(t *testing.T, mutate func(*ui.Deps)) *testEnv {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repos/optiscaler/OptiScaler/releases", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `[{"tag_name":"v0.9.4-test","prerelease":false,"assets":[{"name":"Optiscaler_test.7z","browser_download_url":%q,"size":100}]}]`, e.srv.URL+"/bundle")
+		fmt.Fprintf(w, `[{"tag_name":"v0.9.4-test","prerelease":false,"assets":[{"name":"Optiscaler_test.7z","browser_download_url":%q,"size":100}]},{"tag_name":"v0.10.0-test","prerelease":false,"assets":[{"name":"Optiscaler_test.7z","browser_download_url":%q,"size":100}]}]`, e.srv.URL+"/bundle", e.srv.URL+"/bundle")
 	})
 	mux.HandleFunc("/bundle", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, filepath.Join("..", "installer", "testdata", "bundle.7z"))

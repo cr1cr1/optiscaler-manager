@@ -56,8 +56,11 @@ func (s *Session) refreshResolvedDefault(ctx context.Context, requested string) 
 	}
 	s.mu.Lock()
 	memoized := s.resolvedDefaultKey
+	memoizedAt := s.resolvedDefaultAt
 	s.mu.Unlock()
-	if memoized == requested {
+	// A zero timestamp marks a provisional offline memo (pinned tag served
+	// without validation): it never blocks a real resolution.
+	if memoized == requested && !memoizedAt.IsZero() {
 		return
 	}
 	resolve := s.resolveVersion
@@ -75,6 +78,25 @@ func (s *Session) refreshResolvedDefault(ctx context.Context, requested string) 
 	s.resolvedDefaultVersion = resolved
 	s.resolvedDefaultFresh = fresh
 	s.resolvedDefaultAt = s.now()
+	s.mu.Unlock()
+}
+
+// memoizePinnedDefault serves a pinned concrete default without the
+// network: an exact tag needs no resolution (gh would only exact-match
+// it), so with online lookups off the upgrade comparison can still run.
+// "latest" is unresolvable offline — no memo, no offer. The memo is
+// provisional (zero timestamp): refreshResolvedDefault re-resolves it
+// for real once lookups are back on, and defaultRecentlyResolved stays
+// false so installs keep their stale-cache consent semantics.
+func (s *Session) memoizePinnedDefault(requested string) {
+	if requested == "" || requested == "latest" {
+		return
+	}
+	s.mu.Lock()
+	s.resolvedDefaultKey = requested
+	s.resolvedDefaultVersion = requested
+	s.resolvedDefaultFresh = false
+	s.resolvedDefaultAt = time.Time{}
 	s.mu.Unlock()
 }
 

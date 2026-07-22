@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -11,6 +12,8 @@ import (
 	"github.com/muesli/termenv"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
+	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
@@ -159,6 +162,97 @@ func TestDetailViewOpenININotDimmedForExternal(t *testing.T) {
 			t.Errorf("gated-action suffix missing for a never-installed row: %q", plain)
 		}
 	})
+}
+
+// TestDetailViewUpgradeHint: an eligible row advertises the upgrade on
+// the i action with its concrete target — the TUI equivalent of the
+// GUI's "Upgrade to X" button — overriding both the install/uninstall
+// and the external-adopt captions. Drives the real session flow (the
+// games cache strips offers on load, so seeding one can't work).
+func TestDetailViewUpgradeHint(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("committed", func(t *testing.T) {
+		e := newTestEnv(t, func(d *ui.Deps) {
+			d.Settings = settings.Settings{DefaultVersion: "v0.9.4-test", OnlineLookups: true}
+		})
+		e.sess.Start(ctx)
+		e.sess.Scan(ctx)
+		pollUntil(t, "initial scan", func() bool { return len(e.sess.Snapshot().Rows) == 1 })
+		e.sess.QuickInstall(e.gameRoot)
+		pollUntil(t, "install", func() bool {
+			rows := e.sess.Snapshot().Rows
+			return len(rows) == 1 && rows[0].Status == domain.StatusCommitted
+		})
+
+		e.sess.SetDefaultVersion("v0.10.0-test")
+		e.sess.Scan(ctx)
+		pollUntil(t, "upgrade offer", func() bool {
+			rows := e.sess.Snapshot().Rows
+			return len(rows) == 1 && rows[0].UpgradeAvailable && rows[0].UpgradeTarget == "v0.10.0-test"
+		})
+
+		m := Model{sess: e.sess, screen: screenDetail, detailDir: e.gameRoot}
+		plain := sgrRE.ReplaceAllString(m.detailView(100, 40), "")
+		if !strings.Contains(plain, "upgrade to v0.10.0-test") {
+			t.Fatalf("upgrade hint missing: %q", plain)
+		}
+	})
+
+	t.Run("external", func(t *testing.T) {
+		e := newTestEnv(t, func(d *ui.Deps) {
+			d.Settings = settings.Settings{DefaultVersion: "v0.10.0-test", OnlineLookups: true}
+		})
+		marker := testutil.StringInfoPE(false, map[string]string{
+			"ProductName":      "OptiScaler",
+			"OriginalFilename": "OptiScaler.dll",
+		}, [4]uint16{0, 7, 0, 0})
+		writeFile(t, filepath.Join(e.bin, "dxgi.dll"), string(marker))
+		e.sess.Start(ctx)
+		e.sess.Scan(ctx)
+		pollUntil(t, "external upgrade offer", func() bool {
+			rows := e.sess.Snapshot().Rows
+			return len(rows) == 1 && rows[0].Status == domain.StatusExternal &&
+				rows[0].UpgradeAvailable && rows[0].UpgradeTarget == "v0.10.0-test"
+		})
+
+		m := Model{sess: e.sess, screen: screenDetail, detailDir: e.gameRoot}
+		plain := sgrRE.ReplaceAllString(m.detailView(100, 40), "")
+		if !strings.Contains(plain, "upgrade to v0.10.0-test") {
+			t.Fatalf("upgrade hint missing for external row: %q", plain)
+		}
+		if strings.Contains(plain, "adopt") {
+			t.Errorf("external upgrade still shows the adopt caption: %q", plain)
+		}
+	})
+}
+
+// TestGameRowLineUpgradeBadge: the games list surfaces an available
+// upgrade as a badge with the concrete target, so the offer is visible
+// without opening the detail screen.
+func TestGameRowLineUpgradeBadge(t *testing.T) {
+	forceANSI(t)
+
+	e := newTestEnv(t, nil)
+	m := Model{sess: e.sess}
+	row := ui.GameRow{
+		Title:             "Old Game",
+		Platform:          "Steam",
+		Status:            domain.StatusCommitted,
+		OptiScalerVersion: "v0.9.4-test",
+		UpgradeAvailable:  true,
+		UpgradeTarget:     "v0.10.0-test",
+	}
+
+	line := m.gameRowLine(row, 20, 80, false)
+	t.Logf("rendered upgrade row: %q", line)
+	plain := sgrRE.ReplaceAllString(line, "")
+	if !strings.Contains(plain, "v0.10.0-test") {
+		t.Fatalf("upgrade target badge missing: %q", plain)
+	}
+	if rest := plain; strings.Contains(rest, "\x1b") {
+		t.Errorf("truncated escape sequence in rendered row: %q", line)
+	}
 }
 
 // TestDetailViewAdoptHintForExternal: installing over an external install is
