@@ -1543,9 +1543,3 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   scan), and an upgrade whose install leg loses the op-slot race now
   routes through the same rollback cleanup as other install failures
   (the game is never silently left without OptiScaler).
-- Cards: slimmer chrome made consistent — the height formula dropped the
-  vertical padding, so the card container now pads horizontally only, the
-  buttonRowH constant matches the real 24px button row, and the
-  cardBtnRect seam records the first button (its documented contract)
-  instead of the whole row: the widened inter-button gap had become a
-  dead zone that swallowed clicks.
