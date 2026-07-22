@@ -1621,3 +1621,15 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   edge: a switch resumed from a consent pause gets curated ini defaults
   (same gap as doUpgrade's pause). Same-version selection is a silent
   no-op. Old upgrade-offer machinery untouched (retired in a later wave).
+
+- Session.Versions(gameDir) composes the per-game selectable-version
+  list for the dropdown/cycler: unique(installed ∪ CachedVersions ∪
+  preference), sorted semver-descending. A "latest" preference
+  contributes only the memoized resolved tag (never the literal
+  "latest"; nothing when unresolved); a pinned preference is always
+  contributed verbatim, even offline and uncached. The method never
+  touches the network or resolver — it reads the memo and the
+  filesystem; resolution remains a scan/warm-boot concern. Dedupe is
+  exact-string (installed "0.7.9" may coexist with cached "v0.9.4");
+  unknown game dirs yield cached ∪ preference; empty everywhere yields
+  an empty non-nil slice.
