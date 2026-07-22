@@ -103,6 +103,11 @@ type Confirmation struct {
 	Kind    ConfirmKind
 	GameDir string
 	Message string
+	// Version pins the release the paused install was started with (""
+	// for the configured default): a version-switched install paused at a
+	// consent gate resumes at the SAME tag, not whatever the default
+	// happens to resolve to when the answer lands.
+	Version string
 }
 
 // Toast is a transient notification.
@@ -184,6 +189,13 @@ type Session struct {
 	// slot in the finishOp→registerOp gap so the install leg's errOpBusy
 	// path is exercised deterministically.
 	upgradeGapHook func(gameDir string)
+
+	// switchINIHook is a test seam invoked synchronously after a version
+	// switch's install leg succeeded, just before the captured
+	// OptiScaler.ini is written back (see doSwitchVersion); nil in
+	// production. It lets a test sabotage the write-back (e.g. turn the
+	// ini path into a directory) deterministically.
+	switchINIHook func(gameDir string)
 
 	// resolvedDefault* memoize the default-version resolution (see
 	// upgrade.go): one Resolve per distinct configured value, never per
@@ -1028,9 +1040,9 @@ func (s *Session) AnswerConfirm(accept bool) {
 	}
 	switch c.Kind {
 	case ConfirmEAC:
-		go s.doInstall(c.GameDir, true, false)
+		go s.doInstallVersion(c.GameDir, c.Version, true, false)
 	case ConfirmCachedRelease:
-		go s.doInstall(c.GameDir, false, true)
+		go s.doInstallVersion(c.GameDir, c.Version, false, true)
 	}
 }
 
@@ -1216,18 +1228,36 @@ func (s *Session) doInstall(gameDir string, eacOK, cachedOK bool) {
 	_ = s.runInstall(gameDir, eacOK, cachedOK)
 }
 
+// doInstallVersion is doInstall's version-parameterized form: version ""
+// keeps the configured default version.
+func (s *Session) doInstallVersion(gameDir, version string, eacOK, cachedOK bool) {
+	_ = s.runInstallVersion(gameDir, version, eacOK, cachedOK)
+}
+
 // runInstall is doInstall's body with an outcome: nil on success,
 // errInstallPaused when a consent gate owns the continuation, errOpBusy
 // when the game already has an op, the context cause on cancel, and the
 // surfaced error on failure. Callers that chain ops (upgrade) branch on
 // the outcome; fire-and-forget callers discard it.
 func (s *Session) runInstall(gameDir string, eacOK, cachedOK bool) error {
+	return s.runInstallVersion(gameDir, "", eacOK, cachedOK)
+}
+
+// runInstallVersion is runInstall's version-parameterized form: version ""
+// installs the configured default (identical behavior in every respect);
+// a concrete tag installs exactly that release (the version-switch path).
+// The consent gates are version-agnostic: the EAC warning and the
+// stale-cache prompt pause with errInstallPaused and resume through
+// AnswerConfirm, which carries the tag over via Confirmation.Version, so a
+// paused switch never resumes as a different version.
+func (s *Session) runInstallVersion(gameDir, version string, eacOK, cachedOK bool) error {
 	row := s.findRow(gameDir)
 	if row != nil && row.EAC && !eacOK {
 		s.setConfirm(&Confirmation{
 			Kind:    ConfirmEAC,
 			GameDir: gameDir,
 			Message: fmt.Sprintf("%s uses Easy Anti-Cheat. Installing OptiScaler may result in a ban.", row.Title),
+			Version: version,
 		})
 		return errInstallPaused
 	}
@@ -1241,8 +1271,12 @@ func (s *Session) runInstall(gameDir string, eacOK, cachedOK bool) error {
 	// A scan that just resolved the default live leaves a provably fresh
 	// release cache behind; serving it back without the stale-cache
 	// consent prompt keeps scan-then-install a one-click flow.
+	requested := version
+	if requested == "" {
+		requested = s.Settings().DefaultVersion
+	}
 	m, err := app.Install(ctx, s.deps.Store, s.deps.GH, s.deps.CacheDir, gameDir,
-		app.InstallOpts{AllowCached: cachedOK || s.defaultRecentlyResolved(), EACOverride: eacOK, Requested: s.Settings().DefaultVersion})
+		app.InstallOpts{AllowCached: cachedOK || s.defaultRecentlyResolved(), EACOverride: eacOK, Requested: requested})
 	s.finishOp(gameDir)
 	if errors.Is(err, context.Canceled) {
 		s.opCancelled(gameDir, pre)
@@ -1254,6 +1288,7 @@ func (s *Session) runInstall(gameDir string, eacOK, cachedOK bool) error {
 			Kind:    ConfirmCachedRelease,
 			GameDir: gameDir,
 			Message: "GitHub is rate-limiting; only stale cached release info is available. Use it anyway?",
+			Version: version,
 		})
 		return errInstallPaused
 	}

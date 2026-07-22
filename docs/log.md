@@ -1604,3 +1604,20 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   regular file (filters .download-* temps and strays), sorted
   semver-descending via version.Compare; missing cache yields nil, no
   error. Feeds the per-game version dropdown's "available in cache" list.
+
+- Session.SwitchVersion(gameDir, version) switches an installed game to a
+  chosen OptiScaler version while preserving the game's OptiScaler.ini:
+  committed rows chain uninstall→install at the chosen tag, external rows
+  adopt-install; the ini is captured (bytes+mode) before the switch and
+  written back after the install leg — and removed BEFORE the uninstall
+  leg, because the installer refuses to uninstall foreign-modified files
+  (restored immediately if the leg refuses or is busy). Install path
+  gained a version parameter (runInstallVersion; "" = configured default,
+  byte-identical behavior for existing callers) and Confirmation gained a
+  Version field so an install paused at the EAC/stale-cache gate resumes
+  at the SAME tag. Consent gates (EAC, stale-cache prompt, rollback on
+  failure-after-uninstall) behave exactly as before; a failed ini
+  write-back surfaces as a warning toast and the install stands. Known
+  edge: a switch resumed from a consent pause gets curated ini defaults
+  (same gap as doUpgrade's pause). Same-version selection is a silent
+  no-op. Old upgrade-offer machinery untouched (retired in a later wave).
