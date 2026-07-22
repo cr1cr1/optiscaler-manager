@@ -1596,3 +1596,11 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   the first badge the fixed-width truncation ate on tech-heavy rows
   (real-row evidence: "[DLSS] [DLSS-FG]…" with the offer invisible), so
   "[↑v0.9.4]" now renders ahead of the tech badges.
+
+## 2026-07-22 — v0.10.0-wip: per-game version management (wave 1)
+
+- internal/app.CachedVersions enumerates downloaded bundle versions:
+  subdirs of <cache>/optiscaler containing at least one Optiscaler_*.7z
+  regular file (filters .download-* temps and strays), sorted
+  semver-descending via version.Compare; missing cache yields nil, no
+  error. Feeds the per-game version dropdown's "available in cache" list.
