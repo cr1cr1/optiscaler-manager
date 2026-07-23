@@ -9,6 +9,7 @@ import (
 	"time"
 
 	. "go.hasen.dev/shirei"
+	. "go.hasen.dev/shirei/widgets"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
@@ -434,5 +435,44 @@ func TestGrid_ScrollIntoView(t *testing.T) {
 	}
 	if r.Origin[1]+r.Size[1] < 0 || r.Origin[1] > 400 {
 		t.Errorf("cursor card rect %+v outside the 400px window (not scrolled into view)", r)
+	}
+}
+
+// TestGrid_TabPastLastVisibleCardScrollsForward: Tabbing through cards in a
+// short viewport must scroll off-screen cards into view and continue the
+// Tab walk — never wrap to the sidebar's Scan button (the virtualization
+// boundary). Only the LAST visible card fires the scroll-forward handler;
+// intermediate cards Tab normally through their buttons.
+func TestGrid_TabPastLastVisibleCardScrollsForward(t *testing.T) {
+	sess, _ := seedGridSession(t, 12)
+	m := newModel(Config{Session: sess})
+
+	headlessFrames(t, 700, 400)
+	VirtualListView_ScrollTo("grid", 0)  // reset scroll inherited from prior tests
+	keyFrame(KeyCodeNone, 0, m.rootView) // scroll applies
+	keyFrame(KeyCodeNone, 0, m.rootView) // cards re-render at the top
+	vr := m.visibleRows()
+	if len(vr) == 0 {
+		t.Fatal("no visible rows after drain")
+	}
+	m.selIdx = 0
+	focusCard(t, m, vr[0].InstallDir)
+	m.selIdx = 0
+
+	// Tab past every visible card. After each Tab, if we hit the
+	// virtualization boundary, the handler scrolls forward and the
+	// next card takes focus. Eventually we reach the LAST card without
+	// ever landing on the sidebar.
+	for i := range 30 {
+		keyFrame(KeyTab, 0, m.rootView)
+		keyFrame(KeyCodeNone, 0, m.rootView)
+		// If focus escaped to the sidebar search field, that's the bug.
+		if m.searchID != nil && IdHasFocus(m.searchID) {
+			t.Fatalf("Tab %d: focus escaped to the search field (sidebar) instead of continuing through cards", i+1)
+		}
+		// If focus escaped to the sort trigger, same bug.
+		if m.sortTriggerID != nil && IdHasFocus(m.sortTriggerID) {
+			t.Fatalf("Tab %d: focus escaped to the toolbar sort trigger instead of continuing through cards", i+1)
+		}
 	}
 }

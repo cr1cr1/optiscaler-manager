@@ -170,6 +170,25 @@ func (m *model) handleGlobalKeys() {
 	if n := len(rows); n > 0 && m.selIdx >= n {
 		m.selIdx = n - 1
 	}
+	// Virtualization boundary: Tab from the last button of the last visible
+	// card would wrap to the sidebar (off-screen cards aren't in the
+	// focusables registry). Intercept it, scroll forward, and re-assert
+	// focus on the newly-visible card.
+	if FrameInput.Key == KeyTab && InputState.Modifiers&ModShift == 0 &&
+		m.cardLastButtonID != nil && IdHasFocus(m.cardLastButtonID) &&
+		!m.auditGrid && m.state.Mode != ui.ViewList &&
+		m.selIdx < len(rows)-1 {
+		FrameInput.Key = KeyCodeNone
+		ClearFocus()
+		m.selIdx++
+		c := m.cols
+		if c < 1 {
+			c = 1
+		}
+		VirtualListScrollIntoView("grid", m.selIdx/c)
+		m.cardFocusPending = rows[m.selIdx].InstallDir
+		return
+	}
 	cols := m.cols
 	if cols < 1 {
 		cols = 1

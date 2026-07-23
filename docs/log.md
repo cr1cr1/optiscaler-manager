@@ -1854,3 +1854,20 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
 - (4) Dropdown stomping + pick-path fix: a closed dropdown no longer
   clears the shared item list of the same game's OPEN dropdown (broke
   arrow nav); both pick paths now clear `openDropdownDir`.
+
+## 2026-07-23 — focus: virtualization boundary + scroll-on-focus + ring fixes
+
+- (1) Virtualization boundary: Tab from the last button of the last
+  visible card now scrolls forward and continues the walk instead of
+  wrapping to the sidebar. A `cardLastButtonID` seam tracks the last
+  focusable inside the last visible card; `handleGlobalKeys` intercepts
+  Tab when that id holds focus and there are more cards below.
+- (2) Scroll on focus: `ReceivedFocusNow` now calls
+  `VirtualListScrollIntoView` — Tabbing or arrowing onto a partially
+  visible card scrolls it fully into view.
+- (3) Stale ring: suppress the passive cursor ring on mouse-click
+  frames (`FrameInput.Mouse != MouseClick`) — the clicked card draws
+  its own ring via FocusOnClick, so the old cursor card must not
+  flash a ring for one frame.
+- (4) gridCursorRect reset at gridView start each frame — the seam no
+  longer holds a stale rect from the previous frame.

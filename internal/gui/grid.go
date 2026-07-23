@@ -193,6 +193,7 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 	m.ddTriggerID = nil
 	m.ddFocusRing = false
 	Container(Attrs(Focusable, Pad(cardPad), Gap(cardGapV), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(radiusM), Clip), func() {
+		m.lastRenderedIdx = idx
 		if m.cardIDs != nil {
 			m.cardIDs[e.InstallDir] = CurrentId()
 		}
@@ -227,6 +228,11 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 		// identical value those paths already set, so there is no race.
 		if ReceivedFocusNow() {
 			m.selIdx = idx
+			c := m.cols
+			if c < 1 {
+				c = 1
+			}
+			VirtualListScrollIntoView("grid", idx/c)
 		}
 		if IsHovered() {
 			m.hoveredDir = e.InstallDir
@@ -250,7 +256,7 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 		// selBg band: the docked detail panel is the selection indicator in
 		// grid mode.
 		focused := HasFocus()
-		if focused || (idx == m.selIdx && !m.gridCardFocused) {
+		if focused || (idx == m.selIdx && !m.gridCardFocused && FrameInput.Mouse != MouseClick) {
 			m.gridCursorRect = m.cardRect
 			m.cardRingClip = m.rowClipRect
 			ModAttrs(func(a *AttrSet) {
@@ -343,6 +349,7 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 				if launchable(&e) && focusableButton(0, "Launch") {
 					m.launchGame(e)
 				}
+				m.cardLastButtonID = GetLastId()
 			})
 			btnRowID = GetLastId()
 		}
