@@ -1802,3 +1802,34 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   for games without an OptiScaler pill too. Accepted cosmetic: a
   transient ~2-frame double ring when clicking a card's button (focus
   lands mid-frame; the last-frame suppression catches up next frame).
+
+## 2026-07-23 — focus: Tab after Enter on a scrolled-out card
+
+- Root cause of "Tab resets to the app's top-left button after Enter
+  opens the detail panel": when the panel opens, the grid viewport
+  narrows, `cols` drops, and the cursor card reflows to a higher chunk
+  that can scroll out of the virtualized grid's rendered range. Its
+  identity node detaches; `cardFocusPending` is never consumed (the card
+  never renders); and `cycleFocus` (shirei) finds the stale focused node
+  absent from the frame's `focusables` registry → `idx=-1` →
+  `nextIdx=0` → `focusables[0]` = the sidebar's first button.
+- Fix: a deferred scroll-into-view (`scrollCursorPending` flag on the
+  model). The card's Enter handler sets the flag; `gridView`'s first
+  chunk callback consumes it AFTER `fitCards` recomputes cols (the panel
+  narrowed the grid, so the old cols would target the wrong chunk) and
+  posts `VirtualListScrollIntoView("grid", selIdx/newCols)`. Two frames
+  later the virtual list processes the scroll, the cursor card's chunk
+  re-enters the visible range, the card renders, and `cardFocusPending`
+  re-asserts focus on it — so the card's own Tab handler routes to the
+  panel naturally. No Tab interceptor, no focus trapping: Tab cycles
+  freely through all focusables (grid → panel → sidebar → grid) per
+  WCAG 2.4.3 Focus Order. An earlier Tab-interceptor attempt was
+  rejected: it trapped focus in the panel, cycling between only its
+  Close button and one action button, never returning to the cards.
+- Tests: two new regression tests in `paneltab_test.go`:
+  `TestPanelTab_EnterOpensPanelThenTabJumpsToPanel` (the user's exact
+  gesture: arrow → Enter → Tab, card visible) and
+  `TestPanelTab_EnterOpensPanelLastCardThenTab` (card 9 of 11 in a
+  narrow/short window — the virtualization edge case; verifies the
+  deferred scroll brings the card back into view, focus re-asserts,
+  and Tab flows to the panel). All 8 panel-tab tests green.

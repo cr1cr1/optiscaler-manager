@@ -1589,6 +1589,24 @@ func HasFocusWithin() bool {
 	return isChildNode(focused)
 }
 
+// IdHasFocusWithin reports whether the container with the given handle, or
+// any of its descendants, holds keyboard focus. Id variant of HasFocusWithin
+// for checking focus-within on a container other than the one currently
+// being built.
+// PATCHED by optiscaler-manager
+func IdHasFocusWithin(id ContainerId) bool {
+	n := resolveIdent(id)
+	if n == nil {
+		return false
+	}
+	for node := focused; node != nil; node = node.parent {
+		if node == n {
+			return true
+		}
+	}
+	return false
+}
+
 // IdIsHovered reports whether the pointer is over the container with the given
 // handle (anywhere in its hover stack, not necessarily on top).
 func IdIsHovered(id ContainerId) bool {

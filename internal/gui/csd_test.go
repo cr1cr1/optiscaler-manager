@@ -34,7 +34,7 @@ func TestVendorCSDPatchPresent(t *testing.T) {
 		t.Fatalf("vendored shirei.go unreadable: %v", err)
 	}
 	if !strings.Contains(string(b), "PATCHED by optiscaler-manager") {
-		t.Error("vendored shirei.go lacks the scroll-speedup patch; reapply it (docs/vendor-patches.md)")
+		t.Error("vendored shirei.go lacks the optiscaler-manager patches (scroll speedup, IdHasFocusWithin); reapply them (docs/vendor-patches.md)")
 	}
 
 	kbd := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "waylandbackend", "waylandkeyboard_linux.go")
