@@ -92,6 +92,7 @@ func gridItemCount(chunks int) int { return chunks + 1 }
 func (m *model) gridView() {
 	rows := m.visibleRows()
 	m.cardRingClip = Rect{}
+	m.gridCursorRect = Rect{}
 	if len(rows) == 0 {
 		m.emptyState()
 		return
@@ -150,6 +151,14 @@ func (m *model) gridView() {
 				return
 			}
 			m.fitCards(int(w))
+			if m.scrollCursorPending {
+				m.scrollCursorPending = false
+				c := m.cols
+				if c < 1 {
+					c = 1
+				}
+				VirtualListScrollIntoView("grid", m.selIdx/c)
+			}
 			// 1px vertical padding: shirei draws a container's border
 			// straddling its edge (half the stroke outside the rect), and
 			// this row's Clip used to sit flush against the card, scissoring
@@ -274,27 +283,8 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 			case KeyEnter:
 				m.toggleListDetail(m.gridRows)
 				FrameInput.Key = KeyCodeNone
-				// The panel (un)nests the grid next frame; re-assert focus
-				// on this card's fresh identity (see cardFocusPending).
 				m.cardFocusPending = m.gridRows[m.selIdx].InstallDir
-			case KeyTab:
-				// Panel Tab continuation: with the detail panel open for
-				// THIS card, Tab jumps straight to the panel's first
-				// focusable (the header Close button, view.go's
-				// panelFirstID seam) instead of walking every remaining
-				// grid focusable — the focusables registry is
-				// render-ordered, so all cards sit between this card and
-				// the panel. The CycleFocusOnTab above already ran the
-				// default walk; FocusImmediateOn overrides it. Shift+Tab
-				// keeps the default reverse walk, and a nil panelFirstID
-				// (the selected game renders no dropdown) falls through to
-				// the normal walk — both by leaving the key unconsumed.
-				if m.state.Selected == e.InstallDir &&
-					InputState.Modifiers&ModShift == 0 &&
-					m.panelFirstID != nil {
-					FrameInput.Key = KeyCodeNone
-					FocusImmediateOn(m.panelFirstID)
-				}
+				m.scrollCursorPending = true
 			}
 		}
 		Container(Attrs(Row, Gap(cardGapH)), func() {

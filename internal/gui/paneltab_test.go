@@ -86,37 +86,6 @@ func focusSelectedCardWithPanel(t *testing.T, m *model, sess *ui.Session, dir st
 	}
 }
 
-// TestPanelTab_CardTabJumpsToPanelFirst: with the detail panel open and the
-// SELECTED card focused, Tab jumps focus straight to the panel's first
-// focusable instead of walking the card's own inner controls and every
-// remaining card. Nothing in the grid may keep focus.
-func TestPanelTab_CardTabJumpsToPanelFirst(t *testing.T) {
-	sess, extDir := seedExternalPanelSession(t)
-	m := newModel(Config{Session: sess})
-
-	headlessFrames(t, 1200, 700)
-	focusSelectedCardWithPanel(t, m, sess, extDir)
-	cardDD := m.cardDDTrigger[extDir]
-	if cardDD == nil {
-		t.Fatalf("external card %q rendered no version-dropdown trigger", extDir)
-	}
-
-	keyFrame(KeyTab, 0, m.rootView)      // focused selected card: Tab continues into the panel
-	keyFrame(KeyCodeNone, 0, m.rootView) // focus change applies
-
-	if !IdHasFocus(m.panelFirstID) {
-		t.Error("Tab from the selected card did not land on the panel's first focusable (its header Close button)")
-	}
-	if IdHasFocus(cardDD) {
-		t.Error("Tab landed on the card's own dropdown trigger; the jump must skip the remaining grid focusables")
-	}
-	for dir, id := range m.cardIDs {
-		if IdHasFocus(id) {
-			t.Errorf("card %q holds focus after the panel jump; want the panel's first focusable exclusively", dir)
-		}
-	}
-}
-
 // TestPanelTab_NoPanelKeepsDefaultWalk: with the detail panel CLOSED, Tab
 // from a focused card follows the existing render-order registry walk (card
 // → its version-dropdown trigger → its buttons → the next card) exactly as
@@ -198,41 +167,6 @@ func TestPanelTab_PanelFirstIsCloseButton(t *testing.T) {
 	}
 	if cardDD := m.cardDDTrigger[extDir]; cardDD != nil && m.panelFirstID == cardDD {
 		t.Error("panelFirstID equals the CARD's dropdown trigger; the seam must capture the panel's own first focusable")
-	}
-}
-
-// TestPanelTab_CleanGameTabJumpsToPanel: a clean game renders no version
-// dropdown, but every panel renders the header Close button — so the Tab
-// continuation must still jump into the panel (the reviewer finding: the
-// old dropdown-trigger seam left clean games with no jump target at all).
-func TestPanelTab_CleanGameTabJumpsToPanel(t *testing.T) {
-	sess, extDir := seedExternalPanelSession(t)
-	m := newModel(Config{Session: sess})
-	// The seed library's other manual game is clean (no OptiScaler pill,
-	// hence no version dropdown in its panel).
-	cleanDir := ""
-	for _, r := range sess.VisibleRows() {
-		if r.InstallDir != extDir {
-			cleanDir = r.InstallDir
-		}
-	}
-	if cleanDir == "" {
-		t.Fatal("no clean game found beside the external one")
-	}
-
-	headlessFrames(t, 1200, 700)
-	focusSelectedCardWithPanel(t, m, sess, cleanDir) // fatals if panelFirstID is nil
-
-	keyFrame(KeyTab, 0, m.rootView)      // focused selected card: Tab continues into the panel
-	keyFrame(KeyCodeNone, 0, m.rootView) // focus change applies
-
-	if !IdHasFocus(m.panelFirstID) {
-		t.Error("Tab from a CLEAN game's selected card did not land on the panel's first focusable; the jump must not depend on the version dropdown")
-	}
-	for dir, id := range m.cardIDs {
-		if IdHasFocus(id) {
-			t.Errorf("card %q holds focus after the panel jump; want the panel's first focusable exclusively", dir)
-		}
 	}
 }
 

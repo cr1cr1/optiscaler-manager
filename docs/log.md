@@ -1833,3 +1833,24 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   narrow/short window — the virtualization edge case; verifies the
   deferred scroll brings the card back into view, focus re-asserts,
   and Tab flows to the panel). All 8 panel-tab tests green.
+
+## 2026-07-23 — focus: surgical fixes to per-card model
+
+- Reverted the roving-tabindex grid-wrapper redesign (which made card
+  buttons non-focusable Tab stops) back to the per-card Focusable model,
+  then applied 4 targeted fixes:
+- (1) Deleted the card's `KeyTab` handler that force-jumped to the panel
+  (`panelFirstID`): Tab now walks naturally through render order (card →
+  its Install button → Launch → dropdown → next card → … → panel),
+  restoring the expected Tab behavior.
+- (2) Added `scrollCursorPending`: Enter opens the panel → grid narrows
+  → cols recomputes → cursor card may scroll out of the virtualized
+  range. The deferred scroll (consumed in gridView after `fitCards`
+  recomputes cols) brings it back into view so `cardFocusPending` can
+  re-assert focus — fixing the Tab-to-top-left bug.
+- (3) Reset `gridCursorRect` at gridView start each frame — the stale
+  ring flash when clicking a second card while focus lingered on the
+  first.
+- (4) Dropdown stomping + pick-path fix: a closed dropdown no longer
+  clears the shared item list of the same game's OPEN dropdown (broke
+  arrow nav); both pick paths now clear `openDropdownDir`.

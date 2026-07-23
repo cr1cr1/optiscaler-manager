@@ -667,7 +667,10 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 	if st.open && m.openDropdownDir != e.InstallDir {
 		st.open = false
 	}
-	if !st.open && m.versionDDItemsFor == e.InstallDir {
+	// A closed dropdown clears the shared item list only when NO dropdown is
+	// open for this game — card and panel each render one, and the closed one
+	// must not stomp the open one's items.
+	if !st.open && m.openDropdownDir != e.InstallDir && m.versionDDItemsFor == e.InstallDir {
 		m.versionDDItems = nil
 		m.versionDDItemsFor = ""
 	}
@@ -795,6 +798,7 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 								m.dispatchSwitchVersion(dir, v)
 							}
 							st.open = false // close either way (S13 no-op on current)
+							m.openDropdownDir = ""
 						} else if enterPick && hl {
 							// Enter on the trigger picks the highlighted row:
 							// the same dispatch guard as the click pick above
@@ -804,6 +808,7 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 								m.dispatchSwitchVersion(dir, v)
 							}
 							st.open = false
+							m.openDropdownDir = ""
 							FocusImmediateOn(st.btnID)
 						}
 					})
