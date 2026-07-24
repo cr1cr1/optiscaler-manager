@@ -1871,3 +1871,21 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   flash a ring for one frame.
 - (4) gridCursorRect reset at gridView start each frame — the seam no
   longer holds a stale rect from the previous frame.
+
+## 2026-07-23 — focus: ring = HasFocus() only — delete passive cursor ring
+
+- The passive cursor ring (`idx == selIdx && !gridCardFocused`) was the
+  root cause of every ring timing/staleness bug. It drew a ring on the
+  card at selIdx's POSITION even when that card didn't have keyboard
+  focus — so when cols reflowed (panel open/close) and card positions
+  shifted, the ring landed on the wrong card. Buttons, toggles, and
+  dropdowns never had this problem because their ring is just HasFocus().
+- Ring is now `if HasFocus() { draw ring }` — identical to every other
+  focusable component. No passive cursor ring, no suppression maps.
+- Deleted: `gridCardFocused`, `cardFocusWithin`, `gridFocusWithin` (3
+  model fields), the one-ring computation in gridView (~25 lines), the
+  per-card focus-within recording, and `releaseGridInnerFocus`.
+- Global arrow handler now calls `focusCursorCard()` (focus the cursor
+  card) instead of `releaseGridInnerFocus()` (clear inner focus) —
+  arrows always leave the cursor card focused, so HasFocus() draws the
+  ring on it.

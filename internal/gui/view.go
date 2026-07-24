@@ -140,14 +140,6 @@ func (m *model) focusCursorCard() {
 // consumes arrows during render, so an arrow reaching here while focus is
 // inside the grid means an inner control (button, dropdown trigger) holds
 // it — and a cursor move must leave no element of the previous card
-// focused (at most one focused element, one ring). The mode gate keeps
-// list/audit frames (where gridFocusWithin is stale) untouched.
-func (m *model) releaseGridInnerFocus() {
-	if m.gridFocusWithin && !m.auditGrid && m.state.Mode != ui.ViewList {
-		ClearFocus()
-	}
-}
-
 // handleGlobalKeys runs at the very end of the frame so focused widgets get
 // first pick of the key stream. In grid mode arrows move the card selection
 // (±1 across, ±cols up/down); in list mode Up/Down move one row (and scroll
@@ -200,13 +192,13 @@ func (m *model) handleGlobalKeys() {
 			return
 		}
 		m.moveGridSel(rows, 1)
-		m.releaseGridInnerFocus()
+		m.focusCursorCard()
 	case KeyLeft:
 		if listMode {
 			return
 		}
 		m.moveGridSel(rows, -1)
-		m.releaseGridInnerFocus()
+		m.focusCursorCard()
 	case KeyDown:
 		if listMode {
 			m.moveListSel(rows, 1)
@@ -214,7 +206,7 @@ func (m *model) handleGlobalKeys() {
 			return
 		}
 		m.moveGridSel(rows, cols)
-		m.releaseGridInnerFocus()
+		m.focusCursorCard()
 	case KeyUp:
 		if listMode {
 			m.moveListSel(rows, -1)
@@ -222,7 +214,7 @@ func (m *model) handleGlobalKeys() {
 			return
 		}
 		m.moveGridSel(rows, -cols)
-		m.releaseGridInnerFocus()
+		m.focusCursorCard()
 	case KeyEnter:
 		m.toggleListDetail(rows)
 	case KeyEscape:

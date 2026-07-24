@@ -367,10 +367,9 @@ func TestGrid_CursorRingDistinctFromHover(t *testing.T) {
 	m := newModel(Config{Session: sess})
 
 	headlessFrames(t, 1200, 700)
-	keyFrame(KeyCodeNone, 0, m.rootView) // build; cursor on card 0
-	keyFrame(KeyCodeNone, 0, m.rootView) // capture rects
+	focusCard(t, m, rows[0].InstallDir) // ring = HasFocus(), so focus card 0
 	if m.gridCursorRect.Size[0] == 0 {
-		t.Fatal("cursor card never recorded a ring rect")
+		t.Fatal("focused card never recorded a ring rect")
 	}
 	if m.selIdx != 0 {
 		t.Fatalf("initial cursor selIdx %d, want 0", m.selIdx)
@@ -393,14 +392,13 @@ func TestGrid_CursorRingDistinctFromHover(t *testing.T) {
 	}
 	InputState.MousePoint = Vec2{-50, -50}
 
-	// Selecting a card opens the panel but must not move the cursor ring or
-	// draw any selection band on the card itself.
+	// Selecting a card opens the panel but must not move the cursor
+	// (selection ≠ cursor in grid mode). Programmatic sess.Select does
+	// not maintain keyboard focus through the re-nest, so the ring may
+	// disappear — that is correct (ring = HasFocus()).
 	sess.Select(rows[1].InstallDir)
 	keyFrame(KeyCodeNone, 0, m.rootView) // panel opens beside the grid
 	keyFrame(KeyCodeNone, 0, m.rootView)
-	if m.gridCursorRect.Size[0] == 0 {
-		t.Error("cursor ring lost after selection opened the panel")
-	}
 	if m.selIdx != 0 {
 		t.Errorf("session selection moved the cursor: selIdx %d, want 0 (selection != cursor in grid mode)", m.selIdx)
 	}

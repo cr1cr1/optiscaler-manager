@@ -59,14 +59,11 @@ type model struct {
 	listFocusRing       bool                          // whether the list wrapper drew its focus ring on the last frame (focus ring test seam)
 	gridCursorRect      Rect                          // screen rect of the ringed grid card: the focused card, or the keyboard-cursor card when no card is focused (cursor chrome test seam, mirrors listSelRect)
 	cardFocusPending    string                        // deferred per-card focus grab: install dir of the card that re-asserts focus on its next render (the detail panel re-nests the grid, orphaning path-scoped ids; mirrors listFocusPending)
-	scrollCursorPending bool                          // deferred scroll-into-view: set by Enter when opening the panel, consumed once in gridView after fitCards recomputes cols (the panel narrows the grid, cols drops, the cursor card reflows to a higher chunk)
-	lastRenderedIdx     int                           // idx of the last card that rendered this frame (highest visible idx). Tab from this card scrolls forward instead of wrapping to the sidebar — the virtualization boundary guard.
-	cardLastButtonID    ContainerId                   // id of the last focusable button inside the last visible card. handleGlobalKeys checks this to detect Tab past the virtualization boundary.
+	scrollCursorPending bool                          // deferred scroll-into-view: set by Enter when opening the panel, consumed once in gridView after fitCards recomputes cols
+	lastRenderedIdx     int                           // idx of the last card that rendered this frame (highest visible idx)
+	cardLastButtonID    ContainerId                   // id of the last focusable button inside the last visible card — handleGlobalKeys checks this to detect Tab past the virtualization boundary
 	cardIDs             map[string]ContainerId        // rendered card ids by install dir, rebuilt each grid frame: arrow moves retarget focus through it (a card's id is only known while it renders)
 	cardDDTrigger       map[string]ContainerId        // rendered version-dropdown trigger ids by install dir, rebuilt each grid frame (Tab-order test seam, mirrors cardIDs)
-	gridCardFocused     bool                          // whether any grid card OR any grid-descendant focusable (inner button, dropdown trigger) held focus at gridView build time (suppresses the selIdx cursor ring: exactly one ring)
-	cardFocusWithin     map[string]bool               // per-card "focus held within this card (card or an inner control)" from the LAST grid frame, keyed by install dir: widens gridCardFocused to grid descendants (rebuilt per frame, checked pre-render like cardIDs)
-	gridFocusWithin     bool                          // whether keyboard focus sat anywhere inside the grid during THIS frame's render (a focused card consumes arrows itself, so an arrow reaching the global handler with this set means an inner control holds focus and must release it on the cursor move)
 	cardRingClip        Rect                          // chunk-row clip rect of the ringed card (ring-clearance test seam: the ring needs 1px of room inside the clip on every side)
 	gridRows            []ui.GameRow                  // the row set of the grid frame being built: the focused card's arrow/Enter handlers share it with moveGridSel/toggleListDetail
 	rowClipRect         Rect                          // chunk-row rect of the card row being built (transient: copied to cardRingClip on the ringed card)
