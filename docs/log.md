@@ -2054,3 +2054,23 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
 - Guard: `TestVendorCSDPatchPresent` extended to check for `armRepeat`
   + `pumpRepeat` + the marker in `win32backend_windows.go`.
 - `docs/vendor-patches.md` v0.11 section added.
+
+## 2026-07-24 — v0.11: skip-unchanged-frames on Wayland (vendor patch v0.15) + Windows console suppression
+
+- Wayland with many columns was reported "barely responding to clicks":
+  with animations disabled (v0.13) the surfaces hash is stable on idle
+  frames, but `drawFrame` still ran the full raster+Attach+Damage+Commit
+  every dispatch cycle (~33-160ms on Wayland vs ~10ms on X11).
+- Vendor patch v0.15 `waylandbackend_linux.go:drawFrame`: after
+  `RunFrameFn` produces a frame, if `!out.FrameHasChanges && haveFrame`,
+  skip the raster+present. RunFrameFn still runs (input/state/hover
+  processed), only the paint is skipped. Idle/dispatch frames drop to
+  ~1ms, unblocking click pickup. `haveFrame` is set after the first
+  committed frame.
+- User-verified on Wayland: "seems better."
+- Windows console window fix: the released EXE was allocating a console
+  alongside the GUI. Root cause: Go's default PE subsystem is CONSOLE.
+  Fix: `.goreleaser.yml` gains an `overrides` block for
+  `goos: windows, goarch: amd64` that appends `-H=windowsgui` to the
+  linker flags. Cross-compile verified: built EXE reports
+  `Subsystem: WINDOWS_GUI (2)`. `goreleaser check` passes.

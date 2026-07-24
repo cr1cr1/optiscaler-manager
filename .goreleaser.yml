@@ -36,6 +36,18 @@ builds:
       - -s
       - -w
       - -X=main.version={{.Tag}}_{{.ShortCommit}}
+    # windows: also link against the WINDOWS_GUI subsystem so the EXE does
+    # not allocate a console window alongside the shirei GUI. -H windowsgui
+    # is a no-op (or link error) on linux, so it's gated to windows only via
+    # the per-goos override block.
+    overrides:
+      - goos: windows
+        goarch: amd64
+        ldflags:
+          - -s
+          - -w
+          - -X=main.version={{.Tag}}_{{.ShortCommit}}
+          - -H=windowsgui
 checksum:
   name_template: "sha256sums.txt"
   algorithm: sha256
