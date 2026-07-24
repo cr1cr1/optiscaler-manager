@@ -1912,3 +1912,22 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   final pass, it targets the stable node.
 - Deleted the per-card cardFocusPending check (was consuming on the
   wrong pass).
+
+## 2026-07-23 — focus: identity-churn edge via prevCardFocusDir
+
+- Replaced the prevSelected + prevCols edge detection (which fired
+  spuriously during initial layout convergence) with a single
+  prevCardFocusDir check: "was a card focused last frame but none is
+  focused now?" This precisely detects identity churn (panel re-nest,
+  layout convergence after cols reflow) without firing when focus was
+  never on a card (initial convergence) or intentionally moved
+  elsewhere (panel, sidebar). Tab suppresses the tracking for one
+  frame so Tab-within-grid (card → button) isn't mistaken for churn.
+- The cardFocusPending re-assert: re-asserts when the card lost
+  focus (!HasFocus), clears once focus is back (HasFocus). This
+  handles multi-pass layout convergence within a single RunFrameFn
+  call (each pass re-asserts with its own node; the last pass's node
+  is stable). Between calls, the prevCardFocusDir edge re-sets the
+  pending if the card's node changed again.
+- Probe verified: click card 3 → panel opens → cols 5→3 → focus
+  stays on card 3 across ALL settle frames → ring draws from frame 2.

@@ -102,16 +102,6 @@ func (m *model) gridView() {
 		cols = 1
 	}
 	chunks := chunkRows(rows, cols)
-	// Panel open/close edge: Selected changed since last frame → the grid
-	// re-nested → card identity nodes changed. Re-set cardFocusPending so
-	// the cursor card re-asserts focus on its fresh node (below, after the
-	// virtual list renders the final nodes).
-	if m.prevSelected != m.state.Selected {
-		m.prevSelected = m.state.Selected
-		if 0 <= m.selIdx && m.selIdx < len(rows) {
-			m.cardFocusPending = rows[m.selIdx].InstallDir
-		}
-	}
 	m.cardIDs = make(map[string]ContainerId, len(rows))
 	m.cardDDTrigger = make(map[string]ContainerId, len(rows))
 	m.gridRows = rows
@@ -156,14 +146,31 @@ func (m *model) gridView() {
 				}
 			})
 		})
-	// Post-render re-assert: after all visible cards rendered (cardIDs
-	// populated with the FINAL nodes from this pass), focus the pending
-	// card. On stale-cols passes (VirtualListView deferred items, cardIDs
-	// empty) it's a no-op; on the final pass it targets the stable node.
-	if m.cardFocusPending != "" {
-		if id := m.cardIDs[m.cardFocusPending]; id != nil {
-			m.cardFocusPending = ""
-			FocusImmediateOn(id)
+	// Identity-churn edge: if a card held focus last frame but none
+	// holds it now (the card's identity node changed due to panel
+	// re-nest or layout convergence), re-set cardFocusPending so the
+	// card re-asserts on its fresh node. Only fires when a card WAS
+	// focused — never during initial layout convergence (no card had
+	// focus) or when focus is intentionally elsewhere (panel, sidebar).
+	anyCardFocused := false
+	for _, id := range m.cardIDs {
+		if IdHasFocus(id) {
+			anyCardFocused = true
+			break
+		}
+	}
+	if !anyCardFocused && m.prevCardFocusDir != "" &&
+		0 <= m.selIdx && m.selIdx < len(rows) {
+		m.cardFocusPending = rows[m.selIdx].InstallDir
+		m.scrollCursorPending = true
+	}
+	m.prevCardFocusDir = ""
+	if FrameInput.Key != KeyTab {
+		for d, id := range m.cardIDs {
+			if IdHasFocus(id) {
+				m.prevCardFocusDir = d
+				break
+			}
 		}
 	}
 }
@@ -189,7 +196,20 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 		if m.cardIDs != nil {
 			m.cardIDs[e.InstallDir] = CurrentId()
 		}
+		// Clear when Tab/Shift+Tab moves focus away.
+		if m.cardFocusPending == e.InstallDir && FrameInput.Key == KeyTab {
+			m.cardFocusPending = ""
+		}
+		// Re-assert when the card lost focus (identity churn after re-nest).
+		if m.cardFocusPending == e.InstallDir && !HasFocus() {
+			FocusImmediateOn(CurrentId())
+		}
+		// Clear once focus is back — the pending served its purpose.
+		if m.cardFocusPending == e.InstallDir && HasFocus() {
+			m.cardFocusPending = ""
+		}
 		CycleFocusOnTab()
+		FocusOnClick()
 		FocusOnClick()
 		// Cursor follows focus: Tabbing onto a card moves the keyboard
 		// cursor onto it, so focus and cursor can never diverge. Click and
