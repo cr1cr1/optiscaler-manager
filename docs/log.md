@@ -1944,3 +1944,32 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   where the card re-asserted focus every time the user Tabbed or clicked
   away from it.
 - prevCursorID starts nil (first frame: initialize without firing).
+
+## 2026-07-24 — delete+purge unmerged branch v7-t2-session
+
+- Inspected the unmerged local branch `v7-t2-session` (tip f45ed15; 60
+  commits ahead of main, 149 behind; pre-rebase session branch for the
+  v0.5/v0.6/v0.7 T1+T2 work). Question: anything valuable to port before
+  deletion?
+- Value audit (three independent checks, all negative):
+  - `git cherry main v7-t2-session` → 0 commits with `+`, 49 with `−`:
+    every non-merge branch commit (60 − 11 merges) has an exact patch-id
+    equivalent in main. Zero unique patches.
+  - `comm -23 <(ls-tree branch) <(ls-tree main)` → empty: no file exists
+    on the branch that main lacks.
+  - All 11 merges' second-parent commits are already in main's
+    first-parent history (per git cherry); no merge-hidden content.
+- Conclusion: nothing to TDD-port — no behavioral change to lock. The
+  branch is a pre-hardening snapshot; main hardened the same work further
+  in v0.7.1/v0.7.2 (Score float64, isBinaryMagic, +148 lines of
+  gamedir.go edge cases) and built the v0.8+ stack after divergence.
+- Pruned the stale worktree `/tmp/om-v7t2` (`git worktree prune`; the
+  gitdir pointed at a non-existent location and it was already marked
+  prunable).
+- Deleted the branch with `git branch -D v7-t2-session` (`-d` refuses:
+  the tip is not an ancestor of main). Branch ref, its reflog, and the
+  worktree metadata are gone; the 60 commits are now unreachable and
+  will be gc'd on the next `git gc` run (default 30-day
+  `gc.reflogExpireUnreachable` window for recovery).
+- No archive tag was created — the session is documented here and the
+  work is fully absorbed into main.
