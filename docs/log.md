@@ -2074,3 +2074,30 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   `goos: windows, goarch: amd64` that appends `-H=windowsgui` to the
   linker flags. Cross-compile verified: built EXE reports
   `Subsystem: WINDOWS_GUI (2)`. `goreleaser check` passes.
+
+## 2026-07-24 — pickdir-windows: replace PowerShell with direct IFileOpenDialog COM
+
+- The PowerShell-based FolderBrowserDialog spawned a visible PowerShell
+  window alongside the GUI (parent-process console). Replaced with a
+  direct Win32 IFileOpenDialog call via syscall — no child process, no
+  transient console.
+- Uses the modern folder picker (Vista+): same dialog every Windows
+  app shows, with the navigation pane, recent places, and a "Make New
+  Folder" button.
+- Implementation: CoInitializeEx (COINIT_APARTMENTTHREADED) +
+  CoCreateInstance(CLSID_FileOpenDialog, IID_IFileOpenDialog) +
+  SetOptions(FOS_PICKFOLDHAS|FOS_FORCEFILESYSTEM|FOS_PATHMUSTEXIST) +
+  SetTitle + Show + GetResult -> IShellItem -> GetDisplayName
+  (SIGDN_FILESYSPATH) -> CoTaskMemFree.
+- Vtable dispatch uses typed method structs (`iFileDialogVtbl`,
+  `iShellItemVtbl`, the go-ole idiom) so `go vet`'s unsafeptr analyzer
+  accepts every Pointer/uintptr conversion. CoInitializeEx/CoUninitialize
+  ownership tracked via `ownsInit` so we don't tear down COM another
+  owner set up.
+- Cancelled dialog (HRESULT_FROM_WIN32(ERROR_CANCELLED)) returns
+  ("", nil) like the unix path.
+- `pickdir_test.go` renamed to `pickdir_unix_test.go` with
+  `//go:build !windows` — the "no tools on PATH" assertion only applies
+  to the zenity/kdialog unix pickers; on Windows COM is always
+  available.
+- Cross-verified: GOOS=windows build + vet + test-compile all clean.
