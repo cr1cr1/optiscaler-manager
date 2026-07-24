@@ -128,6 +128,7 @@ func (m *model) focusCursorCard() {
 		return
 	}
 	dir := m.gridRows[m.selIdx].InstallDir
+	m.cardFocusPending = dir
 	if id := m.cardIDs[dir]; id != nil {
 		FocusImmediateOn(id)
 		return
