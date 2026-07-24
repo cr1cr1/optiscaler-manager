@@ -146,33 +146,21 @@ func (m *model) gridView() {
 				}
 			})
 		})
-	// Identity-churn edge: if a card held focus last frame but none
-	// holds it now (the card's identity node changed due to panel
-	// re-nest or layout convergence), re-set cardFocusPending so the
-	// card re-asserts on its fresh node. Only fires when a card WAS
-	// focused — never during initial layout convergence (no card had
-	// focus) or when focus is intentionally elsewhere (panel, sidebar).
-	anyCardFocused := false
-	for _, id := range m.cardIDs {
-		if IdHasFocus(id) {
-			anyCardFocused = true
-			break
-		}
+	// Identity-churn detection: compare the cursor card's node pointer
+	// with last frame's. If it changed (panel re-nest, layout convergence),
+	// the card's identity is new and focus was orphaned — re-set
+	// cardFocusPending. If it's the same, focus was intentionally moved
+	// (Tab, click on panel) — don't interfere. prevCursorID starts nil
+	// (first frame: initialize without firing).
+	currentCursorID := ContainerId(nil)
+	if 0 <= m.selIdx && m.selIdx < len(rows) {
+		currentCursorID = m.cardIDs[rows[m.selIdx].InstallDir]
 	}
-	if !anyCardFocused && m.prevCardFocusDir != "" &&
-		0 <= m.selIdx && m.selIdx < len(rows) {
+	if m.prevCursorID != nil && currentCursorID != nil && m.prevCursorID != currentCursorID {
 		m.cardFocusPending = rows[m.selIdx].InstallDir
 		m.scrollCursorPending = true
 	}
-	m.prevCardFocusDir = ""
-	if FrameInput.Key != KeyTab {
-		for d, id := range m.cardIDs {
-			if IdHasFocus(id) {
-				m.prevCardFocusDir = d
-				break
-			}
-		}
-	}
+	m.prevCursorID = currentCursorID
 }
 
 // gameCard renders one cover card: platform pill, status badges, cover,

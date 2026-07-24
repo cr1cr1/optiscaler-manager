@@ -60,7 +60,7 @@ type model struct {
 	gridCursorRect      Rect                          // screen rect of the ringed grid card: the focused card, or the keyboard-cursor card when no card is focused (cursor chrome test seam, mirrors listSelRect)
 	cardFocusPending    string                        // deferred per-card focus grab: install dir of the card that re-asserts focus on its next render (the detail panel re-nests the grid, orphaning path-scoped ids; mirrors listFocusPending)
 	scrollCursorPending bool                          // deferred scroll-into-view: set by Enter when opening the panel, consumed once in gridView after fitCards recomputes cols
-	prevCardFocusDir    string                        // install dir of the card that held focus LAST frame — gridView detects identity churn (card was focused, now isn't) to re-set cardFocusPending
+	prevCursorID        ContainerId                   // the cursor card's identity node from LAST frame — gridView compares it with this frame's node to detect actual identity churn (pointer changed) vs intentional focus move (pointer same)
 	lastRenderedIdx     int                           // idx of the last card that rendered this frame (highest visible idx)
 	cardLastButtonID    ContainerId                   // id of the last focusable button inside the last visible card — handleGlobalKeys checks this to detect Tab past the virtualization boundary
 	cardIDs             map[string]ContainerId        // rendered card ids by install dir, rebuilt each grid frame: arrow moves retarget focus through it (a card's id is only known while it renders)

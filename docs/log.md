@@ -1931,3 +1931,16 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   pending if the card's node changed again.
 - Probe verified: click card 3 → panel opens → cols 5→3 → focus
   stays on card 3 across ALL settle frames → ring draws from frame 2.
+
+## 2026-07-23 — focus: identity-churn via node pointer comparison
+
+- Replaced prevCardFocusDir (fired on ANY focus loss — couldn't
+  distinguish Tab/click from identity churn, causing focus stealing)
+  with prevCursorID: a direct node-pointer comparison. If the cursor
+  card's identity node pointer changed since last frame, the identity
+  churned (panel re-nest, layout convergence) → re-set cardFocusPending.
+  If the pointer is the same, focus was intentionally moved (Tab, click
+  on panel) → don't interfere. This eliminates the focus-stealing bug
+  where the card re-asserted focus every time the user Tabbed or clicked
+  away from it.
+- prevCursorID starts nil (first frame: initialize without firing).
