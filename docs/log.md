@@ -1889,3 +1889,26 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   card) instead of `releaseGridInnerFocus()` (clear inner focus) —
   arrows always leave the cursor card focused, so HasFocus() draws the
   ring on it.
+
+## 2026-07-23 — focus: fix ring-on-wrong-card after panel reflow
+
+- Root cause: multi-pass rendering. When the panel opens, RunFrameFn
+  runs pass 1 with STALE cols (from last frame). Cards render at old
+  positions with stale-cols nodes. The per-card cardFocusPending
+  re-assert consumed the pending on this pass, focusing a node that
+  gets REPLACED on pass 2 (when fitCards recomputes cols and the card
+  lands in a different chunk). The ring then pointed at a detached
+  node, or shirei resolved it to the wrong card.
+- Fix (two parts):
+  (1) Panel open/close edge detection: `prevSelected` tracks the last
+  frame's `state.Selected`. When it changes, re-set cardFocusPending
+  for the cursor card — the re-nest changed its identity, so the
+  pending must fire on the NEW frame.
+  (2) Post-VirtualListView re-assert: move the cardFocusPending
+  consume OUT of the per-card render and into a block AFTER the
+  virtual list finishes. This runs after all visible cards registered
+  their FINAL nodes (cardIDs populated). On stale-cols passes
+  (VirtualListView deferred items), cardIDs is empty → no-op. On the
+  final pass, it targets the stable node.
+- Deleted the per-card cardFocusPending check (was consuming on the
+  wrong pass).

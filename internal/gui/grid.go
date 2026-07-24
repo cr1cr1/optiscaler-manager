@@ -102,6 +102,16 @@ func (m *model) gridView() {
 		cols = 1
 	}
 	chunks := chunkRows(rows, cols)
+	// Panel open/close edge: Selected changed since last frame → the grid
+	// re-nested → card identity nodes changed. Re-set cardFocusPending so
+	// the cursor card re-asserts focus on its fresh node (below, after the
+	// virtual list renders the final nodes).
+	if m.prevSelected != m.state.Selected {
+		m.prevSelected = m.state.Selected
+		if 0 <= m.selIdx && m.selIdx < len(rows) {
+			m.cardFocusPending = rows[m.selIdx].InstallDir
+		}
+	}
 	m.cardIDs = make(map[string]ContainerId, len(rows))
 	m.cardDDTrigger = make(map[string]ContainerId, len(rows))
 	m.gridRows = rows
@@ -146,6 +156,16 @@ func (m *model) gridView() {
 				}
 			})
 		})
+	// Post-render re-assert: after all visible cards rendered (cardIDs
+	// populated with the FINAL nodes from this pass), focus the pending
+	// card. On stale-cols passes (VirtualListView deferred items, cardIDs
+	// empty) it's a no-op; on the final pass it targets the stable node.
+	if m.cardFocusPending != "" {
+		if id := m.cardIDs[m.cardFocusPending]; id != nil {
+			m.cardFocusPending = ""
+			FocusImmediateOn(id)
+		}
+	}
 }
 
 // gameCard renders one cover card: platform pill, status badges, cover,
@@ -168,16 +188,6 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 		m.lastRenderedIdx = idx
 		if m.cardIDs != nil {
 			m.cardIDs[e.InstallDir] = CurrentId()
-		}
-		// Deferred re-assert: clicks and Enter set cardFocusPending because
-		// opening/closing the detail panel re-nests the grid — shirei
-		// identities are path-scoped, so focus grabbed mid-gesture would be
-		// orphaned. Re-assert once, on this card's fresh identity, the first
-		// frame the card re-renders (mirrors listFocusPending, per-card). A
-		// card scrolled away simply re-asserts when it next renders.
-		if m.cardFocusPending == e.InstallDir {
-			m.cardFocusPending = ""
-			FocusImmediateOn(CurrentId())
 		}
 		CycleFocusOnTab()
 		FocusOnClick()

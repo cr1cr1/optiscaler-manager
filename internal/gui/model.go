@@ -59,6 +59,7 @@ type model struct {
 	listFocusRing       bool                          // whether the list wrapper drew its focus ring on the last frame (focus ring test seam)
 	gridCursorRect      Rect                          // screen rect of the ringed grid card: the focused card, or the keyboard-cursor card when no card is focused (cursor chrome test seam, mirrors listSelRect)
 	cardFocusPending    string                        // deferred per-card focus grab: install dir of the card that re-asserts focus on its next render (the detail panel re-nests the grid, orphaning path-scoped ids; mirrors listFocusPending)
+	prevSelected        string                        // last frame's state.Selected — gridView detects panel open/close edges to re-set cardFocusPending when the grid re-nests
 	scrollCursorPending bool                          // deferred scroll-into-view: set by Enter when opening the panel, consumed once in gridView after fitCards recomputes cols
 	lastRenderedIdx     int                           // idx of the last card that rendered this frame (highest visible idx)
 	cardLastButtonID    ContainerId                   // id of the last focusable button inside the last visible card — handleGlobalKeys checks this to detect Tab past the virtualization boundary
