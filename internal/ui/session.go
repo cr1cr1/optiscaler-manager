@@ -306,6 +306,25 @@ func (s *Session) SetOnlineLookups(v bool) {
 	}
 }
 
+// SetCardSize changes the grid card width preset (persisted). Accepts
+// "small", "medium", "large"; anything else falls back to "medium".
+func (s *Session) SetCardSize(size string) {
+	if size != "small" && size != "medium" && size != "large" {
+		size = "medium"
+	}
+	s.mu.Lock()
+	if s.deps.Settings.CardSize == size {
+		s.mu.Unlock()
+		return
+	}
+	s.deps.Settings.CardSize = size
+	snap := s.deps.Settings
+	s.mu.Unlock()
+	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
+		s.toast("settings not saved: "+err.Error(), true)
+	}
+}
+
 // SetLaunchTemplate changes the command template manual games launch with
 // (persisted); an empty value resets to the plain `"{exe}" {args}` default.
 func (s *Session) SetLaunchTemplate(tmpl string) {

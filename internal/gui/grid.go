@@ -11,27 +11,47 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
-// Card geometry: cards adapt to the live list width so narrow windows
-// (tiling WMs) never overflow horizontally; ultrawide windows cap columns
-// and card width instead of stretching cards absurdly.
+// Card geometry: cards have a FIXED width selected by the user's CardSize
+// preset (small/medium/large). The column count adjusts to the window
+// width so narrowing the window (or opening the detail panel) drops
+// columns instead of shrinking cards. This stabilizes card sizes across
+// resize/panel toggles, which in turn makes shirei's scaled-image cache
+// hit every frame instead of re-rasterizing covers on every width change.
 const (
 	cardGap    = 10
-	targetCard = 200 // px; cols = width/targetCard
 	coverRatio = 1.5 // 600x900 covers are 2:3
-	maxCols    = 8
-	maxCardW   = 320
 	rowPadH    = 12 // horizontal padding each side of a grid row
 	cardPad    = 10 // inner card padding
 	cardGapV   = 8  // vertical gap between components
 	cardGapH   = 8  // horizontal gap inside row containers
 )
 
+// cardSizePresets maps the settings CardSize value to a target card width
+// in px. The target drives the column count; the actual cardW stretches to
+// fill the row so there's no gap on the right (see fitCards).
+var cardSizePresets = map[string]int{
+	"small":  200,
+	"medium": 240,
+	"large":  280,
+}
+
+// cardSizeForPreset returns the target card width for a preset name, falling
+// back to medium for any unrecognized value.
+func cardSizeForPreset(size string) int {
+	if w, ok := cardSizePresets[size]; ok {
+		return w
+	}
+	return cardSizePresets["medium"]
+}
+
 // Fixed card chrome below the cover: badge row, title, two pill rows, and
-// the button row, each one text line tall, plus gaps and padding.
+// the button row, each one text line tall, plus gaps and padding. pillRowH
+// and badgeRowH track badgePill's vertical padding (see theme.go): a pill is
+// 3px top/bottom padding + ~16px text line.
 const (
-	badgeRowH  = 18
+	badgeRowH  = 22
 	textRowH   = 18
-	pillRowH   = 18
+	pillRowH   = 22
 	buttonRowH = 30
 )
 
@@ -60,24 +80,19 @@ func chunkRows(rows []ui.GameRow, cols int) [][]ui.GameRow {
 	return chunks
 }
 
-// fitCards derives columns and card size from the live row width: at least
-// one column, at most maxCols, and cards never wider than maxCardW (rows
-// stay left-aligned on ultrawide windows).
+// fitCards derives columns from the live row width against the FIXED card
+// size preset. Cards never change width; Filler spacers between them absorb
+// the remaining width so the row is justified (no gap on the right).
 func (m *model) fitCards(w int) {
 	inner := w - 2*rowPadH
-	cols := inner / targetCard
+	cardW := cardSizeForPreset(m.cardSize)
+	cols := (inner + cardGap) / (cardW + cardGap)
 	if cols < 1 {
 		cols = 1
 	}
-	if cols > maxCols {
-		cols = maxCols
-	}
 	m.cols = cols
-	m.cardW = (inner - (cols-1)*cardGap) / cols
-	if m.cardW > maxCardW {
-		m.cardW = maxCardW
-	}
-	m.cardH = cardContentH(m.cardW)
+	m.cardW = cardW
+	m.cardH = cardContentH(cardW)
 }
 
 // gridItemCount adds a trailing spacer row to the chunk count so the last
@@ -139,11 +154,13 @@ func (m *model) gridView() {
 			// already gave them room). 1px of row padding clears the stroke
 			// without touching card geometry; the chunk item's 8px height
 			// slack absorbs the taller row.
-			Container(Attrs(Row, Gap(cardGap), Pad2(1, rowPadH), MinSize(w, float32(m.cardH)), Clip), func() {
+			Container(Attrs(Row, CrossMid, Gap(cardGap), Pad2(1, rowPadH), MinSize(w, float32(m.cardH)+8), Clip), func() {
 				m.rowClipRect = GetScreenRectOf(CurrentId())
+				Filler(1)
 				for j := range chunks[i] {
 					m.gameCard(chunks[i][j], i*cols+j)
 				}
+				Filler(1)
 			})
 		})
 	// Identity-churn detection: compare the cursor card's node pointer
@@ -353,7 +370,7 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 func (m *model) coverArt(e ui.GameRow, w, h float32) {
 	if e.CoverPath != "" && !isPlaceholderCover(e.CoverPath) {
 		if _, err := os.Stat(e.CoverPath); err == nil {
-			Image(e.CoverPath, Vec2{w, h})
+			ImageFill(e.CoverPath, Vec2{w, h})
 			return
 		}
 	}

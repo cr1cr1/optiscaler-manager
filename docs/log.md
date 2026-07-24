@@ -314,7 +314,8 @@ Append-only milestone and task log. Newest at the bottom.
   commands `SetDefaultVersion` / `ClearBundleCache`; `app.InstallOpts.
   Requested` plumbs the configured tag into Resolve and the manifest.
 - **Manual add**: `internal/pickdir` shells the OS directory dialog
-  (zenity → kdialog; `ErrUnavailable` otherwise), `app.ManualEntry` builds
+  (Linux: zenity → kdialog; Windows: PowerShell FolderBrowserDialog;
+  macOS: osascript; `ErrUnavailable` otherwise), `app.ManualEntry` builds
   the row, session `AddDirectory` dedupes and persists (ExtraDirs survive
   rescans).
 - **GUI**: Settings sidebar button + modal (version input, clear cache),
@@ -1973,3 +1974,83 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   `gc.reflogExpireUnreachable` window for recovery).
 - No archive tag was created — the session is documented here and the
   work is fully absorbed into main.
+
+## 2026-07-24 — v0.10: Wayland client-side key repeat (vendor patch)
+
+- shirei v0.5.2's Wayland backend left `HandleKeyboardRepeatInfo` as a
+  no-op ("client-side key repeat isn't implemented yet"), so held keys
+  fired exactly once and the app went idle. X11/Win32/Cocoa already
+  deliver OS-level auto-repeat natively (X server auto-repeat /
+  `WM_KEYDOWN` / `NSEvent isARepeat`), so Wayland was the only broken
+  backend.
+- Patched `vendor/.../waylandbackend/waylandkeyboard_linux.go`:
+  - `HandleKeyboardRepeatInfo` now stores `Rate`/`Delay` from
+    `wl_keyboard.repeat_info` instead of discarding them.
+  - `onKey` calls `armRepeat`/`cancelRepeat` at the press/release
+    sites; `xkbKeymap.KeyRepeats(code)` gates arming per the keymap
+    (modifiers don't repeat; arrows / Tab / Backspace / etc. do).
+    Arming a new key cancels the previous (matches OS repeat —
+    `FrameInput.Key` is single-slot).
+  - `pumpRepeat` runs from the main dispatch loop and synthesizes the
+    next press via `onKey(...,true)` when due; `repeatTimeout` caps the
+    dispatch wait so the loop wakes precisely on schedule.
+  - Defaults of 300 ms delay / 20 Hz interval apply if the compositor
+    never sends `repeat_info`.
+- Patched `vendor/.../waylandbackend/waylandbackend_linux.go`:
+  `pumpRepeat()` + `repeatTimeout(framePoll)` in the dispatch loop.
+- All repeat state lives on the Wayland main goroutine (event handlers
+  inside `DisplayDispatchTimeout`, pump right after, drawFrame same
+  iteration) — no goroutine, no mutex.
+- Guard: `TestVendorCSDPatchPresent` extended to check for
+  `HandleKeyboardRepeatInfo` + `pumpRepeat` in the keyboard file and
+  `pumpRepeat()` + `repeatTimeout(framePoll)` in the loop file.
+- `docs/vendor-patches.md` v0.10 section added.
+
+## 2026-07-24 — pickdir cross-platform (Linux/Windows/macOS)
+
+- `internal/pickdir` only knew zenity/kdialog (Linux), so on Windows and
+  macOS the directory picker returned `ErrUnavailable` and "Add Game"
+  showed a toast instead of a system dialog.
+- Split the package into build-tagged files:
+  - `pickdir_linux.go` — zenity → kdialog (unchanged behavior).
+  - `pickdir_windows.go` — PowerShell + Windows Forms
+    `FolderBrowserDialog` (always on Windows 7+; `-STA -NoProfile
+    -NonInteractive` for STA requirement, no $PROFILE side-effects,
+    no input-prompt hangs).
+  - `pickdir_darwin.go` — `osascript` `choose folder`.
+  - `pickdir_other.go` — `ErrUnavailable` fallback for BSDs etc. so
+    the package still compiles.
+- Shared `ErrUnavailable` moved to `pickdir.go`; package doc updated.
+- Existing test (`TestPickUnavailableWhenNoTools`, PATH="") still works:
+  every platform's `Pick` does `exec.LookPath` first and returns
+  `ErrUnavailable` when its required command is missing.
+- Cross-compile-checked: `GOOS=windows`, `GOOS=darwin`,
+  `GOOS=freebsd` all build.
+- Docs: architecture.md, scope.md, log.md updated to reflect the
+  three-platform coverage.
+
+## 2026-07-24 — v0.11: Win32 client-side key repeat (vendor patch)
+
+- Manual testing on Windows showed held keys firing exactly once. Static
+  analysis of `vendor/.../win32backend/win32backend_windows.go` found no
+  `KF_REPEAT` / lParam-bit-30 filter, no message-loop suppression, no
+  dedupe in shirei core — the code path is mechanically correct.
+- Hypothesis: on some setups (RDP, VMs with passthrough keyboards,
+  FilterKeys / accessibility) WM_KEYDOWN auto-repeats don't arrive,
+  matching the v0.10 Wayland symptom.
+- Patched `win32backend_windows.go` with the same defensive pattern as
+  v0.10 Wayland:
+  - `armRepeat`/`cancelRepeat` capture the wparam/lparam on every press
+    and clear on every release / focus loss.
+  - `pumpRepeat` (called from `wmTimer`) synthesizes a press via
+    `onKey(...,true)` + `noteInput()` when a repeat is due.
+  - **No-op when native works**: each native WM_KEYDOWN auto-repeat
+    re-arms, pushing `repeatNext` forward by `repeatDelay` (300 ms), so
+    pumpRepeat never fires when native rate is faster than the delay.
+- Defaults 300 ms / 20 Hz (matches the spec). `SystemParametersInfoW`
+  OS-rate query is a candidate follow-up.
+- Scope: Windows only (`//go:build windows`). All repeat state on the UI
+  thread; no goroutine, no mutex.
+- Guard: `TestVendorCSDPatchPresent` extended to check for `armRepeat`
+  + `pumpRepeat` + the marker in `win32backend_windows.go`.
+- `docs/vendor-patches.md` v0.11 section added.

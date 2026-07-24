@@ -177,7 +177,11 @@ func TestGUISettingsThemedInputs(t *testing.T) {
 	}
 
 	// Tab cycle from a blurred state restarts at the top of the modal trap:
-	// version → online-lookups toggle → add-directory → template field.
+	// version → online-lookups toggle → card-size (small/medium/large) →
+	// add-directory → template field.
+	typeFrame("", KeyTab)
+	typeFrame("", KeyTab)
+	typeFrame("", KeyTab)
 	typeFrame("", KeyTab)
 	typeFrame("", KeyTab)
 	typeFrame("", KeyTab)

@@ -3,6 +3,8 @@
 package waylandbackend
 
 import (
+	"time"
+
 	wos "go.hasen.dev/shirei/internal/wayland/os"
 	"go.hasen.dev/shirei/internal/wayland/wl"
 	"go.hasen.dev/shirei/internal/wayland/wlclient"
@@ -19,11 +21,34 @@ import (
 // value, same as the X11 backend uses) for shortcut mapping, and the UTF-32
 // codepoint for typed text. Sampled into the shirei globals (sample, not queue).
 
+// PATCHED by optiscaler-manager (v0.10): client-side key repeat — reapply
+// after `go mod vendor` (see docs/vendor-patches.md). The block covers the
+// repeat* vars, HandleKeyboardRepeatInfo, armRepeat/cancelRepeat/pumpRepeat,
+// repeatTimeout, and the two calls inside onKey.
 var (
 	keyboard   *wl.Keyboard
 	xkbContext *xkb.Context
 	xkbKeymap  *xkb.Keymap
 	xkbState   *xkb.State
+
+	// Client-side key-repeat state. The Wayland protocol is explicit that
+	// the client generates repeats: the compositor hands us a rate/delay
+	// pair via wl_keyboard.repeat_info and expects us to synthesize presses.
+	// Until this patch the rate/delay was discarded, so a held key fired
+	// exactly once and the app went idle.
+	repeatKey      uint32 // xkb keycode of the key currently armed for repeat (0 = none)
+	repeatKeysym   uint32 // keysym captured at arm time (modifiers may shift between presses)
+	repeatDelay    time.Duration
+	repeatInterval time.Duration // 0 when the compositor asked for no repeats (rate == 0)
+	repeatNext     time.Time     // next synthetic-press due time
+)
+
+// defaultRepeatDelay/defaultRepeatInterval are used when the compositor never
+// sends repeat_info (some embedded compositors don't). Matches the spec the
+// optiscaler-manager UI asked for: 300 ms to first repeat, then 20 Hz.
+const (
+	defaultRepeatDelay    = 300 * time.Millisecond
+	defaultRepeatInterval = 50 * time.Millisecond
 )
 
 // Bits of the serialized xkb modifier mask (standard keymaps use the X11
@@ -112,13 +137,96 @@ func (*handler) HandleKeyboardEnter(wl.KeyboardEnterEvent) { wlDebug("keyboard e
 func (*handler) HandleKeyboardLeave(wl.KeyboardLeaveEvent) {
 	shirei.InputState.DownKeys = shirei.InputState.DownKeys[:0]
 	shirei.InputState.Modifiers = 0
+	cancelRepeat()
 	clearComposition()
 	dirty = true
 	wlDebug("keyboard leave")
 }
 
-// HandleKeyboardRepeatInfo: client-side key repeat isn't implemented yet.
-func (*handler) HandleKeyboardRepeatInfo(wl.KeyboardRepeatInfoEvent) {}
+// HandleKeyboardRepeatInfo stores the compositor-supplied rate/delay so
+// armRepeat/pumpRepeat can synthesize presses. Wayland puts key repeat on
+// the client; without this the toolkit would never see repeats and held
+// navigation keys would fire exactly once.
+//
+// PATCHED by optiscaler-manager (v0.10): previously a no-op.
+func (*handler) HandleKeyboardRepeatInfo(ev wl.KeyboardRepeatInfoEvent) {
+	repeatDelay = time.Duration(ev.Delay) * time.Millisecond
+	if ev.Rate > 0 {
+		repeatInterval = time.Second / time.Duration(ev.Rate)
+	} else {
+		// Rate 0 means "don't repeat" per the protocol.
+		repeatInterval = 0
+		repeatKey = 0
+	}
+	wlDebug("repeat info: delay=%v interval=%v (rate=%d/s)", repeatDelay, repeatInterval, ev.Rate)
+}
+
+// armRepeat begins synthesizing presses for `code`/`keysym` if the keymap
+// says the key repeats. Pressing a different key (or any non-repeatable key)
+// implicitly cancels the previous arm — standard OS repeat behavior, since
+// FrameInput.Key is a single slot and stale repeats would shadow the new
+// press.
+func armRepeat(code, keysym uint32) {
+	if xkbKeymap == nil || !xkbKeymap.KeyRepeats(code) {
+		repeatKey = 0
+		return
+	}
+	if repeatDelay <= 0 {
+		// No repeat_info yet from the compositor — fall back to the spec
+		// defaults so users on minimal compositors still get repeats.
+		repeatDelay = defaultRepeatDelay
+	}
+	if repeatInterval == 0 && repeatDelay > 0 {
+		repeatInterval = defaultRepeatInterval
+	}
+	if repeatInterval <= 0 {
+		repeatKey = 0
+		return
+	}
+	repeatKey = code
+	repeatKeysym = keysym
+	repeatNext = time.Now().Add(repeatDelay)
+}
+
+// cancelRepeat stops synthesizing presses. Called on key release, focus
+// loss, and whenever a non-repeatable key is pressed.
+func cancelRepeat() { repeatKey = 0 }
+
+// pumpRepeat delivers one synthetic press if a held key's repeat is due.
+// Called from the main loop after each dispatch so the repeat cadence
+// tracks real time without needing a separate goroutine (everything that
+// touches the shirei input globals stays on the main goroutine). Setting
+// dirty forces the just-synthesized FrameInput.Key to actually be consumed
+// by a frame.
+func pumpRepeat() {
+	if repeatKey == 0 || repeatInterval <= 0 {
+		return
+	}
+	now := time.Now()
+	if now.Before(repeatNext) {
+		return
+	}
+	onKey(repeatKey, repeatKeysym, true)
+	repeatNext = now.Add(repeatInterval)
+	dirty = true
+}
+
+// repeatTimeout returns how long the main loop's dispatch may block before
+// it must wake up to deliver the next repeat, capped by `max`. Returns max
+// when no repeat is armed.
+func repeatTimeout(max time.Duration) time.Duration {
+	if repeatKey == 0 || repeatInterval <= 0 {
+		return max
+	}
+	wait := time.Until(repeatNext)
+	if wait < 0 {
+		return 0
+	}
+	if wait < max {
+		return wait
+	}
+	return max
+}
 
 // onKey maps a key event to a shirei key code and, for printable presses, the
 // typed text. Mirrors x11backend.onKey. The writing block resolves by evdev
@@ -145,8 +253,12 @@ func onKey(code, keysym uint32, down bool) {
 				shirei.FrameInput.Key = kc
 			}
 			g.SliceAddUniq(&shirei.InputState.DownKeys, kc)
+			armRepeat(code, keysym) // PATCHED (v0.10): begin client-side repeat
 		} else {
 			g.SliceRemove(&shirei.InputState.DownKeys, kc)
+			if code == repeatKey {
+				cancelRepeat() // PATCHED (v0.10): released the armed key
+			}
 		}
 	}
 	if !down || composing {

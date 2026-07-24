@@ -38,6 +38,7 @@ type model struct {
 	versionBuf          string
 	templateBuf         string
 	onlineBuf           bool                          // settings-modal online-lookups toggle buffer, primed on open
+	cardSize            string                        // current grid card preset ("small"/"medium"/"large"), synced from session.Settings().CardSize in drain
 	selIdx              int                           // keyboard-driven selection index into visible rows
 	hoveredDir          string                        // install dir of the card under the mouse, "" when none
 	cardRect            Rect                          // screen rect of the last rendered card (hover test seam)
@@ -129,6 +130,7 @@ func (m *model) drain() {
 		case <-m.sess.Events():
 		default:
 			m.state = m.sess.Snapshot()
+			m.cardSize = m.sess.Settings().CardSize
 			return
 		}
 	}

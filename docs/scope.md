@@ -84,7 +84,8 @@ Added after v0.1, modeled on the reference client's main window:
 - **Settings** (persisted `settings.json` in the data root): default
   OptiScaler version (tag or `latest`), manually added game directories;
   settings window with version input and clear-cache action.
-- **Manual game add**: OS directory dialog (zenity → kdialog) via
+- **Manual game add**: OS directory dialog (Linux: zenity → kdialog;
+  Windows: PowerShell FolderBrowserDialog; macOS: osascript) via
   `internal/pickdir`; added dirs persist and survive rescans.
 - **Chrome**: dark theme (incl. dark modal cards — upstream Modal is
   hardcoded white, so gui ships a local `modal()`), icon sidebar, toolbar

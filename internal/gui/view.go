@@ -279,12 +279,12 @@ func (m *model) actionList() {
 		// selected.
 		m.listRowRects = make([]Rect, len(rows))
 		m.listSelectedRect = Rect{}
-		VirtualListView("games", len(rows),
-			func(i int) any { return rows[i].InstallDir },
-			func(i int, w float32) float32 { return 30 },
-			func(i int, w float32) {
-				e := rows[i]
-				Container(Attrs(Row, CrossMid, Gap(sp8), Pad2(3, sp12), MinSize(w, 34), Corners(radiusS)), func() {
+	VirtualListView("games", len(rows),
+		func(i int) any { return rows[i].InstallDir },
+		func(i int, w float32) float32 { return 38 },
+		func(i int, w float32) {
+			e := rows[i]
+			Container(Attrs(Row, CrossMid, Gap(sp8), Pad2(1, sp12), MinSize(w, 36), Corners(radiusS)), func() {
 					m.listRowRects[i] = GetScreenRectOf(CurrentId())
 					if i == m.selIdx {
 						m.listSelRect = m.listRowRects[i]

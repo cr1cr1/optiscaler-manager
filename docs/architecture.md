@@ -56,7 +56,8 @@ internal/
   protondb/   appid → compatibility tier (protondb.com summaries API; 7d
               TTL disk cache, 429 cooldown)
   settings/   persisted preferences (settings.json in the data root)
-  pickdir/    OS directory dialog (zenity → kdialog)
+  pickdir/    OS directory dialog (zenity→kdialog on Linux,
+              PowerShell FolderBrowserDialog on Windows, osascript on macOS)
   launch/     per-store per-OS command table (pure Command fn) + detached
               spawn (build-tagged spawners; Start + Process.Release, never
               Wait). Steam steam://rungameid (Proton is Steam's business),

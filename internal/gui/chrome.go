@@ -90,7 +90,6 @@ func (m *model) openSettings() {
 	}
 	m.settingsOpen = true
 }
-
 // sectionTitle heads a settings group.
 func sectionTitle(s string) {
 	Label(s, FontSize(13), TextColorVec(txtMain), FontWeight(WeightBold))
@@ -101,17 +100,18 @@ func (m *model) settingsModal() {
 		Container(Attrs(Expand, Gap(sp16), BackgroundVec(bgPanel)), func() {
 			Label("Settings", FontSize(18), TextColorVec(txtMain), FontWeight(WeightBold))
 
-			Container(Attrs(Expand, Gap(sp4)), func() {
-				sectionTitle("General")
-				muted("Default OptiScaler version (tag or 'latest')")
-				themedInput(&m.versionBuf, "latest", 0, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
-				if m.sess != nil {
-					focusableToggle(&m.onlineBuf, "Online game info (Steam/ProtonDB)")
-					if m.onlineBuf != m.sess.Settings().OnlineLookups {
-						m.sess.SetOnlineLookups(m.onlineBuf)
-					}
+		Container(Attrs(Expand, Gap(sp4)), func() {
+			sectionTitle("General")
+			muted("Default OptiScaler version (tag or 'latest')")
+			themedInput(&m.versionBuf, "latest", 0, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+			if m.sess != nil {
+				focusableToggle(&m.onlineBuf, "Online game info (Steam/ProtonDB)")
+				if m.onlineBuf != m.sess.Settings().OnlineLookups {
+					m.sess.SetOnlineLookups(m.onlineBuf)
 				}
-			})
+				m.cardSizeSelector()
+			}
+		})
 
 			Container(Attrs(Expand, Gap(sp4)), func() {
 				sectionTitle("Scan Directories")
@@ -143,6 +143,25 @@ func (m *model) settingsModal() {
 
 // settingsDirsSection lists the session's extra scan directories with a
 // per-row remove button and the add-directory picker entry point.
+
+// cardSizeSelector renders the Small/Medium/Large card-size segmented control.
+func (m *model) cardSizeSelector() {
+	cur := m.sess.Settings().CardSize
+	muted("Card size")
+	Container(Attrs(Row, Gap(sp4)), func() {
+		for _, opt := range []string{"small", "medium", "large"} {
+			selected := opt == cur
+			label := opt
+			if selected {
+				label = "● " + opt
+			}
+			if focusableButtonExt(label, ButtonAttrs{Icon: 0}) && !selected {
+				m.sess.SetCardSize(opt)
+				m.cardSize = opt
+			}
+		}
+	})
+}
 func (m *model) settingsDirsSection() {
 	dirs := m.settingsDirs()
 	if len(dirs) == 0 {

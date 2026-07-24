@@ -29,11 +29,16 @@ type Settings struct {
 	// override beats every identification rule (v0.8). JSON-edited only
 	// for now.
 	TitleOverrides map[string]string `json:"title_overrides,omitempty"`
+	// CardSize selects the grid card width preset: "small" (200px),
+	// "medium" (240px, default), or "large" (280px). The preset sets the
+	// target card width; the actual width stretches a few px to fill the
+	// row, and the column count adjusts to the window width.
+	CardSize string `json:"card_size,omitempty"`
 }
 
 // Defaults returns the out-of-box settings.
 func Defaults() Settings {
-	return Settings{DefaultVersion: "latest", LaunchTemplate: DefaultLaunchTemplate, OnlineLookups: true}
+	return Settings{DefaultVersion: "latest", LaunchTemplate: DefaultLaunchTemplate, OnlineLookups: true, CardSize: "medium"}
 }
 
 func path(root string) string { return filepath.Join(root, "settings.json") }
@@ -55,6 +60,7 @@ func Load(root string) (Settings, error) {
 		ExtraDirs      []string          `json:"extra_dirs,omitempty"`
 		OnlineLookups  *bool             `json:"online_lookups"`
 		TitleOverrides map[string]string `json:"title_overrides,omitempty"`
+		CardSize       string            `json:"card_size,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return Defaults(), fmt.Errorf("settings: parse: %w", err)
@@ -65,6 +71,7 @@ func Load(root string) (Settings, error) {
 		ExtraDirs:      raw.ExtraDirs,
 		OnlineLookups:  true,
 		TitleOverrides: raw.TitleOverrides,
+		CardSize:       raw.CardSize,
 	}
 	if raw.OnlineLookups != nil {
 		s.OnlineLookups = *raw.OnlineLookups
@@ -74,6 +81,9 @@ func Load(root string) (Settings, error) {
 	}
 	if s.LaunchTemplate == "" {
 		s.LaunchTemplate = DefaultLaunchTemplate
+	}
+	if s.CardSize != "small" && s.CardSize != "medium" && s.CardSize != "large" {
+		s.CardSize = "medium"
 	}
 	return s, nil
 }

@@ -58,7 +58,37 @@ var (
 	pendingHi   uint16 // pending UTF-16 high surrogate from WM_CHAR
 	pendingText string // committed text to deliver on the next frame
 
+	// PATCHED by optiscaler-manager (v0.11): client-side key repeat — reapply
+	// after `go mod vendor` (see docs/vendor-patches.md). The block covers
+	// repeatWparam/repeatLparam/repeatArmed/repeatDelay/repeatInterval/
+	// repeatNext + the two default consts + armRepeat/cancelRepeat/pumpRepeat
+	// + the three call sites (onKey press/release, wmKillfocus, wmTimer).
+	//
+	// Same pattern as the v0.10 Wayland patch. WM_KEYDOWN auto-repeat is
+	// supposed to arrive natively on Windows, but on some setups (RDP,
+	// VMs, FilterKeys, accessibility) it doesn't, and the symptom is
+	// "first press fires once, then nothing." armRepeat captures the
+	// wparam/lparam of every press; if native repeats arrive they re-arm
+	// every time and push repeatNext forward by repeatDelay, so pumpRepeat
+	// is a no-op. If native repeats DON'T arrive, pumpRepeat (called from
+	// the 16ms wmTimer) synthesizes them at repeatInterval.
+	repeatWparam   uintptr
+	repeatLparam   uintptr
+	repeatArmed    bool
+	repeatDelay    = defaultRepeatDelay
+	repeatInterval = defaultRepeatInterval
+	repeatNext     time.Time
+
 	wndProcCB = syscall.NewCallback(wndProc)
+)
+
+// PATCHED by optiscaler-manager (v0.11): defaults used when no OS rate has
+// been queried (and the fallback if a future SystemParametersInfoW query
+// fails). Matches the spec the optiscaler-manager UI documents: 300 ms to
+// first repeat, then 20 Hz.
+const (
+	defaultRepeatDelay    = 300 * time.Millisecond
+	defaultRepeatInterval = 50 * time.Millisecond
 )
 
 // SetupWindow records the window parameters. The window is created in Run, on
@@ -208,6 +238,7 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		invalidate()
 		return 0
 	case wmKillfocus:
+		cancelRepeat() // PATCHED (v0.11)
 		clearComposition()
 		noteInput()
 		return 0
@@ -311,6 +342,7 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		// wantsFrame covers in-frame animation; FrameRequested covers
 		// background RequestNextFrame when the last frame settled to idle
 		// (matches cocoa's shireiFrameRequested check on the display link).
+		pumpRepeat() // PATCHED (v0.11): synthesize a due key repeat before any redraw decision
 		if wantsFrame || shirei.FrameRequested() {
 			dirty = true
 			invalidate()
@@ -565,9 +597,44 @@ func onKey(wparam, lparam uintptr, down bool) {
 	if down {
 		shirei.FrameInput.Key = code
 		g.SliceAddUniq(&shirei.InputState.DownKeys, code)
+		armRepeat(wparam, lparam) // PATCHED (v0.11)
 	} else {
 		g.SliceRemove(&shirei.InputState.DownKeys, code)
+		cancelRepeat() // PATCHED (v0.11)
 	}
+}
+
+// armRepeat captures the wparam/lparam of every key press so pumpRepeat can
+// re-fire the same key. Native WM_KEYDOWN auto-repeats call this on every
+// repeat, pushing repeatNext forward by repeatDelay — so when native repeat
+// is working, pumpRepeat is a no-op. When native repeat isn't working
+// (observed on some setups — see the v0.11 marker at the var block),
+// pumpRepeat synthesizes presses at repeatInterval. PATCHED (v0.11).
+func armRepeat(wparam, lparam uintptr) {
+	repeatWparam = wparam
+	repeatLparam = lparam
+	repeatArmed = true
+	repeatNext = time.Now().Add(repeatDelay)
+}
+
+// cancelRepeat stops pumpRepeat from synthesizing further presses. Called on
+// key release and on focus loss. PATCHED (v0.11).
+func cancelRepeat() { repeatArmed = false }
+
+// pumpRepeat synthesizes one WM_KEYDOWN if a held key's repeat is due.
+// Called from wmTimer (16 ms cadence after the first frame). Cheap when no
+// key is armed. PATCHED (v0.11).
+func pumpRepeat() {
+	if !repeatArmed || repeatInterval <= 0 {
+		return
+	}
+	now := time.Now()
+	if now.Before(repeatNext) {
+		return
+	}
+	onKey(repeatWparam, repeatLparam, true)
+	repeatNext = now.Add(repeatInterval)
+	noteInput()
 }
 
 // onChar handles a typed character (WM_CHAR delivers UTF-16 code units).

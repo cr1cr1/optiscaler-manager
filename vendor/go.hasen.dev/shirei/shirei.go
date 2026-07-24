@@ -160,6 +160,16 @@ var timeDelta float32 // fraction of a second
 
 var FrameNumber int64
 
+// PATCHED by optiscaler-manager (v0.13): window-resize detection so
+// layout animations can snap during resize (see resolveOrigins). Without
+// this each resize tick chains 5-7 extra full-window repaint frames via
+// FrameHasChanges→NextFrameRequested, which is the dominant cause of
+// resize sluggishness. Reapply after `go mod vendor`.
+var (
+	prevWindowSize   Vec2
+	windowResizedNow bool
+)
+
 // runFirstFrame is the FrameNumber of the current RunFrameFn call's first
 // pass. A node whose bornFrame is at or past it was born inside this call
 // and has no presented-frame history (see the animation gate in
@@ -253,6 +263,9 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 		prevFrameStart := frameStart
 		frameStart = time.Now()
 		timeDelta = float32(frameStart.Sub(prevFrameStart).Milliseconds()) / 1e3
+		// PATCHED (v0.13): detect window resize so resolveOrigins can snap animations.
+		windowResizedNow = WindowSize != prevWindowSize
+		prevWindowSize = WindowSize
 
 		// click-streak detection (double clicks and beyond): a click close in
 		// time and space to the previous one continues the streak
@@ -1093,7 +1106,13 @@ func resolveOrigins(container *_Container) {
 			// ~zero rate simply holds that value.
 			prev, ok := child.node.prevRenderData()
 			if ok && !child.NoAnimate && child.node.bornFrame < runFirstFrame {
-				var rate = min(1, timeDelta*20)
+				// PATCHED (v0.13): disable ALL layout animation. rate=1
+				// snaps every container to its target immediately — no
+				// smooth transitions on resize, panel open/close, view
+				// switch, or hover. The user explicitly requested no
+				// animations; the 5-7× reduction in repaint frames during
+				// any layout change is a bonus.
+				rate := float32(1)
 				var distCutoff float32 = 1
 				var clrCutoff float32 = 0.01
 				animateVec2From(&child.resolvedSize, prev.ResolvedSize, rate, distCutoff)

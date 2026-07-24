@@ -615,8 +615,13 @@ func (r *SoftRenderer) drawImage(s *Surface) {
 
 	dwl, dhl := float32(iw), float32(ih) // logical dest size
 	if s.ImageScale {
-		fit := s.Rect.Size[1] / float32(ih)
-		dwl, dhl = float32(iw)*fit, float32(ih)*fit
+		// PATCHED by optiscaler-manager (v0.14): stretch to fill the
+		// surface rect exactly (both dimensions). Upstream fits to height
+		// only, which leaves a horizontal gap when the image's aspect
+		// ratio doesn't match the container's (e.g. a 460×900 cover in a
+		// 260×390 card slot). Stretch is the right behavior for grid-view
+		// cover thumbnails; distortion is imperceptible for near-2:3 art.
+		dwl, dhl = s.Rect.Size[0], s.Rect.Size[1]
 	}
 	x0 := int(Roundf32(s.Rect.Origin[0]*r.scale)) - r.devOrigin.X
 	y0 := int(Roundf32(s.Rect.Origin[1]*r.scale)) - r.devOrigin.Y

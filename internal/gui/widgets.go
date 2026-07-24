@@ -594,7 +594,7 @@ func (m *model) protonTierPill(tier string) {
 	if !ok {
 		return
 	}
-	Container(Attrs(Pad2(1, 6), Corners(radiusS), BackgroundVec(bg)), func() {
+	Container(Attrs(Pad2(3, 6), Corners(radiusS), BackgroundVec(bg)), func() {
 		m.tierPillRect = GetScreenRectOf(CurrentId())
 		Label(tier, TextColor(0, 0, 96, 1), FontSize(11))
 	})
@@ -674,10 +674,10 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 		m.versionDDItems = nil
 		m.versionDDItemsFor = ""
 	}
-	// Trigger: badgePill geometry (Pad2(1, 6), FontSize 11) so the pill row
+	// Trigger: badgePill geometry (Pad2(3, 6), FontSize 11) so the pill row
 	// height — and with it cardContentH — is untouched.
 	enterPick := false
-	Container(Attrs(Focusable, Row, CrossMid, Gap(sp4), Pad2(1, 6), Corners(radiusS), BackgroundVec(toneColor(tone))), func() {
+	Container(Attrs(Focusable, Row, CrossMid, Gap(sp4), Pad2(3, 6), Corners(radiusS), BackgroundVec(toneColor(tone))), func() {
 		CycleFocusOnTab()
 		FocusOnClick()
 		m.ddTriggerID = CurrentId()

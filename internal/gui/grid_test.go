@@ -180,11 +180,11 @@ func TestRenderPNG3840pxValid(t *testing.T) {
 	if cfg.Width != 3840 || cfg.Height != 1080 {
 		t.Errorf("frame %dx%d, want 3840x1080", cfg.Width, cfg.Height)
 	}
-	if m.cols != maxCols {
-		t.Errorf("cols %d at 3840px, want capped at %d", m.cols, maxCols)
+	if m.cols < 10 {
+		t.Errorf("cols %d at 3840px, want >=10 (no artificial cap — fill the width)", m.cols)
 	}
-	if m.cardW > maxCardW {
-		t.Errorf("cardW %d at 3840px exceeds cap %d: cards stretch absurdly", m.cardW, maxCardW)
+	if m.cardW != cardSizeForPreset("medium") {
+		t.Errorf("cardW %d at 3840px, want fixed preset %d: cards must not stretch", m.cardW, cardSizeForPreset("medium"))
 	}
 	used := m.cols*m.cardW + (m.cols-1)*cardGap
 	avail := 3840 - sidebarW - 2*rowPadH
