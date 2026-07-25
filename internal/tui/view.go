@@ -213,7 +213,7 @@ func (m Model) footerView(w int) string {
 	case screenDetail:
 		hints = "i install · v version · l launch · c cancel · r rollback · o open INI · esc back"
 	case screenSettings:
-		hints = "e version · t template · a add · d remove · o online info · x clear cache"
+		hints = "e version · t template · a add · d remove · o online info · u umu · p umu proton · x clear cache"
 	case screenHelp, screenAbout:
 		hints = "q quit"
 	default:
