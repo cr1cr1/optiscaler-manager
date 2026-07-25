@@ -38,6 +38,8 @@ type model struct {
 	versionBuf          string
 	templateBuf         string
 	onlineBuf           bool                          // settings-modal online-lookups toggle buffer, primed on open
+	umuEnabledBuf       bool                          // settings-modal umu-launcher toggle buffer, primed on open
+	umuProtonBuf        string                        // settings-modal umu-launcher Proton path buffer, primed on open
 	cardSize            string                        // current grid card preset ("small"/"medium"/"large"), synced from session.Settings().CardSize in drain
 	selIdx              int                           // keyboard-driven selection index into visible rows
 	hoveredDir          string                        // install dir of the card under the mouse, "" when none
@@ -190,6 +192,8 @@ func (m *model) applySettings() {
 	}
 	m.sess.SetDefaultVersion(m.versionBuf)
 	m.sess.SetLaunchTemplate(m.templateBuf)
+	m.sess.SetUmuEnabled(m.umuEnabledBuf)
+	m.sess.SetUmuProtonPath(m.umuProtonBuf)
 }
 
 // exit flushes a pending settings-modal edit through the session's

@@ -1,6 +1,10 @@
 package settings
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestLoadDefaultsWhenMissing(t *testing.T) {
 	s, err := Load(t.TempDir())
@@ -99,5 +103,64 @@ func TestSettings_TitleOverridesRoundtrip(t *testing.T) {
 	}
 	if got.TitleOverrides["/games/Prey"] != "Prey (2017)" {
 		t.Errorf("TitleOverrides = %v, want the pinned title", got.TitleOverrides)
+	}
+}
+
+// umu-launcher integration defaults: opt-in (off), no Proton path pin
+// (let umu fall back to UMU-Latest).
+func TestSettings_UmuDefaults(t *testing.T) {
+	s := Defaults()
+	if s.UmuEnabled {
+		t.Errorf("Defaults().UmuEnabled = true, want false (opt-in)")
+	}
+	if s.UmuProtonPath != "" {
+		t.Errorf("Defaults().UmuProtonPath = %q, want empty", s.UmuProtonPath)
+	}
+}
+
+// Umu fields survive a save/load round-trip with both the enabled flag
+// and a pinned Proton path intact.
+func TestSettings_UmuRoundTrip(t *testing.T) {
+	root := t.TempDir()
+	want := Settings{
+		DefaultVersion: "latest",
+		LaunchTemplate: DefaultLaunchTemplate,
+		OnlineLookups:  true,
+		UmuEnabled:     true,
+		UmuProtonPath:  "/runners/GE-Proton9-3",
+	}
+	if err := Save(root, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.UmuEnabled != want.UmuEnabled {
+		t.Errorf("UmuEnabled = %v, want %v", got.UmuEnabled, want.UmuEnabled)
+	}
+	if got.UmuProtonPath != want.UmuProtonPath {
+		t.Errorf("UmuProtonPath = %q, want %q", got.UmuProtonPath, want.UmuProtonPath)
+	}
+}
+
+// A legacy settings.json written before umu-launcher support existed
+// must load with the safe defaults: UmuEnabled=false, UmuProtonPath="".
+// This protects users upgrading from older releases.
+func TestSettings_LegacyJSONWithoutUmuKeys(t *testing.T) {
+	root := t.TempDir()
+	legacy := `{"default_version":"v0.10.0","launch_template":"\"{exe}\" {args}","extra_dirs":["/games"]}`
+	if err := os.WriteFile(filepath.Join(root, "settings.json"), []byte(legacy), 0o600); err != nil {
+		t.Fatalf("write legacy: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load legacy: %v", err)
+	}
+	if got.UmuEnabled {
+		t.Errorf("UmuEnabled = true on legacy file, want false (opt-in default)")
+	}
+	if got.UmuProtonPath != "" {
+		t.Errorf("UmuProtonPath = %q on legacy file, want empty", got.UmuProtonPath)
 	}
 }

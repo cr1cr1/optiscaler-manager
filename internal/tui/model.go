@@ -39,6 +39,7 @@ const (
 	inputAddDir
 	inputEditVersion
 	inputEditTemplate
+	inputEditUmuProton
 )
 
 // Model is the bubbletea model bound to one ui.Session: one flat model with
@@ -438,6 +439,10 @@ func (m Model) settingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "o":
 		m.sess.SetOnlineLookups(!m.sess.Settings().OnlineLookups)
+	case "u":
+		m.sess.SetUmuEnabled(!m.sess.Settings().UmuEnabled)
+	case "p":
+		m.openInput(inputEditUmuProton, "umu Proton path: ", m.sess.Settings().UmuProtonPath)
 	case "x":
 		m.sess.ClearBundleCache()
 	}
@@ -491,6 +496,8 @@ func (m *Model) commitInput() tea.Cmd {
 		m.sess.SetDefaultVersion(v)
 	case inputEditTemplate:
 		m.sess.SetLaunchTemplate(v)
+	case inputEditUmuProton:
+		m.sess.SetUmuProtonPath(v)
 	}
 	m.mode = inputNone
 	m.input.SetValue("")

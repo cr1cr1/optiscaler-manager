@@ -39,6 +39,7 @@ func newSession(d *Deps) *ui.Session {
 		Steam:        steamClient,
 		ProtonDB:     protonClient,
 		PCGW:         pcgwClient,
+		UmuLauncher:  newUmuLauncher(prefs),
 	})
 }
 

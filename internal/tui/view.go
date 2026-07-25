@@ -469,6 +469,16 @@ func (m Model) settingsView(w, contentH int) string {
 		online = "on"
 	}
 	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("online game info:"), online)
+	umu := "off"
+	if s.UmuEnabled {
+		umu = "on"
+	}
+	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("umu-launcher (Windows games via Proton):"), umu)
+	protonPath := s.UmuProtonPath
+	if protonPath == "" {
+		protonPath = styleMuted.Render("auto")
+	}
+	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("umu Proton path:"), trunc(protonPath, w-20))
 	b.WriteString("\n" + styleHeader.Render("Scan directories"))
 	header := b.String()
 
@@ -507,7 +517,7 @@ func helpView() string {
 		"          / filter · R rescan · s sort",
 		"Detail    i install · v switch version · l launch · c cancel · r rollback · o open INI · esc back",
 		"Settings  e edit version · t edit template · a add dir · d remove dir",
-		"          o toggle online game info · x clear bundle cache",
+		"          o toggle online game info · u toggle umu-launcher · p edit umu Proton path · x clear bundle cache",
 		"Confirm   y proceed · n cancel",
 	}, "\n")
 }

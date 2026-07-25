@@ -519,6 +519,56 @@ func TestTUISettingsListsDirectories(t *testing.T) {
 	}
 }
 
+// TestTUISettingsToggleUmuEnabled: u on the settings screen flips
+// sess.SetUmuEnabled. The state is visible in the rendered frame's
+// umu-launcher line.
+func TestTUISettingsToggleUmuEnabled(t *testing.T) {
+	e := newTestEnv(t, nil)
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	tm.Type("2")
+	waitFrame(t, tm, "Scan directories")
+	if e.sess.Settings().UmuEnabled {
+		t.Fatal("UmuEnabled should default to false")
+	}
+
+	tm.Type("u")
+	pollUntil(t, "UmuEnabled to flip true", func() bool {
+		return e.sess.Settings().UmuEnabled
+	})
+
+	tm.Type("u")
+	pollUntil(t, "UmuEnabled to flip back false", func() bool {
+		return !e.sess.Settings().UmuEnabled
+	})
+}
+
+// TestTUISettingsEditUmuProtonPath: p opens a path input; entering a
+// path persists it via SetUmuProtonPath.
+func TestTUISettingsEditUmuProtonPath(t *testing.T) {
+	e := newTestEnv(t, nil)
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	tm.Type("2")
+	waitFrame(t, tm, "Scan directories")
+	tm.Type("p")
+	waitFrame(t, tm, "umu Proton path")
+	tm.Type("/runners/GE-Proton9-3")
+	sendKey(tm, tea.KeyEnter)
+
+	pollUntil(t, "UmuProtonPath to update", func() bool {
+		return e.sess.Settings().UmuProtonPath == "/runners/GE-Proton9-3"
+	})
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	if !strings.Contains(frame, "GE-Proton9-3") {
+		t.Errorf("umu Proton path not rendered in settings frame:\n%s", frame)
+	}
+}
+
 // TestTUISettingsRemoveDirectory: d on a listed directory asks for inline
 // confirmation; y removes it from settings and from the rendered list.
 func TestTUISettingsRemoveDirectory(t *testing.T) {

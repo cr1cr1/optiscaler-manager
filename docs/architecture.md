@@ -56,13 +56,24 @@ internal/
   protondb/   appid → compatibility tier (protondb.com summaries API; 7d
               TTL disk cache, 429 cooldown)
   settings/   persisted preferences (settings.json in the data root)
-  pickdir/    OS directory dialog (zenity→kdialog on Linux,
-              PowerShell FolderBrowserDialog on Windows, osascript on macOS)
-  launch/     per-store per-OS command table (pure Command fn) + detached
-              spawn (build-tagged spawners; Start + Process.Release, never
-              Wait). Steam steam://rungameid (Proton is Steam's business),
-              Epic launcher URL, GOG direct exe, manual user template split
-              without a shell. Never `proton run`
+   pickdir/    OS directory dialog (zenity→kdialog on Linux,
+               PowerShell FolderBrowserDialog on Windows, osascript on macOS)
+   umu/        umu-launcher integration (Linux only). Detect parses
+               `umu-run --version`; FindRunners scans Steam
+               compatibilitytools.d, Bottles runners/, and umu
+               compatibilitytools for Proton builds; Launch wraps the
+               exec with the GAMEID/WINEPREFIX/PROTONPATH/STORE env and
+               scans stderr for umu's exit-0-on-fatal-error quirk;
+               PrefixFor derives a per-game prefix under
+               <state-root>/umu-prefixes/<sha1[:12]>; IsWindowsBinary
+               detects PE MZ binaries for eligibility.
+   launch/     per-store per-OS command table (pure Command fn) + detached
+               spawn (build-tagged spawners; Start + Process.Release, never
+               Wait). Steam steam://rungameid (Proton is Steam's business),
+               Epic launcher URL, GOG direct exe, manual user template split
+               without a shell. Never `proton run`; umu-run invocations
+               live in internal/umu and are wired via Deps.UmuLauncher in
+               Session.doLaunch (manual-store Windows binaries on Linux)
   app/        shared orchestration: ScanLibrary, ScanAllLibraries (version
               enrichment via classify+pever on managed installs), Install,
               Uninstall, Rollback, ManualEntry, versioned bundle cache,

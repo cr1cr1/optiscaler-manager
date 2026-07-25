@@ -11,8 +11,9 @@ import (
 )
 
 // TestSessionSettingsConcurrentAccess hammers every settings-holding path
-// (Scan, AddDirectory, SetDefaultVersion, SetLaunchTemplate) concurrently.
-// Any settings read that bypasses the session mutex trips the race detector
+// (Scan, AddDirectory, SetDefaultVersion, SetLaunchTemplate,
+// SetUmuEnabled, SetUmuProtonPath) concurrently. Any settings read that
+// bypasses the session mutex trips the race detector
 // (`go test -race`); with proper locking the run is clean.
 func TestSessionSettingsConcurrentAccess(t *testing.T) {
 	e := newTestEnv(t)
@@ -59,7 +60,7 @@ func TestSessionSettingsConcurrentAccess(t *testing.T) {
 		go func(w int) {
 			defer wg.Done()
 			for i := 0; i < iters; i++ {
-				switch (w + i) % 4 {
+				switch (w + i) % 6 {
 				case 0:
 					e.sess.Scan(ctx)
 				case 1:
@@ -68,6 +69,10 @@ func TestSessionSettingsConcurrentAccess(t *testing.T) {
 					e.sess.SetDefaultVersion(fmt.Sprintf("v%d.%d", w, i))
 				case 3:
 					e.sess.SetLaunchTemplate(fmt.Sprintf(`"{exe}" --w%d-i%d {args}`, w, i))
+				case 4:
+					e.sess.SetUmuEnabled(((w + i) & 1) == 0)
+				case 5:
+					e.sess.SetUmuProtonPath(fmt.Sprintf("/runners/GE-Proton%d-%d", w, i))
 				}
 				_ = e.sess.Settings() // locked snapshot read
 			}

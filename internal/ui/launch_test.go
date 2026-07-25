@@ -9,6 +9,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/launch"
+	"github.com/cr1cr1/optiscaler-manager/internal/umu"
 )
 
 // launchCapture records the argv handed to the injected runner.
@@ -144,4 +145,197 @@ func TestSessionLaunchNotifiesOnSpawnFailure(t *testing.T) {
 		t.Errorf("toast %+v, want warn \"Launch failed: spawn blew up\"", last)
 	}
 	t.Logf("captured argv before failure: %v", cap.argv())
+}
+
+// umuCapture records the row handed to the injected UmuLauncher hook.
+// Mirrors launchCapture for the umu-launcher path.
+type umuCapture struct {
+	mu    sync.Mutex
+	calls int
+	row   GameRow
+	err   error
+}
+
+func (u *umuCapture) hook() UmuLauncherHook {
+	return func(_ context.Context, row GameRow) error {
+		u.mu.Lock()
+		defer u.mu.Unlock()
+		u.calls++
+		u.row = row
+		return u.err
+	}
+}
+
+// TestSessionLaunch_ManualWindowsGameUsesUmuWhenEnabled proves the umu
+// hook takes precedence over the regular Launcher when settings allow it
+// and the target is umu-eligible (manual store + Windows binary).
+func TestSessionLaunch_ManualWindowsGameUsesUmuWhenEnabled(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.GOOS = "linux"
+	e.sess.deps.SettingsRoot = t.TempDir()
+
+	cap := &launchCapture{}
+	e.sess.deps.Launcher = launch.New(cap.runner(), "linux", noBinaries)
+	ucap := &umuCapture{}
+	e.sess.deps.UmuLauncher = ucap.hook()
+
+	// Create an actual .exe on disk so IsWindowsBinary has something to
+	// stat (extension alone suffices, but the on-disk route exercises
+	// the full eligibility check).
+	dir := "/games/manual/WinGame"
+	exe := dir + "/game.exe"
+	addRow(e.sess, GameRow{Title: "Win Game", InstallDir: dir, Store: domain.StoreManual, ExePath: exe})
+
+	e.sess.SetUmuEnabled(true)
+	e.sess.Launch(dir)
+	waitEvent(t, e.sess, EvOpDone)
+
+	if ucap.calls != 1 {
+		t.Fatalf("UmuLauncher.calls = %d, want 1", ucap.calls)
+	}
+	if cap.calls != 0 {
+		t.Errorf("regular Launcher.calls = %d, want 0 (umu hook should win)", cap.calls)
+	}
+	if ucap.row.ExePath != exe {
+		t.Errorf("UmuLauncher called with ExePath %q, want %q", ucap.row.ExePath, exe)
+	}
+}
+
+// TestSessionLaunch_ManualWindowsGameFallsBackWhenUmuDisabled: the
+// setting is the gate; default off means the regular Launcher runs.
+func TestSessionLaunch_ManualWindowsGameFallsBackWhenUmuDisabled(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.GOOS = "linux"
+	e.sess.deps.SettingsRoot = t.TempDir()
+
+	cap := &launchCapture{}
+	e.sess.deps.Launcher = launch.New(cap.runner(), "linux", noBinaries)
+	ucap := &umuCapture{}
+	e.sess.deps.UmuLauncher = ucap.hook()
+
+	dir := "/games/manual/WinGame"
+	exe := dir + "/game.exe"
+	addRow(e.sess, GameRow{Title: "Win Game", InstallDir: dir, Store: domain.StoreManual, ExePath: exe})
+
+	// UmuEnabled stays at the default (false).
+	e.sess.Launch(dir)
+	waitEvent(t, e.sess, EvOpDone)
+
+	if ucap.calls != 0 {
+		t.Errorf("UmuLauncher.calls = %d, want 0 (feature disabled)", ucap.calls)
+	}
+	if cap.calls != 1 {
+		t.Errorf("regular Launcher.calls = %d, want 1 (fallback)", cap.calls)
+	}
+}
+
+// TestSessionLaunch_ManualWindowsGameFallsBackWhenNoUmuLauncher: the
+// hook being nil (production default on non-Linux or when umu-run isn't
+// installed) means regular Launcher runs even if UmuEnabled is on.
+func TestSessionLaunch_ManualWindowsGameFallsBackWhenNoUmuLauncher(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.GOOS = "linux"
+	e.sess.deps.SettingsRoot = t.TempDir()
+
+	cap := &launchCapture{}
+	e.sess.deps.Launcher = launch.New(cap.runner(), "linux", noBinaries)
+	e.sess.deps.UmuLauncher = nil // no umu-run detected
+
+	dir := "/games/manual/WinGame"
+	exe := dir + "/game.exe"
+	addRow(e.sess, GameRow{Title: "Win Game", InstallDir: dir, Store: domain.StoreManual, ExePath: exe})
+
+	e.sess.SetUmuEnabled(true)
+	e.sess.Launch(dir)
+	waitEvent(t, e.sess, EvOpDone)
+
+	if cap.calls != 1 {
+		t.Errorf("regular Launcher.calls = %d, want 1 when UmuLauncher is nil", cap.calls)
+	}
+}
+
+// TestSessionLaunch_ManualLinuxBinaryIgnoresUmu: a manual game with a
+// shell-script launcher is not umu-eligible; the regular Launcher runs.
+func TestSessionLaunch_ManualLinuxBinaryIgnoresUmu(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.GOOS = "linux"
+	e.sess.deps.SettingsRoot = t.TempDir()
+
+	cap := &launchCapture{}
+	e.sess.deps.Launcher = launch.New(cap.runner(), "linux", noBinaries)
+	ucap := &umuCapture{}
+	e.sess.deps.UmuLauncher = ucap.hook()
+
+	dir := "/games/manual/NativeGame"
+	addRow(e.sess, GameRow{Title: "Native", InstallDir: dir, Store: domain.StoreManual, ExePath: dir + "/start.sh"})
+
+	e.sess.SetUmuEnabled(true)
+	e.sess.Launch(dir)
+	waitEvent(t, e.sess, EvOpDone)
+
+	if ucap.calls != 0 {
+		t.Errorf("UmuLauncher.calls = %d, want 0 (.sh is not a Windows binary)", ucap.calls)
+	}
+	if cap.calls != 1 {
+		t.Errorf("regular Launcher.calls = %d, want 1", cap.calls)
+	}
+}
+
+// TestSessionLaunch_SteamGameNeverUsesUmu: non-manual stores bypass
+// umu entirely; Steam always goes through the regular steam:// launcher.
+func TestSessionLaunch_SteamGameNeverUsesUmu(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.GOOS = "linux"
+	e.sess.deps.SettingsRoot = t.TempDir()
+
+	cap := &launchCapture{}
+	e.sess.deps.Launcher = launch.New(cap.runner(), "linux", noBinaries)
+	ucap := &umuCapture{}
+	e.sess.deps.UmuLauncher = ucap.hook()
+
+	dir := "/games/steam/SteamGame"
+	addRow(e.sess, GameRow{Title: "Steam Win", AppID: "999", InstallDir: dir, Store: domain.StoreSteam, ExePath: dir + "/game.exe"})
+
+	e.sess.SetUmuEnabled(true)
+	e.sess.Launch(dir)
+	waitEvent(t, e.sess, EvOpDone)
+
+	if ucap.calls != 0 {
+		t.Errorf("UmuLauncher.calls = %d, want 0 (Steam never uses umu)", ucap.calls)
+	}
+	if cap.calls != 1 {
+		t.Errorf("regular Launcher.calls = %d, want 1", cap.calls)
+	}
+}
+
+// TestSessionLaunch_UmuFailureReportedAsLaunchFailed: umu.Launch errors
+// surface as EvOpFailed + warn toast, exactly like regular launch errors.
+func TestSessionLaunch_UmuFailureReportedAsLaunchFailed(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.GOOS = "linux"
+	e.sess.deps.SettingsRoot = t.TempDir()
+
+	cap := &launchCapture{}
+	e.sess.deps.Launcher = launch.New(cap.runner(), "linux", noBinaries)
+	ucap := &umuCapture{err: errors.Join(umu.ErrUmuSetupFailed, errors.New("FileNotFoundError: PROTONPATH"))}
+	e.sess.deps.UmuLauncher = ucap.hook()
+
+	dir := "/games/manual/WinGame"
+	exe := dir + "/game.exe"
+	addRow(e.sess, GameRow{Title: "Win Game", InstallDir: dir, Store: domain.StoreManual, ExePath: exe})
+
+	e.sess.SetUmuEnabled(true)
+	e.sess.Launch(dir)
+	ev := waitEvent(t, e.sess, EvOpFailed)
+	if !strings.Contains(ev.Text, "FileNotFoundError") {
+		t.Errorf("event text %q, want the umu error", ev.Text)
+	}
+	if cap.calls != 0 {
+		t.Errorf("regular Launcher.calls = %d, want 0 (umu hook returned an error, no fallback)", cap.calls)
+	}
+	st := e.sess.Snapshot()
+	last := st.Toasts[len(st.Toasts)-1]
+	if !last.Warn || !strings.Contains(last.Text, "Launch failed:") {
+		t.Errorf("toast %+v, want warn \"Launch failed: …\"", last)
+	}
 }

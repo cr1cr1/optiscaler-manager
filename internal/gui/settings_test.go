@@ -135,6 +135,12 @@ func TestGUISettingsShowsOnlineLookupsToggle(t *testing.T) {
 // join the Tab focus cycle without stealing focus on open, edit their model
 // buffers via FrameInput text/backspace, clear on Esc without closing the
 // modal, and applySettings still persists the edited template.
+//
+// Tab cycle in the settings modal (top-to-bottom, must match this list):
+//
+//	version → online-lookups → card-size (small/medium/large) →
+//	add-directory → template → umu-enabled → umu-proton →
+//	apply/clear-cache/close.
 func TestGUISettingsThemedInputs(t *testing.T) {
 	sess, root := guiFakesWithDirs(t)
 	m := newModel(Config{Session: sess})
@@ -176,16 +182,12 @@ func TestGUISettingsThemedInputs(t *testing.T) {
 		t.Fatal("Esc inside a settings field closed the modal; want the field cleared instead")
 	}
 
-	// Tab cycle from a blurred state restarts at the top of the modal trap:
-	// version → online-lookups toggle → card-size (small/medium/large) →
-	// add-directory → template field.
-	typeFrame("", KeyTab)
-	typeFrame("", KeyTab)
-	typeFrame("", KeyTab)
-	typeFrame("", KeyTab)
-	typeFrame("", KeyTab)
-	typeFrame("", KeyTab)
-	typeFrame("", KeyTab)
+	// Tab cycle from a blurred state restarts at the top of the modal trap.
+	// Slots: 1 version, 2 online-lookups, 3-5 card-size, 6 add-directory,
+	// 7 template, 8 umu-enabled, 9 umu-proton.
+	for i := 0; i < 7; i++ {
+		typeFrame("", KeyTab)
+	}
 	typeFrame(" -fullscreen", KeyCodeNone)
 	wantT := template0 + " -fullscreen"
 	if m.templateBuf != wantT {
@@ -204,4 +206,66 @@ func TestGUISettingsThemedInputs(t *testing.T) {
 		t.Errorf("persisted launch template %q, want %q", s.LaunchTemplate, wantT)
 	}
 	t.Logf("themed settings inputs edited and persisted: version cleared on Esc, template %q", s.LaunchTemplate)
+}
+
+// TestGUISettingsUmuSection: the umu-launcher toggle and Proton path
+// input are primed from the session and applySettings persists edits
+// through SetUmuEnabled / SetUmuProtonPath.
+func TestGUISettingsUmuSection(t *testing.T) {
+	sess, root := guiFakesWithDirs(t)
+	m := newModel(Config{Session: sess})
+	m.openSettings()
+
+	if m.umuEnabledBuf {
+		t.Errorf("umu toggle primed true, want false (default)")
+	}
+	if m.umuProtonBuf != "" {
+		t.Errorf("umu Proton path primed %q, want empty", m.umuProtonBuf)
+	}
+
+	m.umuEnabledBuf = true
+	m.umuProtonBuf = "/runners/GE-Proton9-3"
+	m.applySettings()
+
+	if !sess.Settings().UmuEnabled {
+		t.Errorf("session UmuEnabled = false after apply, want true")
+	}
+	if got := sess.Settings().UmuProtonPath; got != "/runners/GE-Proton9-3" {
+		t.Errorf("session UmuProtonPath = %q, want /runners/GE-Proton9-3", got)
+	}
+
+	s, err := settings.Load(root)
+	if err != nil {
+		t.Fatalf("settings unreadable after apply: %v", err)
+	}
+	if !s.UmuEnabled {
+		t.Errorf("persisted UmuEnabled = false, want true")
+	}
+	if s.UmuProtonPath != "/runners/GE-Proton9-3" {
+		t.Errorf("persisted UmuProtonPath = %q, want /runners/GE-Proton9-3", s.UmuProtonPath)
+	}
+	t.Logf("umu-launcher settings persisted: enabled=%v proton=%q", s.UmuEnabled, s.UmuProtonPath)
+}
+
+// TestGUISettingsUmuToggleFlipsViaKeyboard: the umu toggle enters the
+// Tab focus cycle at slot 8 (after the template field) and Enter flips
+// it through SetUmuEnabled.
+func TestGUISettingsUmuToggleFlipsViaKeyboard(t *testing.T) {
+	sess, _ := guiFakesWithDirs(t)
+	m := newModel(Config{Session: sess})
+	m.openSettings()
+
+	headlessFrames(t, 1100, 700)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	for i := 0; i < 8; i++ {
+		keyFrame(KeyTab, 0, m.rootView)
+	}
+	keyFrame(KeyEnter, 0, m.rootView)
+
+	if !sess.Settings().UmuEnabled {
+		t.Error("UmuEnabled still false after 8 Tabs + Enter, want flipped to true")
+	}
+	if !m.umuEnabledBuf {
+		t.Error("umu toggle buffer still false after Enter, want flipped")
+	}
 }

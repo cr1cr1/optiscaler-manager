@@ -87,6 +87,8 @@ func (m *model) openSettings() {
 		m.versionBuf = s.DefaultVersion
 		m.templateBuf = s.LaunchTemplate
 		m.onlineBuf = s.OnlineLookups
+		m.umuEnabledBuf = s.UmuEnabled
+		m.umuProtonBuf = s.UmuProtonPath
 	}
 	m.settingsOpen = true
 }
@@ -118,11 +120,26 @@ func (m *model) settingsModal() {
 				m.settingsDirsSection()
 			})
 
-			Container(Attrs(Expand, Gap(sp4)), func() {
-				sectionTitle("Launch Template")
-				muted("Command template for manually added games; {exe} and {args} are substituted")
-				themedInput(&m.templateBuf, `"{exe}" {args}`, 0, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
-			})
+		Container(Attrs(Expand, Gap(sp4)), func() {
+			sectionTitle("Launch Template")
+			muted("Command template for manually added games; {exe} and {args} are substituted")
+			themedInput(&m.templateBuf, `"{exe}" {args}`, 0, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+		})
+
+		Container(Attrs(Expand, Gap(sp4)), func() {
+			sectionTitle("umu-launcher (Linux: Windows games via Proton)")
+			if m.sess != nil {
+				focusableToggle(&m.umuEnabledBuf, "Launch Windows binaries via umu-launcher")
+				if m.umuEnabledBuf != m.sess.Settings().UmuEnabled {
+					m.sess.SetUmuEnabled(m.umuEnabledBuf)
+				}
+				muted("Proton path (blank = auto-detect from Steam / Bottles / umu)")
+				themedInput(&m.umuProtonBuf, "", 0, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+				if m.umuProtonBuf != m.sess.Settings().UmuProtonPath {
+					m.sess.SetUmuProtonPath(m.umuProtonBuf)
+				}
+			}
+		})
 
 			if m.sess != nil {
 				Container(Attrs(Row, Gap(sp8)), func() {

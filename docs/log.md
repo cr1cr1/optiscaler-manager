@@ -2101,3 +2101,61 @@ STASIS2, Deadpool), and Zelda discovered as "cemu". Fixes in `673c930`:
   to the zenity/kdialog unix pickers; on Windows COM is always
   available.
 - Cross-verified: GOOS=windows build + vet + test-compile all clean.
+
+## 2026-07-25 — umu-launcher integration (Linux: Windows binaries via Proton)
+
+New `internal/umu` package wraps detection, runner discovery, invocation,
+and prefix derivation for
+[umu-launcher](https://github.com/Open-Wine-Components/umu-launcher).
+On Linux, when `UmuEnabled` is on and `umu-run` is on PATH, manual-store
+games whose ExePath is a Windows binary (`.exe`/`.bat`/`.cmd`/`.msi`
+extension, or PE MZ magic header) launch through umu instead of the
+direct exe path. Each game gets a deterministic Proton prefix at
+`<state-root>/umu-prefixes/<sha1(installDir)[:12]>`.
+
+Package surface (all TDD-first, red -> green -> commit per milestone):
+- `umu.Detect(ctx)` — exec.LookPath("umu-run") + parse `--version`.
+  Cross-platform; returns `ErrUnavailable` off-Linux or when missing.
+- `umu.FindRunners(ctx, roots)` — scans Steam `compatibilitytools.d`,
+  Bottles `runners/`, and umu `compatibilitytools` for dirs containing
+  `toolmanifest.vdf`. Sorted by parsed semver (descending). Linux-only.
+- `umu.Launch(ctx, launcher, opts)` — builds `*exec.Cmd` with full env
+  (GAMEID, WINEPREFIX, PROTONPATH if set, STORE, PROTON_VERB) and scans
+  stderr for fatal markers (Traceback, FileNotFoundError, RuntimeError,
+  ValueError, umu setup strings) to work around umu's exit-0-on-fatal
+  quirk in `__main__`. Wraps such results as `ErrUmuSetupFailed`.
+- `umu.PrefixFor(installDir, name)` — sha1-slugged per-game prefix path;
+  state-root precedence = OM_DATA_DIR (full root, verbatim) >
+  $XDG_DATA_HOME/optiscaler-manager > ~/.local/share/optiscaler-manager.
+- `umu.IsWindowsBinary(path)` — extension check (`.exe`/`.bat`/`.cmd`/
+  `.msi`) wins; otherwise peek at file's first two bytes for PE 'MZ'.
+
+Launch wiring (Option D — launch package stays pure):
+- `Deps.UmuLauncher UmuLauncherHook` — `func(ctx, GameRow) error`,
+  nil on non-Linux or when `umu-run` is missing (cmd/umu_other.go).
+- `Session.doLaunch` checks `shouldUseUmu(row)` (hook + Linux + setting
+  + manual store + Windows binary) and routes to the hook before the
+  regular `launch.Launcher.Launch`. Errors surface as EvOpFailed + warn
+  toast, identical to regular launch failures.
+- Production construction in `cmd/umu_linux.go`: one-shot `umu.Detect`
+  at session build, returns a closure that resolves the per-game prefix
+  + invokes `umu.Launch`.
+
+Settings + UI:
+- `Settings.UmuEnabled bool` (default false, opt-in) and
+  `Settings.UmuProtonPath string` (default empty = auto-detect).
+  Pointer-decoded in Load for legacy-file safety.
+- Session setters `SetUmuEnabled` / `SetUmuProtonPath` mirror
+  `SetLaunchTemplate` (locked mutate + atomic save + toast). The race
+  test hammers them alongside the existing setters.
+- GUI settings modal gains a "umu-launcher" section after the Launch
+  Template: a toggle (slot 8 in the Tab cycle) and a path input
+  (slot 9). Buffer priming + apply paths tested in TestGUISettingsUmu*
+  and the extended TestGUISettingsThemedInputs.
+- TUI settings screen: `u` toggles UmuEnabled, `p` opens a path input
+  for UmuProtonPath. Rendered lines and the help row updated.
+
+Verified: `go test ./... -race` clean (Linux) except the 2 known
+pre-existing failures (TestCardButtonClick_FiresActionNotSelect and
+TestGUICardButtonsBottomAligned — both fail on clean main, unrelated to
+this work). Cross-compile clean for windows/amd64.

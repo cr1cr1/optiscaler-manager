@@ -34,6 +34,19 @@ type Settings struct {
 	// target card width; the actual width stretches a few px to fill the
 	// row, and the column count adjusts to the window width.
 	CardSize string `json:"card_size,omitempty"`
+	// UmuEnabled toggles routing manual-store Windows binaries through
+	// umu-launcher on Linux (umu-run + Proton). Defaults to false: the
+	// feature is opt-in. Decoded through a pointer in Load so legacy
+	// files written before the key existed read as false (the bool zero
+	// value already matches, so a plain decode would suffice, but the
+	// pointer pattern is preserved for consistency with OnlineLookups).
+	UmuEnabled bool `json:"umu_enabled,omitempty"`
+	// UmuProtonPath pins the Proton build umu-run uses. Empty (default)
+	// means "let umu resolve its own default (UMU-Latest, auto-download)".
+	// A non-empty value should be an absolute path to a Proton directory
+	// containing toolmanifest.vdf; the umu package's FindRunners returns
+	// exactly such paths.
+	UmuProtonPath string `json:"umu_proton_path,omitempty"`
 }
 
 // Defaults returns the out-of-box settings.
@@ -61,6 +74,8 @@ func Load(root string) (Settings, error) {
 		OnlineLookups  *bool             `json:"online_lookups"`
 		TitleOverrides map[string]string `json:"title_overrides,omitempty"`
 		CardSize       string            `json:"card_size,omitempty"`
+		UmuEnabled     *bool             `json:"umu_enabled"`
+		UmuProtonPath  string            `json:"umu_proton_path,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return Defaults(), fmt.Errorf("settings: parse: %w", err)
@@ -72,9 +87,14 @@ func Load(root string) (Settings, error) {
 		OnlineLookups:  true,
 		TitleOverrides: raw.TitleOverrides,
 		CardSize:       raw.CardSize,
+		UmuEnabled:     false,
+		UmuProtonPath:  raw.UmuProtonPath,
 	}
 	if raw.OnlineLookups != nil {
 		s.OnlineLookups = *raw.OnlineLookups
+	}
+	if raw.UmuEnabled != nil {
+		s.UmuEnabled = *raw.UmuEnabled
 	}
 	if s.DefaultVersion == "" {
 		s.DefaultVersion = "latest"

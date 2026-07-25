@@ -30,6 +30,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/steam"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 	"github.com/cr1cr1/optiscaler-manager/internal/termopen"
+	"github.com/cr1cr1/optiscaler-manager/internal/umu"
 )
 
 // toastTTL is how long a toast stays visible.
@@ -145,6 +146,15 @@ type Deps struct {
 	SettingsRoot string
 	Launcher     *launch.Launcher // nil selects the platform detached-spawn default
 
+	// UmuLauncher, when non-nil, is invoked for umu-eligible manual-store
+	// games (Linux + Windows binary + UmuEnabled setting). It bypasses
+	// the regular Launcher entirely. Construction typically wraps
+	// umu.Detect + umu.Launch; nil on non-Linux or when umu-run is not
+	// on PATH, in which case umu-eligible games fall through to the
+	// regular Launcher (which usually fails on a Windows binary without
+	// Proton, but the failure is honest).
+	UmuLauncher UmuLauncherHook
+
 	// Steam and ProtonDB feed the online lookup phase of Scan; either nil
 	// skips enrichment entirely.
 	Steam    *steam.Client
@@ -158,6 +168,13 @@ type Deps struct {
 	// ProtonDB enrichment and cached proton tiers are linux-only.
 	GOOS string
 }
+
+// UmuLauncherHook launches a manual-store Windows binary via umu-run.
+// Returning nil means the launch was requested; a non-nil error is
+// surfaced as a launch failure (EvOpFailed + warn toast). The hook
+// must NOT fall back to the regular Launcher — that's the caller's job
+// when the hook itself is nil.
+type UmuLauncherHook func(ctx context.Context, row GameRow) error
 
 // Session is the frontend-agnostic interactive core.
 type Session struct {
@@ -340,6 +357,42 @@ func (s *Session) SetLaunchTemplate(tmpl string) {
 		return
 	}
 	s.toast("launch template: "+tmpl, false)
+}
+
+// SetUmuEnabled toggles routing manual-store Windows binaries through
+// umu-launcher (Linux only). Persisted atomically; toasts the result.
+func (s *Session) SetUmuEnabled(enabled bool) {
+	s.mu.Lock()
+	s.deps.Settings.UmuEnabled = enabled
+	snap := s.deps.Settings
+	s.mu.Unlock()
+	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
+		s.toast("settings not saved: "+err.Error(), true)
+		return
+	}
+	if enabled {
+		s.toast("umu-launcher enabled", false)
+	} else {
+		s.toast("umu-launcher disabled", false)
+	}
+}
+
+// SetUmuProtonPath pins the Proton build umu-run uses. An empty value
+// means "let umu resolve its own default (UMU-Latest)". Persisted.
+func (s *Session) SetUmuProtonPath(path string) {
+	s.mu.Lock()
+	s.deps.Settings.UmuProtonPath = path
+	snap := s.deps.Settings
+	s.mu.Unlock()
+	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
+		s.toast("settings not saved: "+err.Error(), true)
+		return
+	}
+	if path == "" {
+		s.toast("umu Proton: auto", false)
+	} else {
+		s.toast("umu Proton: "+path, false)
+	}
 }
 
 // ClearBundleCache deletes all cached OptiScaler bundles. The deletion runs
@@ -1104,6 +1157,24 @@ func (s *Session) doLaunch(gameDir string) {
 		s.launchFailed(err, gameDir)
 		return
 	}
+
+	// umu-launcher short-circuit: when the feature is enabled AND an
+	// umu hook is wired (production: umu-run detected) AND the target
+	// is umu-eligible (Linux + manual store + Windows binary), bypass
+	// the regular Launcher entirely. The hook owns env-var setup and
+	// stderr-scanning for umu's exit-0-on-fatal-error quirk.
+	if s.shouldUseUmu(row) {
+		if err := s.deps.UmuLauncher(context.Background(), *row); err != nil {
+			s.launchFailed(err, gameDir)
+			return
+		}
+		what := "Launch requested: " + row.Title + " (via umu-launcher)"
+		s.setStatus(what)
+		s.toast(what, false)
+		s.emit(Event{Kind: EvOpDone, Text: what, GameDir: gameDir})
+		return
+	}
+
 	if err := s.deps.Launcher.Launch(context.Background(), target); err != nil {
 		s.launchFailed(err, gameDir)
 		return
@@ -1112,6 +1183,30 @@ func (s *Session) doLaunch(gameDir string) {
 	s.setStatus(what)
 	s.toast(what, false)
 	s.emit(Event{Kind: EvOpDone, Text: what, GameDir: gameDir})
+}
+
+// shouldUseUmu reports whether the umu-launcher path should be taken
+// for this launch. The checks are: the setting is on, a hook is wired,
+// we're on Linux, the row is a manual-store game, and its ExePath is a
+// Windows binary (PE MZ header or .exe/.bat/.cmd/.msi extension).
+func (s *Session) shouldUseUmu(row *GameRow) bool {
+	if s.deps.UmuLauncher == nil {
+		return false
+	}
+	goos := s.deps.GOOS
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	if goos != "linux" {
+		return false
+	}
+	if !s.Settings().UmuEnabled {
+		return false
+	}
+	if row.Store != domain.StoreManual {
+		return false
+	}
+	return umu.IsWindowsBinary(row.ExePath)
 }
 
 func (s *Session) launchFailed(err error, gameDir string) {

@@ -13,7 +13,10 @@ uninstalls cleanly when you're done. Available for **Linux and Windows** (amd64)
   every file it touches
 - Detects and adopts OptiScaler setups you installed by hand, so they become
   managed without losing your files
-- Launch games straight from the app (Steam, Epic, GOG, or a custom template)
+- Launch games straight from the app (Steam, Epic, GOG, or a custom template;
+  on Linux, manually added Windows binaries can run through
+  [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher) when
+  installed)
 - Both a graphical interface and a terminal UI over the same core
 - Open a game's `OptiScaler.ini` for editing right from the app
 - Settings for default OptiScaler version, scan directories, launch template,
@@ -69,7 +72,15 @@ selection, Enter opens the detail panel, Esc closes it. The Settings window
 holds the default OptiScaler version, the scan-directory list, the launch
 template, the online game-info toggle, and the clear-cache action. The
 "Online game info" toggle (on by default) gates Steam/ProtonDB lookups;
-turning it off gives you a fully offline scan.
+turning it off gives you a fully offline scan. On Linux, the Settings
+window also exposes the umu-launcher integration: enable it to launch
+manually-added Windows binaries (`.exe`, `.bat`, `.cmd`, `.msi`) via
+[umu-launcher](https://github.com/Open-Wine-Components/umu-launcher) when
+`umu-run` is installed. Each game gets its own Proton prefix under
+`~/.local/share/optiscaler-manager/umu-prefixes/<slug>`. Pin a Proton
+build in Settings, or leave it blank to auto-detect from Steam
+`compatibilitytools.d`, Bottles `runners/`, and umu `compatibilitytools`
+(falling through to umu's `UMU-Latest` on first launch).
 
 ### TUI keymap
 
@@ -87,7 +98,7 @@ turning it off gives you a fully offline scan.
 | `s` | Toggle sort (default / name) |
 | `R` | Rescan the library |
 | Detail: `i` `v` `l` `c` `r` `o` | Install / switch version / launch / cancel / rollback / open OptiScaler.ini |
-| Settings: `e` `t` `a` `d` `x` `o` | Edit version / edit launch template / add dir / remove dir (`y`/`n`) / clear bundle cache / toggle online game info |
+| Settings: `e` `t` `a` `d` `x` `o` `u` `p` | Edit version / edit launch template / add dir / remove dir (`y`/`n`) / clear bundle cache / toggle online game info / toggle umu-launcher / edit umu Proton path |
 | Confirm modal | `y` proceed, `n` cancel |
 
 ### Command line
