@@ -148,9 +148,9 @@ func TestGUISettingsThemedInputs(t *testing.T) {
 
 	headlessFrames(t, 1100, 700)
 	typeFrame := func(text string, key KeyCode) {
-		FrameInput.Text = text
+		GetFrameInput().Text = text
 		keyFrame(key, 0, m.rootView)
-		FrameInput.Text = ""
+		GetFrameInput().Text = ""
 	}
 
 	version0 := m.versionBuf

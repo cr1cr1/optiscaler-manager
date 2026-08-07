@@ -8,7 +8,7 @@ milestone plan live under `docs/`; release history is tracked in
 ## Architecture
 
 The GUI is a thin [go-shirei](https://github.com/hasenj/go-shirei) binding
-(`go.hasen.dev/shirei`, pinned v0.5.2, vendored) over a frontend-agnostic
+(`go.hasen.dev/shirei`, pinned v0.6.6, vendored) over a frontend-agnostic
 session core in `internal/ui`; the `tui` subcommand is a second, terminal
 frontend on the same session. All behavior lives in the session core, so
 frontends stay dumb.

@@ -53,7 +53,7 @@ func TestCardButtonClick_FiresActionNotSelect(t *testing.T) {
 	m := newModel(Config{Session: sess})
 
 	headlessFrames(t, 400, 800)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	view := cardView(m, row)
 	keyFrame(KeyCodeNone, 0, view) // build
 	keyFrame(KeyCodeNone, 0, view) // capture rects from the previous frame
@@ -89,7 +89,7 @@ func TestCardBodyClick_FiresSelect(t *testing.T) {
 	m := newModel(Config{Session: sess})
 
 	headlessFrames(t, 400, 800)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	view := cardView(m, row)
 	keyFrame(KeyCodeNone, 0, view)
 	keyFrame(KeyCodeNone, 0, view)

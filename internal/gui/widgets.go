@@ -17,7 +17,7 @@ import (
 // global Tab / Shift-Tab focus cycle reaches it (shirei's Button itself is
 // not focusable). Enter or Space while focused activates the button, and the
 // key is consumed so no later widget in the frame can double-fire.
-func focusableButton(icon rune, label string) bool {
+func focusableButton(icon widgets.IconGlyph, label string) bool {
 	return focusableButtonExt(label, widgets.ButtonAttrs{Icon: icon})
 }
 
@@ -34,12 +34,12 @@ func focusableButtonExt(label string, attrs widgets.ButtonAttrs) bool {
 				a.BorderWidth = 2
 				a.BorderColor = focusBorder
 			})
-			if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
-				FrameInput.Key = KeyCodeNone
+			if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
+				GetFrameInput().Key = KeyCodeNone
 				activated = true
 			}
 		}
-		if widgets.ButtonExt(label, attrs) {
+		if widgets.ButtonExt(label, attrs, widgets.DefaultButtonLook()) {
 			activated = true
 		}
 	})
@@ -81,8 +81,8 @@ func focusableToggle(on *bool, label string) {
 				a.BorderWidth = 2
 				a.BorderColor = focusBorder
 			})
-			if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
-				FrameInput.Key = KeyCodeNone
+			if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
+				GetFrameInput().Key = KeyCodeNone
 				*on = !*on
 			}
 		}
@@ -148,8 +148,8 @@ func (st *editState) selRange(bufLen int) (int, int, bool) {
 // selection, and range deletion. Keys are consumed so nothing leaks out.
 func editKeys(buf *string, st *editState) {
 	r := []rune(*buf)
-	shift := InputState.Modifiers&ModShift != 0
-	ctrl := InputState.Modifiers&ModCtrl != 0
+	shift := GetInputState().Modifiers&ModShift != 0
+	ctrl := GetInputState().Modifiers&ModCtrl != 0
 	move := func(to int, extend bool) {
 		if to < 0 {
 			to = 0
@@ -204,13 +204,13 @@ func editKeys(buf *string, st *editState) {
 		return string(r[lo:hi])
 	}
 
-	if FrameInput.Text != "" {
-		insert(FrameInput.Text)
-		FrameInput.Text = ""
+	if GetFrameInput().Text != "" {
+		insert(GetFrameInput().Text)
+		GetFrameInput().Text = ""
 		st.phase = true
 		st.blink = time.Now()
 	}
-	key := FrameInput.Key
+	key := GetFrameInput().Key
 	switch {
 	case ctrl && key == KeyA:
 		st.anchor = 0
@@ -255,13 +255,13 @@ func editKeys(buf *string, st *editState) {
 	default:
 		return
 	}
-	FrameInput.Key = KeyCodeNone
+	GetFrameInput().Key = KeyCodeNone
 }
 
 // shapedGlyphs shapes text exactly as the field's Label does (FontSize 13,
 // default family) and returns the flattened glyph run.
 func shapedGlyphs(text string) []Glyph {
-	var ta TextAttrSet
+	var ta TextStyleAttrs
 	FontSize(13)(&ta)
 	shaped := ShapeText(text, ta)
 	var gs []Glyph
@@ -330,10 +330,10 @@ func wordRange(r []rune, idx int) (int, int) {
 // positions the caret.
 func editMouse(buf *string, st *editState) {
 	r := []rune(*buf)
-	relX := InputState.MousePoint[0] - st.textRect.Origin[0]
+	relX := GetInputState().MousePoint[0] - st.textRect.Origin[0]
 	wake := func() { st.phase, st.blink = true, time.Now() }
 	if st.dragging {
-		if FrameInput.Mouse == MouseRelease {
+		if GetFrameInput().Mouse == MouseRelease {
 			st.dragging = false
 			if st.anchor == st.cursor {
 				st.anchor = -1
@@ -344,19 +344,19 @@ func editMouse(buf *string, st *editState) {
 		}
 		return
 	}
-	if FrameInput.Mouse != MouseClick || !IsHovered() {
+	if GetFrameInput().Mouse != MouseClick || !IsHovered() {
 		return
 	}
 	idx := hitIndex(*buf, relX)
 	switch {
-	case InputState.Modifiers&ModShift != 0:
+	case GetInputState().Modifiers&ModShift != 0:
 		if st.anchor < 0 {
 			st.anchor = st.cursor
 		}
 		st.cursor = idx
-	case FrameInput.ClickCount >= 3:
+	case GetFrameInput().ClickCount >= 3:
 		st.anchor, st.cursor = 0, len(r)
-	case FrameInput.ClickCount == 2:
+	case GetFrameInput().ClickCount == 2:
 		st.anchor, st.cursor = wordRange(r, idx)
 	default:
 		st.cursor, st.anchor, st.dragging = idx, idx, true
@@ -383,13 +383,13 @@ func caretBar(st *editState, focused bool) {
 // themedInput is themedInputState with the state kept internally; it is
 // THE reusable text field — search, the version field, and the
 // launch-template field all share it.
-func themedInput(buf *string, hint string, icon rune, sizing ...AttrsFn) {
+func themedInput(buf *string, hint string, icon widgets.IconGlyph, sizing ...AttrsFn) {
 	themedInputState(buf, hint, icon, nil, sizing...)
 }
 
 // themedInputState is themedInput with a caller-owned edit state (tests
 // drive the same editing flow and assert on st directly).
-func themedInputState(buf *string, hint string, icon rune, st *editState, sizing ...AttrsFn) {
+func themedInputState(buf *string, hint string, icon widgets.IconGlyph, st *editState, sizing ...AttrsFn) {
 	box := Attrs(Focusable, Row, CrossMid, Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(2, sp12), Clip)
 	Container(AttrsWith(box, sizing...), func() {
 		if st == nil {
@@ -412,10 +412,10 @@ func themedInputState(buf *string, hint string, icon rune, st *editState, sizing
 		r := []rune(*buf)
 		lo, hi, hasSel := st.selRange(len(r))
 		Container(Attrs(Row, Gap(sp8), CrossMid, Grow(1)), func() {
-			if icon != 0 {
+		if icon != widgets.NoIcon {
 				widgets.Icon(icon, FontSize(13), TextColorVec(txtMuted))
 			}
-			Container(Attrs(Row, Gap(0), CrossMid, Grow(1)), func() {
+		Container(Attrs(Row, Gap(0), CrossMid, Grow(1), MinSize(0, 16)), func() {
 				st.textRect = GetScreenRect()
 				switch {
 				case hasSel:
@@ -465,8 +465,8 @@ func (m *model) viewSwitch() {
 		if HasFocus() {
 			m.viewSwitchFocusRing = true
 			ModAttrs(func(a *AttrSet) { a.BorderColor = focusBorder })
-			if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
-				FrameInput.Key = KeyCodeNone
+			if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
+				GetFrameInput().Key = KeyCodeNone
 				if !disabled && m.sess != nil {
 					m.sess.ToggleView()
 				}
@@ -479,7 +479,7 @@ func (m *model) viewSwitch() {
 
 // viewSegment is one half of the view switch; activating it flips the view
 // mode through the session.
-func (m *model) viewSegment(icon rune, label string, mode ui.ViewMode, disabled bool) {
+func (m *model) viewSegment(icon widgets.IconGlyph, label string, mode ui.ViewMode, disabled bool) {
 	selected := m.state.Mode == mode
 	fg := txtMuted
 	if selected {
@@ -698,27 +698,27 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 				// Up/Down move the highlight (wrapping), Enter activates the
 				// highlighted row below, Space still toggles closed. All
 				// consumed so no frame-end fallback can also see them.
-				switch FrameInput.Key {
+				switch GetFrameInput().Key {
 				case KeyDown, KeyUp:
 					if n := len(m.versionDDItems); n > 0 {
 						if st.hl < 0 {
 							st.hl = 0
-						} else if FrameInput.Key == KeyDown {
+						} else if GetFrameInput().Key == KeyDown {
 							st.hl = (st.hl + 1) % n
 						} else {
 							st.hl = (st.hl - 1 + n) % n
 						}
-						FrameInput.Key = KeyCodeNone
+						GetFrameInput().Key = KeyCodeNone
 					}
 				case KeyEnter:
-					FrameInput.Key = KeyCodeNone
+					GetFrameInput().Key = KeyCodeNone
 					enterPick = true
 				case KeySpace:
-					FrameInput.Key = KeyCodeNone
+					GetFrameInput().Key = KeyCodeNone
 					activated = true
 				}
-			} else if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
-				FrameInput.Key = KeyCodeNone
+			} else if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
+				GetFrameInput().Key = KeyCodeNone
 				activated = true
 			}
 		}
@@ -747,8 +747,8 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 			// on presence every frame and would overwrite the trigger's
 			// arrow-key move in the same frame; a MOVED mouse still wins
 			// (the intended mouse/keyboard sync).
-			mouseMoved := InputState.MousePoint != st.prevMouse
-			st.prevMouse = InputState.MousePoint
+			mouseMoved := GetInputState().MousePoint != st.prevMouse
+			st.prevMouse = GetInputState().MousePoint
 			// Computed here, never on closed frames: Versions walks the
 			// bundle cache (see the I/O note above).
 			versions := m.sess.Versions(dir)
@@ -820,12 +820,12 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 	// (menu.go:84's ordering): Esc closes without dispatch and is consumed
 	// so the global Esc handler cannot also close the detail panel; a click
 	// outside both trigger and popup closes without dispatch.
-	if st.open && FrameInput.Key == KeyEscape {
-		FrameInput.Key = KeyCodeNone
+	if st.open && GetFrameInput().Key == KeyEscape {
+		GetFrameInput().Key = KeyCodeNone
 		st.open = false
 		m.openDropdownDir = ""
 	}
-	if st.open && !IdIsHovered(st.btnID) && !IdIsHovered(st.menuID) && FrameInput.Mouse == MouseClick {
+	if st.open && !IdIsHovered(st.btnID) && !IdIsHovered(st.menuID) && GetFrameInput().Mouse == MouseClick {
 		st.open = false
 		m.openDropdownDir = ""
 	}
@@ -839,11 +839,11 @@ func dropdownPos(anchorID ContainerId) Vec2 {
 	pos := targetRect.Origin
 	pos[1] += targetRect.Size[1] + sp
 	selfSize := GetResolvedSize()
-	if pos[0]+selfSize[0] > WindowSize[0] {
-		pos[0] = WindowSize[0] - selfSize[0] - sp
+	if pos[0]+selfSize[0] > GetHost().WindowSize[0] {
+		pos[0] = GetHost().WindowSize[0] - selfSize[0] - sp
 	}
-	if pos[1]+selfSize[1] > WindowSize[1] {
-		pos[1] = WindowSize[1] - selfSize[1] - sp
+	if pos[1]+selfSize[1] > GetHost().WindowSize[1] {
+		pos[1] = GetHost().WindowSize[1] - selfSize[1] - sp
 	}
 	pos[0] = max(0, pos[0])
 	pos[1] = max(0, pos[1])
@@ -911,31 +911,31 @@ func (m *model) sortDropdown() {
 				// Up/Down move the highlight (wrapping), Enter activates the
 				// highlighted row below, Space still toggles closed. All
 				// consumed so no frame-end fallback can also see them.
-				switch FrameInput.Key {
+				switch GetFrameInput().Key {
 				case KeyDown, KeyUp:
 					if n := len(m.sortMenuItems); n > 0 {
 						if st.hl < 0 {
 							st.hl = 0
-						} else if FrameInput.Key == KeyDown {
+						} else if GetFrameInput().Key == KeyDown {
 							st.hl = (st.hl + 1) % n
 						} else {
 							st.hl = (st.hl - 1 + n) % n
 						}
-						FrameInput.Key = KeyCodeNone
+						GetFrameInput().Key = KeyCodeNone
 					}
 				case KeyEnter:
-					FrameInput.Key = KeyCodeNone
+					GetFrameInput().Key = KeyCodeNone
 					enterPick = true
 				case KeySpace:
-					FrameInput.Key = KeyCodeNone
+					GetFrameInput().Key = KeyCodeNone
 					activated = !disabled
 				}
-			} else if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
-				FrameInput.Key = KeyCodeNone
+			} else if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
+				GetFrameInput().Key = KeyCodeNone
 				activated = !disabled
 			}
 		}
-		if widgets.ButtonExt("Sort: "+sortLabel(m.state.Sort), widgets.ButtonAttrs{Icon: widgets.TypArrowSortedDown, Disabled: disabled}) {
+		if widgets.ButtonExt("Sort: "+sortLabel(m.state.Sort), widgets.ButtonAttrs{Icon: widgets.TypArrowSortedDown, Disabled: disabled}, widgets.DefaultButtonLook()) {
 			activated = true
 		}
 		if activated {
@@ -951,8 +951,8 @@ func (m *model) sortDropdown() {
 			// pattern): hover adopts the highlight only when the mouse
 			// actually moved, so a resting mouse cannot overwrite the
 			// trigger's arrow-key move in the same frame.
-			mouseMoved := InputState.MousePoint != st.prevMouse
-			st.prevMouse = InputState.MousePoint
+			mouseMoved := GetInputState().MousePoint != st.prevMouse
+			st.prevMouse = GetInputState().MousePoint
 			triggerW := GetResolvedRectOf(st.btnID).Size[0]
 			Container(Attrs(MinWidth(triggerW), Corners(radiusS), Pad2(sp4, 0), Gap(2), Clip, BackgroundVec(bgPanel), BorderWidth(1), BorderColorVec(border), elevateOverlay), func() {
 				ModAttrs(FloatVec(dropdownPos(st.btnID)))
@@ -967,7 +967,7 @@ func (m *model) sortDropdown() {
 				}
 				m.sortMenuItems = m.sortMenuItems[:0]
 				m.sortItem(st, widgets.SymStar, "Default (actionable first)", ui.SortDefault, enterPick, mouseMoved)
-				m.sortItem(st, 0, "Name (A–Z)", ui.SortName, enterPick, mouseMoved)
+				m.sortItem(st, widgets.NoIcon, "Name (A–Z)", ui.SortName, enterPick, mouseMoved)
 			})
 		})
 	}
@@ -976,11 +976,11 @@ func (m *model) sortDropdown() {
 	// consumed here — the toolbar renders before handleGlobalKeys, so the
 	// global Esc handler cannot also close the detail panel; a click outside
 	// both trigger and popup closes without dispatch.
-	if st.open && FrameInput.Key == KeyEscape {
-		FrameInput.Key = KeyCodeNone
+	if st.open && GetFrameInput().Key == KeyEscape {
+		GetFrameInput().Key = KeyCodeNone
 		st.open = false
 	}
-	if st.open && !IdIsHovered(st.btnID) && !IdIsHovered(st.menuID) && FrameInput.Mouse == MouseClick {
+	if st.open && !IdIsHovered(st.btnID) && !IdIsHovered(st.menuID) && GetFrameInput().Mouse == MouseClick {
 		st.open = false
 	}
 }
@@ -992,7 +992,7 @@ func (m *model) sortDropdown() {
 // highlighted row exactly like a click. hoverAdopt is the popup frame's
 // mouse-motion gate: hover adopts the highlight only on actual mouse
 // motion, so a resting mouse cannot overwrite an arrow-key move.
-func (m *model) sortItem(st *dropdownState, icon rune, label string, mode ui.SortMode, enterPick, hoverAdopt bool) {
+func (m *model) sortItem(st *dropdownState, icon widgets.IconGlyph, label string, mode ui.SortMode, enterPick, hoverAdopt bool) {
 	Container(Attrs(Row, Expand, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(2)), func() {
 		idx := len(m.sortMenuItems)
 		// Mouse/keyboard sync: hovering a row adopts it as the highlight,
@@ -1006,7 +1006,7 @@ func (m *model) sortItem(st *dropdownState, icon rune, label string, mode ui.Sor
 		if hl {
 			ModAttrs(BackgroundVec(accentHov))
 		}
-		if icon != 0 {
+		if icon != widgets.NoIcon {
 			widgets.Icon(icon, FontSize(12), TextColorVec(txtMain))
 		}
 		Label(label, FontSize(12), TextColorVec(txtMain))

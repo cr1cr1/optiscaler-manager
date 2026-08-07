@@ -69,11 +69,23 @@ type wlBuffer struct {
 // HandleBufferRelease: the compositor is done reading this buffer; reuse is safe.
 func (b *wlBuffer) HandleBufferRelease(wl.BufferReleaseEvent) { b.busy = false }
 
-// SetupWindow records the window parameters. The window is created in Run.
+// SetupWindow records the window title and preferred content size in points
+// (same contract as macOS/Win32). When CSD is enabled, createWindow grows the
+// surface by titlebarHeight so the titlebar does not consume the body.
 func SetupWindow(title string, width, height int) {
 	winTitle = title
 	winW, winH = width, height
 }
+
+// CenterWindow is a no-op on Wayland: top-level placement is owned by the
+// compositor. Kept for API parity with other backends. Call after SetupWindow
+// and before Run.
+func CenterWindow() {}
+
+// PositionWindow is a no-op on Wayland: top-level placement is owned by the
+// compositor. Kept for API parity with other backends. Call after SetupWindow
+// and before Run.
+func PositionWindow(x, y int) { _, _ = x, y }
 
 // SetupIcon records the path of the image (PNG etc.) used as the window icon.
 // Call it before Run. Applied via the staging xdg-toplevel-icon-v1 protocol
@@ -90,9 +102,10 @@ func SetupIcon(imagePath string) {
 // until the window is closed. Everything (input + frame production) happens on
 // this one goroutine: Wayland delivers events synchronously inside DisplayDispatch.
 func Run(fn shirei.FrameFn) {
-	frameFn = fn
+	frameFn = wrapFrame(fn)
 
-	shirei.GlyphCacheBudgetBytes = glyphCacheBudget
+	shirei.GetHost().GlyphCacheBudgetBytes = glyphCacheBudget
+	shirei.GetHost().EscapeHatchBackendContext = Context{}
 
 	connect()
 	// No icon protocol in the registry (GNOME): bridge the icon over a hidden
@@ -102,12 +115,6 @@ func Run(fn shirei.FrameFn) {
 		ensureDesktopEntry(appID())
 	}
 	createWindow()
-
-	if csdEnabled {
-		// Draw the client-side titlebar transparently above every app's content.
-		shirei.DecorationFn = drawTitlebar
-		shirei.DecorationHeight = titlebarHeight
-	}
 
 	// Pump events until the toplevel is closed. Wayland delivers a batch of
 	// events per DisplayDispatch; input handlers update the shirei globals and set
@@ -128,9 +135,7 @@ func Run(fn shirei.FrameFn) {
 	const framePoll = 16 * time.Millisecond
 	wlDebug("wl backend build: 2026-07-13-idle-frame-wake (timeout dispatch)")
 	for !quit {
-		// PATCHED by optiscaler-manager (v0.10): cap the dispatch wait so a
-		// pending key repeat wakes the loop in time (see pumpRepeat /
-		// HandleKeyboardRepeatInfo in waylandkeyboard_linux.go).
+		// PATCHED by optiscaler-manager (v0.10): cap the dispatch wait so a pending key repeat wakes the loop in time (see pumpRepeat in waylandkeyboard_linux.go).
 		if err := wlclient.DisplayDispatchTimeout(disp, repeatTimeout(framePoll)); err != nil && err != wl.ErrContextRunTimeout && err != wl.ErrContextRunProxyNil {
 			// Always to stderr: exiting the GUI loop is fatal for the app, and
 			// after a protocol error this is the only trace of what happened.
@@ -254,6 +259,9 @@ func (*handler) HandleWmBasePing(ev zxdg.WmBasePingEvent) {
 
 func createWindow() {
 	logicalW, logicalH = winW, winH
+	if csdEnabled && logicalW > 0 && logicalH > 0 {
+		logicalH += titlebarHeight
+	}
 	recomputeDeviceSize() // honors a scale already learned during connect
 
 	var err error
@@ -302,7 +310,7 @@ func (*handler) HandleToplevelConfigure(ev zxdg.ToplevelConfigureEvent) {
 	if ev.Width > 0 && ev.Height > 0 && (int(ev.Width) != logicalW || int(ev.Height) != logicalH) {
 		logicalW, logicalH = int(ev.Width), int(ev.Height)
 		recomputeDeviceSize()
-		dirty = true // PATCHED by optiscaler-manager (v0.12): trigger a repaint on resize (upstream HandleToplevelConfigure sets no dirty flag → the app wouldn't redraw until the next unrelated input event).
+		dirty = true // PATCHED by optiscaler-manager (v0.12): trigger a repaint on resize (upstream HandleToplevelConfigure sets no dirty flag -> the app wouldn't redraw until the next unrelated input event).
 	}
 }
 
@@ -393,25 +401,22 @@ func (b *wlBuffer) destroy() {
 func drawFrame() {
 	b := nextBuffer()
 	if b == nil {
-		wlDebug("drawFrame SKIPPED: both buffers busy (mods=%04b)", shirei.InputState.Modifiers)
+		wlDebug("drawFrame SKIPPED: both buffers busy (mods=%04b)", shirei.GetInputState().Modifiers)
 		dirty = true // both buffers in flight; retry when one is released
 		return
 	}
-	wlDebug("drawFrame render (mods=%04b)", shirei.InputState.Modifiers)
+	wlDebug("drawFrame render (mods=%04b)", shirei.GetInputState().Modifiers)
 	dirty = false
 
 	scale := windowScale
 	if scale <= 0 {
 		scale = 1
 	}
-	shirei.WindowScale = scale
-	// The app's content area excludes the titlebar; the core reserves that strip
-	// (DecorationHeight) above it and draws drawTitlebar there.
-	contentH := float32(logicalH)
-	if csdEnabled {
-		contentH -= titlebarHeight
-	}
-	shirei.WindowSize = shirei.Vec2{float32(logicalW), contentH}
+	shirei.GetHost().WindowScale = scale
+	// Full surface size so the root can host the titlebar; wrapFrame narrows
+	// to content during the app build (restores for settle). Content size is
+	// published again after RunFrameFn below.
+	shirei.GetHost().WindowSize = shirei.Vec2{float32(logicalW), float32(logicalH)}
 
 	// Deliver committed text (IME commits + typed chars + paste) before
 	// frameFn consumes input. FrameInput is reset at the end of RunFrameFn.
@@ -422,16 +427,8 @@ func drawFrame() {
 	out := shirei.RunFrameFn(frameFn)
 	perfRecordProduce(time.Since(t0))
 
-	// PATCHED by optiscaler-manager (v0.15): skip the expensive raster +
-	// Attach + Damage + Commit when nothing changed since the last frame.
-	// RunFrameFn still runs (to process input, update app state, compute
-	// hover); only the paint is skipped. This makes idle/scroll-hover
-	// frames cost ~1ms instead of 33-160ms on Wayland, where the software
-	// rasterizer + compositor recomposite is dramatically slower than X11.
-	if !out.FrameHasChanges && haveFrame {
-		wantsFrame = out.NextFrameRequested
-		perfRecordPaint(0)
-		return
+	if csdEnabled {
+		shirei.GetHost().WindowSize[1] = float32(logicalH - titlebarHeight)
 	}
 
 	// Refresh IME candidate anchor with the just-published CompositionPos /
@@ -443,6 +440,16 @@ func drawFrame() {
 	}
 	if out.Paste {
 		requestPaste()
+	}
+	if out.OpenURL != "" {
+		openURL(out.OpenURL)
+	}
+
+	// PATCHED by optiscaler-manager (v0.15): skip the expensive raster + Attach + Damage + Commit when nothing changed since the last frame. RunFrameFn still ran (input, app state, hover, clipboard/IME outputs were processed above); only the paint is skipped. v0.6.6 made FrameHasChanges hash-based, so this fires precisely on identical-content frames.
+	if !out.FrameHasChanges && haveFrame {
+		wantsFrame = out.NextFrameRequested
+		perfRecordPaint(0)
+		return
 	}
 
 	t1 := time.Now()

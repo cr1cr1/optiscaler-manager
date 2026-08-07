@@ -14,13 +14,13 @@ guarded by a test so a silent revert (e.g. after `go mod vendor`) fails CI.
 - **Marker**: `// PATCHED by optiscaler-manager (v0.5)`
 - **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent`)
 
-**What.** shirei v0.5.2's Wayland backend draws its own client-side
+**What.** shirei v0.6.6's Wayland backend draws its own client-side
 decorations (CSD) with a hardcoded light titlebar. The patch retints the
 titlebar and its controls to the app's dark palette.
 
 **Why.** The whole GUI is dark-themed; a light titlebar on Wayland looks
 broken next to it. The fix lives in the vendor tree because shirei has no
-theming hook for its decorations and the pinned v0.5.2 cannot be changed
+theming hook for its decorations and the pinned v0.6.6 cannot be changed
 upstream on our schedule.
 
 **Scope.** Wayland only. On X11 the window manager draws the decorations,
@@ -65,7 +65,7 @@ the v0.5 patch text in place so re-enabling is one flag away.
 - **Marker**: `// PATCHED by optiscaler-manager (v0.9)` (trailing on both added lines; guard also looks for `xkISOLeftTab`).
 - **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent`); behavior covered by `internal/gui/widgets_test.go` (`TestFocusableButtonTabCyclesAndEnterActivates` — Shift+Tab reverse-cycles).
 
-**What.** shirei v0.5.2's Wayland backend resolves keysyms with
+**What.** shirei v0.6.6's Wayland backend resolves keysyms with
 `xkbState.KeyGetOneSym`; with Shift held, Tab yields `ISO_Left_Tab`
 (0xFE20), which `mapKeysym` did not know, so `FrameInput.Key` was never
 set and the keypress vanished. The patch adds the `xkISOLeftTab = 0xfe20`
@@ -87,7 +87,7 @@ and the case next to `case xkTab:`, each with the trailing marker comment;
 - **Markers**: `// PATCHED by optiscaler-manager (v0.10)` (header block on the vars; trailing on the two `onKey` callsites, the `HandleKeyboardRepeatInfo` body, and the two `waylandbackend_linux.go` loop edits).
 - **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent` checks for `HandleKeyboardRepeatInfo` + `pumpRepeat` in the keyboard file and `pumpRepeat()` + `repeatTimeout(framePoll)` in the loop file).
 
-**What.** shirei v0.5.2's Wayland backend explicitly left
+**What.** shirei v0.6.6's Wayland backend explicitly left
 `HandleKeyboardRepeatInfo` as a no-op ("client-side key repeat isn't
 implemented yet"), so the compositor-supplied repeat rate/delay was
 discarded and held keys fired exactly once before the app went idle. The
@@ -186,7 +186,7 @@ header marker comment), the three helper functions
 - **Marker**: `// PATCHED by optiscaler-manager (v0.12)` (trailing on the `dirty = true` line).
 - **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent` checks for the v0.12 marker in `waylandbackend_linux.go`).
 
-**What.** shirei v0.5.2's `HandleToplevelConfigure` updated the window's
+**What.** shirei v0.6.6's `HandleToplevelConfigure` updated the window's
 logical size on resize but never set `dirty = true`, so the Wayland main
 loop's `if dirty && frameCb == nil { drawFrame() }` never fired — the app
 didn't repaint on resize until the next unrelated input event arrived.
@@ -202,35 +202,91 @@ flag dirty on resize.
 trailing marker comment inside the `HandleToplevelConfigure` size-change
 block; `TestVendorCSDPatchPresent` fails while the marker is missing.
 
-## shirei: snap layout animations during resize (v0.13)
+## shirei: disable layout animations (v0.13)
 
-- **File**: `vendor/go.hasen.dev/shirei/shirei.go` (`prevWindowSize`/`windowResizedNow` vars + detection in the frame pass + rate override in `resolveOrigins`).
+- **File**: `vendor/go.hasen.dev/shirei/shirei.go` (the `rate` line in `resolveOrigins`).
 - **Marker**: `// PATCHED by optiscaler-manager (v0.13)`.
-- **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent` checks for `windowResizedNow` in `shirei.go`).
+- **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent` checks for the v0.13 marker in `shirei.go`).
 
-**What.** `resolveOrigins` (shirei.go:~1095) animates every container's
-size, origin, padding, and corners toward their new target at `rate =
-min(1, timeDelta*20)`. A window resize moves every container, so after
-each resize tick the UI animates for ~5-7 extra frames; each animation
-frame changes surfaces → `FrameHasChanges` → `NextFrameRequested` →
-backend repaints again. This animation chain was the dominant cause of
-resize sluggishness on Wayland (4-16 fps during drag).
+**What.** `resolveOrigins` animates every container's size, origin,
+padding, and corners toward its new target at `rate = min(1, ui.timeDelta*20)`.
+The patch forces `rate := float32(1)` so every container snaps to its target
+immediately — no smooth transitions on resize, panel open/close, view switch,
+or hover lift. The user explicitly requested no animations; the 5-7×
+reduction in repaint frames during any layout change is a bonus.
 
-The patch adds a per-frame `windowResizedNow` flag (comparing `WindowSize`
-to the previous frame's) and sets `rate = 1` (snap) when it's true. The
-visual difference is imperceptible — during a drag the user is focused
-on the window edge, not content smoothness. Non-resize animations (panel
-open/close, view switch, hover lift) are unaffected because they don't
-change `WindowSize`.
+(v0.6.6 reworked animation into a per-channel `Animations` bitfield with
+`NoAnimate`/`AnimateOnly` attrs. Our code already uses `NoAnimate` on
+modals/overlays; the global `rate=1` here is the broader kill switch. With
+it, the per-container flags are moot for layout channels — revisit if
+selective animations are wanted later.)
 
-**Why.** Each resize tick now produces exactly 1 repaint frame instead
-of 5-7, a 5-7× reduction in resize-time frame production.
+**Why.** Each layout change now produces exactly 1 repaint frame instead
+of 5-7 (the animation chain was the dominant cause of resize sluggishness
+on Wayland, 4-16 fps during drag).
 
-**Scope.** All backends (shirei core). The flag is computed once per
-`RunFrameFn` pass and read in `resolveOrigins`.
+**Scope.** All backends (shirei core). Applied once in `resolveOrigins`.
 
-**Reapplying after `go mod vendor`.** Re-add the `prevWindowSize`/
-`windowResizedNow` vars (with marker), the detection lines after
-`timeDelta = ...` in the frame pass, and the rate override in the
-animation block of `resolveOrigins`; `TestVendorCSDPatchPresent` fails
-while the marker is missing.
+**Reapplying after `go mod vendor`.** Replace `var rate = min(1, ui.timeDelta*20)`
+with `rate := float32(1)` (plus the marker comment); `TestVendorCSDPatchPresent`
+fails while the marker is missing.
+
+## shirei: cover-art stretch-to-fill (v0.14)
+
+- **Files**: `vendor/go.hasen.dev/shirei/softrender.go` (`ImageScale` block: stretch both axes to the surface rect), `vendor/go.hasen.dev/shirei/images.go` (new `ImageFill` function).
+- **Markers**: `// PATCHED by optiscaler-manager (v0.14)`.
+- **Guard**: `internal/gui/csd_test.go` (checks for the v0.14 marker in `softrender.go` and `func ImageFill(` in `images.go`).
+
+**What.** Upstream `ImageScale` fits an image to the surface *height* only,
+leaving a horizontal gap when the image's aspect ratio doesn't match the
+container's (e.g. a 460×900 cover in a 260×390 card slot). The patch
+stretches to fill the surface rect exactly on both axes, and adds `ImageFill`
+(like `Image` but ignores aspect ratio) for grid-view cover thumbnails where
+a gap is worse than minor distortion (imperceptible for near-2:3 art).
+
+**Reapplying after `go mod vendor`.** Re-apply the stretch in `softrender.go`
+(`dwl, dhl = s.Rect.Size[0], s.Rect.Size[1]`) and re-add `ImageFill` in
+`images.go`; the guard fails while either is missing.
+
+## shirei: Wayland skip-unchanged-frames (v0.15)
+
+- **File**: `vendor/go.hasen.dev/shirei/waylandbackend/waylandbackend_linux.go` (`haveFrame` var + early-return in `drawFrame` + `haveFrame = true` after commit).
+- **Marker**: `// PATCHED by optiscaler-manager (v0.15)`.
+- **Guard**: `internal/gui/csd_test.go` (checks for the v0.15 marker / `haveFrame` in `waylandbackend_linux.go`).
+
+**What.** The Wayland backend always rasterized + `Attach` + `Damage` +
+`Commit`-ted every frame, even when nothing changed. v0.6.6 made
+`FrameHasChanges` hash-based (precise "did the rendered content change"),
+but the backend never consulted it. The patch skips the expensive paint
+when `!out.FrameHasChanges && haveFrame` — `RunFrameFn` still runs (input,
+app state, hover, clipboard/IME outputs are processed); only the software
+raster + compositor recomposite is skipped. Idle / scroll-hover frames drop
+from the full raster cost to ~1 ms.
+
+**Scope.** Wayland only. v0.6.6's Win32 and Cocoa backends already have a
+native content-hash present skip (`lastPresentedHash` / `havePresented`);
+this brings Wayland to parity.
+
+**Reapplying after `go mod vendor`.** Re-add the `haveFrame` var, the
+early-return after the post-frame output handling (before `softRenderer.RenderInto`),
+and `haveFrame = true` after `surface.Commit`/`b.busy = true`.
+
+## shirei: headless identity-tree reset (v0.16)
+
+- **File**: `vendor/go.hasen.dev/shirei/renderpng.go` (`ResetInputSession`: reset `ui.identRoot`).
+- **Marker**: `// PATCHED by optiscaler-manager (v0.16)`.
+- **Guard**: `internal/gui/csd_test.go` (checks for the v0.16 marker in `renderpng.go`).
+
+**What.** `ResetInputSession` is the headless/test reset (called by
+`RenderToImage` and the GUI test helper). It reset input and the focus graph
+but not the identity tree, so `Use`-hook-backed widget state — virtual-list
+scroll and height caches — leaked across back-to-back tests. v0.6.6's
+stricter virtual list exposed this as order-dependent failures. The patch
+resets `ui.identRoot` (and `currentIdent`) to a fresh root, giving true
+per-run isolation while preserving `Host` (the caller sets `WindowSize`).
+
+**Scope.** Headless only — every `ResetInputSession` caller is headless
+(`RenderToImage`, the GUI test helper); live backends never call it.
+
+**Reapplying after `go mod vendor`.** Re-add the `identRoot`/`currentIdent`
+reset at the end of `ResetInputSession`.

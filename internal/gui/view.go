@@ -154,9 +154,9 @@ func (m *model) handleGlobalKeys() {
 	}
 	// `/` anywhere focuses the search field (unless it is already focused —
 	// then the field consumed the character itself).
-	if FrameInput.Text == "/" && !m.libraryEmpty() {
+	if GetFrameInput().Text == "/" && !m.libraryEmpty() {
 		FocusImmediateOn(m.searchID)
-		FrameInput.Text = ""
+		GetFrameInput().Text = ""
 		return
 	}
 	rows := m.visibleRows()
@@ -167,11 +167,11 @@ func (m *model) handleGlobalKeys() {
 	// card would wrap to the sidebar (off-screen cards aren't in the
 	// focusables registry). Intercept it, scroll forward, and re-assert
 	// focus on the newly-visible card.
-	if FrameInput.Key == KeyTab && InputState.Modifiers&ModShift == 0 &&
+	if GetFrameInput().Key == KeyTab && GetInputState().Modifiers&ModShift == 0 &&
 		m.cardLastButtonID != nil && IdHasFocus(m.cardLastButtonID) &&
 		!m.auditGrid && m.state.Mode != ui.ViewList &&
 		m.selIdx < len(rows)-1 {
-		FrameInput.Key = KeyCodeNone
+		GetFrameInput().Key = KeyCodeNone
 		ClearFocus()
 		m.selIdx++
 		c := m.cols
@@ -187,7 +187,7 @@ func (m *model) handleGlobalKeys() {
 		cols = 1
 	}
 	listMode := m.state.Mode == ui.ViewList && !m.auditGrid
-	switch FrameInput.Key {
+	switch GetFrameInput().Key {
 	case KeyRight:
 		if listMode {
 			return
@@ -203,7 +203,7 @@ func (m *model) handleGlobalKeys() {
 	case KeyDown:
 		if listMode {
 			m.moveListSel(rows, 1)
-			FrameInput.Key = KeyCodeNone
+			GetFrameInput().Key = KeyCodeNone
 			return
 		}
 		m.moveGridSel(rows, cols)
@@ -211,7 +211,7 @@ func (m *model) handleGlobalKeys() {
 	case KeyUp:
 		if listMode {
 			m.moveListSel(rows, -1)
-			FrameInput.Key = KeyCodeNone
+			GetFrameInput().Key = KeyCodeNone
 			return
 		}
 		m.moveGridSel(rows, -cols)
@@ -228,7 +228,7 @@ func (m *model) handleGlobalKeys() {
 	if listMode && len(rows) > 0 {
 		VirtualListScrollIntoView("games", rows[m.selIdx].InstallDir)
 	}
-	FrameInput.Key = KeyCodeNone
+	GetFrameInput().Key = KeyCodeNone
 }
 
 // actionList is the fuzzy-filtered, actionable-first virtualized game list.
@@ -262,16 +262,16 @@ func (m *model) actionList() {
 		if focused {
 			m.listFocusRing = true
 			ModAttrs(func(a *AttrSet) { a.BorderColor = focusBorder })
-			switch FrameInput.Key {
+			switch GetFrameInput().Key {
 			case KeyDown:
 				m.moveListSel(rows, 1)
-				FrameInput.Key = KeyCodeNone
+				GetFrameInput().Key = KeyCodeNone
 			case KeyUp:
 				m.moveListSel(rows, -1)
-				FrameInput.Key = KeyCodeNone
+				GetFrameInput().Key = KeyCodeNone
 			case KeyEnter:
 				m.toggleListDetail(rows)
-				FrameInput.Key = KeyCodeNone
+				GetFrameInput().Key = KeyCodeNone
 			}
 		}
 		// Row-rect seams rebuild every frame the list renders: indexes track
@@ -359,7 +359,7 @@ func (m *model) detailPanel() {
 		}
 		return
 	}
-	panelW := detailPanelWidth(WindowSize[0])
+	panelW := detailPanelWidth(GetHost().WindowSize[0])
 	m.openINIRect = Rect{}
 	// Viewport on a Row child absorbs leftover main-axis space, defeating
 	// FixWidth — the scrollable column nests inside the fixed-width shell.
@@ -382,8 +382,8 @@ func (m *model) detailPanel() {
 				// keep the default reverse walk.
 				if !m.auditGrid && m.state.Mode != ui.ViewList &&
 					m.panelFirstID != nil && IdHasFocus(m.panelFirstID) &&
-					FrameInput.Key == KeyTab && InputState.Modifiers&ModShift != 0 {
-					FrameInput.Key = KeyCodeNone
+					GetFrameInput().Key == KeyTab && GetInputState().Modifiers&ModShift != 0 {
+					GetFrameInput().Key = KeyCodeNone
 					if id := m.cardIDs[m.state.Selected]; id != nil {
 						FocusImmediateOn(id)
 					} else {
@@ -480,12 +480,12 @@ func (m *model) panelCloseButton() bool {
 				a.BorderWidth = 2
 				a.BorderColor = focusBorder
 			})
-			if FrameInput.Key == KeyEnter || FrameInput.Key == KeySpace {
-				FrameInput.Key = KeyCodeNone
+			if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
+				GetFrameInput().Key = KeyCodeNone
 				activated = true
 			}
 		}
-		if ButtonExt("Close", ButtonAttrs{Icon: TypCancel}) {
+		if ButtonExt("Close", ButtonAttrs{Icon: TypCancel}, DefaultButtonLook()) {
 			activated = true
 		}
 	})

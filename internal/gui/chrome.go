@@ -15,16 +15,16 @@ func modal(width float32, dismiss func(), fn func()) {
 	Popup(func() {
 		var cardID ContainerId
 		var cardFirst bool
-		Container(Attrs(Float(0, 0), FixWidth(WindowSize[0]), FixHeight(WindowSize[1]), FocusTrap, Center, Background(220, 25, 12, 0.45), NoAnimate, InFront), func() {
+		Container(Attrs(Float(0, 0), FixWidth(GetHost().WindowSize[0]), FixHeight(GetHost().WindowSize[1]), FocusTrap, Center, Background(220, 25, 12, 0.45), NoAnimate, InFront), func() {
 			Container(Attrs(FixWidth(width), Gap(sp12), Pad(sp24), BackgroundVec(bgPanel), Corners(radiusL), elevateOverlay), func() {
 				cardID = CurrentId()
 				cardFirst = FirstRender()
 				fn()
 			})
-			if dismiss != nil && FrameInput.Key == KeyEscape {
+			if dismiss != nil && GetFrameInput().Key == KeyEscape {
 				dismiss()
 			}
-			if dismiss != nil && !cardFirst && FrameInput.Mouse == MouseClick && !IdIsHovered(cardID) {
+			if dismiss != nil && !cardFirst && GetFrameInput().Mouse == MouseClick && !IdIsHovered(cardID) {
 				dismiss()
 			}
 		})
@@ -37,7 +37,7 @@ func modal(width float32, dismiss func(), fn func()) {
 // highlighted in the accent color.
 func (m *model) sidebar() {
 	m.sidebarRects = m.sidebarRects[:0]
-	Container(Attrs(FixSize(sidebarW, WindowSize[1]), BackgroundVec(bgPanel), Pad(sp8), Gap(sp12)), func() {
+	Container(Attrs(FixSize(sidebarW, GetHost().WindowSize[1]), BackgroundVec(bgPanel), Pad(sp8), Gap(sp12)), func() {
 		m.sidebarShellRect = GetScreenRectOf(CurrentId())
 		Container(Attrs(Row, Center, Expand), func() {
 			Label("✦", FontSize(22), TextColorVec(toneColor(2)))
@@ -62,7 +62,7 @@ func (m *model) sidebar() {
 
 // sidebarItem is one navigation entry: icon over a truncated label, tinted
 // with the accent while its section is active.
-func (m *model) sidebarItem(icon rune, label string, active bool, action func()) {
+func (m *model) sidebarItem(icon IconGlyph, label string, active bool, action func()) {
 	fg := txtMuted
 	if active {
 		fg = accentHov
@@ -105,7 +105,7 @@ func (m *model) settingsModal() {
 		Container(Attrs(Expand, Gap(sp4)), func() {
 			sectionTitle("General")
 			muted("Default OptiScaler version (tag or 'latest')")
-			themedInput(&m.versionBuf, "latest", 0, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+			themedInput(&m.versionBuf, "latest", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
 			if m.sess != nil {
 				focusableToggle(&m.onlineBuf, "Online game info (Steam/ProtonDB)")
 				if m.onlineBuf != m.sess.Settings().OnlineLookups {
@@ -123,7 +123,7 @@ func (m *model) settingsModal() {
 		Container(Attrs(Expand, Gap(sp4)), func() {
 			sectionTitle("Launch Template")
 			muted("Command template for manually added games; {exe} and {args} are substituted")
-			themedInput(&m.templateBuf, `"{exe}" {args}`, 0, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+			themedInput(&m.templateBuf, `"{exe}" {args}`, NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
 		})
 
 		Container(Attrs(Expand, Gap(sp4)), func() {
@@ -134,7 +134,7 @@ func (m *model) settingsModal() {
 					m.sess.SetUmuEnabled(m.umuEnabledBuf)
 				}
 				muted("Proton path (blank = auto-detect from Steam / Bottles / umu)")
-				themedInput(&m.umuProtonBuf, "", 0, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+				themedInput(&m.umuProtonBuf, "", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
 				if m.umuProtonBuf != m.sess.Settings().UmuProtonPath {
 					m.sess.SetUmuProtonPath(m.umuProtonBuf)
 				}
@@ -172,7 +172,7 @@ func (m *model) cardSizeSelector() {
 			if selected {
 				label = "● " + opt
 			}
-			if focusableButtonExt(label, ButtonAttrs{Icon: 0}) && !selected {
+			if focusableButtonExt(label, ButtonAttrs{Icon: NoIcon}) && !selected {
 				m.sess.SetCardSize(opt)
 				m.cardSize = opt
 			}
@@ -300,8 +300,8 @@ func (m *model) toastOverlay() {
 		toasts = toasts[len(toasts)-3:]
 	}
 	const toastH = 40 // card padding + one text line + gap, per toast
-	y := WindowSize[1] - float32(len(toasts)*toastH) - sp24
-	Container(Attrs(Float(WindowSize[0]-380, y), Z(10), FixSize(360, 0), Gap(sp8)), func() {
+	y := GetHost().WindowSize[1] - float32(len(toasts)*toastH) - sp24
+	Container(Attrs(Float(GetHost().WindowSize[0]-380, y), Z(10), FixSize(360, 0), Gap(sp8)), func() {
 		for _, t := range toasts {
 			Container(Attrs(Row, Expand, Corners(radiusM), BackgroundVec(bgRaised), elevateOverlay, Clip), func() {
 				bar := Vec4{140, 55, 45, 1}
@@ -325,7 +325,7 @@ func (m *model) aboutModal() {
 		Container(Attrs(Gap(sp8)), func() {
 			txt("optiscaler-manager " + m.cfg.Version)
 			muted("OptiScaler manager for local games — Linux + Steam.")
-			muted("GUI: go-shirei (pinned v0.5.2)")
+			muted("GUI: go-shirei (pinned v0.6.6)")
 			if focusableButton(SymILeft, "Close") {
 				m.about = false
 			}

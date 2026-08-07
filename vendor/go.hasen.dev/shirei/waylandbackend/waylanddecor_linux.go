@@ -11,10 +11,15 @@ import (
 
 // Client-side decorations. Of shirei's backends only Wayland lacks a window
 // manager that draws the titlebar/borders — GNOME/Mutter in particular requires
-// the client to decorate itself. So the Wayland backend offers a Titlebar() the
-// app places at the top of its frame (drag to move, a close button) plus
-// pointer-level edge resizing. Move/resize are driven by xdg_toplevel, which
-// starts an interactive compositor grab from the input serial.
+// the client to decorate itself. So the Wayland backend draws a titlebar (drag
+// to move, close button) plus pointer-level edge resizing. Move/resize are
+// driven by xdg_toplevel, which starts an interactive compositor grab from the
+// input serial.
+//
+// SetupWindow sizes are content/client (parity with macOS/Win32). createWindow
+// grows the initial surface by titlebarHeight; wrapFrame then narrows
+// Host.WindowSize so the app body matches the requested size. Compositor
+// configures and interactive resizes already speak in full-surface size.
 //
 // (Server-side decorations via the xdg-decoration protocol — real titlebars on
 // KDE/sway — are a later add; they'd also let us skip CSD where granted.)
@@ -28,12 +33,35 @@ const titlebarHeight = 34
 // PATCHED by optiscaler-manager (v0.8): CSD disabled — reapply after `go mod vendor` (see docs/vendor-patches.md)
 var csdEnabled = false
 
+// wrapFrame is the backend's own chrome wrapper (core knows nothing of
+// decorations): the root spans the full surface (WindowSize as set per
+// frame before this runs), the titlebar flows first, and the app builds
+// inside an always-present content container — always-present because focus
+// lives on identity nodes, and conditionally reparenting the app (e.g. on a
+// future CSD/fullscreen toggle) would drop it. Host.WindowSize is narrowed
+// to the content area during the app build, then restored to the surface so
+// a settle pass still sizes the root correctly (see jsbackend.wrapFrame).
+// drawFrame sets Host.WindowSize back to content after RunFrameFn. Popups
+// drain content-scoped so they layer under the titlebar.
+func wrapFrame(appFn FrameFn) FrameFn {
+	return func() {
+		full := GetHost().WindowSize
+		if csdEnabled {
+			GetHost().WindowSize[1] = full[1] - titlebarHeight
+			drawTitlebar()
+		}
+		ContainerWithKey("app-content", Attrs(Viewport), func() {
+			appFn()
+			PopupsHost()
+		})
+		GetHost().WindowSize = full
+	}
+}
+
 // drawTitlebar builds the client-side title bar (window title + close button) and
-// starts an interactive move when dragged. It's installed as shirei.DecorationFn,
-// so the core draws it above the app's content transparently — the app does
-// nothing. Runs only while CSD is active.
-//
-// PATCHED by optiscaler-manager (v0.5): dark-themed CSD — reapply after `go mod vendor` (see docs/vendor-patches.md)
+// starts an interactive move when dragged. wrapFrame places it above the
+// app's content transparently — the app does nothing. Runs only while CSD is
+// active.
 func drawTitlebar() {
 	Container(Attrs(Row, Expand, FixHeight(titlebarHeight), Background(230, 25, 11, 1),
 		Grad(0, 0, -4, 0), CrossAlign(AlignMiddle), Pad2(0, 8), Gap(8)), func() {
@@ -79,7 +107,7 @@ func tryStartResize(serial uint32) bool {
 	if !csdEnabled || xdgToplevel == nil || seat == nil {
 		return false
 	}
-	p := InputState.MousePoint
+	p := GetInputState().MousePoint
 	// Use the full window size: pointer coords are full-window, but WindowSize is
 	// the content area (it excludes the titlebar).
 	edge := resizeEdgeAt(p[0], p[1], float32(logicalW), float32(logicalH))

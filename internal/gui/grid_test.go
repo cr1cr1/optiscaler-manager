@@ -138,8 +138,9 @@ func TestRenderPNG800pxValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode 800px frame: %v", err)
 	}
-	if cfg.Width != 800 || cfg.Height != 600 {
-		t.Errorf("frame %dx%d, want 800x600", cfg.Width, cfg.Height)
+	wantW, wantH := int(800*HeadlessScale), int(600*HeadlessScale)
+	if cfg.Width != wantW || cfg.Height != wantH {
+		t.Errorf("frame %dx%d, want %dx%d (logical 800x600 @ HeadlessScale=%v)", cfg.Width, cfg.Height, wantW, wantH, HeadlessScale)
 	}
 	if m.cols < 1 {
 		t.Errorf("cols %d at 800px, want >= 1", m.cols)
@@ -152,7 +153,7 @@ func TestRenderPNG800pxValid(t *testing.T) {
 	if used > avail {
 		t.Errorf("grid row occupies %dpx of %dpx usable width at 800px: horizontal overflow", used, avail)
 	}
-	t.Logf("800px frame: %dx%d, cols=%d cardW=%d cardH=%d used=%d avail=%d",
+	t.Logf("800px frame: %dx%d (logical 800x600), cols=%d cardW=%d cardH=%d used=%d avail=%d",
 		cfg.Width, cfg.Height, m.cols, m.cardW, m.cardH, used, avail)
 }
 
@@ -177,8 +178,9 @@ func TestRenderPNG3840pxValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode 3840px frame: %v", err)
 	}
-	if cfg.Width != 3840 || cfg.Height != 1080 {
-		t.Errorf("frame %dx%d, want 3840x1080", cfg.Width, cfg.Height)
+	wantW, wantH := int(3840*HeadlessScale), int(1080*HeadlessScale)
+	if cfg.Width != wantW || cfg.Height != wantH {
+		t.Errorf("frame %dx%d, want %dx%d (logical 3840x1080 @ HeadlessScale=%v)", cfg.Width, cfg.Height, wantW, wantH, HeadlessScale)
 	}
 	if m.cols < 10 {
 		t.Errorf("cols %d at 3840px, want >=10 (no artificial cap — fill the width)", m.cols)

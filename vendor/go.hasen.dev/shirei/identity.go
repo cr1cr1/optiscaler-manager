@@ -10,8 +10,7 @@ import (
 // the per-frame container tree, giving every container a stable identity
 // (the node's pointer) across frames. It replaced the old scope-id hashing
 // (scope.go, deleted), whose identity depended on how an id was boxed into
-// `any` — see notes/identity-tree-plan.md for the design and migration
-// history.
+// `any`.
 //
 // Reconciliation rule, per parent, per frame:
 //
@@ -79,6 +78,14 @@ type identNode struct {
 	// data is a discarded settle pass — see runFirstFrame).
 	bornFrame int64
 
+	// layoutSize is the pre-animation resolved size from the last pass that
+	// laid this node out (see commitLayoutSizesAndDetectStale). Distinct from
+	// rd.ResolvedSize, which may be mid-ease under AnimSize. geometryQueryFrame
+	// stamps the pass that hit a public geometry accessor on this node.
+	layoutSize         Vec2
+	layoutSizeFrame    int64
+	geometryQueryFrame int64
+
 	// stage 3: UI hook state (Use/UseWithInit) lives on its node, keyed by
 	// the hook's itemKey. Retention is prune-per-frame, matching the old
 	// hooksMap double buffer: a slot untouched for a full frame reads as
@@ -120,17 +127,15 @@ type typeClaim struct {
 	n   int
 }
 
-// identRoot persists across frames; currentIdent is the build cursor,
-// mirroring `current *_Container`.
-var identRoot = newNode(nil, 0, nil)
-var currentIdent *identNode
+// identRoot / currentIdent live on *UI (ui.identRoot, ui.currentIdent).
 
-// newNode: rdFrame must start at -1, NOT the zero value — on the very
-// first frame of a process FrameNumber-1 is 0, and a zero rdFrame would
-// make every fresh container look like it rendered "last frame"
-// (FirstRender false, AutoFocus suppressed) on that frame only.
+// newNode: rdFrame / layoutSizeFrame must start at -1, NOT the zero value —
+// on the very first frame of a process FrameNumber-1 is 0, and a zero stamp
+// would make every fresh container look like it rendered "last frame"
+// (FirstRender false, AutoFocus suppressed; false stale-size settle) on
+// that frame only.
 func newNode(parent *identNode, typ uintptr, key any) *identNode {
-	return &identNode{parent: parent, typ: typ, key: key, rdFrame: -1}
+	return &identNode{parent: parent, typ: typ, key: key, rdFrame: -1, layoutSizeFrame: -1}
 }
 
 // identDupCount counts explicit ids claimed more than once under the same
@@ -138,16 +143,13 @@ func newNode(parent *identNode, typ uintptr, key any) *identNode {
 // two claimants under one parent means state, hover, and focus can't tell
 // them apart. Reported loudly (capped so a 60fps loop can't flood stderr);
 // the same id under DIFFERENT parents is fine.
-var identDupCount int64
-var identDupLogged int
-
 func reportDuplicateKey(key any) {
-	identDupCount++
+	ui.identDupCount++
 	const logCap = 8
-	if identDupLogged < logCap {
-		identDupLogged++
+	if ui.identDupLogged < logCap {
+		ui.identDupLogged++
 		fmt.Printf("shirei: duplicate container key %v (%T) claimed twice under one parent in a single frame\n", key, key)
-		if identDupLogged == logCap {
+		if ui.identDupLogged == logCap {
 			fmt.Println("shirei: further duplicate-key reports suppressed")
 		}
 	}
@@ -166,12 +168,11 @@ func resolveIdent(id ContainerId) *identNode {
 // code pointer alone is not that value — the compiler clones a func
 // literal per INLINE INSTANCE of its enclosing function, so one literal
 // can have several code addresses depending on which call site built it
-// (verified empirically; it remounted a virtual list mid-test — see
-// notes/architecture.md, sharp edges). So the code pointer is
-// canonicalized to the literal's source position: the first pointer seen
-// for a given file:line stands for all later clones of it. The FuncForPC
-// lookup runs once per distinct code address in the process, then it's a
-// single map hit per claim.
+// (verified empirically; it remounted a virtual list mid-test). So the
+// code pointer is canonicalized to the literal's source position: the first
+// pointer seen for a given file:line stands for all later clones of it. The
+// FuncForPC lookup runs once per distinct code address in the process, then
+// it's a single map hit per claim.
 //
 // Deliberate coarseness: two literals written on one source line share a
 // type, and generic instantiations of one literal merge across type
@@ -218,7 +219,6 @@ func rawFuncCodePtr(f func()) uintptr {
 
 // frameInProgress is true while RunFrameFn is building/resolving a frame;
 // it decides which frame prevRenderData considers "most recently completed".
-var frameInProgress bool
 
 // prevRenderData returns the node's render data from the most recently
 // completed frame, mirroring the renderData map's semantics exactly:
@@ -228,9 +228,9 @@ var frameInProgress bool
 // drop-if-unrendered behavior (FirstRender fires again, scroll offset
 // resets, animations have no source rect).
 func (n *identNode) prevRenderData() (RenderData, bool) {
-	want := FrameNumber
-	if frameInProgress {
-		want = FrameNumber - 1
+	want := ui.FrameNumber
+	if ui.frameInProgress {
+		want = ui.FrameNumber - 1
 	}
 	if n.rdFrame == want {
 		return n.rd, true
@@ -239,9 +239,14 @@ func (n *identNode) prevRenderData() (RenderData, bool) {
 }
 
 // queriedRenderData is prevRenderData for the public geometry accessors:
-// a miss flags the frame as incomplete. Internal callers (FirstRender,
-// animation sources, scroll restore) keep using prevRenderData directly —
-// for them absence is a normal state, not an unmet dependency.
+// a miss flags the frame as incomplete. A hit stamps geometryQueryFrame so
+// commitLayoutSizesAndDetectStale can settle when the layout target moved
+// under a still-valid previous-frame answer (resize / reflow), without
+// treating AnimSize easing as instability.
+//
+// Internal callers (FirstRender, animation sources, scroll restore) keep
+// using prevRenderData directly — for them absence is a normal state, not
+// an unmet dependency.
 //
 // A detached node is exempt: it can never resolve (reconciliation can't
 // reach it), so requesting a settle pass for it would put the frame loop
@@ -249,8 +254,12 @@ func (n *identNode) prevRenderData() (RenderData, bool) {
 // zeros, like a nil handle.
 func queriedRenderData(n *identNode) RenderData {
 	rd, ok := n.prevRenderData()
-	if !ok && frameInProgress && !n.detached {
-		stabilizeRequested = true
+	if ui.frameInProgress && !n.detached {
+		if !ok {
+			ui.stabilizeRequested = true
+		} else {
+			n.geometryQueryFrame = ui.FrameNumber
+		}
 	}
 	return rd
 }
@@ -264,7 +273,7 @@ func (p *identNode) claimChild(key any, typ uintptr) *identNode {
 		// duplicate check BEFORE the remount decision: a second claim of
 		// the same key this frame is a duplicate even if its type differs
 		// (remounting would otherwise silently swallow it)
-		if node != nil && node.visitFrame == FrameNumber {
+		if node != nil && node.visitFrame == ui.FrameNumber {
 			reportDuplicateKey(key)
 		}
 		if node != nil && node.typ != typ {
@@ -278,8 +287,8 @@ func (p *identNode) claimChild(key any, typ uintptr) *identNode {
 			p.keyed[key] = node
 		}
 	} else {
-		if p.claimFrame != FrameNumber {
-			p.claimFrame = FrameNumber
+		if p.claimFrame != ui.FrameNumber {
+			p.claimFrame = ui.FrameNumber
 			p.claims = p.claims[:0]
 		}
 		ordinal := 0
@@ -306,7 +315,7 @@ func (p *identNode) claimChild(key any, typ uintptr) *identNode {
 		}
 	}
 
-	node.visitFrame = FrameNumber
+	node.visitFrame = ui.FrameNumber
 	return node
 }
 
@@ -315,10 +324,10 @@ func (p *identNode) claimChild(key any, typ uintptr) *identNode {
 // Without it, `keyed` is insert-only and a churning key population (virtual
 // list rows keyed per item, dynamic tabs) retains a node — with its render
 // data, hooks, child maps, and the key value it pins — for every distinct
-// key ever shown: notes/identity-retention-leak.md. The sweep runs from
-// RunFrameFn AFTER the settle loop's final pass, which is what makes it
-// safe: every node claimed in any pass of the frame is stamped by then, so
-// a forward-referenced key never looks stale mid-frame.
+// key ever shown. The sweep runs from RunFrameFn AFTER the settle loop's
+// final pass, which is what makes it safe: every node claimed in any pass
+// of the frame is stamped by then, so a forward-referenced key never looks
+// stale mid-frame.
 
 // pruneAfterFrames is a memory/continuity knob, not a correctness bound: a
 // node unclaimed for a full frame already reads as absent (prevRenderData,
@@ -334,8 +343,6 @@ const pruneAfterFrames = 4
 // frames (~200ms at 60fps) — still bounded, which is all that matters.
 const sweepInterval = 8
 
-var lastSweepFrame int64
-
 // maybeSweepIdentTree prunes child nodes not claimed within
 // pruneAfterFrames, at most once per sweepInterval frames. Deleting the
 // map entry is the whole release: the entry holds the only tree reference
@@ -350,11 +357,11 @@ var lastSweepFrame int64
 // state). nextFocused is exempt for the same reason: it's a focus about to
 // take effect next frame (FocusOn with a held handle).
 func maybeSweepIdentTree() {
-	if FrameNumber-lastSweepFrame < sweepInterval {
+	if ui.FrameNumber-ui.lastSweepFrame < sweepInterval {
 		return
 	}
-	lastSweepFrame = FrameNumber
-	identRoot.sweepChildren(FrameNumber - pruneAfterFrames)
+	ui.lastSweepFrame = ui.FrameNumber
+	ui.identRoot.sweepChildren(ui.FrameNumber - pruneAfterFrames)
 }
 
 func (n *identNode) sweepChildren(staleFrame int64) {
@@ -377,5 +384,5 @@ func (n *identNode) sweepChildren(staleFrame int64) {
 }
 
 func isRetentionExempt(n *identNode) bool {
-	return n == focused || n == active || n == nextFocused
+	return n == ui.focused || n == ui.active || n == ui.nextFocused
 }

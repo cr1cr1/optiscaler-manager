@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && !android
 
 package app
 
@@ -17,13 +17,39 @@ import (
 // and Run always use the same backend.
 var useWayland = os.Getenv("WAYLAND_DISPLAY") != ""
 
-// SetupWindow records the window's title and initial size in points. Call it
-// before Run.
+// SetupWindow records the window's title and initial content size in points.
+// Call it before Run. On Wayland with CSD the surface is taller by the
+// titlebar so the app body keeps that size (X11 uses server decorations).
 func SetupWindow(title string, width, height int) {
 	if useWayland {
 		waylandbackend.SetupWindow(title, width, height)
 	} else {
 		x11backend.SetupWindow(title, width, height)
+	}
+}
+
+// CenterWindow requests that the window open centered on the screen. Best-effort:
+// honored on macOS (also the default), Windows, and X11; ignored on Wayland and
+// mobile. Call after SetupWindow and before Run. Mutually exclusive with
+// PositionWindow; the last call wins.
+func CenterWindow() {
+	if useWayland {
+		waylandbackend.CenterWindow()
+	} else {
+		x11backend.CenterWindow()
+	}
+}
+
+// PositionWindow requests that the window open with its top-left corner at
+// (x, y) in screen points (origin at the top-left of the primary display).
+// Best-effort: honored on macOS, Windows, and X11; ignored on Wayland and
+// mobile. Call after SetupWindow and before Run. Mutually exclusive with
+// CenterWindow; the last call wins.
+func PositionWindow(x, y int) {
+	if useWayland {
+		waylandbackend.PositionWindow(x, y)
+	} else {
+		x11backend.PositionWindow(x, y)
 	}
 }
 

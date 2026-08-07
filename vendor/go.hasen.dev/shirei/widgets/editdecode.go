@@ -4,10 +4,9 @@ package widgets
 // text input, kept apart from both the pure model (editcore.go) and
 // the widget shell (textinput.go). A pure function of one frame's
 // input values, so key bindings are testable as tables without fonts
-// or frames. Design contract: notes/textinput-architecture.md.
+// or frames.
 
 import (
-	"runtime"
 	"strings"
 
 	. "go.hasen.dev/shirei"
@@ -20,7 +19,7 @@ type editKeyOpts struct {
 }
 
 // sanitizeEditText makes arbitrary incoming text (typed or pasted —
-// both arrive as FrameInput.Text) safe for the configured input mode.
+// both arrive as GetFrameInput().Text) safe for the configured input mode.
 // Single-line fields turn newlines and tabs into spaces; multiline
 // fields keep '\n' and '\t' while normalizing CRLF/CR to LF. Other
 // control runes are always dropped.
@@ -63,27 +62,38 @@ func sanitizeEditText(s string, keepNewlines bool) string {
 
 func sanitizeSingleLine(s string) string { return sanitizeEditText(s, false) }
 
-// the primary shortcut modifier: Cmd on macOS, Ctrl elsewhere
-var editPrimaryMod = func() Modifiers {
-	if runtime.GOOS == "darwin" {
-		return ModCmd
-	}
-	return ModCtrl
-}()
+// editPrimaryMod is the platform shortcut modifier (Cmd on Apple hosts,
+// Ctrl elsewhere). Prefers Host.PrimaryMod so web backends can report the
+// browser OS; falls back to GOOS via shirei.PrimaryMod.
+func editPrimaryMod() Modifiers {
+	return PrimaryMod()
+}
 
 // decodeEditKeys turns one frame's key/modifiers/typed-text into edit
 // commands, in application order. Clipboard combos require the primary
 // modifier exactly (Cmd+Shift+V is not paste — matches the historical
-// exact-combo matching).
+// exact-combo matching). Non-mac platforms also support the traditional
+// Windows clipboard aliases: Shift+Insert, Ctrl+Insert, and Shift+Delete.
 //
-// Motions and deletions follow the modifier decode rule
-// (notes/textinput-plan.md): shift always means extend; the remaining
-// modifier picks granularity — none = char, Alt/Option = word, and the
-// primary modifier = line edge on mac (Cmd+arrows) or word elsewhere
-// (Ctrl+arrows). Home/End are line edges directly (mac laptops send
-// them for fn+Left/Right). Arrow chords outside the rule (e.g.
-// Cmd+Alt+Left) do nothing rather than falling back to a char step.
+// Motions and deletions follow the modifier decode rule: shift always
+// means extend; the remaining modifier picks granularity — none = char,
+// Alt/Option = word, and the primary modifier = line edge on mac
+// (Cmd+arrows) or word elsewhere (Ctrl+arrows). Home/End are line edges
+// directly (mac laptops send them for fn+Left/Right). Arrow chords outside
+// the rule (e.g. Cmd+Alt+Left) do nothing rather than falling back to a
+// char step.
 func decodeEditKeys(key KeyCode, mods Modifiers, text string, primary Modifiers, opts editKeyOpts) (cmds []_EditCommand) {
+	if primary == ModCtrl {
+		switch {
+		case key == KeyInsert && mods == ModShift:
+			return []_EditCommand{{Op: _EditPaste}}
+		case key == KeyInsert && mods == ModCtrl:
+			return []_EditCommand{{Op: _EditCopy}}
+		case key == KeyDeleteForward && mods == ModShift:
+			return []_EditCommand{{Op: _EditCut}}
+		}
+	}
+
 	if mods == primary {
 		switch key {
 		case KeyV:
@@ -110,6 +120,7 @@ func decodeEditKeys(key KeyCode, mods Modifiers, text string, primary Modifiers,
 	motion := mods &^ ModShift
 	word := motion == ModAlt || (primary == ModCtrl && motion == ModCtrl)
 	lineEdge := primary == ModCmd && motion == ModCmd
+	documentEdge := primary == ModCtrl && motion == ModCtrl
 
 	emit := func(op _EditOp) {
 		cmds = append(cmds, _EditCommand{Op: op, Extend: extend})
@@ -135,9 +146,17 @@ func decodeEditKeys(key KeyCode, mods Modifiers, text string, primary Modifiers,
 			emit(_EditMoveRight)
 		}
 	case KeyHome:
-		emit(_EditMoveLineStart)
+		if documentEdge {
+			cmds = append(cmds, _EditCommand{Op: _EditMoveTo, Pos: 0, Extend: extend})
+		} else {
+			emit(_EditMoveLineStart)
+		}
 	case KeyEnd:
-		emit(_EditMoveLineEnd)
+		if documentEdge {
+			cmds = append(cmds, _EditCommand{Op: _EditMoveTo, Pos: int(^uint(0) >> 1), Extend: extend})
+		} else {
+			emit(_EditMoveLineEnd)
+		}
 	case KeyUp:
 		switch {
 		case opts.VerticalMotion && motion == primary:

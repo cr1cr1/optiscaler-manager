@@ -11,10 +11,12 @@ require (
 	github.com/charmbracelet/x/exp/teatest v0.0.0-20260719004043-bb9a97036f23
 	github.com/joho/godotenv v1.5.1
 	github.com/lewisgibson/go-vdf v0.0.0-20260423173933-a31546981217
+	github.com/muesli/termenv v0.16.0
 	github.com/rs/zerolog v1.35.1
-	go.hasen.dev/shirei v0.5.2
+	go.hasen.dev/shirei v0.6.6
 	golang.org/x/sync v0.22.0
-	golang.org/x/sys v0.40.0
+	golang.org/x/sys v0.46.0
+	golang.org/x/text v0.40.0
 )
 
 require (
@@ -39,7 +41,7 @@ require (
 	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
-	github.com/go-text/typesetting v0.3.0 // indirect
+	github.com/go-text/typesetting v0.3.4 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/jezek/xgb v1.1.1 // indirect
@@ -51,7 +53,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
-	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.27 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
@@ -60,6 +61,5 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	go.hasen.dev/generic v0.1.6 // indirect
 	go4.org v0.0.0-20260112195520-a5071408f32f // indirect
-	golang.org/x/image v0.29.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/image v0.43.0 // indirect
 )

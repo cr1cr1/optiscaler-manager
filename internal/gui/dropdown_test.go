@@ -87,7 +87,7 @@ func TestVersionDropdown_InstalledRowOnly(t *testing.T) {
 		m := newModel(Config{Session: sess})
 
 		headlessFrames(t, 400, 800)
-		InputState.MousePoint = Vec2{-50, -50}
+		GetInputState().MousePoint = Vec2{-50, -50}
 		view := cardView(m, row)
 		keyFrame(KeyCodeNone, 0, view)
 		keyFrame(KeyCodeNone, 0, view)
@@ -107,7 +107,7 @@ func TestVersionDropdown_InstalledRowOnly(t *testing.T) {
 		m := newModel(Config{Session: sess})
 
 		headlessFrames(t, 400, 800)
-		InputState.MousePoint = Vec2{-50, -50}
+		GetInputState().MousePoint = Vec2{-50, -50}
 		view := cardView(m, row)
 		keyFrame(KeyCodeNone, 0, view)
 		keyFrame(KeyCodeNone, 0, view)
@@ -127,7 +127,7 @@ func TestVersionDropdown_OpenListsVersions(t *testing.T) {
 	m := newModel(Config{Session: sess})
 
 	headlessFrames(t, 400, 800)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	view := cardView(m, row)
 	openDropdown(t, m, row.InstallDir, view)
 
@@ -165,7 +165,7 @@ func TestVersionDropdown_SelectOtherDispatchesSwitch(t *testing.T) {
 	m.switchVersionFn = func(dir, version string) { calls = append(calls, call{dir, version}) }
 
 	headlessFrames(t, 400, 800)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	view := cardView(m, row)
 	openDropdown(t, m, row.InstallDir, view)
 
@@ -211,7 +211,7 @@ func TestVersionDropdown_ReselectCurrentNoOp(t *testing.T) {
 	m.switchVersionFn = func(_, _ string) { calls++ }
 
 	headlessFrames(t, 400, 800)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	view := cardView(m, row)
 	openDropdown(t, m, row.InstallDir, view)
 
@@ -262,7 +262,7 @@ func TestVersionDropdown_SemanticEqualItemTickedNoDispatch(t *testing.T) {
 	row.OptiScalerVersion = "v0.9.4"
 
 	headlessFrames(t, 400, 800)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	view := cardView(m, row)
 	openDropdown(t, m, row.InstallDir, view)
 
@@ -303,7 +303,7 @@ func TestVersionDropdown_Dismissal(t *testing.T) {
 		calls := new(int)
 		m.switchVersionFn = func(_, _ string) { *calls++ }
 		headlessFrames(t, 400, 800)
-		InputState.MousePoint = Vec2{-50, -50}
+		GetInputState().MousePoint = Vec2{-50, -50}
 		return m, row, calls, cardView(m, row)
 	}
 
@@ -377,7 +377,7 @@ func TestVersionDropdown_OneOpenAtATime(t *testing.T) {
 
 	m := newModel(Config{Session: sess})
 	headlessFrames(t, 800, 800)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	view := func() {
 		Container(Attrs(Viewport, Row), func() {
 			m.fitCards(800)
@@ -420,7 +420,7 @@ func ddArrowSetup(t *testing.T) (*model, ui.GameRow, FrameFn) {
 	row := scanExternalRow(t, sess)
 	m := newModel(Config{Session: sess})
 	headlessFrames(t, 400, 800)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	return m, row, cardView(m, row)
 }
 
@@ -648,7 +648,7 @@ func TestVersionDropdown_TabFocusRing(t *testing.T) {
 	m := newModel(Config{Session: sess})
 
 	headlessFrames(t, 400, 800)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	view := cardView(m, row)
 	keyFrame(KeyCodeNone, 0, view)
 	keyFrame(KeyCodeNone, 0, view)
@@ -674,7 +674,7 @@ func TestVersionDropdown_EnterSpaceToggle(t *testing.T) {
 	m.switchVersionFn = func(_, _ string) { calls++ }
 
 	headlessFrames(t, 400, 800)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	view := cardView(m, row)
 	focusDDTrigger(t, m, view)
 
@@ -726,7 +726,7 @@ func TestVersionDropdown_EscClosesDropdownBeforePanel(t *testing.T) {
 	}
 
 	headlessFrames(t, 1100, 1400)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	keyFrame(KeyCodeNone, 0, m.rootView)
 	keyFrame(KeyCodeNone, 0, m.rootView)
 	openDropdown(t, m, row.InstallDir, m.rootView)
@@ -772,7 +772,7 @@ func TestVersionDropdown_HoverMovesHighlight(t *testing.T) {
 	if r.Size[0] == 0 {
 		t.Fatalf("dropdown row rect unresolved: %+v", r)
 	}
-	InputState.MousePoint = Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
+	GetInputState().MousePoint = Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
 	keyFrame(KeyCodeNone, 0, view) // hover settles
 	keyFrame(KeyCodeNone, 0, view)
 	if got := versionHlIndex(t, m); got != 0 {
@@ -780,7 +780,7 @@ func TestVersionDropdown_HoverMovesHighlight(t *testing.T) {
 	}
 
 	// Mouse leaves: the last highlight position sticks.
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	keyFrame(KeyCodeNone, 0, view)
 	if got := versionHlIndex(t, m); got != 0 {
 		t.Errorf("highlight after the mouse left = row %d, want 0 (last position sticks)", got)
@@ -808,7 +808,7 @@ func TestVersionDropdown_StationaryMouseKeepsKeyboardHighlight(t *testing.T) {
 	if r.Size[0] == 0 {
 		t.Fatalf("dropdown row rect unresolved: %+v", r)
 	}
-	InputState.MousePoint = Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
+	GetInputState().MousePoint = Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
 	keyFrame(KeyCodeNone, 0, view)
 	keyFrame(KeyCodeNone, 0, view)
 	if got := versionHlIndex(t, m); got != 0 {
@@ -843,7 +843,7 @@ func TestVersionDropdown_DetailPanelWired(t *testing.T) {
 	}
 
 	headlessFrames(t, 1100, 1400)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	keyFrame(KeyCodeNone, 0, m.rootView)
 	keyFrame(KeyCodeNone, 0, m.rootView)
 	if r := m.versionDDRects[row.InstallDir]; r.Size[0] == 0 || r.Size[1] == 0 {

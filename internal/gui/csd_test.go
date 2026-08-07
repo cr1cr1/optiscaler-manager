@@ -33,14 +33,11 @@ func TestVendorCSDPatchPresent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("vendored shirei.go unreadable: %v", err)
 	}
-	if !strings.Contains(string(b), "PATCHED by optiscaler-manager") {
-		t.Error("vendored shirei.go lacks the optiscaler-manager patches (scroll speedup, IdHasFocusWithin, resize animation snap); reapply them (docs/vendor-patches.md)")
-	}
-	if !strings.Contains(string(b), "windowResizedNow") {
-		t.Error("vendored shirei.go lacks the v0.13 resize-animation-snap patch (windowResizedNow); reapply it (docs/vendor-patches.md)")
+	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.8)") {
+		t.Error("vendored shirei.go lacks the v0.8 scroll-speedup patch; reapply it (docs/vendor-patches.md)")
 	}
 	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.13)") {
-		t.Error("vendored shirei.go lacks the v0.13 animation-disable patch; reapply it (docs/vendor-patches.md)")
+		t.Error("vendored shirei.go lacks the v0.13 animation-disable patch (rate=1 in resolveOrigins); reapply it (docs/vendor-patches.md)")
 	}
 
 	softrender := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "softrender.go")
@@ -59,6 +56,14 @@ func TestVendorCSDPatchPresent(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "func ImageFill(") {
 		t.Error("vendored images.go lacks the v0.14 ImageFill function; reapply it (docs/vendor-patches.md)")
+	}
+	renderpng := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "renderpng.go")
+	b, err = os.ReadFile(renderpng)
+	if err != nil {
+		t.Fatalf("vendored renderpng.go unreadable: %v", err)
+	}
+	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.16)") {
+		t.Error("vendored renderpng.go lacks the v0.16 identity-reset patch (test isolation); reapply it (docs/vendor-patches.md)")
 	}
 
 	kbd := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "waylandbackend", "waylandkeyboard_linux.go")

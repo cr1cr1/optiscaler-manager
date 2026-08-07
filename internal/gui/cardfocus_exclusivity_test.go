@@ -64,12 +64,12 @@ func TestCardFocus_ClickOtherCardBlursButton(t *testing.T) {
 	// Fast move+click: the pointer jumps onto card B and goes down in the
 	// SAME frame — no hover-settle frame first (clickRect minus its first
 	// frame). This is the gesture the stale-hover theory is about.
-	InputState.MousePoint = Vec2{m.cardRect.Origin[0] + m.cardRect.Size[0]/2, m.cardRect.Origin[1] + m.cardRect.Size[1]/2}
-	FrameInput.Mouse = MouseClick
+	GetInputState().MousePoint = Vec2{m.cardRect.Origin[0] + m.cardRect.Size[0]/2, m.cardRect.Origin[1] + m.cardRect.Size[1]/2}
+	GetFrameInput().Mouse = MouseClick
 	RunFrameFn(m.rootView)
-	FrameInput.Mouse = MouseRelease
+	GetFrameInput().Mouse = MouseRelease
 	RunFrameFn(m.rootView)
-	FrameInput.Mouse = 0
+	GetFrameInput().Mouse = 0
 	keyFrame(KeyCodeNone, 0, m.rootView) // panel re-nests; deferred re-assert lands
 
 	cardB := m.cardIDs[rows[b].InstallDir]

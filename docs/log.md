@@ -2159,3 +2159,46 @@ Verified: `go test ./... -race` clean (Linux) except the 2 known
 pre-existing failures (TestCardButtonClick_FiresActionNotSelect and
 TestGUICardButtonsBottomAligned — both fail on clean main, unrelated to
 this work). Cross-compile clean for windows/amd64.
+
+## 2026-08-08 — shirei v0.5.2 → v0.6.6 upgrade + performance
+
+Upgrade:
+- `go.hasen.dev/shirei` v0.5.2 → v0.6.6 (vendored). Transitive bumps:
+  `go-text/typesetting` v0.3.0→v0.3.4, `golang.org/x/image` v0.29→v0.43,
+  `golang.org/x/sys` v0.40→v0.46; new `dboslee/lru` (v0.6.6 caching).
+- v0.6.6 restructured the core: input/window globals moved off package
+  level onto a per-UI `Host` (`WindowSize`/`FrameInput`/`InputState`/
+  `WindowScale` → `GetHost()`/`GetFrameInput()`/`GetInputState()`).
+  Migrated all 147 call sites in `internal/gui` via an ast-grep codemod
+  (bare-identifier rewrite, scoped to the package).
+- Other API migrations: `Sym*`/`Icon`/`Button` now take `widgets.IconGlyph`
+  (was `rune`) — changed 6 helper signatures (`focusableButton`,
+  `sidebarItem`, `themedInput*`, `viewSegment`, `sortItem`) + no-icon
+  call sites to `NoIcon`; `ButtonExt` gained a `ButtonLook` arg
+  (`DefaultButtonLook()`); `TextAttrSet`→`TextStyleAttrs`;
+  `VirtualListView_ScrollTo`→`VirtualListView_ScrollToIndex`;
+  `HeadlessRender=2` `HeadlessScale` (headless PNGs are now 2× device px).
+- Re-applied all vendor patches adapted to v0.6.6 (none made it upstream):
+  CSD disable (v0.5/v0.8), scroll speedup (v0.8), Wayland Shift+Tab (v0.9),
+  Wayland + Win32 client-side key repeat (v0.10/v0.11), Wayland resize
+  redraw (v0.12), full layout-animation disable (v0.13), cover-art
+  stretch-to-fill + `ImageFill` (v0.14), Wayland skip-unchanged-frames
+  (v0.15), headless identity-tree reset (v0.16). Dropped the dead
+  `windowResizedNow`/`IdHasFocusWithin` leftovers (v0.13 is now a clean
+  `rate=1`; `IdHasFocusWithin` was unused). `csd_test.go` guard updated.
+
+Performance (v0.6.6-native wins + our patches):
+- v0.6.6 made `FrameHasChanges` hash-based; the v0.15 Wayland idle-skip now
+  fires precisely on identical-content frames (idle/scroll-hover frames
+  skip the software raster + compositor recomposite entirely).
+- Grid virtual-list height-fn now derives card height from the preset
+  (`cardContentH(cardSizeForPreset(...))`) instead of the laggy `m.cardH`,
+  so v0.6.6's height cache is correct from frame 1 (no 1-frame convergence
+  lag → no short-card render).
+- Text field container gained a `MinSize(0,16)` so the caret-only
+  (focused-empty) state measures the same height as a text line (no
+  focus jitter from v0.6.6's descender metrics).
+
+Verified: `go test ./...` clean (Linux); `go vet` + `GOOS=windows go vet`
+clean; `GOOS=darwin go vet` clean on the non-GUI packages (macOS GUI build
+still needs an Apple SDK — unchanged).

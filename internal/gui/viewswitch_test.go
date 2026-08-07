@@ -17,7 +17,7 @@ func viewSwitchPopulated(t *testing.T) (*ui.Session, *model) {
 	scanOneRow(t, sess)
 	m := newModel(Config{Session: sess})
 	headlessFrames(t, 1100, 700)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	return sess, m
 }
 
@@ -145,7 +145,7 @@ func TestViewSwitch_DisabledIgnoresKeys(t *testing.T) {
 	sess, _ := guiFakes(t) // no scan: empty library
 	m := newModel(Config{Session: sess})
 	headlessFrames(t, 1100, 700)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	keyFrame(KeyCodeNone, 0, m.rootView)
 	keyFrame(KeyCodeNone, 0, m.rootView)
 	if !m.libraryEmpty() {

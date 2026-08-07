@@ -9,11 +9,6 @@ import (
 	. "go.hasen.dev/shirei"
 )
 
-// Debug gates developer-only UI such as ProfileButton. It is true when the
-// DEBUG environment variable is set to a non-empty value (e.g. DEBUG=1).
-// Programs may also set it explicitly after parsing a --debug flag.
-var Debug = os.Getenv("DEBUG") != ""
-
 var profilingActive bool
 var profilingFile *os.File
 
@@ -67,7 +62,7 @@ const profileButtonWidth = 170
 // The button is a no-op unless Debug is true (DEBUG=1 in the environment, or
 // set Debug explicitly). Safe to leave at every call site permanently.
 func ProfileButton(prefix ...string) {
-	if !Debug {
+	if !DEBUG_ENV {
 		return
 	}
 
@@ -88,7 +83,7 @@ func ProfileButton(prefix ...string) {
 	}
 
 	Container(Attrs(Float(size[0]-profileButtonWidth-margin, margin), InFront, FixWidth(profileButtonWidth), CrossAlign(AlignEnd)), func() {
-		if CtrlButton(0, label, true) {
+		if CtrlButton(NoIcon, label, true) {
 			toggleCPUProfile(name)
 		}
 	})

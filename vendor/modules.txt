@@ -11,7 +11,9 @@ github.com/andybalholm/brotli/matchfinder
 github.com/anthonynsimon/bild/blur
 github.com/anthonynsimon/bild/clone
 github.com/anthonynsimon/bild/convolution
+github.com/anthonynsimon/bild/math/f64
 github.com/anthonynsimon/bild/parallel
+github.com/anthonynsimon/bild/transform
 # github.com/atotto/clipboard v0.1.4
 ## explicit
 github.com/atotto/clipboard
@@ -111,7 +113,7 @@ github.com/erikgeiser/coninput
 ## explicit; go 1.17
 github.com/fsnotify/fsnotify
 github.com/fsnotify/fsnotify/internal
-# github.com/go-text/typesetting v0.3.0
+# github.com/go-text/typesetting v0.3.4
 ## explicit; go 1.19
 github.com/go-text/typesetting/font
 github.com/go-text/typesetting/font/cff
@@ -120,8 +122,8 @@ github.com/go-text/typesetting/font/opentype
 github.com/go-text/typesetting/font/opentype/tables
 github.com/go-text/typesetting/fontscan
 github.com/go-text/typesetting/harfbuzz
+github.com/go-text/typesetting/internal/unicodedata
 github.com/go-text/typesetting/language
-github.com/go-text/typesetting/unicodedata
 # github.com/godbus/dbus/v5 v5.2.2
 ## explicit; go 1.20
 github.com/godbus/dbus/v5
@@ -214,9 +216,10 @@ github.com/xo/terminfo
 # go.hasen.dev/generic v0.1.6
 ## explicit; go 1.21
 go.hasen.dev/generic
-# go.hasen.dev/shirei v0.5.2
-## explicit; go 1.24.4
+# go.hasen.dev/shirei v0.6.6
+## explicit; go 1.25.0
 go.hasen.dev/shirei
+go.hasen.dev/shirei/androidbackend
 go.hasen.dev/shirei/app
 go.hasen.dev/shirei/cocoabackend
 go.hasen.dev/shirei/internal/iconimg
@@ -230,6 +233,8 @@ go.hasen.dev/shirei/internal/wayland/wlcursor
 go.hasen.dev/shirei/internal/wayland/wlcursor/xcursor
 go.hasen.dev/shirei/internal/wayland/xdg
 go.hasen.dev/shirei/internal/wayland/xkbcommon
+go.hasen.dev/shirei/iosbackend
+go.hasen.dev/shirei/jsbackend
 go.hasen.dev/shirei/waylandbackend
 go.hasen.dev/shirei/widgets
 go.hasen.dev/shirei/win32backend
@@ -237,11 +242,10 @@ go.hasen.dev/shirei/x11backend
 # go4.org v0.0.0-20260112195520-a5071408f32f
 ## explicit; go 1.24.0
 go4.org/readerutil
-# golang.org/x/image v0.29.0
-## explicit; go 1.23.0
+# golang.org/x/image v0.43.0
+## explicit; go 1.25.0
 golang.org/x/image/ccitt
-golang.org/x/image/draw
-golang.org/x/image/math/f64
+golang.org/x/image/internal/safemath
 golang.org/x/image/riff
 golang.org/x/image/tiff
 golang.org/x/image/tiff/lzw
@@ -252,8 +256,8 @@ golang.org/x/image/webp
 # golang.org/x/sync v0.22.0
 ## explicit; go 1.25.0
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.40.0
-## explicit; go 1.24.0
+# golang.org/x/sys v0.46.0
+## explicit; go 1.25.0
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry

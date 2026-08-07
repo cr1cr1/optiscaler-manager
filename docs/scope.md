@@ -147,7 +147,7 @@ only with new evidence.
   verified by compile and by linux-executed parser tests, not by running the
   suite there (W3 decision).
 - Release artifacts are linux/amd64 + windows/amd64. **No macOS builds**:
-  shirei v0.5.2's cocoa backend is cgo + Apple frameworks, which a Linux
+  shirei v0.6.6's cocoa backend is cgo + Apple frameworks, which a Linux
   runner cannot link (needs an Apple SDK). Unlock path is a macos-latest
   runner; diagnosis lives in `.goreleaser.yml`.
 - Epic launch needs the AppName from the .item manifest; without it the exe
@@ -393,7 +393,7 @@ closed; reopen only with new evidence.
 - 7z: `github.com/bodgit/sevenzip` **gated by spike** against a real
   `Optiscaler_0.9.4-final*.7z` (BCJ2 risk); fallback = shell out to system `7z`.
 - VDF: `github.com/lewisgibson/go-vdf`. No hand-rolled parser.
-- GUI: `go.hasen.dev/shirei` **pinned v0.5.2**; all imports quarantined under
+- GUI: `go.hasen.dev/shirei` **pinned v0.6.6**; all imports quarantined under
   `internal/gui`; upgrades are deliberate tasks.
 - GitHub API: 15-minute cooldown + cached releases; fallback needs an explicit
   user prompt; requested vs resolved (asset, digest) recorded separately.

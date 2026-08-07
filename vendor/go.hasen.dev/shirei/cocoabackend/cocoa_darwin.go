@@ -1,11 +1,10 @@
-//go:build darwin
+//go:build darwin && !ios
 
 // Package cocoabackend is a direct-macOS (AppKit) backend for shirei. AppKit
 // provides the window, run loop, and input; all rasterization is done by shirei's
 // core software renderer, which rasterizes each frame straight into an IOSurface
 // that is set as a CALayer's contents — the window server composites it on the GPU
-// with no per-frame CPU copy. It is an alternative to giobackend; see PLAN.md for
-// the roadmap and ../notes/opus-ime-assessment.txt for the motivation (IME + CPU).
+// with no per-frame CPU copy. It is an alternative to giobackend.
 package cocoabackend
 
 /*
@@ -23,6 +22,7 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
+	"github.com/cli/browser"
 	g "go.hasen.dev/generic"
 	"go.hasen.dev/shirei"
 	"go.hasen.dev/shirei/internal/iconimg"
@@ -33,12 +33,21 @@ import (
 // glyph cache; 0 would disable it). 16 MB holds many thousands of glyph masks.
 const glyphCacheBudget = 16 << 20
 
+// Window placement hints recorded before Run (best-effort; see CenterWindow).
+const (
+	placeDefault = iota // macOS default: center
+	placeCenter
+	placeAt
+)
+
 var (
 	winTitle    string
 	winIconPath string
 	winIconImg  *image.NRGBA
 	winW        int
 	winH        int
+	winPlace    int
+	winX, winY  int
 	frameFn     shirei.FrameFn
 )
 
@@ -48,6 +57,22 @@ func SetupWindow(title string, width int, height int) {
 	winTitle = title
 	winW = width
 	winH = height
+}
+
+// CenterWindow requests that the window open centered on the screen. On macOS
+// this is also the default when neither CenterWindow nor PositionWindow is
+// called. Call after SetupWindow and before Run. Mutually exclusive with
+// PositionWindow; the last call wins.
+func CenterWindow() {
+	winPlace = placeCenter
+}
+
+// PositionWindow requests that the window open with its top-left corner at
+// (x, y) in screen points. Call after SetupWindow and before Run. Mutually
+// exclusive with CenterWindow; the last call wins.
+func PositionWindow(x, y int) {
+	winPlace = placeAt
+	winX, winY = x, y
 }
 
 // SetupIcon records the path of the image (any NSImage-readable format, e.g.
@@ -85,11 +110,12 @@ func Run(fn shirei.FrameFn) {
 
 	frameFn = fn
 
-	shirei.GlyphCacheBudgetBytes = glyphCacheBudget
+	shirei.GetHost().GlyphCacheBudgetBytes = glyphCacheBudget
+	shirei.GetHost().EscapeHatchBackendContext = Context{}
 
 	ctitle := C.CString(winTitle)
 	defer C.free(unsafe.Pointer(ctitle))
-	C.cocoa_setupWindow(ctitle, C.int(winW), C.int(winH))
+	C.cocoa_setupWindow(ctitle, C.int(winW), C.int(winH), C.int(winPlace), C.int(winX), C.int(winY))
 	if winIconImg != nil {
 		b := winIconImg.Bounds()
 		C.cocoa_setAppIconRGBA((*C.uchar)(unsafe.Pointer(&winIconImg.Pix[0])),
@@ -147,12 +173,12 @@ func shireiRenderAndPresent(source C.int) {
 	defer func() { perfRecordPaint(time.Since(t0)) }()
 	perfRecordPresentSource(int(source))
 
-	scale := shirei.WindowScale
+	scale := shirei.GetHost().WindowScale
 	if scale <= 0 {
 		scale = 1
 	}
-	dw := int(shirei.WindowSize[0]*scale + 0.5)
-	dh := int(shirei.WindowSize[1]*scale + 0.5)
+	dw := int(shirei.GetHost().WindowSize[0]*scale + 0.5)
+	dh := int(shirei.GetHost().WindowSize[1]*scale + 0.5)
 	if dw <= 0 || dh <= 0 {
 		return
 	}
@@ -264,8 +290,8 @@ var (
 
 //export shireiProduceFrame
 func shireiProduceFrame(w C.double, h C.double) {
-	shirei.WindowSize = shirei.Vec2{float32(w), float32(h)}
-	shirei.WindowScale = float32(C.cocoa_backingScaleFactor())
+	shirei.GetHost().WindowSize = shirei.Vec2{float32(w), float32(h)}
+	shirei.GetHost().WindowScale = float32(C.cocoa_backingScaleFactor())
 	lastProducedW, lastProducedH = float32(w), float32(h)
 
 	flushPendingFrameText()
@@ -286,6 +312,9 @@ func shireiProduceFrame(w C.double, h C.double) {
 		pendingPaste = getClipboard()
 		hasPendingPaste = true
 		C.cocoa_requestRedraw()
+	}
+	if out.OpenURL != "" {
+		openURL(out.OpenURL)
 	}
 
 	var wf C.int
@@ -310,7 +339,7 @@ func flushPendingFrameText() {
 		hasPendingPaste = false
 	}
 	if pendingText != "" {
-		shirei.FrameInput.Text += pendingText
+		shirei.GetFrameInput().Text += pendingText
 		pendingText = ""
 	}
 }
@@ -336,17 +365,17 @@ func shireiFrameRequested() C.int {
 
 //export shireiCaretX
 func shireiCaretX() C.double {
-	return C.double(shirei.CaretPos[0])
+	return C.double(shirei.GetHost().CaretPos[0])
 }
 
 //export shireiCaretY
 func shireiCaretY() C.double {
-	return C.double(shirei.CaretPos[1])
+	return C.double(shirei.GetHost().CaretPos[1])
 }
 
 //export shireiCaretHeight
 func shireiCaretHeight() C.double {
-	return C.double(shirei.CaretHeight)
+	return C.double(shirei.GetHost().CaretHeight)
 }
 
 func setClipboard(s string) {
@@ -365,6 +394,14 @@ func getClipboard() string {
 	return s
 }
 
+// openURL opens url in the system browser (FrameOutputData.OpenURL). Errors ignored.
+func openURL(url string) {
+	if url == "" {
+		return
+	}
+	_ = browser.OpenURL(url)
+}
+
 // -----------------------------------------------------------------------------
 //  Input (called from the NSView's event overrides)
 // -----------------------------------------------------------------------------
@@ -380,28 +417,28 @@ const (
 //export shireiMouse
 func shireiMouse(x, y C.double, action, button C.int) {
 	np := shirei.Vec2{float32(x), float32(y)}
-	prev := shirei.InputState.MousePoint
-	shirei.FrameInput.Motion = shirei.Vec2Add(shirei.FrameInput.Motion, shirei.Vec2Sub(np, prev))
-	shirei.InputState.MousePoint = np
-	shirei.InputState.MouseButton = shirei.MouseButton(button)
+	prev := shirei.GetInputState().MousePoint
+	shirei.GetFrameInput().Motion = shirei.Vec2Add(shirei.GetFrameInput().Motion, shirei.Vec2Sub(np, prev))
+	shirei.GetInputState().MousePoint = np
+	shirei.GetInputState().MouseButton = shirei.MouseButton(button)
 
 	switch action {
 	case mouseDown:
-		shirei.FrameInput.Mouse = shirei.MouseClick
+		shirei.GetFrameInput().Mouse = shirei.MouseClick
 	case mouseUp:
-		shirei.FrameInput.Mouse = shirei.MouseRelease
+		shirei.GetFrameInput().Mouse = shirei.MouseRelease
 	}
 }
 
 //export shireiScroll
 func shireiScroll(dx, dy C.double) {
-	shirei.FrameInput.Scroll = shirei.Vec2Add(shirei.FrameInput.Scroll,
+	shirei.GetFrameInput().Scroll = shirei.Vec2Add(shirei.GetFrameInput().Scroll,
 		shirei.Vec2{float32(dx), float32(dy)})
 }
 
 //export shireiWindowFocus
 func shireiWindowFocus(focused C.int) {
-	shirei.WindowFocused = focused != 0
+	shirei.GetHost().WindowFocused = focused != 0
 	// re-render once so focus-only affordances (the text caret) show/hide; the loop
 	// then sleeps again if nothing else is animating.
 	shirei.RequestNextFrame()
@@ -431,7 +468,7 @@ func shireiSetModifiers(flags C.uint) {
 	if f&nsCommand != 0 {
 		m |= shirei.ModCmd
 	}
-	shirei.InputState.Modifiers = m
+	shirei.GetInputState().Modifiers = m
 
 	// modifier keys arrive via flagsChanged, not keyDown, so mirror them into
 	// DownKeys (shirei widgets check e.g. DownKeys contains KeyShift).
@@ -443,16 +480,16 @@ func shireiSetModifiers(flags C.uint) {
 
 func syncModKey(m, bit shirei.Modifiers, k shirei.KeyCode) {
 	if m&bit != 0 {
-		g.SliceAddUniq(&shirei.InputState.DownKeys, k)
+		g.SliceAddUniq(&shirei.GetInputState().DownKeys, k)
 	} else {
-		g.SliceRemove(&shirei.InputState.DownKeys, k)
+		g.SliceRemove(&shirei.GetInputState().DownKeys, k)
 	}
 }
 
 func keyDown(vkey int, bare string) {
 	if code := mapVKey(uint16(vkey), bare); code != shirei.KeyCodeNone {
-		shirei.FrameInput.Key = code
-		g.SliceAddUniq(&shirei.InputState.DownKeys, code)
+		shirei.GetFrameInput().Key = code
+		g.SliceAddUniq(&shirei.GetInputState().DownKeys, code)
 	}
 }
 
@@ -489,8 +526,8 @@ func setCompositionFromUTF16Offsets(text string, startUTF16 int, endUTF16 int) {
 	if start > end {
 		start, end = end, start
 	}
-	shirei.InputState.Composition = text
-	shirei.InputState.CompositionSel = [2]int{start, end}
+	shirei.GetInputState().Composition = text
+	shirei.GetInputState().CompositionSel = [2]int{start, end}
 	shirei.RequestNextFrame()
 }
 
@@ -502,7 +539,7 @@ func shireiSetComposition(cchars *C.char, startUTF16 C.int, endUTF16 C.int) {
 //export shireiKeyUp
 func shireiKeyUp(vkey C.int, cbare *C.char) {
 	if code := mapVKey(uint16(vkey), C.GoString(cbare)); code != shirei.KeyCodeNone {
-		g.SliceRemove(&shirei.InputState.DownKeys, code)
+		g.SliceRemove(&shirei.GetInputState().DownKeys, code)
 	}
 }
 

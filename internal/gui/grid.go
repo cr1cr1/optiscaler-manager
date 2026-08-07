@@ -52,7 +52,7 @@ const (
 	badgeRowH  = 22
 	textRowH   = 18
 	pillRowH   = 22
-	buttonRowH = 30
+	buttonRowH = 34 // focusableButton row height (v0.6.6 DefaultButtonLook: text + pad + push lip)
 )
 
 // cardContentH sizes a card so every element fits: badge row, cover,
@@ -131,7 +131,7 @@ func (m *model) gridView() {
 			if i == len(chunks) {
 				return sp24
 			}
-			return float32(m.cardH) + 8
+			return float32(cardContentH(cardSizeForPreset(m.cardSize))) + 8
 		},
 		func(i int, w float32) {
 			if i == len(chunks) {
@@ -202,7 +202,7 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 			m.cardIDs[e.InstallDir] = CurrentId()
 		}
 		// Clear when Tab/Shift+Tab moves focus away.
-		if m.cardFocusPending == e.InstallDir && FrameInput.Key == KeyTab {
+		if m.cardFocusPending == e.InstallDir && GetFrameInput().Key == KeyTab {
 			m.cardFocusPending = ""
 		}
 		// Re-assert when the card lost focus (identity churn after re-nest).
@@ -260,26 +260,26 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 		// via the shared moveGridSel AND hand focus to the new cursor card;
 		// Enter toggles the detail panel for the focused==cursor card.
 		if HasFocus() && len(m.gridRows) > 0 {
-			switch FrameInput.Key {
+			switch GetFrameInput().Key {
 			case KeyRight:
 				m.moveGridSel(m.gridRows, 1)
-				FrameInput.Key = KeyCodeNone
+				GetFrameInput().Key = KeyCodeNone
 				m.focusCursorCard()
 			case KeyLeft:
 				m.moveGridSel(m.gridRows, -1)
-				FrameInput.Key = KeyCodeNone
+				GetFrameInput().Key = KeyCodeNone
 				m.focusCursorCard()
 			case KeyDown:
 				m.moveGridSel(m.gridRows, m.cols)
-				FrameInput.Key = KeyCodeNone
+				GetFrameInput().Key = KeyCodeNone
 				m.focusCursorCard()
 			case KeyUp:
 				m.moveGridSel(m.gridRows, -m.cols)
-				FrameInput.Key = KeyCodeNone
+				GetFrameInput().Key = KeyCodeNone
 				m.focusCursorCard()
 			case KeyEnter:
 				m.toggleListDetail(m.gridRows)
-				FrameInput.Key = KeyCodeNone
+				GetFrameInput().Key = KeyCodeNone
 				m.cardFocusPending = m.gridRows[m.selIdx].InstallDir
 				m.scrollCursorPending = true
 			}
@@ -337,7 +337,7 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 				if focusableButton(SymIRight, quickLabel(&e)) {
 					m.sess.QuickInstall(e.InstallDir)
 				}
-				if launchable(&e) && focusableButton(0, "Launch") {
+				if launchable(&e) && focusableButton(NoIcon, "Launch") {
 					m.launchGame(e)
 				}
 				m.cardLastButtonID = GetLastId()

@@ -7,13 +7,16 @@
 #define SHIREI_COCOA_H
 
 // ---- lifecycle (called from Go) ----
-void cocoa_setupWindow(const char *title, int width, int height);
+// place: 0 = platform default (center), 1 = center, 2 = top-left at (x, y) in
+// screen points (AppKit y is converted from top-left origin).
+void cocoa_setupWindow(const char *title, int width, int height, int place, int x, int y);
 void cocoa_setAppIcon(const char *path); // Dock icon; call after cocoa_setupWindow
 void cocoa_setAppIconRGBA(const unsigned char *pix, int w, int h); // straight-alpha RGBA, stride w*4
 void cocoa_run(void);
 void cocoa_requestRedraw(void);  // async: marks dirty, drawn on the next display pass
 void cocoa_setWantsFrame(int v);
 double cocoa_backingScaleFactor(void); // device pixels per point (1.0 if no window)
+void *cocoa_nsWindow(void); // live NSWindow *, or NULL before setup
 
 // ---- clipboard ----
 void  cocoa_setClipboard(const char *s);

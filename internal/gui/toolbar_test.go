@@ -13,13 +13,13 @@ import (
 // clickRect runs a full click gesture (hover settle, down, release) at the
 // center of rect across three frames.
 func clickRect(rect Rect, fn FrameFn) {
-	InputState.MousePoint = Vec2{rect.Origin[0] + rect.Size[0]/2, rect.Origin[1] + rect.Size[1]/2}
+	GetInputState().MousePoint = Vec2{rect.Origin[0] + rect.Size[0]/2, rect.Origin[1] + rect.Size[1]/2}
 	RunFrameFn(fn) // hover settles from the previous frame's hoverables
-	FrameInput.Mouse = MouseClick
+	GetFrameInput().Mouse = MouseClick
 	RunFrameFn(fn)
-	FrameInput.Mouse = MouseRelease
+	GetFrameInput().Mouse = MouseRelease
 	RunFrameFn(fn)
-	FrameInput.Mouse = 0
+	GetFrameInput().Mouse = 0
 }
 
 // TestGridTrailingSpacer: the grid appends a trailing spacer row so the last

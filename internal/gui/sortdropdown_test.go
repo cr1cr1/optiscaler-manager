@@ -16,7 +16,7 @@ func sortPopulated(t *testing.T) (*ui.Session, *model, ui.GameRow) {
 	row := scanOneRow(t, sess)
 	m := newModel(Config{Session: sess})
 	headlessFrames(t, 1100, 700)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	closeSortDropdownIfOpen(t, m, m.rootView)
 	return sess, m, row
 }
@@ -152,7 +152,7 @@ func TestSortDropdown_InitialHighlightIsCurrentMode(t *testing.T) {
 	}
 	// Park the mouse off the popup so hover cannot move the highlight and
 	// mask a missing open-time init.
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	keyFrame(KeyEnter, 0, m.rootView)
 	keyFrame(KeyCodeNone, 0, m.rootView)
 	if len(m.sortMenuItems) != 2 {
@@ -232,7 +232,7 @@ func TestSortDropdown_HoverMovesHighlight(t *testing.T) {
 	if r.Size[0] == 0 {
 		t.Fatalf("menu item rect unresolved: %+v", r)
 	}
-	InputState.MousePoint = Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
+	GetInputState().MousePoint = Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
 	keyFrame(KeyCodeNone, 0, m.rootView) // hover settles
 	keyFrame(KeyCodeNone, 0, m.rootView)
 	if got := sortHlIndex(t, m); got != 0 {
@@ -240,7 +240,7 @@ func TestSortDropdown_HoverMovesHighlight(t *testing.T) {
 	}
 
 	// Mouse leaves: the last highlight position sticks (no snap-back).
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	keyFrame(KeyCodeNone, 0, m.rootView)
 	if got := sortHlIndex(t, m); got != 0 {
 		t.Errorf("highlight after the mouse left = row %d, want 0 (last position sticks)", got)
@@ -263,7 +263,7 @@ func TestSortDropdown_StationaryMouseKeepsKeyboardHighlight(t *testing.T) {
 	if r.Size[0] == 0 {
 		t.Fatalf("menu item rect unresolved: %+v", r)
 	}
-	InputState.MousePoint = Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
+	GetInputState().MousePoint = Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
 	keyFrame(KeyCodeNone, 0, m.rootView)
 	keyFrame(KeyCodeNone, 0, m.rootView)
 	if got := sortHlIndex(t, m); got != 1 {
@@ -541,7 +541,7 @@ func TestSortDropdown_DisabledWhenEmpty(t *testing.T) {
 	sess, _ := guiFakes(t) // no scan: empty library
 	m := newModel(Config{Session: sess})
 	headlessFrames(t, 1100, 700)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	keyFrame(KeyCodeNone, 0, m.rootView)
 	keyFrame(KeyCodeNone, 0, m.rootView)
 	if !m.libraryEmpty() {

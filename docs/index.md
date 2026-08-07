@@ -2,7 +2,7 @@
 
 Go desktop app that manages [OptiScaler](https://github.com/optiscaler/OptiScaler)
 installations for local games. GUI: [go-shirei](https://github.com/hasenj/go-shirei)
-(`go.hasen.dev/shirei`, pinned v0.5.2). Current release: v0.7, teaching
+(`go.hasen.dev/shirei`, pinned v0.6.6). Current release: v0.7, teaching
 scanning the difference between a game folder and a library root —
 manually added containers become scan roots whose games surface as
 individual rows; v0.6 added

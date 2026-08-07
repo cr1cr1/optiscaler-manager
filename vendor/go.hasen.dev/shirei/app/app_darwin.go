@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build darwin && !ios
 
 package app
 
@@ -14,6 +14,23 @@ import (
 // before Run.
 func SetupWindow(title string, width, height int) {
 	cocoabackend.SetupWindow(title, width, height)
+}
+
+// CenterWindow requests that the window open centered on the screen. Best-effort:
+// honored on macOS (also the default), Windows, and X11; ignored on Wayland and
+// mobile. Call after SetupWindow and before Run. Mutually exclusive with
+// PositionWindow; the last call wins.
+func CenterWindow() {
+	cocoabackend.CenterWindow()
+}
+
+// PositionWindow requests that the window open with its top-left corner at
+// (x, y) in screen points (origin at the top-left of the primary display).
+// Best-effort: honored on macOS, Windows, and X11; ignored on Wayland and
+// mobile. Call after SetupWindow and before Run. Mutually exclusive with
+// CenterWindow; the last call wins.
+func PositionWindow(x, y int) {
+	cocoabackend.PositionWindow(x, y)
 }
 
 // SetupIcon records the path of the image (PNG etc.) used as the app's icon —

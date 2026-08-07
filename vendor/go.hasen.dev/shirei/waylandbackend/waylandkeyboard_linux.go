@@ -21,31 +21,21 @@ import (
 // value, same as the X11 backend uses) for shortcut mapping, and the UTF-32
 // codepoint for typed text. Sampled into the shirei globals (sample, not queue).
 
-// PATCHED by optiscaler-manager (v0.10): client-side key repeat — reapply
-// after `go mod vendor` (see docs/vendor-patches.md). The block covers the
-// repeat* vars, HandleKeyboardRepeatInfo, armRepeat/cancelRepeat/pumpRepeat,
-// repeatTimeout, and the two calls inside onKey.
 var (
 	keyboard   *wl.Keyboard
 	xkbContext *xkb.Context
 	xkbKeymap  *xkb.Keymap
 	xkbState   *xkb.State
 
-	// Client-side key-repeat state. The Wayland protocol is explicit that
-	// the client generates repeats: the compositor hands us a rate/delay
-	// pair via wl_keyboard.repeat_info and expects us to synthesize presses.
-	// Until this patch the rate/delay was discarded, so a held key fired
-	// exactly once and the app went idle.
-	repeatKey      uint32 // xkb keycode of the key currently armed for repeat (0 = none)
-	repeatKeysym   uint32 // keysym captured at arm time (modifiers may shift between presses)
-	repeatDelay    time.Duration
-	repeatInterval time.Duration // 0 when the compositor asked for no repeats (rate == 0)
+	// PATCHED by optiscaler-manager (v0.10): client-side key repeat — reapply after `go mod vendor` (see docs/vendor-patches.md).
+	repeatKey      uint32        // xkb keycode armed for repeat (0 = none)
+	repeatKeysym   uint32        // keysym captured at arm time
+	repeatDelay    time.Duration // delay to first repeat
+	repeatInterval time.Duration // 0 when the compositor asked for no repeats
 	repeatNext     time.Time     // next synthetic-press due time
 )
 
-// defaultRepeatDelay/defaultRepeatInterval are used when the compositor never
-// sends repeat_info (some embedded compositors don't). Matches the spec the
-// optiscaler-manager UI asked for: 300 ms to first repeat, then 20 Hz.
+// defaultRepeatDelay/defaultRepeatInterval: fallbacks when the compositor never sends repeat_info. Matches the spec the UI documents: 300 ms to first repeat, then 20 Hz. PATCHED (v0.10).
 const (
 	defaultRepeatDelay    = 300 * time.Millisecond
 	defaultRepeatInterval = 50 * time.Millisecond
@@ -113,7 +103,7 @@ func (*handler) HandleKeyboardModifiers(ev wl.KeyboardModifiersEvent) {
 	updateModifiers(ev.ModsDepressed | ev.ModsLatched)
 	dirty = true
 	wlDebug("modifiers: depressed=%#x latched=%#x locked=%#x -> shirei mods=%04b",
-		ev.ModsDepressed, ev.ModsLatched, ev.ModsLocked, shirei.InputState.Modifiers)
+		ev.ModsDepressed, ev.ModsLatched, ev.ModsLocked, shirei.GetInputState().Modifiers)
 }
 
 func (*handler) HandleKeyboardKey(ev wl.KeyboardKeyEvent) {
@@ -125,7 +115,7 @@ func (*handler) HandleKeyboardKey(ev wl.KeyboardKeyEvent) {
 	down := ev.State != wl.KeyboardKeyStateReleased
 	onKey(code, xkbState.KeyGetOneSym(code), down)
 	dirty = true
-	wlDebug("key: evdev=%d down=%v (mods now %04b)", ev.Key, down, shirei.InputState.Modifiers)
+	wlDebug("key: evdev=%d down=%v (mods now %04b)", ev.Key, down, shirei.GetInputState().Modifiers)
 }
 
 func (*handler) HandleKeyboardEnter(wl.KeyboardEnterEvent) { wlDebug("keyboard enter") }
@@ -135,45 +125,32 @@ func (*handler) HandleKeyboardEnter(wl.KeyboardEnterEvent) { wlDebug("keyboard e
 // here too so a compositor that omits text-input leave cannot leave a stale
 // underline.
 func (*handler) HandleKeyboardLeave(wl.KeyboardLeaveEvent) {
-	shirei.InputState.DownKeys = shirei.InputState.DownKeys[:0]
-	shirei.InputState.Modifiers = 0
-	cancelRepeat()
+	shirei.GetInputState().DownKeys = shirei.GetInputState().DownKeys[:0]
+	shirei.GetInputState().Modifiers = 0
+	cancelRepeat() // PATCHED (v0.10): focus lost — stop repeating
 	clearComposition()
 	dirty = true
 	wlDebug("keyboard leave")
 }
 
-// HandleKeyboardRepeatInfo stores the compositor-supplied rate/delay so
-// armRepeat/pumpRepeat can synthesize presses. Wayland puts key repeat on
-// the client; without this the toolkit would never see repeats and held
-// navigation keys would fire exactly once.
-//
-// PATCHED by optiscaler-manager (v0.10): previously a no-op.
+// HandleKeyboardRepeatInfo stores the compositor-supplied rate/delay so armRepeat/pumpRepeat can synthesize presses. Wayland puts key repeat on the client. PATCHED by optiscaler-manager (v0.10): previously a no-op.
 func (*handler) HandleKeyboardRepeatInfo(ev wl.KeyboardRepeatInfoEvent) {
 	repeatDelay = time.Duration(ev.Delay) * time.Millisecond
 	if ev.Rate > 0 {
 		repeatInterval = time.Second / time.Duration(ev.Rate)
 	} else {
-		// Rate 0 means "don't repeat" per the protocol.
-		repeatInterval = 0
+		repeatInterval = 0 // Rate 0 means "don't repeat" per the protocol.
 		repeatKey = 0
 	}
-	wlDebug("repeat info: delay=%v interval=%v (rate=%d/s)", repeatDelay, repeatInterval, ev.Rate)
 }
 
-// armRepeat begins synthesizing presses for `code`/`keysym` if the keymap
-// says the key repeats. Pressing a different key (or any non-repeatable key)
-// implicitly cancels the previous arm — standard OS repeat behavior, since
-// FrameInput.Key is a single slot and stale repeats would shadow the new
-// press.
+// armRepeat begins synthesizing presses for code/keysym if the keymap says the key repeats. Pressing a different key implicitly cancels the previous arm. PATCHED (v0.10).
 func armRepeat(code, keysym uint32) {
 	if xkbKeymap == nil || !xkbKeymap.KeyRepeats(code) {
 		repeatKey = 0
 		return
 	}
 	if repeatDelay <= 0 {
-		// No repeat_info yet from the compositor — fall back to the spec
-		// defaults so users on minimal compositors still get repeats.
 		repeatDelay = defaultRepeatDelay
 	}
 	if repeatInterval == 0 && repeatDelay > 0 {
@@ -188,16 +165,10 @@ func armRepeat(code, keysym uint32) {
 	repeatNext = time.Now().Add(repeatDelay)
 }
 
-// cancelRepeat stops synthesizing presses. Called on key release, focus
-// loss, and whenever a non-repeatable key is pressed.
+// cancelRepeat stops synthesizing presses. PATCHED (v0.10).
 func cancelRepeat() { repeatKey = 0 }
 
-// pumpRepeat delivers one synthetic press if a held key's repeat is due.
-// Called from the main loop after each dispatch so the repeat cadence
-// tracks real time without needing a separate goroutine (everything that
-// touches the shirei input globals stays on the main goroutine). Setting
-// dirty forces the just-synthesized FrameInput.Key to actually be consumed
-// by a frame.
+// pumpRepeat delivers one synthetic press if a held key's repeat is due. Called from the main loop after each dispatch so the cadence tracks real time without a goroutine. PATCHED (v0.10).
 func pumpRepeat() {
 	if repeatKey == 0 || repeatInterval <= 0 {
 		return
@@ -211,9 +182,7 @@ func pumpRepeat() {
 	dirty = true
 }
 
-// repeatTimeout returns how long the main loop's dispatch may block before
-// it must wake up to deliver the next repeat, capped by `max`. Returns max
-// when no repeat is armed.
+// repeatTimeout caps the dispatch wait so a pending repeat wakes the loop in time. PATCHED (v0.10).
 func repeatTimeout(max time.Duration) time.Duration {
 	if repeatKey == 0 || repeatInterval <= 0 {
 		return max
@@ -234,13 +203,18 @@ func repeatTimeout(max time.Duration) time.Duration {
 // the layout; the layout still drives the typed text below. Other keys
 // resolve by keysym.
 //
-// While an IME composition is active, editing/navigation keys belong to the
-// IME (Cocoa B1 hasMarkedText gate / Win32 VK_PROCESSKEY). text-input-v3 has
-// no per-key consumed flag, so we gate on non-empty Composition.
+// While an IME composition is active, editing/navigation keys and typed text
+// belong to the IME (Cocoa B1 hasMarkedText / Win32 VK_PROCESSKEY). text-input-v3
+// has no per-key "consumed" flag, so we gate on non-empty Composition
+// (textInputConsumesKeys). Committed text arrives via commit_string and is
+// merged into pendingText on done.
 //
-// When text-input-v3 is enabled, committed characters arrive via commit_string
-// — suppress the xkb→text path to avoid double-insert (the #1 botch on every
-// IME backend). Without the protocol (or before enter), fall back to xkb utf32.
+// Do NOT suppress xkb→utf32 merely because text-input-v3 is enabled. GNOME
+// Mutter (and similar) only sends commit_string for IME-routed text; ordinary
+// latin/digit keys arrive solely on wl_keyboard.key with no commit_string.
+// Gating on textInputEnabled left TextInput fields read-only without an IME
+// (go-shirei#15). While composing, the early return above already skips xkb
+// text — that is enough to avoid double-insert with preedit/commit_string.
 func onKey(code, keysym uint32, down bool) {
 	kc := qwerty.FromScan(uint16(code - 8)) // xkb keycode -> evdev
 	if kc == shirei.KeyCodeNone {
@@ -250,12 +224,12 @@ func onKey(code, keysym uint32, down bool) {
 	if kc != shirei.KeyCodeNone {
 		if down {
 			if !composing {
-				shirei.FrameInput.Key = kc
+				shirei.GetFrameInput().Key = kc
 			}
-			g.SliceAddUniq(&shirei.InputState.DownKeys, kc)
+			g.SliceAddUniq(&shirei.GetInputState().DownKeys, kc)
 			armRepeat(code, keysym) // PATCHED (v0.10): begin client-side repeat
 		} else {
-			g.SliceRemove(&shirei.InputState.DownKeys, kc)
+			g.SliceRemove(&shirei.GetInputState().DownKeys, kc)
 			if code == repeatKey {
 				cancelRepeat() // PATCHED (v0.10): released the armed key
 			}
@@ -265,15 +239,11 @@ func onKey(code, keysym uint32, down bool) {
 		return
 	}
 	// Suppress text for shortcut combos and control characters (delivered as Key).
-	if shirei.InputState.Modifiers&(shirei.ModCtrl|shirei.ModCmd|shirei.ModAlt) != 0 {
+	if shirei.GetInputState().Modifiers&(shirei.ModCtrl|shirei.ModCmd|shirei.ModAlt) != 0 {
 		return
 	}
-	// text-input-v3 owns typed text while enabled (commit_string). Without it,
-	// xkb utf32 is the only channel — accumulate so multi-key frames keep all
+	// Plain typing: xkb utf32. Accumulate so multi-key frames keep all
 	// characters (assign would drop earlier ones, same class of bug as Win32 W0).
-	if textInputEnabled {
-		return
-	}
 	if r := rune(xkbState.KeyGetUtf32(code)); r >= 0x20 && r != 0x7f {
 		appendPendingText(string(r))
 	}
@@ -293,7 +263,7 @@ func updateModifiers(mask uint32) {
 	if mask&wlModSuper != 0 {
 		m |= shirei.ModSuper
 	}
-	shirei.InputState.Modifiers = m
+	shirei.GetInputState().Modifiers = m
 
 	syncModKey(m, shirei.ModShift, shirei.KeyShift)
 	syncModKey(m, shirei.ModCtrl, shirei.KeyCtrl)
@@ -303,9 +273,9 @@ func updateModifiers(mask uint32) {
 
 func syncModKey(m, bit shirei.Modifiers, k shirei.KeyCode) {
 	if m&bit != 0 {
-		g.SliceAddUniq(&shirei.InputState.DownKeys, k)
+		g.SliceAddUniq(&shirei.GetInputState().DownKeys, k)
 	} else {
-		g.SliceRemove(&shirei.InputState.DownKeys, k)
+		g.SliceRemove(&shirei.GetInputState().DownKeys, k)
 	}
 }
 
@@ -353,6 +323,8 @@ func mapKeysym(ks uint32) shirei.KeyCode {
 		return shirei.KeyHome
 	case xkEnd:
 		return shirei.KeyEnd
+	case xkb.KeyInsert:
+		return shirei.KeyInsert
 	case xkPrior:
 		return shirei.KeyPageUp
 	case xkNext:

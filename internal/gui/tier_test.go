@@ -27,7 +27,7 @@ func TestTierBadge_RendersWhenPresent(t *testing.T) {
 	row := ui.GameRow{Title: "Tier Game", InstallDir: "/games/tier", ProtonTier: "gold"}
 
 	headlessFrames(t, 400, 800)
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 	view := func() {
 		Container(Attrs(Viewport), func() {
 			m.fitCards(400)

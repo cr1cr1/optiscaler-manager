@@ -1,13 +1,16 @@
 // Package win32backend is a direct-Windows backend for shirei. The Win32 API
 // provides the window, message loop, and input; all rasterization is done by
-// shirei's core software renderer, which renders each frame into a top-down
-// 32-bit DIB section that GDI blits to the window (BitBlt). It mirrors
-// cocoabackend (the reference shell) minus the rasterizer, and is the Windows
-// half of the GOOS-selected go.hasen.dev/shirei/app wrapper.
+// shirei's core software renderer into a top-down 32bpp DIB section that GDI
+// blits to the window (BitBlt).
 //
-// It is pure Go (no cgo): the Win32 entry points are bound lazily through the
-// standard syscall package, so it cross-compiles from any OS with
-// GOOS=windows. See ../notes/backends-plan.md.
+// Content-hash skip: when SurfacesHash and client size match the last presented
+// frame, render+present are skipped (same idea as cocoabackend/androidbackend).
+//
+// Instrumentation: SHIREI_PERF=1 prints fps + produce/render/present; optional
+// SHIREI_PERF_LOG=<path> appends the same lines to a file.
+//
+// Pure Go (no cgo): Win32 entry points via syscall, cross-compiles with
+// GOOS=windows. Half of the GOOS-selected go.hasen.dev/shirei/app wrapper.
 package win32backend
 
 import (
@@ -18,6 +21,7 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
+	"github.com/cli/browser"
 	g "go.hasen.dev/generic"
 	"go.hasen.dev/shirei"
 	"go.hasen.dev/shirei/internal/qwerty"
@@ -30,17 +34,27 @@ const glyphCacheBudget = 16 << 20
 // frameTimerID identifies the animation timer (per-window timer id).
 const frameTimerID = 1
 
+// Window placement hints recorded before Run (best-effort; see CenterWindow).
+const (
+	placeDefault = iota // Win32 default: CW_USEDEFAULT
+	placeCenter
+	placeAt
+)
+
 var (
 	winTitle string
 	winW     int
 	winH     int
+	winPlace int
+	winX     int
+	winY     int
 	frameFn  shirei.FrameFn
 
 	hwnd      syscall.Handle
 	hinstance syscall.Handle
 
-	// DIB present surface: a top-down 32bpp BGRA bitmap selected into a memory
-	// DC. The renderer writes straight into dibBuf; BitBlt copies it to the window.
+	// DIB present surface: top-down 32bpp BGRA selected into a memory DC.
+	// SoftRenderer writes dibBuf; BitBlt copies it to the window.
 	memDC   syscall.Handle
 	dibBM   syscall.Handle
 	dibBuf  []byte
@@ -50,46 +64,63 @@ var (
 
 	softRenderer shirei.SoftRenderer
 
-	dirty      bool // a new frame must be produced+rendered before the next blit
+	dirty      bool // a new frame must be produced before the next present
 	haveFrame  bool
 	wantsFrame bool // last frame asked to be re-run (animation/async work)
 	timerOn    bool
 
+	// Content-hash present skip (mirrors cocoabackend / androidbackend).
+	lastPresentedHash uint64
+	havePresented     bool
+	presentW          int
+	presentH          int
+
 	pendingHi   uint16 // pending UTF-16 high surrogate from WM_CHAR
 	pendingText string // committed text to deliver on the next frame
 
-	// PATCHED by optiscaler-manager (v0.11): client-side key repeat — reapply
-	// after `go mod vendor` (see docs/vendor-patches.md). The block covers
-	// repeatWparam/repeatLparam/repeatArmed/repeatDelay/repeatInterval/
-	// repeatNext + the two default consts + armRepeat/cancelRepeat/pumpRepeat
-	// + the three call sites (onKey press/release, wmKillfocus, wmTimer).
-	//
-	// Same pattern as the v0.10 Wayland patch. WM_KEYDOWN auto-repeat is
-	// supposed to arrive natively on Windows, but on some setups (RDP,
-	// VMs, FilterKeys, accessibility) it doesn't, and the symptom is
-	// "first press fires once, then nothing." armRepeat captures the
-	// wparam/lparam of every press; if native repeats arrive they re-arm
-	// every time and push repeatNext forward by repeatDelay, so pumpRepeat
-	// is a no-op. If native repeats DON'T arrive, pumpRepeat (called from
-	// the 16ms wmTimer) synthesizes them at repeatInterval.
+	wndProcCB = syscall.NewCallback(wndProc)
+)
+
+// PATCHED by optiscaler-manager (v0.11): client-side key repeat — reapply after `go mod vendor` (see docs/vendor-patches.md). WM_KEYDOWN auto-repeat is supposed to arrive natively, but on some setups (RDP, VMs, FilterKeys) it doesn't; armRepeat captures every press and pumpRepeat (from wmTimer) synthesizes repeats. Native repeats re-arm every time and push repeatNext forward by repeatDelay, so pumpRepeat is a no-op when native repeat works.
+var (
 	repeatWparam   uintptr
 	repeatLparam   uintptr
 	repeatArmed    bool
 	repeatDelay    = defaultRepeatDelay
 	repeatInterval = defaultRepeatInterval
 	repeatNext     time.Time
-
-	wndProcCB = syscall.NewCallback(wndProc)
 )
 
-// PATCHED by optiscaler-manager (v0.11): defaults used when no OS rate has
-// been queried (and the fallback if a future SystemParametersInfoW query
-// fails). Matches the spec the optiscaler-manager UI documents: 300 ms to
-// first repeat, then 20 Hz.
+// defaultRepeatDelay/defaultRepeatInterval: 300 ms to first repeat, then 20 Hz (matches the spec). PATCHED (v0.11).
 const (
 	defaultRepeatDelay    = 300 * time.Millisecond
 	defaultRepeatInterval = 50 * time.Millisecond
 )
+
+// armRepeat captures the wparam/lparam of every key press so pumpRepeat can re-fire it. PATCHED (v0.11).
+func armRepeat(wparam, lparam uintptr) {
+	repeatWparam = wparam
+	repeatLparam = lparam
+	repeatArmed = true
+	repeatNext = time.Now().Add(repeatDelay)
+}
+
+// cancelRepeat stops pumpRepeat from synthesizing further presses. PATCHED (v0.11).
+func cancelRepeat() { repeatArmed = false }
+
+// pumpRepeat synthesizes one WM_KEYDOWN if a held key's repeat is due. Called from wmTimer; cheap when no key is armed. PATCHED (v0.11).
+func pumpRepeat() {
+	if !repeatArmed || repeatInterval <= 0 {
+		return
+	}
+	now := time.Now()
+	if now.Before(repeatNext) {
+		return
+	}
+	onKey(repeatWparam, repeatLparam, true)
+	repeatNext = now.Add(repeatInterval)
+	noteInput()
+}
 
 // SetupWindow records the window parameters. The window is created in Run, on
 // the UI thread.
@@ -97,6 +128,22 @@ func SetupWindow(title string, width, height int) {
 	winTitle = title
 	winW = width
 	winH = height
+}
+
+// CenterWindow requests that the window open centered on the primary monitor.
+// Best-effort. Call after SetupWindow and before Run. Mutually exclusive with
+// PositionWindow; the last call wins.
+func CenterWindow() {
+	winPlace = placeCenter
+}
+
+// PositionWindow requests that the window open with its top-left corner at
+// (x, y) in screen points (origin at the top-left of the primary monitor).
+// Best-effort. Call after SetupWindow and before Run. Mutually exclusive with
+// CenterWindow; the last call wins.
+func PositionWindow(x, y int) {
+	winPlace = placeAt
+	winX, winY = x, y
 }
 
 // Run opens the window and runs the Win32 message loop. It must be called
@@ -108,7 +155,8 @@ func Run(fn shirei.FrameFn) {
 
 	frameFn = fn
 
-	shirei.GlyphCacheBudgetBytes = glyphCacheBudget
+	shirei.GetHost().GlyphCacheBudgetBytes = glyphCacheBudget
+	shirei.GetHost().EscapeHatchBackendContext = Context{}
 
 	enableDPIAwareness()
 	createWindow()
@@ -167,13 +215,26 @@ func createWindow() {
 		fmt.Printf("[win32] creation dpi %d -> client %dx%d px\n", dpi, uintptr(winW)*dpi/96, uintptr(winH)*dpi/96)
 	}
 
+	x, y := uintptr(cwUseDefault), uintptr(cwUseDefault)
+	switch winPlace {
+	case placeCenter:
+		sx, _, _ := procGetSystemMetrics.Call(smCXScreen)
+		sy, _, _ := procGetSystemMetrics.Call(smCYScreen)
+		x = uintptr(int32((int(sx) - wWidth) / 2))
+		y = uintptr(int32((int(sy) - wHeight) / 2))
+	case placeAt:
+		// Position is in logical points; CreateWindowEx wants device pixels.
+		x = uintptr(int32(uintptr(winX) * dpi / 96))
+		y = uintptr(int32(uintptr(winY) * dpi / 96))
+	}
+
 	title, _ := syscall.UTF16PtrFromString(winTitle)
 	h, _, err := procCreateWindowExW.Call(
 		0,
 		uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(title)),
 		wsOverlappedWindow|wsVisible,
-		cwUseDefault, cwUseDefault,
+		x, y,
 		uintptr(wWidth), uintptr(wHeight),
 		0, 0, uintptr(hinstance), 0,
 	)
@@ -223,6 +284,8 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		return 1 // we paint every pixel; skip the background erase (no flicker)
 
 	case wmSize:
+		// Size change invalidates the last presented content.
+		havePresented = false
 		dirty = true
 		invalidate()
 		return 0
@@ -234,12 +297,13 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 			uintptr(nr.Left), uintptr(nr.Top),
 			uintptr(nr.Right-nr.Left), uintptr(nr.Bottom-nr.Top),
 			swpNozorder|swpNoactivate)
+		havePresented = false
 		dirty = true
 		invalidate()
 		return 0
 	case wmKillfocus:
-		cancelRepeat() // PATCHED (v0.11)
 		clearComposition()
+		cancelRepeat() // PATCHED (v0.11): focus lost — stop repeating
 		noteInput()
 		return 0
 
@@ -339,10 +403,10 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		return r
 
 	case wmTimer:
+		pumpRepeat() // PATCHED (v0.11): synthesize a due key repeat before any redraw decision
 		// wantsFrame covers in-frame animation; FrameRequested covers
 		// background RequestNextFrame when the last frame settled to idle
 		// (matches cocoa's shireiFrameRequested check on the display link).
-		pumpRepeat() // PATCHED (v0.11): synthesize a due key repeat before any redraw decision
 		if wantsFrame || shirei.FrameRequested() {
 			dirty = true
 			invalidate()
@@ -350,6 +414,11 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		return 0
 
 	case wmDestroy:
+		releaseDIB()
+		if memDC != 0 {
+			procDeleteDC.Call(uintptr(memDC))
+			memDC = 0
+		}
 		procPostQuitMessage.Call(0)
 		return 0
 	}
@@ -383,30 +452,42 @@ func onPaint() {
 	if cw <= 0 || ch <= 0 {
 		return
 	}
-	if !ensureDIB(cw, ch) {
+
+	needProduce := dirty || !haveFrame
+	dirty = false
+
+	if needProduce {
+		out, skipped := produceFrame(cw, ch)
+		if !skipped {
+			renderAndPresent(hdc, cw, ch, out)
+		}
+		haveFrame = true
 		return
 	}
 
-	if dirty || !haveFrame {
-		produceAndRender(cw, ch)
-		dirty = false
+	// Expose / repaint without new content: re-BitBlt the last DIB.
+	if haveFrame {
+		if !ensureDIB(cw, ch) {
+			return
+		}
+		t0 := time.Now()
+		procBitBlt.Call(hdc, 0, 0, uintptr(cw), uintptr(ch),
+			uintptr(memDC), 0, 0, srccopy)
+		perfRecordPresent(time.Since(t0))
 	}
-
-	// Blit the rendered DIB to the window (GDI copies, so no tearing concern).
-	procBitBlt.Call(hdc, 0, 0, uintptr(cw), uintptr(ch),
-		uintptr(memDC), 0, 0, srccopy)
 }
 
-// produceAndRender runs one shirei frame and rasterizes it into the DIB buffer.
-func produceAndRender(cw, ch int) {
+// produceFrame runs one shirei frame and returns whether paint can be skipped
+// because the content hash matches what is already on screen.
+func produceFrame(cw, ch int) (out shirei.FrameOutputData, skipped bool) {
 	scale := dpiScale()
-	shirei.WindowScale = scale
-	shirei.WindowSize = shirei.Vec2{float32(cw) / scale, float32(ch) / scale}
+	shirei.GetHost().WindowScale = scale
+	shirei.GetHost().WindowSize = shirei.Vec2{float32(cw) / scale, float32(ch) / scale}
 
 	flushPendingText()
 
 	t0 := time.Now()
-	out := shirei.RunFrameFn(frameFn)
+	out = shirei.RunFrameFn(frameFn)
 	perfRecordProduce(time.Since(t0))
 	updateImeCandidateWindow()
 
@@ -416,12 +497,10 @@ func produceAndRender(cw, ch int) {
 	if out.Paste {
 		appendPendingText(getClipboard())
 	}
+	if out.OpenURL != "" {
+		openURL(out.OpenURL)
+	}
 
-	t1 := time.Now()
-	softRenderer.RenderInto(dibBuf, dibW*4, cw, ch, scale, out.Surfaces)
-	perfRecordPaint(time.Since(t1))
-
-	haveFrame = true
 	wantsFrame = out.NextFrameRequested
 	// Keep the timer running even when this frame settled: a later
 	// RequestNextFrame from a background goroutine must be able to wake
@@ -429,6 +508,54 @@ func produceAndRender(cw, ch int) {
 	// wmTimer only invalidates when wantsFrame || FrameRequested, so idle
 	// ticks are cheap.
 	startTimer()
+
+	if havePresented && out.SurfacesHash == lastPresentedHash && cw == presentW && ch == presentH {
+		perfRecordPresentSkip()
+		return out, true
+	}
+	return out, false
+}
+
+// renderAndPresent rasterizes out.Surfaces into the DIB and BitBlts to the window.
+func renderAndPresent(hdc uintptr, cw, ch int, out shirei.FrameOutputData) {
+	scale := shirei.GetHost().WindowScale
+	if scale <= 0 {
+		scale = 1
+	}
+	if !ensureDIB(cw, ch) {
+		return
+	}
+	t0 := time.Now()
+	softRenderer.RenderInto(dibBuf, dibW*4, cw, ch, scale, out.Surfaces)
+	perfRecordRender(time.Since(t0))
+
+	t1 := time.Now()
+	if hdc != 0 {
+		procBitBlt.Call(hdc, 0, 0, uintptr(cw), uintptr(ch),
+			uintptr(memDC), 0, 0, srccopy)
+	} else {
+		// No paint DC (e.g. interruption frame): blit via window DC.
+		wdc, _, _ := procGetDC.Call(uintptr(hwnd))
+		if wdc != 0 {
+			procBitBlt.Call(wdc, 0, 0, uintptr(cw), uintptr(ch),
+				uintptr(memDC), 0, 0, srccopy)
+			procReleaseDC.Call(uintptr(hwnd), wdc)
+		}
+	}
+	perfRecordPresent(time.Since(t1))
+
+	lastPresentedHash = out.SurfacesHash
+	presentW, presentH = cw, ch
+	havePresented = true
+}
+
+// produceAndRender is used by IME interruption frames (no WM_PAINT DC).
+func produceAndRender(cw, ch int) {
+	out, skipped := produceFrame(cw, ch)
+	if skipped {
+		return
+	}
+	renderAndPresent(0, cw, ch, out)
 }
 
 // ensureDIB (re)creates the DIB present surface when the client size changes.
@@ -548,7 +675,7 @@ func stopTimer() {
 // onMouse records pointer position (and an optional click/release). lParam packs
 // the client-area position in device pixels; shirei works in logical points.
 func onMouse(lparam uintptr, button, action int) {
-	scale := shirei.WindowScale
+	scale := shirei.GetHost().WindowScale
 	if scale <= 0 {
 		scale = 1
 	}
@@ -556,19 +683,19 @@ func onMouse(lparam uintptr, button, action int) {
 	y := float32(int16((lparam>>16)&0xffff)) / scale
 
 	np := shirei.Vec2{x, y}
-	prev := shirei.InputState.MousePoint
-	shirei.FrameInput.Motion = shirei.Vec2Add(shirei.FrameInput.Motion, shirei.Vec2Sub(np, prev))
-	shirei.InputState.MousePoint = np
+	prev := shirei.GetInputState().MousePoint
+	shirei.GetFrameInput().Motion = shirei.Vec2Add(shirei.GetFrameInput().Motion, shirei.Vec2Sub(np, prev))
+	shirei.GetInputState().MousePoint = np
 
 	updateModifiers()
 
 	switch action {
 	case int(shirei.MouseClick):
-		shirei.InputState.MouseButton = shirei.MouseButton(button)
-		shirei.FrameInput.Mouse = shirei.MouseClick
+		shirei.GetInputState().MouseButton = shirei.MouseButton(button)
+		shirei.GetFrameInput().Mouse = shirei.MouseClick
 	case int(shirei.MouseRelease):
-		shirei.InputState.MouseButton = shirei.MouseButton(button)
-		shirei.FrameInput.Mouse = shirei.MouseRelease
+		shirei.GetInputState().MouseButton = shirei.MouseButton(button)
+		shirei.GetFrameInput().Mouse = shirei.MouseRelease
 	}
 }
 
@@ -579,9 +706,9 @@ func onWheel(wparam uintptr, horizontal bool) {
 	delta := float32(int16((wparam>>16)&0xffff)) / 120
 	amt := -delta * 30
 	if horizontal {
-		shirei.FrameInput.Scroll = shirei.Vec2Add(shirei.FrameInput.Scroll, shirei.Vec2{amt, 0})
+		shirei.GetFrameInput().Scroll = shirei.Vec2Add(shirei.GetFrameInput().Scroll, shirei.Vec2{amt, 0})
 	} else {
-		shirei.FrameInput.Scroll = shirei.Vec2Add(shirei.FrameInput.Scroll, shirei.Vec2{0, amt})
+		shirei.GetFrameInput().Scroll = shirei.Vec2Add(shirei.GetFrameInput().Scroll, shirei.Vec2{0, amt})
 	}
 }
 
@@ -595,46 +722,13 @@ func onKey(wparam, lparam uintptr, down bool) {
 		return
 	}
 	if down {
-		shirei.FrameInput.Key = code
-		g.SliceAddUniq(&shirei.InputState.DownKeys, code)
+		shirei.GetFrameInput().Key = code
+		g.SliceAddUniq(&shirei.GetInputState().DownKeys, code)
 		armRepeat(wparam, lparam) // PATCHED (v0.11)
 	} else {
-		g.SliceRemove(&shirei.InputState.DownKeys, code)
+		g.SliceRemove(&shirei.GetInputState().DownKeys, code)
 		cancelRepeat() // PATCHED (v0.11)
 	}
-}
-
-// armRepeat captures the wparam/lparam of every key press so pumpRepeat can
-// re-fire the same key. Native WM_KEYDOWN auto-repeats call this on every
-// repeat, pushing repeatNext forward by repeatDelay — so when native repeat
-// is working, pumpRepeat is a no-op. When native repeat isn't working
-// (observed on some setups — see the v0.11 marker at the var block),
-// pumpRepeat synthesizes presses at repeatInterval. PATCHED (v0.11).
-func armRepeat(wparam, lparam uintptr) {
-	repeatWparam = wparam
-	repeatLparam = lparam
-	repeatArmed = true
-	repeatNext = time.Now().Add(repeatDelay)
-}
-
-// cancelRepeat stops pumpRepeat from synthesizing further presses. Called on
-// key release and on focus loss. PATCHED (v0.11).
-func cancelRepeat() { repeatArmed = false }
-
-// pumpRepeat synthesizes one WM_KEYDOWN if a held key's repeat is due.
-// Called from wmTimer (16 ms cadence after the first frame). Cheap when no
-// key is armed. PATCHED (v0.11).
-func pumpRepeat() {
-	if !repeatArmed || repeatInterval <= 0 {
-		return
-	}
-	now := time.Now()
-	if now.Before(repeatNext) {
-		return
-	}
-	onKey(repeatWparam, repeatLparam, true)
-	repeatNext = now.Add(repeatInterval)
-	noteInput()
 }
 
 // onChar handles a typed character (WM_CHAR delivers UTF-16 code units).
@@ -656,7 +750,7 @@ func onChar(u uint16) {
 	if r < 0x20 || r == 0x7f {
 		return
 	}
-	if shirei.InputState.Modifiers&(shirei.ModCmd|shirei.ModCtrl) != 0 {
+	if shirei.GetInputState().Modifiers&(shirei.ModCmd|shirei.ModCtrl) != 0 {
 		return
 	}
 	appendPendingText(string(r))
@@ -670,7 +764,7 @@ func flushPendingText() {
 	if pendingText == "" {
 		return
 	}
-	shirei.FrameInput.Text += pendingText
+	shirei.GetFrameInput().Text += pendingText
 	pendingText = ""
 }
 
@@ -735,14 +829,14 @@ func imeCompositionUTF16(himc uintptr, index uintptr) []uint16 {
 }
 
 func clearComposition() {
-	shirei.InputState.Composition = ""
-	shirei.InputState.CompositionSel = [2]int{}
+	shirei.GetInputState().Composition = ""
+	shirei.GetInputState().CompositionSel = [2]int{}
 }
 
 func setCompositionUTF16(u16 []uint16) {
 	cursor := utf16UnitOffsetToRuneOffset(u16, len(u16))
-	shirei.InputState.Composition = string(utf16.Decode(u16))
-	shirei.InputState.CompositionSel = [2]int{cursor, cursor}
+	shirei.GetInputState().Composition = string(utf16.Decode(u16))
+	shirei.GetInputState().CompositionSel = [2]int{cursor, cursor}
 }
 
 func utf16UnitOffsetToRuneOffset(u16 []uint16, offset int) int {
@@ -756,7 +850,7 @@ func utf16UnitOffsetToRuneOffset(u16 []uint16, offset int) int {
 }
 
 func updateImeCandidateWindow() {
-	if shirei.InputState.Composition == "" {
+	if shirei.GetInputState().Composition == "" {
 		return
 	}
 	himc, release := imeContext()
@@ -767,7 +861,7 @@ func updateImeCandidateWindow() {
 
 	form := candidateForm{
 		Style:      cfsCandidatepos,
-		CurrentPos: candidatePoint(shirei.CompositionPos, shirei.WindowScale),
+		CurrentPos: candidatePoint(shirei.GetHost().CompositionPos, shirei.GetHost().WindowScale),
 	}
 	procImmSetCandidateWindow.Call(himc, uintptr(unsafe.Pointer(&form)))
 }
@@ -783,7 +877,7 @@ func candidatePoint(pos shirei.Vec2, scale float32) win32Point {
 }
 
 func commitImeBeforeInterruption() {
-	if shirei.InputState.Composition == "" {
+	if shirei.GetInputState().Composition == "" {
 		return
 	}
 	himc, release := imeContext()
@@ -802,10 +896,8 @@ func produceInterruptionFrame() {
 	if cw <= 0 || ch <= 0 {
 		return
 	}
-	if !ensureDIB(cw, ch) {
-		return
-	}
 	produceAndRender(cw, ch)
+	haveFrame = true
 	dirty = false
 }
 
@@ -825,7 +917,7 @@ func updateModifiers() {
 	if keyDown(vkLwin) || keyDown(vkRwin) {
 		m |= shirei.ModSuper
 	}
-	shirei.InputState.Modifiers = m
+	shirei.GetInputState().Modifiers = m
 
 	syncModKey(m, shirei.ModShift, shirei.KeyShift)
 	syncModKey(m, shirei.ModCtrl, shirei.KeyCtrl)
@@ -835,9 +927,9 @@ func updateModifiers() {
 
 func syncModKey(m, bit shirei.Modifiers, k shirei.KeyCode) {
 	if m&bit != 0 {
-		g.SliceAddUniq(&shirei.InputState.DownKeys, k)
+		g.SliceAddUniq(&shirei.GetInputState().DownKeys, k)
 	} else {
-		g.SliceRemove(&shirei.InputState.DownKeys, k)
+		g.SliceRemove(&shirei.GetInputState().DownKeys, k)
 	}
 }
 
@@ -889,6 +981,8 @@ func mapVKey(vk uint32) shirei.KeyCode {
 		return shirei.KeyHome
 	case vkEnd:
 		return shirei.KeyEnd
+	case vkInsert:
+		return shirei.KeyInsert
 	case vkPrior:
 		return shirei.KeyPageUp
 	case vkNext:
@@ -942,6 +1036,14 @@ func getClipboard() string {
 		ptr = unsafe.Add(ptr, 2)
 	}
 	return string(utf16.Decode(u16))
+}
+
+// openURL opens url in the system browser (FrameOutputData.OpenURL). Errors ignored.
+func openURL(url string) {
+	if url == "" {
+		return
+	}
+	_ = browser.OpenURL(url)
 }
 
 func setClipboard(s string) {

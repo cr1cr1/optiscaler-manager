@@ -13,7 +13,7 @@ builds:
       - CGO_ENABLED=0
     goos:
       - linux
-      # darwin is blocked by the toolchain, not by config: shirei v0.5.2's
+      # darwin is blocked by the toolchain, not by config: shirei v0.6.6's
       # only macOS backend (vendored cocoabackend) is cgo + Cocoa/QuartzCore/
       # IOSurface, so a darwin build needs an Apple SDK. CGO_ENABLED=0 fails
       # at compile (cocoabackend/perf_darwin.go references symbols defined in

@@ -382,7 +382,7 @@ func TestGrid_CursorRingDistinctFromHover(t *testing.T) {
 	if hoverRect == m.gridCursorRect {
 		t.Fatalf("last card rect equals cursor rect; need two distinct cards: %+v", hoverRect)
 	}
-	InputState.MousePoint = Vec2{hoverRect.Origin[0] + hoverRect.Size[0]/2, hoverRect.Origin[1] + hoverRect.Size[1]/2}
+	GetInputState().MousePoint = Vec2{hoverRect.Origin[0] + hoverRect.Size[0]/2, hoverRect.Origin[1] + hoverRect.Size[1]/2}
 	keyFrame(KeyCodeNone, 0, m.rootView)
 	if m.hoveredDir != rows[last].InstallDir {
 		t.Errorf("hoveredDir %q, want %q (hovered non-cursor card keeps its hover treatment)", m.hoveredDir, rows[last].InstallDir)
@@ -390,7 +390,7 @@ func TestGrid_CursorRingDistinctFromHover(t *testing.T) {
 	if m.gridCursorRect == hoverRect {
 		t.Error("cursor ring followed the hovered card; want it pinned to the cursor card")
 	}
-	InputState.MousePoint = Vec2{-50, -50}
+	GetInputState().MousePoint = Vec2{-50, -50}
 
 	// Selecting a card opens the panel but must not move the cursor
 	// (selection ≠ cursor in grid mode). Programmatic sess.Select does
@@ -446,7 +446,7 @@ func TestGrid_TabPastLastVisibleCardScrollsForward(t *testing.T) {
 	m := newModel(Config{Session: sess})
 
 	headlessFrames(t, 700, 400)
-	VirtualListView_ScrollTo("grid", 0)  // reset scroll inherited from prior tests
+	VirtualListView_ScrollToIndex("grid", 0) // reset scroll inherited from prior tests
 	keyFrame(KeyCodeNone, 0, m.rootView) // scroll applies
 	keyFrame(KeyCodeNone, 0, m.rootView) // cards re-render at the top
 	vr := m.visibleRows()
