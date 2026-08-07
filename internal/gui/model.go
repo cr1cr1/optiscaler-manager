@@ -74,6 +74,7 @@ type model struct {
 	cols                int                           // current grid columns, derived from live width
 	cardW               int                           // current card width in px, derived from live width
 	cardH               int                           // current card height in px
+	coverExists         map[string]bool               // memoized cover-file existence (avoids a per-card os.Stat every frame; v0.6.6's loader is panic-safe on missing files but we still want the placeholder fallback)
 	exitNow             func(code int)                // quit seam: os.Exit in production, stubbed in tests
 	switchVersionFn     func(gameDir, version string) // version-switch dispatch seam: nil in production (Session.SwitchVersion), stubbed in tests
 	versionDDRects      map[string]Rect               // screen rects of rendered version-dropdown triggers by install dir (dropdown test seam)

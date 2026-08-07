@@ -273,7 +273,7 @@ and `haveFrame = true` after `surface.Commit`/`b.busy = true`.
 
 ## shirei: headless identity-tree reset (v0.16)
 
-- **File**: `vendor/go.hasen.dev/shirei/renderpng.go` (`ResetInputSession`: reset `ui.identRoot`).
+- **File**: `vendor/go.hasen.dev/shirei/renderpng.go` (`ResetInputSession`: reset `ui.identRoot` + build buffers).
 - **Marker**: `// PATCHED by optiscaler-manager (v0.16)`.
 - **Guard**: `internal/gui/csd_test.go` (checks for the v0.16 marker in `renderpng.go`).
 
@@ -282,11 +282,12 @@ and `haveFrame = true` after `surface.Commit`/`b.busy = true`.
 but not the identity tree, so `Use`-hook-backed widget state — virtual-list
 scroll and height caches — leaked across back-to-back tests. v0.6.6's
 stricter virtual list exposed this as order-dependent failures. The patch
-resets `ui.identRoot` (and `currentIdent`) to a fresh root, giving true
-per-run isolation while preserving `Host` (the caller sets `WindowSize`).
+resets `ui.identRoot` (and `currentIdent`, the surfaces/popups/pending-commands
+build buffers, `surfaceHash`, and the sweep counter) to a fresh state, giving
+true per-run isolation while preserving `Host` (the caller sets `WindowSize`).
 
 **Scope.** Headless only — every `ResetInputSession` caller is headless
 (`RenderToImage`, the GUI test helper); live backends never call it.
 
-**Reapplying after `go mod vendor`.** Re-add the `identRoot`/`currentIdent`
-reset at the end of `ResetInputSession`.
+**Reapplying after `go mod vendor`.** Re-add the identity-tree + build-buffer
+reset block at the end of `ResetInputSession`.

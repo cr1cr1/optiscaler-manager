@@ -365,16 +365,31 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 // coverArt renders the game's cover scaled into the cover box. The covers
 // package hands back a tiny dark placeholder file when a game has no art;
 // that counts as "no cover" and gets the gradient placeholder instead. A
-// path whose file was deleted (e.g. the user wiped the cover cache) must
-// not reach shirei's image loader — it nil-dereferences on missing files.
+// path whose file was deleted (e.g. the user wiped the cover cache) gets
+// the placeholder too — v0.6.6's image loader is panic-safe on missing
+// files, but a blank slot is worse than the gradient. Existence is memoized
+// per path (coverOK) so the render path does no I/O after the first frame.
 func (m *model) coverArt(e ui.GameRow, w, h float32) {
-	if e.CoverPath != "" && !isPlaceholderCover(e.CoverPath) {
-		if _, err := os.Stat(e.CoverPath); err == nil {
-			ImageFill(e.CoverPath, Vec2{w, h})
-			return
-		}
+	if e.CoverPath != "" && !isPlaceholderCover(e.CoverPath) && m.coverOK(e.CoverPath) {
+		ImageFill(e.CoverPath, Vec2{w, h})
+		return
 	}
 	coverPlaceholder(e.Title, w, h)
+}
+
+// coverOK reports whether the cover file exists, memoized per path. Cover
+// paths are stable (one per game, from the covers cache), so this is one
+// stat per cover for the life of the model instead of one per card per frame.
+func (m *model) coverOK(path string) bool {
+	if v, ok := m.coverExists[path]; ok {
+		return v
+	}
+	_, err := os.Stat(path)
+	if m.coverExists == nil {
+		m.coverExists = make(map[string]bool, 8)
+	}
+	m.coverExists[path] = err == nil
+	return err == nil
 }
 
 // isPlaceholderCover reports whether path is the covers package's generated
