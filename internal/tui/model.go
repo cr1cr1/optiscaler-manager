@@ -380,6 +380,8 @@ func (m Model) detailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if row := m.detailRow(); row != nil && row.Actionable {
 			m.sess.Rollback(dir)
 		}
+	case "d":
+		m.sess.ToggleDisabled(dir)
 	case "o":
 		if row := m.detailRow(); row != nil && row.CanOpenINI() {
 			return m, openINIEditor(m.sess, dir)

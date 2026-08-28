@@ -401,6 +401,9 @@ func (m Model) detailView(w, contentH int) string {
 		if status == "" {
 			status = "not installed"
 		}
+		if row.Disabled {
+			status += " (disabled)"
+		}
 		eac := "no"
 		if row.EAC {
 			eac = "yes"
@@ -440,11 +443,20 @@ func (m Model) detailView(w, contentH int) string {
 		if !row.Actionable {
 			rollback = styleDimmedAction.Render(rollback + " (interrupted installs only)")
 		}
+		b.WriteString(rollback + "\n")
+		disable := "  d  disable OptiScaler"
+		if row.Disabled {
+			disable = "  d  enable OptiScaler"
+		}
+		if row.Status != "committed" && row.Status != "external" {
+			disable = styleDimmedAction.Render("  d  disable OptiScaler (installed games only)")
+		}
+		b.WriteString(disable + "\n")
 		openINI := "  o  open INI"
 		if !row.CanOpenINI() {
 			openINI = styleDimmedAction.Render(openINI + " (installed games only)")
 		}
-		b.WriteString(rollback + "\n" + openINI + "\n")
+		b.WriteString(openINI + "\n")
 		b.WriteString(styleMuted.Render("  esc  back"))
 		content = b.String()
 	}

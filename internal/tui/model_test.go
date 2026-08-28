@@ -29,6 +29,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
@@ -348,6 +349,50 @@ func TestDetailKeyOpenINIAllowedForExternal(t *testing.T) {
 			t.Error("never-installed row produced an editor cmd, want gated off")
 		}
 	})
+}
+
+// TestDetailKeyToggleDisabled: 'd' on an installed game renames its hook
+// to .disabled and back, mirroring the GUI's Disable/Enable button.
+func TestDetailKeyToggleDisabled(t *testing.T) {
+	settingsDir := t.TempDir()
+	e := newTestEnv(t, func(d *ui.Deps) { d.SettingsRoot = settingsDir })
+	hook := filepath.Join(e.bin, "dxgi.dll")
+	if err := os.WriteFile(hook, testutil.StringInfoPE(false, map[string]string{"ProductName": "OptiScaler"}, [4]uint16{}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seedGamesCache(t, settingsDir, []ui.GameRow{{
+		Title:        "Game One",
+		AppID:        "100",
+		InstallDir:   e.gameRoot,
+		InjectionDir: e.bin,
+		Platform:     "Steam",
+		Status:       domain.StatusCommitted,
+	}})
+	e.sess.Start(context.Background())
+	m := Model{sess: e.sess, screen: screenDetail, detailDir: e.gameRoot}
+	dKey := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}
+
+	if _, cmd := m.detailKey(dKey); cmd != nil {
+		t.Fatal("disable returned a cmd, want a synchronous rename")
+	}
+	if _, err := os.Stat(hook + ".disabled"); err != nil {
+		t.Fatalf("hook not renamed away after 'd': %v", err)
+	}
+	row := m.detailRow()
+	if row == nil || !row.Disabled {
+		t.Fatalf("row.Disabled = %+v after 'd', want true", row)
+	}
+
+	if _, cmd := m.detailKey(dKey); cmd != nil {
+		t.Fatal("enable returned a cmd, want a synchronous rename")
+	}
+	if _, err := os.Stat(hook); err != nil {
+		t.Fatalf("hook not restored after second 'd': %v", err)
+	}
+	if row := m.detailRow(); row == nil || row.Disabled {
+		t.Fatalf("row.Disabled = %+v after second 'd', want false", row)
+	}
+	t.Log("d toggles disable/enable via hook rename")
 }
 
 // TestTUIConfirmEACPrompt: installing an EAC game surfaces the confirm
