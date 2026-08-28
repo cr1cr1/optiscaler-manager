@@ -2305,3 +2305,28 @@ catch-up above), all landed:
   invisible.
 
 Verified: `go vet ./...` clean; `go test ./...` clean (Linux).
+
+## 2026-08-28 — disable/enable toggle + two-line card titles
+
+- Disable/Enable: `Session.ToggleDisabled` renames the game's OptiScaler
+  injection hook to `<name>.disabled` and back (dxgi.dll, winmm.dll,
+  version.dll, dbghelp.dll, d3d12.dll, wininet.dll, winhttp.dll,
+  OptiScaler.asi — the new `pever.hookCandidates`, identity-gated like
+  DetectOptiScaler so a DXVK dxgi.dll is never touched). A hook carrying
+  the suffix means "installed but the game will not load it": scan
+  enrichment and warm-boot reconcile flag `GameRow.Disabled`; an
+  unmanaged dir whose only hook is disabled still surfaces as external.
+  Status stays committed/external — the manifest is untouched, nothing
+  is uninstalled. GUI: Disable/Enable button in the detail panel plus a
+  gray "disabled" pill on the card and in the panel. TUI: `d` key on the
+  detail screen, "(disabled)" status marker, dimmed actions-list line
+  for games with no install.
+- GUI cards: the title gets a fixed two-line slot (FixHeight + Clip) and
+  `cardContentH` reserves it. Titles soft-wrap at the card's inner
+  width; before, a 2-line title overflowed the budgeted one line and
+  the pill/button rows paid for it. Anything past two lines clips.
+  `TestGrid_FocusedArrowsMoveFocusAndCursor` now allows the documented
+  deferred-focus handoff on the backward scroll jump (taller rows
+  virtualize the previous row fully away).
+
+Verified: `go vet ./...` clean; `go test ./...` clean (Linux).
