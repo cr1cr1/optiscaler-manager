@@ -120,4 +120,10 @@ Launching a game is fire-and-forget by design:
   are waited on, so a hung opener can't leak a zombie or block the session.
 - Proton is never invoked directly (`proton run` is an upstream-unsupported
   path); Steam games launch through `steam://rungameid`, leaving Proton
-  selection to Steam.
+  selection to Steam. The one carve-out is the opt-in umu-launcher
+  integration on Linux: manual-store Windows binaries launch through
+  `umu-run` (not raw `proton run`) with a deterministic per-game prefix
+  under the state root, and the Proton build is user-pinnable via
+  `UmuProtonPath` (empty = auto-detect from Steam/Bottles/umu runner
+  dirs). The toggle defaults off; off-Linux the hook is nil and this path
+  never fires.

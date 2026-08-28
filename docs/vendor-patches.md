@@ -8,6 +8,10 @@ Local patches applied on top of vendored dependencies (`vendor/`). Every
 patch carries a marker comment so it can be found and reapplied, and is
 guarded by a test so a silent revert (e.g. after `go mod vendor`) fails CI.
 
+All patches below were reapplied verbatim onto shirei v0.6.7 (2026-08-28);
+the "v0.6.6's …" descriptions remain accurate because v0.6.7 did not
+change the patched regions.
+
 ## shirei: dark Wayland CSD titlebar (v0.5)
 
 - **File**: `vendor/go.hasen.dev/shirei/waylandbackend/waylanddecor_linux.go`
@@ -20,7 +24,7 @@ titlebar and its controls to the app's dark palette.
 
 **Why.** The whole GUI is dark-themed; a light titlebar on Wayland looks
 broken next to it. The fix lives in the vendor tree because shirei has no
-theming hook for its decorations and the pinned v0.6.6 cannot be changed
+theming hook for its decorations and the pinned release cannot be changed
 upstream on our schedule.
 
 **Scope.** Wayland only. On X11 the window manager draws the decorations,

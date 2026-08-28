@@ -2,7 +2,7 @@
 
 Go desktop app that manages [OptiScaler](https://github.com/optiscaler/OptiScaler)
 installations for local games. GUI: [go-shirei](https://github.com/hasenj/go-shirei)
-(`go.hasen.dev/shirei`, pinned v0.6.6). Current release: v0.7, teaching
+(`go.hasen.dev/shirei`, pinned v0.6.7). Current release: v0.12; v0.7 taught
 scanning the difference between a game folder and a library root —
 manually added containers become scan roots whose games surface as
 individual rows; v0.6 added
@@ -15,7 +15,7 @@ version-info identity with adopt/refuse/restore semantics; multi-store
 | File | OKF type | Contents |
 |------|----------|----------|
 | `log.md` | reserved | Milestone/task log, append-only |
-| `scope.md` | reference | Scope by version (v0.1–v0.7), settled decisions, cut list |
+| `scope.md` | reference | Scope by version (v0.1–v0.12), settled decisions, cut list |
 | `architecture.md` | explanation | Package layout, data flow, startup cache, scan phases, external detection, game-dir classification, cross-platform shape, cancellation model |
 | `safety.md` | explanation | Install invariants, manifest, rollback model, cancellation + launch safety |
 | `plan.md` | reference | Milestone sequence, waves, verification gates |

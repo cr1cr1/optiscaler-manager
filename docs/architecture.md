@@ -55,7 +55,13 @@ internal/
               disk cache, no auth)
   protondb/   appid → compatibility tier (protondb.com summaries API; 7d
               TTL disk cache, 429 cooldown)
+  pcgw/       PCGamingWiki secondary title source (keyless MediaWiki API:
+              opensearch + Cargo reverse lookup; 30 req/min pacing,
+              429/5xx cooldown, 30d disk cache with negatives)
   settings/   persisted preferences (settings.json in the data root)
+  version/    OptiScaler version-string ordering for upgrade eligibility
+              (leading-v normalized, numeric segments, pre-release older
+              than release; deliberately not full semver)
    pickdir/    OS directory dialog (zenity→kdialog on Linux,
                PowerShell FolderBrowserDialog on Windows, osascript on macOS)
    umu/        umu-launcher integration (Linux only). Detect parses
@@ -74,6 +80,10 @@ internal/
                without a shell. Never `proton run`; umu-run invocations
                live in internal/umu and are wired via Deps.UmuLauncher in
                Session.doLaunch (manual-store Windows binaries on Linux)
+  termopen/   open a text file in the user's terminal editor, detached
+               (Linux): $EDITOR verbatim, $TERMINAL's basename picks the
+               run-a-command convention, else the foot→konsole→
+               gnome-terminal→kitty→alacritty→xterm chain; no shell
   app/        shared orchestration: ScanLibrary, ScanAllLibraries (version
               enrichment via classify+pever on managed installs), Install,
               Uninstall, Rollback, ManualEntry, versioned bundle cache,

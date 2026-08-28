@@ -57,6 +57,11 @@ Critical path: M0 → M1 → M2d → M3 → M4 → M5 → M6 → M7.
 - **M6 — GUI GATE.** Tests: `TestActionListSortsActionableFirst`,
   `TestFilterNarrowsList`, `TestEACModalShownBeforeInstall`,
   `TestRenderToPNGSmoke`; run with `-race`. Adds shirei v0.5.2 (+vendor).
+  (The sort/filter/EAC logic moved to `internal/ui` with the session
+  refactor — those tests now live there as `TestVisibleRowsFilterAndSort`,
+  `TestEACConfirmBlocksInstall` et al.; `internal/gui` keeps
+  `TestRenderToPNGSmoke` plus the binding tests `TestGUIBindsSessionState`
+  / `TestGUIFilterSyncsToSession`.)
   Commit: `feat(gui): action-list window with per-game install dashboard`.
 - **M7 — polish.** golangci-lint clean; `goreleaser release --snapshot` builds
   (vendored); README usage; log final entry. Commit: `docs: readme, milestone

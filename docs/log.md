@@ -2202,3 +2202,74 @@ Performance (v0.6.6-native wins + our patches):
 Verified: `go test ./...` clean (Linux); `go vet` + `GOOS=windows go vet`
 clean; `GOOS=darwin go vet` clean on the non-GUI packages (macOS GUI build
 still needs an Apple SDK — unchanged).
+
+## 2026-08-08 — perf(gui): memoize cover-file stat + headless identity reset (e09ac59)
+
+- `coverArt` did `os.Stat(e.CoverPath)` per visible card per frame — the
+  only I/O on the render path. v0.6.6's image loader is panic-safe on
+  missing files, so the stat is purely the placeholder-fallback guard.
+  Memoized existence per cover path (`coverOK`): one stat per cover for
+  the life of the model instead of one per card per frame.
+- Expanded the v0.16 headless identity reset (renderpng
+  `ResetInputSession`) from identRoot-only to the full build-buffer reset
+  (surfaces, popups, pendingCommands, surfaceHash, sweep counter). The
+  minimal reset left residual list/virtualization state that
+  intermittently failed `TestListRows_DoNotOverlap` in the full suite.
+- Considered + rejected: caching `VisibleRows` — rows mutate in place, so
+  a cache would be stale/corruption-prone, and at µs-scale it is noise
+  next to the ms-scale software raster.
+
+Verified: `go test ./...` clean (Linux), stable across repeated runs.
+
+## 2026-08-28 — Go 1.27 + dependency upgrade, ponytail markers (509cd53)
+
+- `go` directive 1.26.1 → 1.27 (mise.toml follows).
+- `go.hasen.dev/shirei` v0.6.6 → v0.6.7 (vendored). Notable bumps:
+  kong v1.15.0→v1.16.1, `golang.org/x/sys` v0.46→v0.47,
+  `golang.org/x/text` v0.40→v0.41, teatest + golden to 2026-08-23
+  snapshots, bild v0.14→v0.17; new indirect `nativewebp` (bild's WebP).
+- Documented the intentional simplifications from the full-codebase
+  review as `ponytail:` comments (ceiling + upgrade path each):
+  `internal/covers` mtime-based negative cache, `internal/launch`
+  best-effort Epic fallbacks (direct exe run; xdg-open hides failure),
+  `internal/termopen` unsupported multi-word `$TERMINAL`.
+- Regression introduced here, found 2026-08-28: `go mod vendor` dropped
+  ALL shirei vendor patches (v0.5/v0.8–v0.16), leaving `internal/gui`
+  referencing a now-nonexistent `ImageFill` — HEAD did not compile.
+  Reapplied in the next entry.
+
+## 2026-08-28 — module tidy (e0c1953)
+
+- `go mod tidy`-style prune: dropped modules no longer imported after the
+  upgrade (go.mod/go.sum/vendor only; no code changes).
+
+## 2026-08-28 — shirei vendor patches reapplied onto v0.6.7 + docs catch-up
+
+Vendor patch reapply (fixes the compile break from 509cd53):
+- Reapplied all 8 patched files (markers v0.5, v0.8–v0.16) onto the
+  vendored shirei v0.6.7 tree: `images.go`, `renderpng.go`, `shirei.go`,
+  `softrender.go`, `waylandbackend/waylandbackend_linux.go`,
+  `waylanddecor_linux.go`, `waylandkeyboard_linux.go`,
+  `win32backend/win32backend_windows.go`. Four files were unchanged
+  upstream v0.6.6 → v0.6.7 and copied verbatim; four applied with clean
+  offsets (no rejects). No adaptation needed — v0.6.7 did not touch the
+  patched regions.
+
+Docs catch-up from the full-codebase review:
+- `docs/index.md`, `docs/scope.md`, `README.dev.md`: shirei pin v0.6.6 →
+  v0.6.7; index's "Current release" v0.7 → v0.12 (tags are the source of
+  truth).
+- `docs/scope.md`: new "Later shipped scope (v0.9–v0.12)" section —
+  Linux-only ProtonDB, per-game version switching, umu-launcher
+  integration (all shipped, previously only in this log).
+- `docs/safety.md`: resolved the "Proton is never invoked directly"
+  contradiction with the opt-in umu carve-out (`umu-run`, per-game
+  prefix, user-pinnable `PROTONPATH`).
+- `docs/architecture.md`: package map gained `internal/pcgw`,
+  `internal/version`, `internal/termopen`.
+- `docs/plan.md`: M6 test names annotated with their post-session-
+  refactor homes (`TestVisibleRowsFilterAndSort` et al.).
+- `docs/vendor-patches.md`: noted the verbatim reapply onto v0.6.7.
+
+Verified: `go vet ./...` clean (linux, windows, darwin non-GUI);
+`go test ./...` clean (Linux, all 27 packages).

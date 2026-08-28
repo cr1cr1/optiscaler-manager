@@ -147,7 +147,7 @@ only with new evidence.
   verified by compile and by linux-executed parser tests, not by running the
   suite there (W3 decision).
 - Release artifacts are linux/amd64 + windows/amd64. **No macOS builds**:
-  shirei v0.6.6's cocoa backend is cgo + Apple frameworks, which a Linux
+  shirei v0.6.7's cocoa backend is cgo + Apple frameworks, which a Linux
   runner cannot link (needs an Apple SDK). Unlock path is a macos-latest
   runner; diagnosis lives in `.goreleaser.yml`.
 - Epic launch needs the AppName from the .item manifest; without it the exe
@@ -393,7 +393,7 @@ closed; reopen only with new evidence.
 - 7z: `github.com/bodgit/sevenzip` **gated by spike** against a real
   `Optiscaler_0.9.4-final*.7z` (BCJ2 risk); fallback = shell out to system `7z`.
 - VDF: `github.com/lewisgibson/go-vdf`. No hand-rolled parser.
-- GUI: `go.hasen.dev/shirei` **pinned v0.6.6**; all imports quarantined under
+- GUI: `go.hasen.dev/shirei` **pinned v0.6.7**; all imports quarantined under
   `internal/gui`; upgrades are deliberate tasks.
 - GitHub API: 15-minute cooldown + cached releases; fallback needs an explicit
   user prompt; requested vs resolved (asset, digest) recorded separately.
@@ -431,3 +431,30 @@ closed; reopen only with new evidence.
   PE/stem/folder tail (sources recorded; the next online scan upgrades).
 - Rows persist `TitleSource` + `SteamAppID` (games cache v5; v1–v4
   invalidated).
+
+## Later shipped scope (v0.9–v0.12)
+
+Shipped and recorded in `docs/log.md`; collected here because they settled
+decisions the per-version sections above do not cover.
+
+- **ProtonDB is Linux-only** (v0.9.0): enrichment skips the ProtonDB
+  summary call off-Linux (injectable GOOS seam on `ui.Deps`), and
+  `games.json` caches written on Linux are stripped of tiers when loaded
+  off-Linux (strip-at-load, no schema bump). The resolved Steam appid is
+  still kept for identification on every platform.
+- **Per-game version switching** (v0.10): `Session.SwitchVersion` switches
+  an installed game to a chosen OptiScaler version while preserving the
+  game's `OptiScaler.ini` (captured before the switch, written back after
+  the install leg, removed before the uninstall leg so foreign-modified
+  files don't block it). Committed rows chain uninstall→install at the
+  chosen tag; external rows adopt-install. The selectable list is
+  unique(installed ∪ cached bundles ∪ preference), semver-descending. The
+  old upgrade-offer model is retired in favor of this explicit management.
+- **umu-launcher integration** (v0.12, Linux only, opt-in): when
+  `UmuEnabled` is on and `umu-run` is on PATH, manual-store games whose
+  ExePath is a Windows binary launch through umu instead of the direct
+  exe path. Each game gets a deterministic Proton prefix at
+  `<state-root>/umu-prefixes/<sha1(installDir)[:12]>`; the Proton build is
+  user-pinnable via `UmuProtonPath` (empty = auto-detect from Steam
+  `compatibilitytools.d`, Bottles `runners/`, and umu
+  `compatibilitytools`).
