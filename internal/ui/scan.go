@@ -15,6 +15,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/app"
 	"github.com/cr1cr1/optiscaler-manager/internal/discovery"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 )
 
 // Start boots the library: a warm games cache hydrates the rows
@@ -87,6 +88,12 @@ func (s *Session) reconcileStatuses(rows []GameRow) {
 		if ok {
 			rows[i].Status = st
 			rows[i].Actionable = actionableStatus(st)
+		}
+		// The disabled flag lives on disk (a renamed hook), not in the
+		// manifest: re-probe installed rows so a toggle done while the
+		// manager was not running renders correctly.
+		if rows[i].InjectionDir != "" && (rows[i].Status == domain.StatusCommitted || rows[i].Status == domain.StatusExternal) {
+			rows[i].Disabled = pever.DisabledHook(rows[i].InjectionDir) != ""
 		}
 	}
 }
@@ -369,6 +376,7 @@ func (s *Session) toRow(ctx context.Context, e app.LibraryEntry) GameRow {
 		OptiScalerVersion: e.OptiScalerVersion,
 		Status:            e.Status,
 		Actionable:        actionableStatus(e.Status),
+		Disabled:          e.Disabled,
 		EAC:               e.EAC,
 		ModTime:           e.ModTime,
 		SteamAppID:        e.Game.SteamAppID,

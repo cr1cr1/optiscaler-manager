@@ -40,6 +40,10 @@ type GameRow struct {
 	Status       domain.Status
 	Actionable   bool
 	EAC          bool
+	// Disabled reports the install's injection hook renamed to
+	// <name>.disabled: OptiScaler is present but the game will not load
+	// it. The Disable/Enable toggle flips it.
+	Disabled bool
 	CoverPath    string
 	ModTime      time.Time
 	SteamAppID   string // resolved via Steam search or copied from a numeric AppID; "" when unknown
