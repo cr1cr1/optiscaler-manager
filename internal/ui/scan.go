@@ -34,10 +34,31 @@ func (s *Session) Start(ctx context.Context) {
 	s.st.StatusLine = fmt.Sprintf("%d games (cached)", len(rows))
 	s.st.Busy = ""
 	s.mu.Unlock()
+	s.toastInterrupted(rows)
 	// Resolve the default version so the memo is populated for the version
 	// dropdown before the next manual scan. Async: Start must not block on
 	// the resolve network call.
 	go s.warmBootResolveDefault(ctx)
+}
+
+// toastInterrupted surfaces installs left in in_progress/failed state at
+// boot: the process died mid-transaction, and only the user can choose
+// repair/rollback/retry (docs/safety.md), so the boot warns and the
+// actionable rows carry the Rollback affordance. Nothing is auto-deleted.
+func (s *Session) toastInterrupted(rows []GameRow) {
+	var titles []string
+	for _, r := range rows {
+		if actionableStatus(r.Status) {
+			titles = append(titles, r.Title)
+		}
+	}
+	switch len(titles) {
+	case 0:
+	case 1:
+		s.toast("interrupted install: "+titles[0]+", rollback to restore or install to retry", true)
+	default:
+		s.toast(fmt.Sprintf("%d interrupted installs: rollback to restore or install to retry", len(titles)), true)
+	}
 }
 
 // reconcileStatuses overrides cached row status from store manifests keyed

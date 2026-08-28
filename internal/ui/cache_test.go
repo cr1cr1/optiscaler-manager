@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,6 +85,49 @@ func TestStart_StaleSchemaCacheFallsThroughToScan(t *testing.T) {
 		}
 	}
 	t.Log("v1 cache invalidated by schema bump; Start fell through to scan")
+}
+
+// TestStart_ToastsInterruptedInstalls: a warm boot whose store holds an
+// in_progress/failed manifest (the process died mid-transaction) surfaces
+// a startup warning toast naming the repair choice, the GUI/TUI equivalent
+// of the CLI's stderr warning (docs/safety.md: surfaced with repair /
+// rollback / retry choices, never auto-deleted).
+func TestStart_ToastsInterruptedInstalls(t *testing.T) {
+	e := newTestEnv(t)
+	root := t.TempDir()
+	e.sess.deps.SettingsRoot = root
+	gameDir := filepath.Join(t.TempDir(), "InterruptedGame")
+	writeGamesCache(t, root, []GameRow{{
+		Title:      "Interrupted Game",
+		AppID:      "custom_InterruptedGame",
+		InstallDir: gameDir,
+	}})
+	m := &domain.Manifest{
+		ID:         domain.ManifestID(gameDir),
+		Status:     domain.StatusFailed,
+		GameRoot:   gameDir,
+		InstallDir: filepath.Join(gameDir, "bin"),
+	}
+	if err := e.sess.deps.Store.Save(m); err != nil {
+		t.Fatal(err)
+	}
+
+	e.sess.Start(context.Background())
+
+	snap := e.sess.Snapshot()
+	if len(snap.Rows) != 1 || !snap.Rows[0].Actionable {
+		t.Fatalf("interrupted row not actionable at boot: %+v", snap.Rows)
+	}
+	found := false
+	for _, to := range snap.Toasts {
+		if to.Warn && strings.Contains(to.Text, "interrupted") {
+			found = true
+			t.Logf("boot toast: %q", to.Text)
+		}
+	}
+	if !found {
+		t.Fatalf("no interrupted-install toast at boot: %+v", snap.Toasts)
+	}
 }
 
 // TestLoadGamesCacheStripsProtonTierOffLinux: a games.json carried over from
