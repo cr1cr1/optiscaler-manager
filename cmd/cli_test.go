@@ -190,6 +190,23 @@ func TestStartupRecoveryFlagsInterruptedManifests(t *testing.T) {
 	}
 }
 
+// The stderr warning is the CLI surface only: gui/tui surface interrupted
+// installs in-session (boot toast + the persistent banner), so a stderr
+// print there would be invisible or corrupt the alternate screen.
+func TestWarnInterruptedCLIGating(t *testing.T) {
+	for _, cmd := range []string{"gui", "tui", "version"} {
+		if warnInterruptedCLI(cmd) {
+			t.Errorf("warnInterruptedCLI(%q) = true, want suppressed (in-session surface)", cmd)
+		}
+	}
+	for _, cmd := range []string{"scan", "install", "uninstall", "rollback"} {
+		if !warnInterruptedCLI(cmd) {
+			t.Errorf("warnInterruptedCLI(%q) = false, want the stderr warning", cmd)
+		}
+	}
+	t.Log("stderr warning gated to plain CLI commands")
+}
+
 // TestScanCommandAppliesTitleOverrides: a pinned title in settings.json
 // wins on the CLI scan path too — the override is global, not GUI-only.
 func TestScanCommandAppliesTitleOverrides(t *testing.T) {

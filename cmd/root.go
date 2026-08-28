@@ -138,11 +138,7 @@ func Run(version string, args []string) error {
 	if err != nil {
 		return &ExitError{Code: 1, Err: err}
 	}
-	// The GUI and TUI boot through Session.Start, which toasts interrupted
-	// installs itself; the stderr warning is the CLI surface only.
-	switch kctx.Command() {
-	case "version", "gui", "tui":
-	default:
+	if warnInterruptedCLI(kctx.Command()) {
 		checkInterrupted(deps.ErrOut, deps.Store)
 	}
 

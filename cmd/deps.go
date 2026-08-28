@@ -71,6 +71,18 @@ func defaultCacheRoot() string {
 	return filepath.Join(os.TempDir(), "optiscaler-manager")
 }
 
+// warnInterruptedCLI reports whether command gets the interrupted-install
+// warning on stderr. The GUI and TUI surface it in-session (boot toast
+// plus the persistent banner over actionable rows), so a stderr print
+// would be invisible under the GUI or corrupt the TUI's alternate screen.
+func warnInterruptedCLI(command string) bool {
+	switch command {
+	case "version", "gui", "tui":
+		return false
+	}
+	return true
+}
+
 // checkInterrupted warns about installs left in in_progress/failed state.
 // Such manifests mean the process died mid-transaction; only the user can
 // choose repair/rollback/retry, so we surface and guide, never auto-delete.
