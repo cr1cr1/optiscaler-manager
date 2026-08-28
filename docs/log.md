@@ -2273,3 +2273,35 @@ Docs catch-up from the full-codebase review:
 
 Verified: `go vet ./...` clean (linux, windows, darwin non-GUI);
 `go test ./...` clean (Linux, all 27 packages).
+
+## 2026-08-28 — review follow-ups: jsoncache extraction, CardSize type, ui split, boot surface
+
+The five items the full-codebase review left open (deferred from the docs
+catch-up above), all landed:
+
+- `internal/jsoncache` (new): generic `Read`/`Write` plus
+  `InCooldown`/`WriteCooldown`, replacing the triplicated JSON state-file
+  code in `internal/steam` (search + both store.go caches) and
+  `internal/protondb`. File formats and TTL behavior unchanged.
+- `settings.CardSize` type with `OrDefault()` replaces the raw string
+  validated in two places (`settings.Load`, `Session.SetCardSize`); the
+  GUI preset map keys and model field adopt it. JSON format unchanged.
+- `Session.updateSettings(mutate, toastOK, toastUnchanged)` collapses the
+  six persisted setters' lock/snapshot/save/toast sequence; per-setter
+  quirks (equality skips, silent CardSize, conditional umu messages)
+  preserved.
+- `internal/ui` session split: the 1741-line session.go (~70 methods)
+  became themed files beside the existing ones: `scan.go` (boot/scan
+  pipeline), `dirs.go` (directory add/remove), `install.go`
+  (install/uninstall/rollback + op slots), `launch.go` (incl. umu
+  routing), `settings.go` (setters), `browse.go` (filter/sort/select/
+  INI). session.go keeps the types, NewSession, and shared state/event
+  helpers. Pure code move.
+- GUI/TUI surface for interrupted installs: `Session.Start` now toasts a
+  warning naming the repair choice (rollback to restore, install to
+  retry) when the warm-boot reconcile finds in_progress/failed manifests;
+  the actionable rows already carried the Rollback affordance sorted
+  first. `cmd` skips the stderr warning for gui/tui, where it was
+  invisible.
+
+Verified: `go vet ./...` clean; `go test ./...` clean (Linux).

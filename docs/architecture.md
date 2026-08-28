@@ -58,6 +58,9 @@ internal/
   pcgw/       PCGamingWiki secondary title source (keyless MediaWiki API:
               opensearch + Cargo reverse lookup; 30 req/min pacing,
               429/5xx cooldown, 30d disk cache with negatives)
+  jsoncache/  shared JSON state-file helpers for the API client caches
+              (generic Read/Write, 429/5xx cooldown markers); used by
+              steam/, protondb/, and the steam store caches
   settings/   persisted preferences (settings.json in the data root)
   version/    OptiScaler version-string ordering for upgrade eligibility
               (leading-v normalized, numeric segments, pre-release older
@@ -89,8 +92,11 @@ internal/
               Uninstall, Rollback, ManualEntry, versioned bundle cache,
               ops.go (Op, RunOps: errgroup, first error cancels siblings)
   ui/         frontend-agnostic Session: state, commands, events, consent,
-              per-game CancelOp, sort mode; cache.go is the games.json
-              library cache (schema-versioned, atomic) behind Session.Start
+              per-game CancelOp, sort mode; session.go keeps the types and
+              shared state helpers while scan.go, dirs.go, install.go,
+              launch.go, settings.go, browse.go carry the themed methods;
+              cache.go is the games.json library cache (schema-versioned,
+              atomic) behind Session.Start
   gui/        shirei binding over ui.Session (ALL shirei imports live here);
               theme tokens, arrow-key grid nav, right-docked detail panel
   tui/        bubbletea binding over ui.Session (renders snapshots, forwards
