@@ -34,20 +34,10 @@ const glyphCacheBudget = 16 << 20
 // frameTimerID identifies the animation timer (per-window timer id).
 const frameTimerID = 1
 
-// Window placement hints recorded before Run (best-effort; see CenterWindow).
-const (
-	placeDefault = iota // Win32 default: CW_USEDEFAULT
-	placeCenter
-	placeAt
-)
-
 var (
 	winTitle string
 	winW     int
 	winH     int
-	winPlace int
-	winX     int
-	winY     int
 	frameFn  shirei.FrameFn
 
 	hwnd      syscall.Handle
@@ -81,69 +71,12 @@ var (
 	wndProcCB = syscall.NewCallback(wndProc)
 )
 
-// PATCHED by optiscaler-manager (v0.11): client-side key repeat — reapply after `go mod vendor` (see docs/vendor-patches.md). WM_KEYDOWN auto-repeat is supposed to arrive natively, but on some setups (RDP, VMs, FilterKeys) it doesn't; armRepeat captures every press and pumpRepeat (from wmTimer) synthesizes repeats. Native repeats re-arm every time and push repeatNext forward by repeatDelay, so pumpRepeat is a no-op when native repeat works.
-var (
-	repeatWparam   uintptr
-	repeatLparam   uintptr
-	repeatArmed    bool
-	repeatDelay    = defaultRepeatDelay
-	repeatInterval = defaultRepeatInterval
-	repeatNext     time.Time
-)
-
-// defaultRepeatDelay/defaultRepeatInterval: 300 ms to first repeat, then 20 Hz (matches the spec). PATCHED (v0.11).
-const (
-	defaultRepeatDelay    = 300 * time.Millisecond
-	defaultRepeatInterval = 50 * time.Millisecond
-)
-
-// armRepeat captures the wparam/lparam of every key press so pumpRepeat can re-fire it. PATCHED (v0.11).
-func armRepeat(wparam, lparam uintptr) {
-	repeatWparam = wparam
-	repeatLparam = lparam
-	repeatArmed = true
-	repeatNext = time.Now().Add(repeatDelay)
-}
-
-// cancelRepeat stops pumpRepeat from synthesizing further presses. PATCHED (v0.11).
-func cancelRepeat() { repeatArmed = false }
-
-// pumpRepeat synthesizes one WM_KEYDOWN if a held key's repeat is due. Called from wmTimer; cheap when no key is armed. PATCHED (v0.11).
-func pumpRepeat() {
-	if !repeatArmed || repeatInterval <= 0 {
-		return
-	}
-	now := time.Now()
-	if now.Before(repeatNext) {
-		return
-	}
-	onKey(repeatWparam, repeatLparam, true)
-	repeatNext = now.Add(repeatInterval)
-	noteInput()
-}
-
 // SetupWindow records the window parameters. The window is created in Run, on
 // the UI thread.
 func SetupWindow(title string, width, height int) {
 	winTitle = title
 	winW = width
 	winH = height
-}
-
-// CenterWindow requests that the window open centered on the primary monitor.
-// Best-effort. Call after SetupWindow and before Run. Mutually exclusive with
-// PositionWindow; the last call wins.
-func CenterWindow() {
-	winPlace = placeCenter
-}
-
-// PositionWindow requests that the window open with its top-left corner at
-// (x, y) in screen points (origin at the top-left of the primary monitor).
-// Best-effort. Call after SetupWindow and before Run. Mutually exclusive with
-// CenterWindow; the last call wins.
-func PositionWindow(x, y int) {
-	winPlace = placeAt
-	winX, winY = x, y
 }
 
 // Run opens the window and runs the Win32 message loop. It must be called
@@ -216,17 +149,6 @@ func createWindow() {
 	}
 
 	x, y := uintptr(cwUseDefault), uintptr(cwUseDefault)
-	switch winPlace {
-	case placeCenter:
-		sx, _, _ := procGetSystemMetrics.Call(smCXScreen)
-		sy, _, _ := procGetSystemMetrics.Call(smCYScreen)
-		x = uintptr(int32((int(sx) - wWidth) / 2))
-		y = uintptr(int32((int(sy) - wHeight) / 2))
-	case placeAt:
-		// Position is in logical points; CreateWindowEx wants device pixels.
-		x = uintptr(int32(uintptr(winX) * dpi / 96))
-		y = uintptr(int32(uintptr(winY) * dpi / 96))
-	}
 
 	title, _ := syscall.UTF16PtrFromString(winTitle)
 	h, _, err := procCreateWindowExW.Call(
@@ -303,7 +225,6 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		return 0
 	case wmKillfocus:
 		clearComposition()
-		cancelRepeat() // PATCHED (v0.11): focus lost — stop repeating
 		noteInput()
 		return 0
 
@@ -403,7 +324,6 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		return r
 
 	case wmTimer:
-		pumpRepeat() // PATCHED (v0.11): synthesize a due key repeat before any redraw decision
 		// wantsFrame covers in-frame animation; FrameRequested covers
 		// background RequestNextFrame when the last frame settled to idle
 		// (matches cocoa's shireiFrameRequested check on the display link).
@@ -724,10 +644,8 @@ func onKey(wparam, lparam uintptr, down bool) {
 	if down {
 		shirei.GetFrameInput().Key = code
 		g.SliceAddUniq(&shirei.GetInputState().DownKeys, code)
-		armRepeat(wparam, lparam) // PATCHED (v0.11)
 	} else {
 		g.SliceRemove(&shirei.GetInputState().DownKeys, code)
-		cancelRepeat() // PATCHED (v0.11)
 	}
 }
 

@@ -15,6 +15,10 @@
 // supported (split with strings.Fields), but arguments in $TERMINAL are
 // NOT — a value like "foot -s" is passed verbatim as argv[0], fails to
 // spawn, and silently falls through to the next candidate.
+//
+// ponytail: $TERMINAL args unsupported (ceiling: multi-word $TERMINAL is
+// mishandled); upgrade path: split $TERMINAL with strings.Fields like
+// $EDITOR, per-basename argv conventions already keyed off it.
 package termopen
 
 import (

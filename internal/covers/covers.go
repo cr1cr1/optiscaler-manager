@@ -126,6 +126,10 @@ func (c *Covers) artURL(variant string) string {
 }
 
 // missTTL is how long a known-artless appid is not re-fetched.
+//
+// ponytail: mtime-based negative cache (ceiling: clock skew or manual
+// cache-dir edits can extend/shrink the TTL); upgrade path: JSON cache
+// records like internal/steam and internal/protondb use.
 const missTTL = 7 * 24 * time.Hour
 
 func (c *Covers) recentMiss(appid string) bool {

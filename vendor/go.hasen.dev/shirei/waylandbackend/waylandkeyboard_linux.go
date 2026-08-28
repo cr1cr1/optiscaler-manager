@@ -3,8 +3,6 @@
 package waylandbackend
 
 import (
-	"time"
-
 	wos "go.hasen.dev/shirei/internal/wayland/os"
 	"go.hasen.dev/shirei/internal/wayland/wl"
 	"go.hasen.dev/shirei/internal/wayland/wlclient"
@@ -26,19 +24,6 @@ var (
 	xkbContext *xkb.Context
 	xkbKeymap  *xkb.Keymap
 	xkbState   *xkb.State
-
-	// PATCHED by optiscaler-manager (v0.10): client-side key repeat — reapply after `go mod vendor` (see docs/vendor-patches.md).
-	repeatKey      uint32        // xkb keycode armed for repeat (0 = none)
-	repeatKeysym   uint32        // keysym captured at arm time
-	repeatDelay    time.Duration // delay to first repeat
-	repeatInterval time.Duration // 0 when the compositor asked for no repeats
-	repeatNext     time.Time     // next synthetic-press due time
-)
-
-// defaultRepeatDelay/defaultRepeatInterval: fallbacks when the compositor never sends repeat_info. Matches the spec the UI documents: 300 ms to first repeat, then 20 Hz. PATCHED (v0.10).
-const (
-	defaultRepeatDelay    = 300 * time.Millisecond
-	defaultRepeatInterval = 50 * time.Millisecond
 )
 
 // Bits of the serialized xkb modifier mask (standard keymaps use the X11
@@ -127,75 +112,13 @@ func (*handler) HandleKeyboardEnter(wl.KeyboardEnterEvent) { wlDebug("keyboard e
 func (*handler) HandleKeyboardLeave(wl.KeyboardLeaveEvent) {
 	shirei.GetInputState().DownKeys = shirei.GetInputState().DownKeys[:0]
 	shirei.GetInputState().Modifiers = 0
-	cancelRepeat() // PATCHED (v0.10): focus lost — stop repeating
 	clearComposition()
 	dirty = true
 	wlDebug("keyboard leave")
 }
 
-// HandleKeyboardRepeatInfo stores the compositor-supplied rate/delay so armRepeat/pumpRepeat can synthesize presses. Wayland puts key repeat on the client. PATCHED by optiscaler-manager (v0.10): previously a no-op.
-func (*handler) HandleKeyboardRepeatInfo(ev wl.KeyboardRepeatInfoEvent) {
-	repeatDelay = time.Duration(ev.Delay) * time.Millisecond
-	if ev.Rate > 0 {
-		repeatInterval = time.Second / time.Duration(ev.Rate)
-	} else {
-		repeatInterval = 0 // Rate 0 means "don't repeat" per the protocol.
-		repeatKey = 0
-	}
-}
-
-// armRepeat begins synthesizing presses for code/keysym if the keymap says the key repeats. Pressing a different key implicitly cancels the previous arm. PATCHED (v0.10).
-func armRepeat(code, keysym uint32) {
-	if xkbKeymap == nil || !xkbKeymap.KeyRepeats(code) {
-		repeatKey = 0
-		return
-	}
-	if repeatDelay <= 0 {
-		repeatDelay = defaultRepeatDelay
-	}
-	if repeatInterval == 0 && repeatDelay > 0 {
-		repeatInterval = defaultRepeatInterval
-	}
-	if repeatInterval <= 0 {
-		repeatKey = 0
-		return
-	}
-	repeatKey = code
-	repeatKeysym = keysym
-	repeatNext = time.Now().Add(repeatDelay)
-}
-
-// cancelRepeat stops synthesizing presses. PATCHED (v0.10).
-func cancelRepeat() { repeatKey = 0 }
-
-// pumpRepeat delivers one synthetic press if a held key's repeat is due. Called from the main loop after each dispatch so the cadence tracks real time without a goroutine. PATCHED (v0.10).
-func pumpRepeat() {
-	if repeatKey == 0 || repeatInterval <= 0 {
-		return
-	}
-	now := time.Now()
-	if now.Before(repeatNext) {
-		return
-	}
-	onKey(repeatKey, repeatKeysym, true)
-	repeatNext = now.Add(repeatInterval)
-	dirty = true
-}
-
-// repeatTimeout caps the dispatch wait so a pending repeat wakes the loop in time. PATCHED (v0.10).
-func repeatTimeout(max time.Duration) time.Duration {
-	if repeatKey == 0 || repeatInterval <= 0 {
-		return max
-	}
-	wait := time.Until(repeatNext)
-	if wait < 0 {
-		return 0
-	}
-	if wait < max {
-		return wait
-	}
-	return max
-}
+// HandleKeyboardRepeatInfo: client-side key repeat isn't implemented yet.
+func (*handler) HandleKeyboardRepeatInfo(wl.KeyboardRepeatInfoEvent) {}
 
 // onKey maps a key event to a shirei key code and, for printable presses, the
 // typed text. Mirrors x11backend.onKey. The writing block resolves by evdev
@@ -227,12 +150,8 @@ func onKey(code, keysym uint32, down bool) {
 				shirei.GetFrameInput().Key = kc
 			}
 			g.SliceAddUniq(&shirei.GetInputState().DownKeys, kc)
-			armRepeat(code, keysym) // PATCHED (v0.10): begin client-side repeat
 		} else {
 			g.SliceRemove(&shirei.GetInputState().DownKeys, kc)
-			if code == repeatKey {
-				cancelRepeat() // PATCHED (v0.10): released the armed key
-			}
 		}
 	}
 	if !down || composing {
@@ -282,23 +201,22 @@ func syncModKey(m, bit shirei.Modifiers, k shirei.KeyCode) {
 // X11 keysym constants (xkb uses the same values). Mirrors x11backend; a shared
 // keysym->KeyCode helper is a candidate cleanup.
 const (
-	xkBackSpace  = 0xff08
-	xkTab        = 0xff09
-	xkISOLeftTab = 0xfe20 // PATCHED by optiscaler-manager (v0.9): Shift+Tab keysym — reapply after `go mod vendor` (see docs/vendor-patches.md)
-	xkReturn     = 0xff0d
-	xkEscape     = 0xff1b
-	xkHome       = 0xff50
-	xkLeft       = 0xff51
-	xkUp         = 0xff52
-	xkRight      = 0xff53
-	xkDown       = 0xff54
-	xkPrior      = 0xff55 // Page Up
-	xkNext       = 0xff56 // Page Down
-	xkEnd        = 0xff57
-	xkDelete     = 0xffff
-	xkSpace      = 0x0020
-	xkF1         = 0xffbe
-	xkF12        = 0xffc9
+	xkBackSpace = 0xff08
+	xkTab       = 0xff09
+	xkReturn    = 0xff0d
+	xkEscape    = 0xff1b
+	xkHome      = 0xff50
+	xkLeft      = 0xff51
+	xkUp        = 0xff52
+	xkRight     = 0xff53
+	xkDown      = 0xff54
+	xkPrior     = 0xff55 // Page Up
+	xkNext      = 0xff56 // Page Down
+	xkEnd       = 0xff57
+	xkDelete    = 0xffff
+	xkSpace     = 0x0020
+	xkF1        = 0xffbe
+	xkF12       = 0xffc9
 )
 
 func mapKeysym(ks uint32) shirei.KeyCode {
@@ -330,8 +248,6 @@ func mapKeysym(ks uint32) shirei.KeyCode {
 	case xkNext:
 		return shirei.KeyPageDown
 	case xkTab:
-		return shirei.KeyTab
-	case xkISOLeftTab: // PATCHED by optiscaler-manager (v0.9): Shift+Tab -> KeyTab so the toolkit reverse-cycles focus
 		return shirei.KeyTab
 	case xkSpace:
 		return shirei.KeySpace

@@ -71,6 +71,9 @@ type Conn struct {
 	// Extensions is a map from extension name to major opcode. It should
 	// not be used. It is exported for use in the extension sub-packages.
 	Extensions map[string]byte
+
+	idRangeFuncMu sync.RWMutex
+	idRangeFunc   func(*Conn) (uint32, uint32, error)
 }
 
 // NewConn creates a new connection instance. It initializes locks, data
@@ -87,6 +90,7 @@ func NewConn() (*Conn, error) {
 // If 'display' is empty it will be taken from os.Getenv("DISPLAY").
 //
 // Examples:
+//
 //	NewConn(":1") -> net.Dial("unix", "", "/tmp/.X11-unix/X1")
 //	NewConn("/tmp/launch-12/:0") -> net.Dial("unix", "", "/tmp/launch-12/:0")
 //	NewConn("hostname:2.1") -> net.Dial("tcp", "", "hostname:6002")
@@ -112,6 +116,24 @@ func NewConnNet(netConn net.Conn) (*Conn, error) {
 	// First connect. This reads authority, checks DISPLAY environment
 	// variable, and loads the initial Setup info.
 	err := c.connectNet(netConn)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return postNewConn(c)
+}
+
+// NewConnNetWithCookieHex is just like NewConnNet and
+// creates a new X connection from an existing net.Conn using hex-encoded authentication.
+// The cookieHex parameter should be a 32-character hex string representing MIT-MAGIC-COOKIE-1 authentication data.
+// Returns a fully initialized Conn ready for use with X protocol operations.
+func NewConnNetWithCookieHex(netConn net.Conn, cookieHex string) (*Conn, error) {
+	c := &Conn{}
+
+	// Connect using the provided network connection and hex-encoded authentication,
+	// then load the initial Setup info.
+	err := c.connectNetWithCookieHex(netConn, cookieHex)
 
 	if err != nil {
 		return nil, err
@@ -146,6 +168,16 @@ func (c *Conn) Close() {
 	case c.reqChan <- nil:
 	case <-c.doneSend:
 	}
+}
+
+// SetIDRangeFunc provides a function that allows re-use of IDs.
+// Without this implemented an application will eventually run out of identifiers.
+// An implementation of this is in the xgbutil repository, where the xgbutil.NewConnXgb will set up
+// the re-use provider by calling this function for you.
+func (c *Conn) SetIDRangeFunc(f func(*Conn) (uint32, uint32, error)) {
+	c.idRangeFuncMu.Lock()
+	c.idRangeFunc = f
+	c.idRangeFuncMu.Unlock()
 }
 
 // Event is an interface that can contain any of the events returned by the
@@ -253,11 +285,35 @@ func (c *Conn) generateXIds() {
 	last := uint32(0)
 	for {
 		id := xid{}
-		if last > 0 && last >= max-inc+1 {
-			// TODO: Use the XC Misc extension to look for released ids.
-			id = xid{
-				id:  0,
-				err: errors.New("There are no more available resource identifiers."),
+		if last >= max-inc+1 {
+			c.idRangeFuncMu.RLock()
+			rangeFunc := c.idRangeFunc
+			c.idRangeFuncMu.RUnlock()
+
+			if rangeFunc == nil {
+				id = xid{
+					id:  0,
+					err: errors.New("there are no more available resource identifiers, and no re-use configured"),
+				}
+			} else {
+				start, count, err := rangeFunc(c)
+				if count == 0 && err == nil {
+					err = errors.New("error getting ID re-use, none returned")
+				}
+				if err != nil {
+					id = xid{
+						id:  0,
+						err: errors.New("error getting ID re-use: " + err.Error()),
+					}
+				} else {
+					last = start
+					max = start + (count-1)*inc
+
+					id = xid{
+						id:  last | c.setupResourceIdBase,
+						err: nil,
+					}
+				}
 			}
 		} else {
 			last += inc

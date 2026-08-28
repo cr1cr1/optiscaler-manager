@@ -207,6 +207,9 @@ func (l *Launcher) gogCommand(t Target) (string, []string, error) {
 func (l *Launcher) epicCommand(t Target) (string, []string, error) {
 	if t.AppName == "" {
 		// Best-effort fallback: run the exe directly.
+		// ponytail: direct exe run bypasses the Epic launcher (ceiling: no
+		// entitlement check, no cloud-save sync); upgrade path: none —
+		// by design when the AppName is undiscoverable.
 		if t.ExePath != "" {
 			return filepath.Dir(t.ExePath), append([]string{t.ExePath}, t.Args...), nil
 		}
@@ -219,6 +222,9 @@ func (l *Launcher) epicCommand(t Target) (string, []string, error) {
 	case "darwin":
 		return "", []string{"open", url}, nil
 	default: // linux: best-effort via the desktop's URL handler
+		// ponytail: xdg-open hides launch failure (ceiling: no exit status
+		// if the handler is missing/misconfigured); upgrade path: probe
+		// xdg-open on PATH at startup and surface a warning once.
 		return "", []string{"xdg-open", url}, nil
 	}
 }

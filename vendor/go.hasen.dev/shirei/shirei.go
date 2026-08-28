@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"hash/maphash"
 	"math"
+	"runtime"
 	"slices"
 	"sync"
 	"time"
@@ -361,6 +362,12 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 		output.GlyphsAdded, output.GlyphsEvicted = updateGlyphCache(ui.surfaces)
 	}
 
+	// Shape + raster are done. File-backed NewFont heaps (color emoji, CJK)
+	// are not needed to blit cached glyphs or to hit the shape cache.
+	if unloadFileBackedParsedFonts() > 0 {
+		runtime.GC()
+	}
+
 	var newSurfacesHash = computeSurfacesHash(ui.surfaces)
 	output.SurfacesHash = newSurfacesHash
 	if ui.surfaceHash != newSurfacesHash {
@@ -380,8 +387,29 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 
 	ui.Host.LayoutTime = time.Since(runStart)
 
+	lastFrameMu.Lock()
+	lastFrameOutput = output
+	lastFrameOutput.Surfaces = append([]Surface(nil), output.Surfaces...)
+	lastFrameMu.Unlock()
+
 	return output
 }
+
+// LastFrameOutput is the FrameOutputData from the most recently completed
+// RunFrameFn. Surfaces are a copy. Read it on a later frame (or after
+// RunFrameFn returns); the pass currently inside frameFn has not harvested yet.
+func LastFrameOutput() FrameOutputData {
+	lastFrameMu.Lock()
+	defer lastFrameMu.Unlock()
+	out := lastFrameOutput
+	out.Surfaces = append([]Surface(nil), lastFrameOutput.Surfaces...)
+	return out
+}
+
+var (
+	lastFrameMu     sync.Mutex
+	lastFrameOutput FrameOutputData
+)
 
 // -----------------------------------------------------------------------------
 //      Surfaces
@@ -636,8 +664,13 @@ type AttrSet struct {
 
 	// Event things
 	ClickThrough bool
-	Focusable    bool // items that can receive focus via clicking or tab-cycling
-	FocusTrap    bool // this container wants to be a focus trap (only for modals)
+	// clickThroughSet: ClickThrough / NoClickThrough was applied. Open-time
+	// cascade from a ClickThrough parent skips this container when set (same
+	// role as animationsSet for YesAnimate), so a hit-testable card can sit
+	// inside a ClickThrough overlay.
+	clickThroughSet bool
+	Focusable       bool // items that can receive focus via clicking or tab-cycling
+	FocusTrap       bool // this container wants to be a focus trap (only for modals)
 
 	// Clip constrains children (drawing and pointer events) to this container's
 	// bounds. Attrs() defaults Clip to true; opt out with NoClip. Raw AttrSet{}
@@ -783,8 +816,8 @@ func ContainerWithKey(key any, attrs AttrSet, builder func()) ContainerId {
 	if !attrs.animationsSet {
 		attrs.Animations &= ui.current.Animations
 	}
-	if ui.current.ClickThrough {
-		attrs.ClickThrough = ui.current.ClickThrough
+	if ui.current.ClickThrough && !attrs.clickThroughSet {
+		attrs.ClickThrough = true
 	}
 	// Cross-axis MaxSize cascade: a column's MaxWidth (or a row's MaxHeight)
 	// becomes each child's max on that axis when the child left it unset.
@@ -904,8 +937,7 @@ func ScrollOnInput() {
 		// Wheel input scrolls what's on screen, so clamping against the
 		// previous frame eagerly is right here — unlike SetScrollOffset,
 		// which records a target for this frame's layout to reconcile.
-		// PATCHED by optiscaler-manager (v0.8): scroll speedup (x2/x3) — reapply after `go mod vendor` (see docs/vendor-patches.md)
-		desired := Vec2Add(ui.current.ScrollOffset, Vec2{ui.Host.FrameInput.Scroll[0] * 2, ui.Host.FrameInput.Scroll[1] * 3})
+		desired := Vec2Add(ui.current.ScrollOffset, ui.Host.FrameInput.Scroll)
 
 		var paddingSize Vec2
 		paddingSize[0] = ui.current.Padding[PAD_LEFT] + ui.current.Padding[PAD_RIGHT]
@@ -1158,13 +1190,7 @@ func resolveOrigins(container *_Container) {
 			// parent's origin + relativeOrigin below.
 			prev, ok := child.node.prevRenderData()
 			if ok && child.Animations != 0 && child.node.bornFrame < ui.runFirstFrame {
-			// PATCHED by optiscaler-manager (v0.13): disable ALL layout animation. rate=1
-			// snaps every container to its target immediately — no smooth
-			// transitions on resize, panel open/close, view switch, or hover.
-			// The user explicitly requested no animations; the 5-7x reduction in
-			// repaint frames during any layout change is a bonus. Reapply after
-			// `go mod vendor` (see docs/vendor-patches.md).
-			rate := float32(1)
+				var rate = min(1, ui.timeDelta*20)
 				var distCutoff float32 = 1
 				var clrCutoff float32 = 0.01
 				af := child.Animations
@@ -1594,6 +1620,10 @@ func stealFocusOnMount() {
 
 // dir should be 1 or -1, but an arbitrary number should work too ..
 func cycleFocus(dir int) {
+	if len(ui.focusables) == 0 {
+		return
+	}
+
 	idx := slices.Index(ui.focusables, ui.focused)
 	if idx == -1 {
 		// special case
