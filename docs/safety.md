@@ -45,6 +45,13 @@ in_progress → committed
 
 `planned` is in-memory only. On startup, manifests in `in_progress`/`failed`
 are surfaced with repair / rollback / retry choices; nothing is auto-deleted.
+The surface per frontend: plain CLI commands print a stderr warning naming
+the manifest (`cmd/checkInterrupted`, gated by `warnInterruptedCLI`); the
+GUI shows a persistent banner under the toolbar and the TUI a warning line
+above the games list, both derived from row state so cold and warm boots
+are covered, plus a one-shot boot toast on the warm-cache path. In every
+frontend the interrupted rows sort first and carry the actual choices: the
+Rollback button restores, Install/QuickInstall retries.
 
 ## Backups
 

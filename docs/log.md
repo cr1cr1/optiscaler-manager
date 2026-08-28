@@ -2330,3 +2330,32 @@ Verified: `go vet ./...` clean; `go test ./...` clean (Linux).
   virtualize the previous row fully away).
 
 Verified: `go vet ./...` clean; `go test ./...` clean (Linux).
+
+## 2026-08-28 — code-review follow-ups: smells fixed, spec gaps closed
+
+Two-axis review (ff01442..HEAD) follow-up:
+
+- Spec: `pever.DisabledHook` is now presence-only per the spec's
+  unconditional rule ("one of these files has the suffix .disabled =
+  disabled"); hand-renamed or unverifiable files no longer report
+  enabled. First-time detection of unmanaged dirs keeps the identity
+  gate via the new `DisabledHookVerified`, so a DXVK
+  `dxgi.dll.disabled` still cannot masquerade as an OptiScaler install.
+- Standards: extracted `app.probeInstallState` from the duplicated
+  enrich/ManualEntryWithResolver cascade, fixing a latent cwd-stat bug
+  (enrich's Disabled probe lacked the InjectionDir guard).
+- Standards: `GameRow` owns the shared derivations the frontends
+  reimplemented: `HasInstall` (backs CanOpenINI, the disable gate, the
+  TUI switchable gate), `DisableToggleLabel`, and
+  `InterruptedRows`/`InterruptedMessage` (boot toast + banners share the
+  wording). `cardSizeForPreset` delegates its fallback to
+  `CardSize.OrDefault`.
+- Spec (A-5): the persistent repair/rollback/retry surface. GUI warning
+  banner under the toolbar, TUI warning line above the games list, both
+  derived from actionable rows so the cold-boot path (no warm cache, no
+  boot toast, CLI warning suppressed) is covered. `docs/safety.md`
+  documents the per-frontend surface.
+- Standards (hard): `warnInterruptedCLI` extracted from root.go's
+  untested gui/tui gating switch, with a table test.
+
+Verified: `go vet ./...` clean; `go test ./...` clean (Linux).
