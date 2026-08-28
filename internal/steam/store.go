@@ -10,10 +10,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/cr1cr1/optiscaler-manager/internal/jsoncache"
 )
 
 // Store endpoints (store.steampowered.com, no auth): appdetails resolves a
@@ -183,26 +184,11 @@ type cachedStoreSearch struct {
 }
 
 func (c *Client) readAppDetailsCache(appid string) (cachedAppDetails, bool) {
-	var cs cachedAppDetails
-	data, err := os.ReadFile(filepath.Join(c.cacheDir, "appdetails_"+appid+".json"))
-	if err != nil {
-		return cs, false
-	}
-	if err := json.Unmarshal(data, &cs); err != nil {
-		return cachedAppDetails{}, false
-	}
-	return cs, true
+	return jsoncache.Read[cachedAppDetails](filepath.Join(c.cacheDir, "appdetails_"+appid+".json"))
 }
 
 func (c *Client) writeAppDetailsCache(appid string, cs cachedAppDetails) {
-	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
-		return
-	}
-	data, err := json.Marshal(cs)
-	if err != nil {
-		return
-	}
-	_ = os.WriteFile(filepath.Join(c.cacheDir, "appdetails_"+appid+".json"), data, 0o644)
+	_ = jsoncache.Write(filepath.Join(c.cacheDir, "appdetails_"+appid+".json"), cs)
 }
 
 func storeSearchFile(cacheDir, term string) string {
@@ -211,13 +197,9 @@ func storeSearchFile(cacheDir, term string) string {
 }
 
 func (c *Client) readStoreSearchCache(term string) (cachedStoreSearch, bool) {
-	var cs cachedStoreSearch
-	data, err := os.ReadFile(storeSearchFile(c.cacheDir, term))
-	if err != nil {
+	cs, ok := jsoncache.Read[cachedStoreSearch](storeSearchFile(c.cacheDir, term))
+	if !ok {
 		return cs, false
-	}
-	if err := json.Unmarshal(data, &cs); err != nil {
-		return cachedStoreSearch{}, false
 	}
 	// Cache entries written before StoreItem.Type existed must keep
 	// working: they were all apps.
@@ -230,12 +212,5 @@ func (c *Client) readStoreSearchCache(term string) (cachedStoreSearch, bool) {
 }
 
 func (c *Client) writeStoreSearchCache(term string, cs cachedStoreSearch) {
-	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
-		return
-	}
-	data, err := json.Marshal(cs)
-	if err != nil {
-		return
-	}
-	_ = os.WriteFile(storeSearchFile(c.cacheDir, term), data, 0o644)
+	_ = jsoncache.Write(storeSearchFile(c.cacheDir, term), cs)
 }

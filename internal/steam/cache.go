@@ -3,12 +3,12 @@ package steam
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/cr1cr1/optiscaler-manager/internal/jsoncache"
 )
 
 // cachedSearch is the persisted title → appid mapping with its fetch
@@ -22,12 +22,6 @@ type cachedSearch struct {
 	NoMatch   bool      `json:"no_match,omitempty"`
 }
 
-// cooldownState is the persisted cooldown file, recording the last 429/5xx
-// response time.
-type cooldownState struct {
-	LastAttempt time.Time `json:"last_attempt"`
-}
-
 // cacheFile names the per-title cache file: a hash of the normalized query
 // keeps titles with separators or unicode off the filesystem verbatim.
 func cacheFile(cacheDir, query string) string {
@@ -37,55 +31,28 @@ func cacheFile(cacheDir, query string) string {
 
 func normalize(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
+func (c *Client) cooldownPath() string { return filepath.Join(c.cacheDir, cooldownFile) }
+
 // inCooldown reports whether the last recorded 429/5xx is inside the
 // cooldown window. A missing or unreadable file means no cooldown.
 func (c *Client) inCooldown() bool {
-	data, err := os.ReadFile(filepath.Join(c.cacheDir, cooldownFile))
-	if err != nil {
-		return false
-	}
-	var state cooldownState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return false
-	}
-	return c.now().Sub(state.LastAttempt) < cooldown
+	return jsoncache.InCooldown(c.cooldownPath(), c.now(), cooldown)
 }
 
 // writeCooldown records a rate-limit/server-error response time.
 func (c *Client) writeCooldown(t time.Time) error {
-	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
-		return err
-	}
-	data, err := json.Marshal(cooldownState{LastAttempt: t})
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(c.cacheDir, cooldownFile), data, 0o644)
+	return jsoncache.WriteCooldown(c.cooldownPath(), t)
 }
 
 // readCache loads the persisted mapping for query.
 func (c *Client) readCache(query string) (cachedSearch, bool) {
-	data, err := os.ReadFile(cacheFile(c.cacheDir, query))
-	if err != nil {
-		return cachedSearch{}, false
-	}
-	var cs cachedSearch
-	if err := json.Unmarshal(data, &cs); err != nil {
-		return cachedSearch{}, false
-	}
-	return cs, true
+	return jsoncache.Read[cachedSearch](cacheFile(c.cacheDir, query))
 }
 
 // writeCache persists the resolved mapping for query.
 func (c *Client) writeCache(query string, res searchResult) error {
-	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
-		return err
-	}
-	data, err := json.Marshal(cachedSearch{AppID: res.AppID, Name: res.Name, FetchedAt: c.now()})
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(cacheFile(c.cacheDir, query), data, 0o644); err != nil {
+	cs := cachedSearch{AppID: res.AppID, Name: res.Name, FetchedAt: c.now()}
+	if err := jsoncache.Write(cacheFile(c.cacheDir, query), cs); err != nil {
 		return fmt.Errorf("steam: write search cache: %w", err)
 	}
 	return nil
@@ -93,12 +60,5 @@ func (c *Client) writeCache(query string, res searchResult) error {
 
 // writeNegative persists a no-match answer for query.
 func (c *Client) writeNegative(query string) {
-	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
-		return
-	}
-	data, err := json.Marshal(cachedSearch{FetchedAt: c.now(), NoMatch: true})
-	if err != nil {
-		return
-	}
-	_ = os.WriteFile(cacheFile(c.cacheDir, query), data, 0o644)
+	_ = jsoncache.Write(cacheFile(c.cacheDir, query), cachedSearch{FetchedAt: c.now(), NoMatch: true})
 }
