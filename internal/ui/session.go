@@ -284,60 +284,68 @@ func (s *Session) Settings() settings.Settings {
 	return out
 }
 
+// updateSettings runs mutate against the live settings under the lock.
+// When mutate reports a change the snapshot is persisted: a save failure
+// toasts the error, a success toasts toastOK. An unchanged result skips
+// the save and toasts toastUnchanged. An empty toast string stays silent.
+func (s *Session) updateSettings(mutate func(*settings.Settings) (changed bool), toastOK, toastUnchanged string) {
+	s.mu.Lock()
+	changed := mutate(&s.deps.Settings)
+	snap := s.deps.Settings
+	s.mu.Unlock()
+	if !changed {
+		if toastUnchanged != "" {
+			s.toast(toastUnchanged, false)
+		}
+		return
+	}
+	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
+		s.toast("settings not saved: "+err.Error(), true)
+		return
+	}
+	if toastOK != "" {
+		s.toast(toastOK, false)
+	}
+}
+
 // SetDefaultVersion changes the release tag installs resolve to (persisted).
 func (s *Session) SetDefaultVersion(v string) {
 	if v == "" {
 		v = "latest"
 	}
-	s.mu.Lock()
-	if s.deps.Settings.DefaultVersion == v {
-		s.mu.Unlock()
-		s.toast("default version: "+v, false)
-		return
-	}
-	s.deps.Settings.DefaultVersion = v
-	snap := s.deps.Settings
-	s.mu.Unlock()
-	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
-		s.toast("settings not saved: "+err.Error(), true)
-		return
-	}
-	s.toast("default version: "+v, false)
+	s.updateSettings(func(st *settings.Settings) bool {
+		if st.DefaultVersion == v {
+			return false
+		}
+		st.DefaultVersion = v
+		return true
+	}, "default version: "+v, "default version: "+v)
 }
 
 // SetOnlineLookups toggles ProtonDB/Steam game-info enrichment during
 // scans (persisted); frontends render it as the online-lookups switch.
 func (s *Session) SetOnlineLookups(v bool) {
-	s.mu.Lock()
-	s.deps.Settings.OnlineLookups = v
-	snap := s.deps.Settings
-	s.mu.Unlock()
-	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
-		s.toast("settings not saved: "+err.Error(), true)
-		return
-	}
+	msg := "online lookups: off"
 	if v {
-		s.toast("online lookups: on", false)
-	} else {
-		s.toast("online lookups: off", false)
+		msg = "online lookups: on"
 	}
+	s.updateSettings(func(st *settings.Settings) bool {
+		st.OnlineLookups = v
+		return true
+	}, msg, "")
 }
 
 // SetCardSize changes the grid card width preset (persisted). Anything
 // outside the known presets falls back to medium.
 func (s *Session) SetCardSize(size settings.CardSize) {
 	size = size.OrDefault()
-	s.mu.Lock()
-	if s.deps.Settings.CardSize == size {
-		s.mu.Unlock()
-		return
-	}
-	s.deps.Settings.CardSize = size
-	snap := s.deps.Settings
-	s.mu.Unlock()
-	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
-		s.toast("settings not saved: "+err.Error(), true)
-	}
+	s.updateSettings(func(st *settings.Settings) bool {
+		if st.CardSize == size {
+			return false
+		}
+		st.CardSize = size
+		return true
+	}, "", "")
 }
 
 // SetLaunchTemplate changes the command template manual games launch with
@@ -346,51 +354,36 @@ func (s *Session) SetLaunchTemplate(tmpl string) {
 	if tmpl == "" {
 		tmpl = settings.DefaultLaunchTemplate
 	}
-	s.mu.Lock()
-	s.deps.Settings.LaunchTemplate = tmpl
-	snap := s.deps.Settings
-	s.mu.Unlock()
-	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
-		s.toast("settings not saved: "+err.Error(), true)
-		return
-	}
-	s.toast("launch template: "+tmpl, false)
+	s.updateSettings(func(st *settings.Settings) bool {
+		st.LaunchTemplate = tmpl
+		return true
+	}, "launch template: "+tmpl, "")
 }
 
 // SetUmuEnabled toggles routing manual-store Windows binaries through
 // umu-launcher (Linux only). Persisted atomically; toasts the result.
 func (s *Session) SetUmuEnabled(enabled bool) {
-	s.mu.Lock()
-	s.deps.Settings.UmuEnabled = enabled
-	snap := s.deps.Settings
-	s.mu.Unlock()
-	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
-		s.toast("settings not saved: "+err.Error(), true)
-		return
-	}
+	msg := "umu-launcher disabled"
 	if enabled {
-		s.toast("umu-launcher enabled", false)
-	} else {
-		s.toast("umu-launcher disabled", false)
+		msg = "umu-launcher enabled"
 	}
+	s.updateSettings(func(st *settings.Settings) bool {
+		st.UmuEnabled = enabled
+		return true
+	}, msg, "")
 }
 
 // SetUmuProtonPath pins the Proton build umu-run uses. An empty value
 // means "let umu resolve its own default (UMU-Latest)". Persisted.
 func (s *Session) SetUmuProtonPath(path string) {
-	s.mu.Lock()
-	s.deps.Settings.UmuProtonPath = path
-	snap := s.deps.Settings
-	s.mu.Unlock()
-	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
-		s.toast("settings not saved: "+err.Error(), true)
-		return
+	msg := "umu Proton: auto"
+	if path != "" {
+		msg = "umu Proton: " + path
 	}
-	if path == "" {
-		s.toast("umu Proton: auto", false)
-	} else {
-		s.toast("umu Proton: "+path, false)
-	}
+	s.updateSettings(func(st *settings.Settings) bool {
+		st.UmuProtonPath = path
+		return true
+	}, msg, "")
 }
 
 // ClearBundleCache deletes all cached OptiScaler bundles. The deletion runs
