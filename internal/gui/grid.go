@@ -60,7 +60,7 @@ const (
 // two-line title, version pills, tech pills, and the button row, plus gaps.
 func cardContentH(cardW int) int {
 	coverH := int(float32(cardW-2*cardPad) * coverRatio)
-	chrome := badgeRowH + titleRowH + 2*pillRowH + buttonRowH + 5*cardGapV
+	chrome := badgeRowH + titleRowH + 2*pillRowH + buttonRowH + 6*cardGapV
 	return coverH + chrome
 }
 
