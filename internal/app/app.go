@@ -92,23 +92,7 @@ func ManualEntryWithResolver(dir string, st *store.Store, res discovery.TitleRes
 			}
 		}
 	}
-	// Manual roots bypass the discovery→enrich probe, so detect a
-	// pre-existing OptiScaler install here (mirroring enrich): a branded
-	// injection DLL means external, with the version from the bounded
-	// evidence chain. Component versions stay suppressed — those DLLs
-	// belong to OptiScaler's bundle, not the game.
-	if e.Status == "" && e.InjectionDir != "" {
-		if found, version := pever.DetectOptiScaler(e.InjectionDir); found {
-			e.Status = domain.StatusExternal
-			e.OptiScalerVersion = version
-		} else if pever.DisabledHook(e.InjectionDir) != "" {
-			e.Status = domain.StatusExternal
-			e.Disabled = true
-		}
-	}
-	if e.Status != "" && !e.Disabled && e.InjectionDir != "" {
-		e.Disabled = pever.DisabledHook(e.InjectionDir) != ""
-	}
+	probeInstallState(&e)
 	return e, nil
 }
 
@@ -240,14 +224,28 @@ func enrich(g domain.Game, byInstallDir map[string]*domain.Manifest) LibraryEntr
 	}
 	// A game with no store manifest may still carry an OptiScaler dropped in
 	// by hand: probe the injection dir for a branded injection DLL. The
-	// probe is bounded to unmanaged rows — manifests stay authoritative. A
-	// hook renamed <name>.disabled is still an install (external), just one
-	// the game will not load.
-	if e.Status == "" && e.InjectionDir != "" {
+	// probe is bounded to unmanaged rows — manifests stay authoritative.
+	probeInstallState(&e)
+	enrichVersions(&e, m)
+	return e
+}
+
+// probeInstallState fills Status/OptiScalerVersion/Disabled from on-disk
+// evidence for an entry whose manifest precedence has already run. An
+// unmanaged row with a branded hook is external; a hook renamed
+// <name>.disabled is still an install (external), just one the game will
+// not load. First-time detection verifies identity (a DXVK
+// dxgi.dll.disabled is not OptiScaler); the Disabled flag on an
+// established install only needs the suffix's presence.
+func probeInstallState(e *LibraryEntry) {
+	if e.InjectionDir == "" {
+		return
+	}
+	if e.Status == "" {
 		if found, version := pever.DetectOptiScaler(e.InjectionDir); found {
 			e.Status = domain.StatusExternal
 			e.OptiScalerVersion = version // "" when the evidence chain runs dry
-		} else if pever.DisabledHook(e.InjectionDir) != "" {
+		} else if pever.DisabledHookVerified(e.InjectionDir) != "" {
 			e.Status = domain.StatusExternal
 			e.Disabled = true
 		}
@@ -255,8 +253,6 @@ func enrich(g domain.Game, byInstallDir map[string]*domain.Manifest) LibraryEntr
 	if e.Status != "" && !e.Disabled {
 		e.Disabled = pever.DisabledHook(e.InjectionDir) != ""
 	}
-	enrichVersions(&e, m)
-	return e
 }
 
 // enrichVersions fills OptiScalerVersion/ComponentVersions for managed
