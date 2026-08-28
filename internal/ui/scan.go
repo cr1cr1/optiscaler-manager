@@ -388,6 +388,12 @@ func (s *Session) toRow(ctx context.Context, e app.LibraryEntry) GameRow {
 		if e.Game.SteamAppID != "" {
 			coverAppID = e.Game.SteamAppID
 		}
+		if !isNumericAppID(coverAppID) {
+			// "custom_<folder>" manual ids carry no Steam meaning; digits
+			// in a folder name ("Hades 2" → "2") would fetch a wrong
+			// game's art and poison the miss cache with a bogus key.
+			coverAppID = ""
+		}
 		if p, err := s.deps.Covers.Cover(ctx, coverAppID, e.Game.Name); err == nil {
 			row.CoverPath = p
 		}
@@ -399,12 +405,27 @@ func (s *Session) toRow(ctx context.Context, e app.LibraryEntry) GameRow {
 // has finalized titles and appids: rows with a resolved Steam appid get
 // art for THAT appid (straight from the CDN), so a cover fetched for a
 // codename title is replaced by the correct game's art the same scan.
+// Rows whose identification produced a canonical title but no appid retry
+// the search with that resolved title — the raw pre-identification query
+// (folder or codename) is the weak one.
 func (s *Session) refreshCovers(ctx context.Context, rows []GameRow) {
 	if s.deps.Covers == nil {
 		return
 	}
 	for i := range rows {
 		if rows[i].SteamAppID == "" {
+			// No appid: retry by the resolved title when the row has no
+			// real art yet (.img files are real; the placeholder is not).
+			// ponytail: the covers store search has no negative cache, so
+			// an unresolvable title costs one live request per scan;
+			// upgrade path: route the query through the steam client's
+			// cached search.
+			if rows[i].Title == "" || strings.HasSuffix(rows[i].CoverPath, ".img") {
+				continue
+			}
+			if p, err := s.deps.Covers.Cover(ctx, "", rows[i].Title); err == nil {
+				rows[i].CoverPath = p
+			}
 			continue
 		}
 		if strings.HasSuffix(rows[i].CoverPath, rows[i].SteamAppID+".img") {

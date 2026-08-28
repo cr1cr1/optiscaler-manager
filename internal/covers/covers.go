@@ -76,27 +76,29 @@ func NewWithBase(httpClient *http.Client, cacheDir, cdnBase, searchBase string) 
 // Cover returns the local path of the game's cover image, downloading and
 // caching it if needed. On any miss it returns the shared placeholder (never
 // an error for a missing cover — art is decorative). The appid path goes
-// straight to the CDN (no search); a title search only fires without one,
-// and its candidates are scored — a wrong cover is worse than no cover.
+// straight to the CDN (no search); a title search always runs when the
+// appid path produced nothing — a known-artless appid (recent miss marker)
+// only skips the CDN retry, never the search, because a wrong appid guess
+// must not bury a resolvable title. Search candidates are scored and the
+// best-probability one binds: a wrong cover is worse than no cover.
 func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) {
 	if sanitized := sanitize(appID); sanitized != "" {
 		cached := filepath.Join(c.cacheDir, sanitized+".img")
 		if _, err := os.Stat(cached); err == nil {
 			return cached, nil
 		}
-		if c.recentMiss(sanitized) {
-			return c.placeholder()
+		if !c.recentMiss(sanitized) {
+			if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_600x900.jpg"), url.PathEscape(sanitized)), cached); err == nil {
+				return cached, nil
+			}
+			if p, ok := c.fromPCGW(ctx, sanitized, name); ok {
+				return p, nil
+			}
+			if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_hero.jpg"), url.PathEscape(sanitized)), cached); err == nil {
+				return cached, nil
+			}
+			c.markMiss(sanitized)
 		}
-		if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_600x900.jpg"), url.PathEscape(sanitized)), cached); err == nil {
-			return cached, nil
-		}
-		if p, ok := c.fromPCGW(ctx, sanitized, name); ok {
-			return p, nil
-		}
-		if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_hero.jpg"), url.PathEscape(sanitized)), cached); err == nil {
-			return cached, nil
-		}
-		c.markMiss(sanitized)
 	}
 
 	if name != "" {
@@ -151,10 +153,10 @@ func (c *Covers) markMiss(appid string) {
 }
 
 // searchAppID resolves a game name to a Steam appid via the store search API.
-// The first hit is NOT automatically the game: candidates are scored
-// (normalized exact or near-equal, PC bonus, edition penalty) and only an
-// accepted score binds — anything weaker means no cover rather than the
-// wrong one.
+// Candidates are scored (normalized exact or near-equal, PC bonus, edition
+// penalty) and the BEST score above the acceptance threshold binds — not the
+// first acceptable hit; anything weaker means no cover rather than the wrong
+// one.
 func (c *Covers) searchAppID(ctx context.Context, name string) (string, error) {
 	u := c.searchBase + "?term=" + url.QueryEscape(name) + "&cc=us&l=en"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
@@ -182,10 +184,14 @@ func (c *Covers) searchAppID(ctx context.Context, name string) (string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", err
 	}
+	bestID, bestScore := "", -1
 	for _, item := range result.Items {
-		if gid.Accept(gid.Score(name, item.Name, item.Platforms.Windows), false) {
-			return sanitize(item.ID.String()), nil
+		if score := gid.Score(name, item.Name, item.Platforms.Windows); score > bestScore {
+			bestID, bestScore = sanitize(item.ID.String()), score
 		}
+	}
+	if bestID != "" && gid.Accept(bestScore, false) {
+		return bestID, nil
 	}
 	return "", nil
 }

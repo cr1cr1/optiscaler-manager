@@ -2359,3 +2359,32 @@ Two-axis review (ff01442..HEAD) follow-up:
   untested gui/tui gating switch, with a table test.
 
 Verified: `go vet ./...` clean; `go test ./...` clean (Linux).
+
+## 2026-08-28 — cover art fallback for manually added games
+
+Posters for manual games were stuck on the placeholder. Four gaps, all
+fixed:
+
+- `covers.Cover`: a recent appid miss marker short-circuited to the
+  placeholder for 7 days, suppressing the title search entirely. It now
+  only skips the CDN retry; the title search always runs when the appid
+  path produced nothing.
+- `covers.searchAppID`: binds the BEST-scoring acceptable candidate (PC
+  bonus tie-break), not the first acceptable hit.
+- `ui.toRow`: manual `custom_<folder>` ids no longer reach the CDN appid
+  path — digits in a folder name ("Hades 2" → "2") fetched a wrong
+  game's URL and poisoned the miss cache with a bogus key. Non-numeric
+  ids go straight to the title search.
+- `ui.refreshCovers`: rows whose identification resolved a canonical
+  title but no appid retry the search with that resolved title (the raw
+  folder/codename query is the weak one; the covers storesearch scores
+  all candidates, unlike steam.SearchApps' first-hit-only check).
+  `AddDirectory`'s async pass now runs the same enrichment a scan would
+  (identify + enrich + cover rebind), so a manual add gets its poster
+  immediately instead of after the user's next rescan.
+
+Test hardening: TestStoreSearchFallback previously asserted only a
+non-empty path and silently "resolved" to the placeholder (its query
+scored 0); it now queries a title that scores and asserts real art.
+
+Verified: `go vet ./...` clean; `go test ./...` clean (Linux).

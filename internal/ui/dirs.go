@@ -113,6 +113,18 @@ func (s *Session) AddDirectory(dir string) {
 			s.finishOp(root)
 			return // cancelled mid-add: the placeholder row stays for the next scan
 		}
+		// Manual adds get the same online enrichment a scan would run:
+		// canonical title, appid, and the cover rebind — waiting for the
+		// user's next manual rescan left the raw-title placeholder up.
+		if snap.OnlineLookups && s.deps.Steam != nil {
+			s.identifyRow(ctx, &row, s.deps.Steam)
+			if s.deps.ProtonDB != nil {
+				s.enrichRow(ctx, &row, s.deps.Steam, s.deps.ProtonDB)
+			}
+			rw := []GameRow{row}
+			s.refreshCovers(ctx, rw)
+			row = rw[0]
+		}
 		s.mu.Lock()
 		// A RemoveDirectory that landed while this add was enriching has
 		// already dropped the placeholder row and the ExtraDirs entry;

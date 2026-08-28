@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -115,12 +116,15 @@ func TestStoreSearchFallback(t *testing.T) {
 	c.searchBase = f.srv.URL + "/api/storesearch/"
 
 	// Unknown appid: direct CDN misses, store search resolves by name.
-	p, err := c.Cover(context.Background(), "999999", "cyberpunk")
+	p, err := c.Cover(context.Background(), "999999", "cyberpunk 2077")
 	if err != nil {
 		t.Fatalf("Cover: %v", err)
 	}
 	if p == "" {
 		t.Fatal("expected cover via store-search fallback, got empty")
+	}
+	if !strings.HasSuffix(p, f.knownAppID+".img") {
+		t.Errorf("path = %q, want the searched game's art %q", p, f.knownAppID+".img")
 	}
 	if f.searchHits == 0 {
 		t.Error("store search was never consulted")
@@ -164,6 +168,66 @@ func TestCoverCacheKeySanitizesAppID(t *testing.T) {
 	p, err := c.Cover(context.Background(), "../../evil", "x")
 	if err == nil && strings.Contains(p, "..") {
 		t.Fatalf("cache path escaped: %q", p)
+	}
+}
+
+// A known-artless appid (recent .miss marker) skips the CDN retry but must
+// NOT suppress the title-search fallback: for manual games the appid guess
+// can be wrong while the title still resolves.
+func TestCoverRecentMissStillSearchesByTitle(t *testing.T) {
+	f := newFakeCDN(t)
+	cacheDir := t.TempDir()
+	c := New(nil, cacheDir)
+	c.cdnBase = f.srv.URL + "/steam/apps/%s/library_600x900.jpg"
+	c.searchBase = f.srv.URL + "/api/storesearch/"
+
+	// Seed the negative marker for the wrong appid.
+	miss := filepath.Join(cacheDir, "999999.miss")
+	if err := os.WriteFile(miss, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := c.Cover(context.Background(), "999999", "cyberpunk 2077")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	if !strings.HasSuffix(p, f.knownAppID+".img") {
+		t.Errorf("path = %q, want the title-search hit %q (miss marker must not block the fallback)", p, f.knownAppID+".img")
+	}
+	if f.searchHits == 0 {
+		t.Error("store search never ran behind a recent appid miss")
+	}
+	t.Logf("title fallback fired despite the miss marker: %s", p)
+}
+
+// When several candidates pass the acceptance gate, the best-probability
+// one wins (PC build outranks non-PC at equal title score), not the first.
+func TestSearchAppIDPicksBestScored(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/storesearch/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"items":[
+		  {"id":111,"name":"Cyberpunk","platforms":{"windows":false}},
+		  {"id":222,"name":"Cyberpunk","platforms":{"windows":true}}]}`)
+	})
+	mux.HandleFunc("/steam/apps/", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "222") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write(tinyPNG(t))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+
+	p, err := c.Cover(context.Background(), "", "Cyberpunk")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	if !strings.HasSuffix(p, "222.img") {
+		t.Errorf("path = %q, want the PC candidate's art (best score), not the first hit", p)
 	}
 }
 
