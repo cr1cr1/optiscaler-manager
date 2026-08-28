@@ -480,6 +480,71 @@ func TestGUICardButtonsBottomAligned(t *testing.T) {
 	}
 }
 
+// A long title wraps inside its reserved two-line slot; the button row
+// stays inside the fixed card height instead of being pushed past it.
+func TestGUICardTwoLineTitleKeepsButtonsInside(t *testing.T) {
+	sess, _ := guiFakes(t)
+	m := newModel(Config{Session: sess})
+	m.cardW = 200
+	m.cardH = cardContentH(m.cardW)
+	long := ui.GameRow{Title: "A Very Long Game Title That Definitely Wraps Well Past Two Lines Of Card Text",
+		Status: domain.StatusCommitted, OptiScalerVersion: "0.9.4", Components: []string{"DLSS 4.0"}}
+	short := ui.GameRow{Title: "Short",
+		Status: domain.StatusCommitted, OptiScalerVersion: "0.9.4", Components: []string{"DLSS 4.0"}}
+
+	headlessFrames(t, 800, 600)
+	RunFrameFn(func() { // build + resolve layout
+		Container(Attrs(Viewport, Row), func() {
+			m.gameCard(long, 0)
+			m.gameCard(short, 1)
+		})
+	})
+	var cardBottom, btnBottomLong, btnYShort, titleH float32
+	RunFrameFn(func() {
+		Container(Attrs(Viewport, Row), func() {
+			m.gameCard(long, 0)
+			cardBottom = m.cardRect.Origin[1] + m.cardRect.Size[1]
+			btnBottomLong = m.cardBtnRect.Origin[1] + m.cardBtnRect.Size[1]
+			titleH = m.titleRect.Size[1]
+			m.gameCard(short, 1)
+			btnYShort = m.cardBtnRect.Origin[1]
+		})
+	})
+	if titleH != titleRowH {
+		t.Errorf("title slot height = %.1f, want the reserved two lines %d", titleH, titleRowH)
+	}
+	if btnBottomLong > cardBottom+1 {
+		t.Errorf("long title: button row bottom %.1f past card bottom %.1f (title overflowed its slot)", btnBottomLong, cardBottom)
+	}
+	if yLong := btnBottomLong - m.cardBtnRect.Size[1]; yLong != btnYShort {
+		t.Errorf("button row Y = %.1f (long title) vs %.1f (short), want identical alignment", yLong, btnYShort)
+	}
+	t.Logf("card rect %+v, btn rect %+v, title slot %.1f", m.cardRect, m.cardBtnRect, titleH)
+}
+
+// The detail panel's disable toggle caption follows the install state:
+// Disable for an active install, Enable for a .disabled hook, hidden for
+// games with no install.
+func TestDisableLabel(t *testing.T) {
+	active := ui.GameRow{Status: domain.StatusCommitted}
+	if label, ok := disableLabel(&active); !ok || label != "Disable OptiScaler" {
+		t.Errorf("active install: label %q ok %v, want \"Disable OptiScaler\"", label, ok)
+	}
+	disabled := ui.GameRow{Status: domain.StatusCommitted, Disabled: true}
+	if label, ok := disableLabel(&disabled); !ok || label != "Enable OptiScaler" {
+		t.Errorf("disabled install: label %q ok %v, want \"Enable OptiScaler\"", label, ok)
+	}
+	external := ui.GameRow{Status: domain.StatusExternal}
+	if _, ok := disableLabel(&external); !ok {
+		t.Error("external install: toggle hidden, want shown (adoptable installs toggle too)")
+	}
+	plain := ui.GameRow{}
+	if _, ok := disableLabel(&plain); ok {
+		t.Error("plain game: toggle shown, want hidden (nothing to rename)")
+	}
+	t.Log("disable toggle captions ok")
+}
+
 // The sidebar shell fills the full window height.
 func TestGUISidebarFullHeight(t *testing.T) {
 	m := newModel(Config{})

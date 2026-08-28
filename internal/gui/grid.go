@@ -48,19 +48,22 @@ func cardSizeForPreset(size settings.CardSize) int {
 // Fixed card chrome below the cover: badge row, title, two pill rows, and
 // the button row, each one text line tall, plus gaps and padding. pillRowH
 // and badgeRowH track badgePill's vertical padding (see theme.go): a pill is
-// 3px top/bottom padding + ~16px text line.
+// 3px top/bottom padding + ~16px text line. The title reserves TWO lines:
+// titles soft-wrap at the card's inner width, and a 2-line title must not
+// push the pill/button rows past the fixed card height.
 const (
 	badgeRowH  = 22
 	textRowH   = 18
+	titleRowH  = 2 * textRowH
 	pillRowH   = 22
 	buttonRowH = 34 // focusableButton row height (v0.6.6 DefaultButtonLook: text + pad + push lip)
 )
 
 // cardContentH sizes a card so every element fits: badge row, cover,
-// title, version pills, tech pills, and the button row, plus gaps.
+// two-line title, version pills, tech pills, and the button row, plus gaps.
 func cardContentH(cardW int) int {
 	coverH := int(float32(cardW-2*cardPad) * coverRatio)
-	chrome := badgeRowH + textRowH + 2*pillRowH + buttonRowH + 5*cardGapV
+	chrome := badgeRowH + titleRowH + 2*pillRowH + buttonRowH + 5*cardGapV
 	return coverH + chrome
 }
 
@@ -295,13 +298,23 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 			if b, ok := statusPill(&e); ok {
 				badgePill(b.Label, b.Tone)
 			}
+			if e.Disabled {
+				badgePill("disabled", ui.ToneGray)
+			}
 			m.protonTierPill(e.ProtonTier)
 			if m.sess != nil && m.sess.OpBusy(e.InstallDir) {
 				spinnerGlyph()
 			}
 		})
 		m.coverArt(e, coverW, coverW*coverRatio)
-		txt(e.Title)
+		// The title gets a fixed two-line slot: short titles leave the
+		// second line empty (Filler below keeps the buttons bottom-pinned),
+		// long titles soft-wrap into it and anything past two lines is
+		// clipped rather than pushing the pill/button rows out of the card.
+		Container(Attrs(FixHeight(titleRowH), Clip), func() {
+			m.titleRect = GetScreenRectOf(CurrentId())
+			txt(e.Title)
+		})
 		if pills := versionPills(&e); len(pills) > 0 {
 			Container(Attrs(Row, Gap(cardGapH)), func() {
 				start := 0

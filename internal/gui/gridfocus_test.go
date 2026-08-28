@@ -289,6 +289,12 @@ func TestGrid_FocusedArrowsMoveFocusAndCursor(t *testing.T) {
 	keyFrame(KeyDown, 0, m.rootView)
 	assertFocus(1+m.cols, "after focused Down")
 	keyFrame(KeyUp, 0, m.rootView)
+	// With the two-line title reservation the rows are tall enough that
+	// the Up target's row is fully virtualized away after the Down scroll;
+	// focus then lands via the deferred cardFocusPending re-assert on the
+	// frame the target renders (the documented handoff in
+	// focusCursorCard), not in the same keyframe.
+	keyFrame(KeyCodeNone, 0, m.rootView)
 	assertFocus(1, "after focused Up")
 	keyFrame(KeyLeft, 0, m.rootView)
 	assertFocus(0, "after focused Left")

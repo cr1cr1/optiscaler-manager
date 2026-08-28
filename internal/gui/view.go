@@ -397,6 +397,9 @@ func (m *model) detailPanel() {
 			Container(Attrs(Row, Gap(sp4), CrossMid), func() {
 				txt("Status:")
 				badgePill(statusLabel(e), statusTone(e))
+				if e.Disabled {
+					badgePill("disabled", ui.ToneGray)
+				}
 				if e.EAC {
 					badgePill("EAC", ui.ToneRed)
 				}
@@ -448,6 +451,9 @@ func (m *model) detailPanel() {
 			}
 			if e.Actionable && focusableButton(SymUndo, "Rollback") {
 				m.sess.Rollback(e.InstallDir)
+			}
+			if label, ok := disableLabel(e); ok && focusableButton(NoIcon, label) {
+				m.sess.ToggleDisabled(e.InstallDir)
 			}
 			if e.CanOpenINI() {
 				Container(Attrs(Row), func() {
@@ -614,6 +620,19 @@ func (m *model) emptyState() {
 			}
 		})
 	})
+}
+
+// disableLabel is the detail panel's disable-toggle caption: Enable when
+// the install's hook is renamed away, Disable when it is active. ok=false
+// for rows with no OptiScaler install (nothing to rename).
+func disableLabel(e *ui.GameRow) (label string, ok bool) {
+	if e.Status != domain.StatusCommitted && e.Status != domain.StatusExternal {
+		return "", false
+	}
+	if e.Disabled {
+		return "Enable OptiScaler", true
+	}
+	return "Disable OptiScaler", true
 }
 
 func statusLabel(e *ui.GameRow) string {
