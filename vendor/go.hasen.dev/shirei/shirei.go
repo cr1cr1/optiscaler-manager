@@ -937,7 +937,8 @@ func ScrollOnInput() {
 		// Wheel input scrolls what's on screen, so clamping against the
 		// previous frame eagerly is right here — unlike SetScrollOffset,
 		// which records a target for this frame's layout to reconcile.
-		desired := Vec2Add(ui.current.ScrollOffset, ui.Host.FrameInput.Scroll)
+		// PATCHED by optiscaler-manager (v0.8): scroll speedup (x2/x3) — reapply after `go mod vendor` (see docs/vendor-patches.md)
+		desired := Vec2Add(ui.current.ScrollOffset, Vec2{ui.Host.FrameInput.Scroll[0] * 2, ui.Host.FrameInput.Scroll[1] * 3})
 
 		var paddingSize Vec2
 		paddingSize[0] = ui.current.Padding[PAD_LEFT] + ui.current.Padding[PAD_RIGHT]
@@ -1190,7 +1191,13 @@ func resolveOrigins(container *_Container) {
 			// parent's origin + relativeOrigin below.
 			prev, ok := child.node.prevRenderData()
 			if ok && child.Animations != 0 && child.node.bornFrame < ui.runFirstFrame {
-				var rate = min(1, ui.timeDelta*20)
+			// PATCHED by optiscaler-manager (v0.13): disable ALL layout animation. rate=1
+			// snaps every container to its target immediately — no smooth
+			// transitions on resize, panel open/close, view switch, or hover.
+			// The user explicitly requested no animations; the 5-7x reduction in
+			// repaint frames during any layout change is a bonus. Reapply after
+			// `go mod vendor` (see docs/vendor-patches.md).
+			rate := float32(1)
 				var distCutoff float32 = 1
 				var clrCutoff float32 = 0.01
 				af := child.Animations

@@ -52,6 +52,7 @@ var (
 	wantsFrame    bool
 	dirty         bool // input/state changed; redraw when no frame callback is pending
 	quit          bool
+	haveFrame     bool // PATCHED by optiscaler-manager (v0.15): at least one frame rendered — enables skipping unchanged frames
 
 	softRenderer shirei.SoftRenderer
 )
@@ -124,13 +125,14 @@ func Run(fn shirei.FrameFn) {
 	const framePoll = 16 * time.Millisecond
 	wlDebug("wl backend build: 2026-07-13-idle-frame-wake (timeout dispatch)")
 	for !quit {
-		err := wlclient.DisplayDispatchTimeout(disp, framePoll)
-		if err != nil && err != wl.ErrContextRunTimeout && err != wl.ErrContextRunProxyNil {
+		// PATCHED by optiscaler-manager (v0.10): cap the dispatch wait so a pending key repeat wakes the loop in time (see pumpRepeat in waylandkeyboard_linux.go).
+		if err := wlclient.DisplayDispatchTimeout(disp, repeatTimeout(framePoll)); err != nil && err != wl.ErrContextRunTimeout && err != wl.ErrContextRunProxyNil {
 			// Always to stderr: exiting the GUI loop is fatal for the app, and
 			// after a protocol error this is the only trace of what happened.
 			fmt.Fprintf(os.Stderr, "waylandbackend: display dispatch failed: %v\n", err)
 			break
 		}
+		pumpRepeat() // PATCHED (v0.10): synthesize the next held-key press if due
 		// Background goroutines set the RequestNextFrame flag; pick it up here
 		// the same way cocoa's tick checks shireiFrameRequested().
 		if shirei.FrameRequested() {
@@ -298,6 +300,7 @@ func (*handler) HandleToplevelConfigure(ev zxdg.ToplevelConfigureEvent) {
 	if ev.Width > 0 && ev.Height > 0 && (int(ev.Width) != logicalW || int(ev.Height) != logicalH) {
 		logicalW, logicalH = int(ev.Width), int(ev.Height)
 		recomputeDeviceSize()
+		dirty = true // PATCHED by optiscaler-manager (v0.12): trigger a repaint on resize (upstream HandleToplevelConfigure sets no dirty flag -> the app wouldn't redraw until the next unrelated input event).
 	}
 }
 
@@ -432,6 +435,13 @@ func drawFrame() {
 		openURL(out.OpenURL)
 	}
 
+	// PATCHED by optiscaler-manager (v0.15): skip the expensive raster + Attach + Damage + Commit when nothing changed since the last frame. RunFrameFn still ran (input, app state, hover, clipboard/IME outputs were processed above); only the paint is skipped. v0.6.6 made FrameHasChanges hash-based, so this fires precisely on identical-content frames.
+	if !out.FrameHasChanges && haveFrame {
+		wantsFrame = out.NextFrameRequested
+		perfRecordPaint(0)
+		return
+	}
+
 	t1 := time.Now()
 	softRenderer.RenderInto(b.data, curW*4, curW, curH, scale, out.Surfaces)
 	surface.Attach(b.buf, 0, 0)
@@ -446,5 +456,6 @@ func drawFrame() {
 	}
 	surface.Commit()
 	b.busy = true
+	haveFrame = true // PATCHED (v0.15): mark that a frame is on screen
 	perfRecordPaint(time.Since(t1))
 }
