@@ -6,6 +6,7 @@ import (
 	. "go.hasen.dev/shirei"
 	. "go.hasen.dev/shirei/widgets"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
@@ -92,6 +93,7 @@ func (m *model) openSettings() {
 	}
 	m.settingsOpen = true
 }
+
 // sectionTitle heads a settings group.
 func sectionTitle(s string) {
 	Label(s, FontSize(13), TextColorVec(txtMain), FontWeight(WeightBold))
@@ -102,44 +104,44 @@ func (m *model) settingsModal() {
 		Container(Attrs(Expand, Gap(sp16), BackgroundVec(bgPanel)), func() {
 			Label("Settings", FontSize(18), TextColorVec(txtMain), FontWeight(WeightBold))
 
-		Container(Attrs(Expand, Gap(sp4)), func() {
-			sectionTitle("General")
-			muted("Default OptiScaler version (tag or 'latest')")
-			themedInput(&m.versionBuf, "latest", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
-			if m.sess != nil {
-				focusableToggle(&m.onlineBuf, "Online game info (Steam/ProtonDB)")
-				if m.onlineBuf != m.sess.Settings().OnlineLookups {
-					m.sess.SetOnlineLookups(m.onlineBuf)
+			Container(Attrs(Expand, Gap(sp4)), func() {
+				sectionTitle("General")
+				muted("Default OptiScaler version (tag or 'latest')")
+				themedInput(&m.versionBuf, "latest", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+				if m.sess != nil {
+					focusableToggle(&m.onlineBuf, "Online game info (Steam/ProtonDB)")
+					if m.onlineBuf != m.sess.Settings().OnlineLookups {
+						m.sess.SetOnlineLookups(m.onlineBuf)
+					}
+					m.cardSizeSelector()
 				}
-				m.cardSizeSelector()
-			}
-		})
+			})
 
 			Container(Attrs(Expand, Gap(sp4)), func() {
 				sectionTitle("Scan Directories")
 				m.settingsDirsSection()
 			})
 
-		Container(Attrs(Expand, Gap(sp4)), func() {
-			sectionTitle("Launch Template")
-			muted("Command template for manually added games; {exe} and {args} are substituted")
-			themedInput(&m.templateBuf, `"{exe}" {args}`, NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
-		})
+			Container(Attrs(Expand, Gap(sp4)), func() {
+				sectionTitle("Launch Template")
+				muted("Command template for manually added games; {exe} and {args} are substituted")
+				themedInput(&m.templateBuf, `"{exe}" {args}`, NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+			})
 
-		Container(Attrs(Expand, Gap(sp4)), func() {
-			sectionTitle("umu-launcher (Linux: Windows games via Proton)")
-			if m.sess != nil {
-				focusableToggle(&m.umuEnabledBuf, "Launch Windows binaries via umu-launcher")
-				if m.umuEnabledBuf != m.sess.Settings().UmuEnabled {
-					m.sess.SetUmuEnabled(m.umuEnabledBuf)
+			Container(Attrs(Expand, Gap(sp4)), func() {
+				sectionTitle("umu-launcher (Linux: Windows games via Proton)")
+				if m.sess != nil {
+					focusableToggle(&m.umuEnabledBuf, "Launch Windows binaries via umu-launcher")
+					if m.umuEnabledBuf != m.sess.Settings().UmuEnabled {
+						m.sess.SetUmuEnabled(m.umuEnabledBuf)
+					}
+					muted("Proton path (blank = auto-detect from Steam / Bottles / umu)")
+					themedInput(&m.umuProtonBuf, "", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+					if m.umuProtonBuf != m.sess.Settings().UmuProtonPath {
+						m.sess.SetUmuProtonPath(m.umuProtonBuf)
+					}
 				}
-				muted("Proton path (blank = auto-detect from Steam / Bottles / umu)")
-				themedInput(&m.umuProtonBuf, "", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
-				if m.umuProtonBuf != m.sess.Settings().UmuProtonPath {
-					m.sess.SetUmuProtonPath(m.umuProtonBuf)
-				}
-			}
-		})
+			})
 
 			if m.sess != nil {
 				Container(Attrs(Row, Gap(sp8)), func() {
@@ -166,11 +168,11 @@ func (m *model) cardSizeSelector() {
 	cur := m.sess.Settings().CardSize
 	muted("Card size")
 	Container(Attrs(Row, Gap(sp4)), func() {
-		for _, opt := range []string{"small", "medium", "large"} {
+		for _, opt := range []settings.CardSize{settings.CardSizeSmall, settings.CardSizeMedium, settings.CardSizeLarge} {
 			selected := opt == cur
-			label := opt
+			label := string(opt)
 			if selected {
-				label = "● " + opt
+				label = "● " + label
 			}
 			if focusableButtonExt(label, ButtonAttrs{Icon: NoIcon}) && !selected {
 				m.sess.SetCardSize(opt)

@@ -8,6 +8,7 @@ import (
 	. "go.hasen.dev/shirei"
 	. "go.hasen.dev/shirei/widgets"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
@@ -20,28 +21,28 @@ import (
 const (
 	cardGap    = 10
 	coverRatio = 1.5 // 600x900 covers are 2:3
-	rowPadH    = 12 // horizontal padding each side of a grid row
-	cardPad    = 10 // inner card padding
-	cardGapV   = 8  // vertical gap between components
-	cardGapH   = 8  // horizontal gap inside row containers
+	rowPadH    = 12  // horizontal padding each side of a grid row
+	cardPad    = 10  // inner card padding
+	cardGapV   = 8   // vertical gap between components
+	cardGapH   = 8   // horizontal gap inside row containers
 )
 
 // cardSizePresets maps the settings CardSize value to a target card width
 // in px. The target drives the column count; the actual cardW stretches to
 // fill the row so there's no gap on the right (see fitCards).
-var cardSizePresets = map[string]int{
-	"small":  200,
-	"medium": 240,
-	"large":  280,
+var cardSizePresets = map[settings.CardSize]int{
+	settings.CardSizeSmall:  200,
+	settings.CardSizeMedium: 240,
+	settings.CardSizeLarge:  280,
 }
 
-// cardSizeForPreset returns the target card width for a preset name, falling
+// cardSizeForPreset returns the target card width for a preset, falling
 // back to medium for any unrecognized value.
-func cardSizeForPreset(size string) int {
+func cardSizeForPreset(size settings.CardSize) int {
 	if w, ok := cardSizePresets[size]; ok {
 		return w
 	}
-	return cardSizePresets["medium"]
+	return cardSizePresets[settings.CardSizeMedium]
 }
 
 // Fixed card chrome below the cover: badge row, title, two pill rows, and

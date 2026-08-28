@@ -19,6 +19,20 @@ func TestLoadDefaultsWhenMissing(t *testing.T) {
 	}
 }
 
+func TestCardSizeOrDefault(t *testing.T) {
+	for _, s := range []CardSize{CardSizeSmall, CardSizeMedium, CardSizeLarge} {
+		if got := s.OrDefault(); got != s {
+			t.Errorf("CardSize(%q).OrDefault() = %q, want itself", s, got)
+		}
+	}
+	for _, s := range []CardSize{"", "bogus", "SMALL"} {
+		if got := s.OrDefault(); got != CardSizeMedium {
+			t.Errorf("CardSize(%q).OrDefault() = %q, want medium", s, got)
+		}
+	}
+	t.Log("card size presets normalize to medium")
+}
+
 func TestSaveLoadRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	want := Settings{DefaultVersion: "v0.9.4", ExtraDirs: []string{"/games/custom"}}

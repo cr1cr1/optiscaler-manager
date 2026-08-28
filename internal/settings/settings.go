@@ -15,6 +15,26 @@ import (
 // mirrors the launch package's built-in manual template.
 const DefaultLaunchTemplate = `"{exe}" {args}`
 
+// CardSize is a grid card width preset. The preset sets the target card
+// width; the actual width stretches a few px to fill the row, and the
+// column count adjusts to the window width.
+type CardSize string
+
+const (
+	CardSizeSmall  CardSize = "small"  // 200px target card width
+	CardSizeMedium CardSize = "medium" // 240px, the default
+	CardSizeLarge  CardSize = "large"  // 280px
+)
+
+// OrDefault returns s when it names a known preset, else CardSizeMedium.
+func (s CardSize) OrDefault() CardSize {
+	switch s {
+	case CardSizeSmall, CardSizeMedium, CardSizeLarge:
+		return s
+	}
+	return CardSizeMedium
+}
+
 // Settings are the user-configurable preferences.
 type Settings struct {
 	DefaultVersion string   `json:"default_version"`
@@ -29,11 +49,8 @@ type Settings struct {
 	// override beats every identification rule (v0.8). JSON-edited only
 	// for now.
 	TitleOverrides map[string]string `json:"title_overrides,omitempty"`
-	// CardSize selects the grid card width preset: "small" (200px),
-	// "medium" (240px, default), or "large" (280px). The preset sets the
-	// target card width; the actual width stretches a few px to fill the
-	// row, and the column count adjusts to the window width.
-	CardSize string `json:"card_size,omitempty"`
+	// CardSize selects the grid card width preset.
+	CardSize CardSize `json:"card_size,omitempty"`
 	// UmuEnabled toggles routing manual-store Windows binaries through
 	// umu-launcher on Linux (umu-run + Proton). Defaults to false: the
 	// feature is opt-in. Decoded through a pointer in Load so legacy
@@ -51,7 +68,7 @@ type Settings struct {
 
 // Defaults returns the out-of-box settings.
 func Defaults() Settings {
-	return Settings{DefaultVersion: "latest", LaunchTemplate: DefaultLaunchTemplate, OnlineLookups: true, CardSize: "medium"}
+	return Settings{DefaultVersion: "latest", LaunchTemplate: DefaultLaunchTemplate, OnlineLookups: true, CardSize: CardSizeMedium}
 }
 
 func path(root string) string { return filepath.Join(root, "settings.json") }
@@ -73,7 +90,7 @@ func Load(root string) (Settings, error) {
 		ExtraDirs      []string          `json:"extra_dirs,omitempty"`
 		OnlineLookups  *bool             `json:"online_lookups"`
 		TitleOverrides map[string]string `json:"title_overrides,omitempty"`
-		CardSize       string            `json:"card_size,omitempty"`
+		CardSize       CardSize          `json:"card_size,omitempty"`
 		UmuEnabled     *bool             `json:"umu_enabled"`
 		UmuProtonPath  string            `json:"umu_proton_path,omitempty"`
 	}
@@ -102,9 +119,7 @@ func Load(root string) (Settings, error) {
 	if s.LaunchTemplate == "" {
 		s.LaunchTemplate = DefaultLaunchTemplate
 	}
-	if s.CardSize != "small" && s.CardSize != "medium" && s.CardSize != "large" {
-		s.CardSize = "medium"
-	}
+	s.CardSize = s.CardSize.OrDefault()
 	return s, nil
 }
 

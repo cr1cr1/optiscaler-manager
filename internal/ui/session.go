@@ -323,12 +323,10 @@ func (s *Session) SetOnlineLookups(v bool) {
 	}
 }
 
-// SetCardSize changes the grid card width preset (persisted). Accepts
-// "small", "medium", "large"; anything else falls back to "medium".
-func (s *Session) SetCardSize(size string) {
-	if size != "small" && size != "medium" && size != "large" {
-		size = "medium"
-	}
+// SetCardSize changes the grid card width preset (persisted). Anything
+// outside the known presets falls back to medium.
+func (s *Session) SetCardSize(size settings.CardSize) {
+	size = size.OrDefault()
 	s.mu.Lock()
 	if s.deps.Settings.CardSize == size {
 		s.mu.Unlock()

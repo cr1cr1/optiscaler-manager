@@ -8,12 +8,14 @@ import (
 	"time"
 
 	. "go.hasen.dev/shirei"
+
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 )
 
 // --- Card size presets ---
 
 func TestCardSizePresets_Valid(t *testing.T) {
-	want := map[string]int{"small": 200, "medium": 240, "large": 280}
+	want := map[settings.CardSize]int{settings.CardSizeSmall: 200, settings.CardSizeMedium: 240, settings.CardSizeLarge: 280}
 	for size, px := range want {
 		got := cardSizeForPreset(size)
 		if got != px {
