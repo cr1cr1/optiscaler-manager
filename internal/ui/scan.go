@@ -47,18 +47,8 @@ func (s *Session) Start(ctx context.Context) {
 // repair/rollback/retry (docs/safety.md), so the boot warns and the
 // actionable rows carry the Rollback affordance. Nothing is auto-deleted.
 func (s *Session) toastInterrupted(rows []GameRow) {
-	var titles []string
-	for _, r := range rows {
-		if actionableStatus(r.Status) {
-			titles = append(titles, r.Title)
-		}
-	}
-	switch len(titles) {
-	case 0:
-	case 1:
-		s.toast("interrupted install: "+titles[0]+", rollback to restore or install to retry", true)
-	default:
-		s.toast(fmt.Sprintf("%d interrupted installs: rollback to restore or install to retry", len(titles)), true)
+	if msg := InterruptedMessage(InterruptedRows(rows)); msg != "" {
+		s.toast(msg, true)
 	}
 }
 

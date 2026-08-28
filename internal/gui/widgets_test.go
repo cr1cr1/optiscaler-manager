@@ -522,27 +522,27 @@ func TestGUICardTwoLineTitleKeepsButtonsInside(t *testing.T) {
 	t.Logf("card rect %+v, btn rect %+v, title slot %.1f", m.cardRect, m.cardBtnRect, titleH)
 }
 
-// The detail panel's disable toggle caption follows the install state:
-// Disable for an active install, Enable for a .disabled hook, hidden for
-// games with no install.
-func TestDisableLabel(t *testing.T) {
-	active := ui.GameRow{Status: domain.StatusCommitted}
-	if label, ok := disableLabel(&active); !ok || label != "Disable OptiScaler" {
-		t.Errorf("active install: label %q ok %v, want \"Disable OptiScaler\"", label, ok)
+// The interrupted-install banner is the persistent repair surface: it
+// renders while any row is actionable and vanishes for a clean library.
+func TestGUIInterruptedBanner(t *testing.T) {
+	m := newModel(Config{})
+	m.state.Rows = []ui.GameRow{
+		{Title: "Fine", Status: domain.StatusCommitted},
+		{Title: "Died", Status: domain.StatusFailed, Actionable: true},
 	}
-	disabled := ui.GameRow{Status: domain.StatusCommitted, Disabled: true}
-	if label, ok := disableLabel(&disabled); !ok || label != "Enable OptiScaler" {
-		t.Errorf("disabled install: label %q ok %v, want \"Enable OptiScaler\"", label, ok)
+	headlessFrames(t, 800, 600)
+	RunFrameFn(m.rootView) // build
+	RunFrameFn(m.rootView) // resolve layout
+	if m.bannerRect.Size[1] == 0 {
+		t.Fatal("no banner with an interrupted install present")
 	}
-	external := ui.GameRow{Status: domain.StatusExternal}
-	if _, ok := disableLabel(&external); !ok {
-		t.Error("external install: toggle hidden, want shown (adoptable installs toggle too)")
+	t.Logf("banner rect: %+v", m.bannerRect)
+
+	m.state.Rows = []ui.GameRow{{Title: "Fine", Status: domain.StatusCommitted}}
+	RunFrameFn(m.rootView)
+	if m.bannerRect.Size[1] != 0 {
+		t.Errorf("banner still present for a clean library: %+v", m.bannerRect)
 	}
-	plain := ui.GameRow{}
-	if _, ok := disableLabel(&plain); ok {
-		t.Error("plain game: toggle shown, want hidden (nothing to rename)")
-	}
-	t.Log("disable toggle captions ok")
 }
 
 // The sidebar shell fills the full window height.

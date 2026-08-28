@@ -14,7 +14,6 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/termopen"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
@@ -142,7 +141,7 @@ func findRow(rows []ui.GameRow, dir string) *ui.GameRow {
 // cycler may retarget (committed or external — anything else has nothing
 // to switch FROM).
 func switchable(r ui.GameRow) bool {
-	return r.Status == domain.StatusCommitted || r.Status == domain.StatusExternal
+	return r.HasInstall()
 }
 
 // eventMsg carries one session event into the update loop.

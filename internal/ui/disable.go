@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 )
 
@@ -20,7 +19,7 @@ func (s *Session) ToggleDisabled(gameDir string) {
 		s.toast("unknown game: "+gameDir, true)
 		return
 	}
-	if row.InjectionDir == "" || (row.Status != domain.StatusCommitted && row.Status != domain.StatusExternal) {
+	if row.InjectionDir == "" || !row.HasInstall() {
 		s.toast("OptiScaler is not installed for "+gameTitle(row, gameDir), true)
 		return
 	}

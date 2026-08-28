@@ -19,6 +19,7 @@ func (m *model) rootView() {
 		Container(Attrs(Grow(1), Expand, Gap(0)), func() {
 			m.toolbar()
 			m.progressBar()
+			m.interruptedBanner()
 			// The virtualized views must sit directly inside the expanding
 			// column: they size to the remaining space and render nothing
 			// inside auto-sized wrappers (upstream demos do the same). With
@@ -50,6 +51,24 @@ func (m *model) rootView() {
 			m.confirmModal()
 		}
 		m.handleGlobalKeys()
+	})
+}
+
+// interruptedBanner is the persistent half of the repair/rollback/retry
+// surface (docs/safety.md): while any install sits in in_progress/failed,
+// a warning strip names the count and the choices. It covers every boot
+// path (warm cache or cold scan) because it derives from the row state;
+// the actionable rows themselves carry the Rollback and Install buttons.
+func (m *model) interruptedBanner() {
+	m.bannerRect = Rect{}
+	msg := ui.InterruptedMessage(ui.InterruptedRows(m.state.Rows))
+	if msg == "" {
+		return
+	}
+	Container(Attrs(Row, CrossMid, Gap(sp8), Pad2(sp8, sp12), BackgroundVec(bgPanel)), func() {
+		m.bannerRect = GetScreenRectOf(CurrentId())
+		Icon(TypWarningOutline, FontSize(15), TextColorVec(txtWarn))
+		Label(msg, FontSize(13), TextColorVec(txtWarn))
 	})
 }
 
@@ -452,7 +471,7 @@ func (m *model) detailPanel() {
 			if e.Actionable && focusableButton(SymUndo, "Rollback") {
 				m.sess.Rollback(e.InstallDir)
 			}
-			if label, ok := disableLabel(e); ok && focusableButton(NoIcon, label) {
+			if label, ok := e.DisableToggleLabel(); ok && focusableButton(NoIcon, label) {
 				m.sess.ToggleDisabled(e.InstallDir)
 			}
 			if e.CanOpenINI() {
@@ -620,19 +639,6 @@ func (m *model) emptyState() {
 			}
 		})
 	})
-}
-
-// disableLabel is the detail panel's disable-toggle caption: Enable when
-// the install's hook is renamed away, Disable when it is active. ok=false
-// for rows with no OptiScaler install (nothing to rename).
-func disableLabel(e *ui.GameRow) (label string, ok bool) {
-	if e.Status != domain.StatusCommitted && e.Status != domain.StatusExternal {
-		return "", false
-	}
-	if e.Disabled {
-		return "Enable OptiScaler", true
-	}
-	return "Disable OptiScaler", true
 }
 
 func statusLabel(e *ui.GameRow) string {

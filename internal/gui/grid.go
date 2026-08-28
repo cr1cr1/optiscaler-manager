@@ -36,13 +36,10 @@ var cardSizePresets = map[settings.CardSize]int{
 	settings.CardSizeLarge:  280,
 }
 
-// cardSizeForPreset returns the target card width for a preset, falling
-// back to medium for any unrecognized value.
+// cardSizeForPreset returns the target card width for a preset; unknown
+// values fall back to medium via the settings type's own normalization.
 func cardSizeForPreset(size settings.CardSize) int {
-	if w, ok := cardSizePresets[size]; ok {
-		return w
-	}
-	return cardSizePresets[settings.CardSizeMedium]
+	return cardSizePresets[size.OrDefault()]
 }
 
 // Fixed card chrome below the cover: badge row, title, two pill rows, and

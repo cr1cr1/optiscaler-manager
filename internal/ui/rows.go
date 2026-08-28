@@ -4,6 +4,7 @@
 package ui
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -82,12 +83,59 @@ func badgeForTech(kind string) Badge {
 	}
 }
 
+// HasInstall reports whether the row carries an OptiScaler install:
+// manager-committed or detected external. Anything else has no hook to
+// toggle, no ini worth opening, and no version to switch from.
+func (r GameRow) HasInstall() bool {
+	return r.Status == domain.StatusCommitted || r.Status == domain.StatusExternal
+}
+
 // CanOpenINI reports whether the row has an OptiScaler install whose ini is
 // worth opening: a manager-committed install or an external one detected on
 // disk. Failed, in-progress, rolled-back, and never-installed rows have no
 // usable ini, so the affordance stays closed for them.
 func (r GameRow) CanOpenINI() bool {
-	return r.Status == domain.StatusCommitted || r.Status == domain.StatusExternal
+	return r.HasInstall()
+}
+
+// DisableToggleLabel is the caption for the hook disable toggle: Enable
+// when the hook is renamed away, Disable when it is active. ok=false when
+// the row has no install to toggle.
+func (r GameRow) DisableToggleLabel() (label string, ok bool) {
+	if !r.HasInstall() {
+		return "", false
+	}
+	if r.Disabled {
+		return "Enable OptiScaler", true
+	}
+	return "Disable OptiScaler", true
+}
+
+// InterruptedRows filters rows down to interrupted installs (in_progress /
+// failed, the actionable set) in order. Frontends build the persistent
+// repair/rollback/retry surface from it; the rows themselves carry the
+// Rollback and Install affordances.
+func InterruptedRows(rows []GameRow) []GameRow {
+	var out []GameRow
+	for _, r := range rows {
+		if r.Actionable {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// InterruptedMessage is the repair guidance for interrupted installs; the
+// boot toast and the frontends' persistent banner share the wording. rows
+// must be the InterruptedRows output. "" for an empty set.
+func InterruptedMessage(rows []GameRow) string {
+	switch len(rows) {
+	case 0:
+		return ""
+	case 1:
+		return "interrupted install: " + rows[0].Title + ", rollback to restore or install to retry"
+	}
+	return fmt.Sprintf("%d interrupted installs: rollback to restore or install to retry", len(rows))
 }
 
 // actionableStatus marks installs that need attention (interrupted, failed).

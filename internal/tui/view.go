@@ -255,15 +255,26 @@ func (m Model) gamesView(snap ui.State, w, contentH int) string {
 	for i, r := range rows {
 		lines = append(lines, m.gameRowLine(r, tw, w, i == m.cursor))
 	}
+	// The persistent half of the repair/rollback/retry surface
+	// (docs/safety.md): while any install is in_progress/failed, a warning
+	// line names the count and the choices; the rows themselves carry the
+	// actionable affordances. Derives from row state, so it covers the
+	// cold-boot scan path the CLI stderr warning no longer prints for tui.
+	banner := ""
+	reserved := 1 // column header
+	if msg := ui.InterruptedMessage(ui.InterruptedRows(rows)); msg != "" {
+		banner = styleWarn.Render("! "+msg) + "\n"
+		reserved++
+	}
 	vp := m.gamesVP
 	vp.Width = w
-	vp.Height = contentH - 1 // column header
+	vp.Height = contentH - reserved
 	if vp.Height < 1 {
 		vp.Height = 1
 	}
 	vp.SetContent(strings.Join(lines, "\n"))
 	keepCursorVisible(&vp, m.cursor)
-	return header + "\n" + vp.View()
+	return header + "\n" + banner + vp.View()
 }
 
 // keepCursorVisible scrolls the viewport just enough to contain row.
@@ -448,7 +459,7 @@ func (m Model) detailView(w, contentH int) string {
 		if row.Disabled {
 			disable = "  d  enable OptiScaler"
 		}
-		if row.Status != "committed" && row.Status != "external" {
+		if !row.HasInstall() {
 			disable = styleDimmedAction.Render("  d  disable OptiScaler (installed games only)")
 		}
 		b.WriteString(disable + "\n")

@@ -344,6 +344,30 @@ func TestDetailViewSwitchVersionHint(t *testing.T) {
 	})
 }
 
+// TestGamesViewInterruptedBanner: while any row is an interrupted install,
+// the games list carries the persistent repair/rollback/retry guidance
+// (the cold-boot surface; the CLI stderr warning no longer prints for tui).
+func TestGamesViewInterruptedBanner(t *testing.T) {
+	settingsDir := t.TempDir()
+	e := newTestEnv(t, func(d *ui.Deps) { d.SettingsRoot = settingsDir })
+	seedGamesCache(t, settingsDir, []ui.GameRow{
+		{Title: "Fine", AppID: "100", InstallDir: "/games/fine", Status: domain.StatusCommitted},
+		{Title: "Died", AppID: "200", InstallDir: "/games/died", Status: domain.StatusFailed, Actionable: true},
+	})
+	e.sess.Start(context.Background())
+	m := Model{sess: e.sess, screen: screenGames}
+
+	out := m.gamesView(e.sess.Snapshot(), 100, 40)
+	plain := sgrRE.ReplaceAllString(out, "")
+	t.Logf("games view:\n%s", plain)
+	if !strings.Contains(plain, "interrupted install") {
+		t.Errorf("no interrupted-install banner: %q", plain)
+	}
+	if !strings.Contains(plain, "rollback") {
+		t.Errorf("banner does not guide toward rollback: %q", plain)
+	}
+}
+
 // TestGameRowLineCycleIndicator: a staged version candidate replaces the
 // version cell ("→ <candidate>"), truncated BEFORE styling so the row
 // stays ANSI-balanced and exactly one table width wide — same invariant
