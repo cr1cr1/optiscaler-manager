@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
 )
@@ -285,6 +286,63 @@ func TestEnrichManagedSkipsDetection(t *testing.T) {
 	}
 	if e.ManifestID != "managed1" {
 		t.Errorf("ManifestID = %q, want %q", e.ManifestID, "managed1")
+	}
+}
+
+// TestEnrichDisabledExternalDetected: an unmanaged game whose hook was
+// renamed to <name>.disabled (OptiScaler off, files still present) still
+// surfaces as external — the install exists — flagged Disabled so
+// frontends can offer the re-enable toggle.
+func TestEnrichDisabledExternalDetected(t *testing.T) {
+	steamRoot := mkSteamRoot(t)
+	game := mkExternalGame(t, steamRoot, "100", "Disabled Game", "DisabledGame",
+		map[string]string{"ProductName": "OptiScaler"}, [4]uint16{})
+	if err := os.Rename(filepath.Join(game, "dxgi.dll"), filepath.Join(game, "dxgi.dll"+pever.DisabledSuffix)); err != nil {
+		t.Fatal(err)
+	}
+
+	e := scanOne(t, nil, steamRoot, "Disabled Game")
+	if e.Status != domain.StatusExternal {
+		t.Errorf("Status = %q, want %q (disabled hook still means installed)", e.Status, domain.StatusExternal)
+	}
+	if !e.Disabled {
+		t.Error("Disabled = false, want true for a .disabled hook")
+	}
+}
+
+// TestEnrichManagedDisabled: a committed manifest stays authoritative when
+// the hook is renamed .disabled — the row remains committed and gains the
+// Disabled flag instead of dropping to uninstalled.
+func TestEnrichManagedDisabled(t *testing.T) {
+	steamRoot := mkSteamRoot(t)
+	game := mkExternalGame(t, steamRoot, "100", "Managed Disabled", "ManagedDisabled",
+		map[string]string{"ProductName": "OptiScaler"}, [4]uint16{})
+	if err := os.Rename(filepath.Join(game, "dxgi.dll"), filepath.Join(game, "dxgi.dll"+pever.DisabledSuffix)); err != nil {
+		t.Fatal(err)
+	}
+
+	installDir, err := installDirOf(game)
+	if err != nil {
+		t.Fatalf("installDirOf: %v", err)
+	}
+	st := store.New(t.TempDir())
+	if err := st.Save(&domain.Manifest{
+		ID:            "managed-disabled1",
+		SchemaVersion: domain.SchemaVersion,
+		Status:        domain.StatusCommitted,
+		GameRoot:      game,
+		InstallDir:    installDir,
+		Resolved:      domain.ResolvedAsset{Version: "0.9.4"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	e := scanOne(t, st, steamRoot, "Managed Disabled")
+	if e.Status != domain.StatusCommitted {
+		t.Errorf("Status = %q, want %q (manifest authoritative)", e.Status, domain.StatusCommitted)
+	}
+	if !e.Disabled {
+		t.Error("Disabled = false, want true for a .disabled hook")
 	}
 }
 

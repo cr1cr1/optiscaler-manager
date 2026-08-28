@@ -101,7 +101,13 @@ func ManualEntryWithResolver(dir string, st *store.Store, res discovery.TitleRes
 		if found, version := pever.DetectOptiScaler(e.InjectionDir); found {
 			e.Status = domain.StatusExternal
 			e.OptiScalerVersion = version
+		} else if pever.DisabledHook(e.InjectionDir) != "" {
+			e.Status = domain.StatusExternal
+			e.Disabled = true
 		}
+	}
+	if e.Status != "" && !e.Disabled && e.InjectionDir != "" {
+		e.Disabled = pever.DisabledHook(e.InjectionDir) != ""
 	}
 	return e, nil
 }
@@ -138,6 +144,9 @@ type LibraryEntry struct {
 
 	OptiScalerVersion string            // "" when not installed or unknown
 	ComponentVersions map[string]string // "dlss"/"fsr"/"xess" → marketing name
+	// Disabled reports the install's injection hook renamed to
+	// <name>.disabled: OptiScaler is present but the game will not load it.
+	Disabled bool
 }
 
 // ScanAllOptions controls ScanAllLibraries. An empty SteamRoot means "probe
@@ -231,12 +240,20 @@ func enrich(g domain.Game, byInstallDir map[string]*domain.Manifest) LibraryEntr
 	}
 	// A game with no store manifest may still carry an OptiScaler dropped in
 	// by hand: probe the injection dir for a branded injection DLL. The
-	// probe is bounded to unmanaged rows — manifests stay authoritative.
+	// probe is bounded to unmanaged rows — manifests stay authoritative. A
+	// hook renamed <name>.disabled is still an install (external), just one
+	// the game will not load.
 	if e.Status == "" && e.InjectionDir != "" {
 		if found, version := pever.DetectOptiScaler(e.InjectionDir); found {
 			e.Status = domain.StatusExternal
 			e.OptiScalerVersion = version // "" when the evidence chain runs dry
+		} else if pever.DisabledHook(e.InjectionDir) != "" {
+			e.Status = domain.StatusExternal
+			e.Disabled = true
 		}
+	}
+	if e.Status != "" && !e.Disabled {
+		e.Disabled = pever.DisabledHook(e.InjectionDir) != ""
 	}
 	enrichVersions(&e, m)
 	return e
