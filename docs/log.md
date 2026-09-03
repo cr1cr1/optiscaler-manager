@@ -2388,3 +2388,23 @@ non-empty path and silently "resolved" to the placeholder (its query
 scored 0); it now queries a title that scores and asserts real art.
 
 Verified: `go vet ./...` clean; `go test ./...` clean (Linux).
+
+## 2026-08-28 — selection re-probes install state from disk
+
+Cached rows went stale when OptiScaler was added, removed, or
+disabled/enabled by hand between scans; only a rescan refreshed them.
+Selection is now the freshness point: `Session.RefreshInstallState`
+re-probes the row's injection dir (stats + one bounded PE identity parse)
+and rewrites the row and games cache when the disk drifted.
+`Session.Select` runs it (covers GUI card and list clicks); the TUI calls
+it on detail-open since it keeps its own `detailDir`. Semantics mirror the
+scan: committed rows keep manifest status (only the `.disabled` toggle
+drifts), external rows follow the disk exactly (hand-deleted hook clears
+the install), never-installed rows gain `external` on a branded hook, and
+interrupted/rolled-back rows are skipped so partial files cannot flip them.
+
+Tests: five `internal/ui/probe_test.go` cases (hand-toggle both directions,
+manual install, manual disabled install, hand-removed external, late
+injection-dir resolution) plus a TUI detail-screen test asserting the
+fresh external+disabled render. Verified: `go vet ./...` clean;
+`go test ./...` clean (Linux).

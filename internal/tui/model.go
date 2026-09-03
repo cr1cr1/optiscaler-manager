@@ -329,6 +329,9 @@ func (m Model) gamesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		if dir := selectedDir(rows, m.cursor); dir != "" {
+			// The TUI keeps its own detailDir (no session Select), so
+			// re-probe the install state here like Select does.
+			m.sess.RefreshInstallState(dir)
 			m.detailDir = dir
 			m.screen = screenDetail
 		}

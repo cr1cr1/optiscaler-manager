@@ -1259,3 +1259,34 @@ func TestTUIVersionCycleDetailScreen(t *testing.T) {
 		t.Errorf("detail frame does not show the switched version:\n%s", frame)
 	}
 }
+
+// TestTUIDetailReprobesInstallState: OptiScaler was dropped into the game
+// directory by hand (already disabled) after the scan; opening the detail
+// screen re-probes the disk and renders the fresh state — external,
+// (disabled), and an Enable action — without a rescan.
+func TestTUIDetailReprobesInstallState(t *testing.T) {
+	e := newTestEnv(t, nil)
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	// Hand-drop a disabled OptiScaler hook after the scan cached the row.
+	if err := os.WriteFile(filepath.Join(e.bin, "dxgi.dll.disabled"),
+		testutil.StringInfoPE(false, map[string]string{"ProductName": "OptiScaler"}, [4]uint16{}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sendKey(tm, tea.KeyEnter)
+	waitFrame(t, tm, "AppID")
+
+	_ = tm.Quit()
+	frame := finalFrame(t, tm)
+	t.Logf("detail frame after hand-disabled drop-in:\n%s", frame)
+	for _, want := range []string{"external", "(disabled)", "enable OptiScaler"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("detail frame lacks %q:\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "installed games only") {
+		t.Errorf("install-gated actions still dimmed after detection:\n%s", frame)
+	}
+}

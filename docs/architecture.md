@@ -147,6 +147,18 @@ rewritten after every scan, `AddDirectory`/`RemoveDirectory`, and op settle
 (status change), serialized so concurrent writers cannot interleave.
 Explicit rescans stay user-initiated (GUI Scan button, TUI `R`).
 
+Between scans, selection is the freshness point: `Session.Select` (GUI card
+and list) and the TUI's detail-open both run `RefreshInstallState`, which
+re-probes the row's injection dir from disk (a few stats plus one bounded
+PE identity parse) and rewrites the row — and the cache — when it drifted.
+A hook installed, deleted, or renamed `.disabled` by hand thus renders
+correctly on the next click without a rescan. Manifest semantics mirror the
+scan: committed rows keep their manifest status (only the on-disk toggle
+drifts), external rows follow the disk exactly (a hand-deleted hook clears
+the install), and never-installed rows gain `external` when a branded hook
+appears. Interrupted and rolled-back rows are skipped — partial files must
+not flip them; the repair surface owns them.
+
 ## External install detection (v0.6)
 
 The enrich phase derives one more status. A game with no store manifest may
