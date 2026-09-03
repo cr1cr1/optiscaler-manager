@@ -37,7 +37,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.12
+          version: v2.13
 
   # Cross-GOOS compile gates. Windows is fully CGO-free, so the whole tree
   # vets. Darwin is package-scoped: shirei's cocoa backend needs an Apple SDK
