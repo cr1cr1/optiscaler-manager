@@ -210,3 +210,56 @@ func TestSelectFollowsHandRenamedDisabledHook(t *testing.T) {
 	}
 	t.Log("selection and toggle followed the hand-renamed disabled hook")
 }
+
+// TestSelectFollowsBackupRenamedHook: the user parked the hook with a
+// backup-style suffix (dxgi.dll → dxgi.dll.1). Selection reads it as
+// disabled, and Enable restores the real hook name from the .1 file.
+func TestSelectFollowsBackupRenamedHook(t *testing.T) {
+	s := NewSession(Deps{})
+	dir := mkHookGame(t, s, "Hook Game") // committed, active dxgi.dll
+
+	if err := os.Rename(filepath.Join(dir, "dxgi.dll"), filepath.Join(dir, "dxgi.dll.1")); err != nil {
+		t.Fatal(err)
+	}
+	s.Select(dir)
+	row := s.findRow(dir)
+	if row == nil || row.Status != domain.StatusCommitted || !row.Disabled {
+		t.Fatalf("row = %+v after backup rename, want committed+disabled", row)
+	}
+	if label, ok := row.DisableToggleLabel(); !ok || label != "Enable OptiScaler" {
+		t.Fatalf("toggle label = %q ok=%v, want %q", label, ok, "Enable OptiScaler")
+	}
+
+	s.ToggleDisabled(dir)
+	if _, err := os.Stat(filepath.Join(dir, "dxgi.dll")); err != nil {
+		t.Fatalf("enable did not restore dxgi.dll from dxgi.dll.1: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "dxgi.dll.1")); !os.IsNotExist(err) {
+		t.Fatalf("backup file still present after enable: %v", err)
+	}
+	if row := s.findRow(dir); row == nil || row.Disabled {
+		t.Fatalf("row.Disabled = %+v after enable, want false", row)
+	}
+	t.Log("backup-renamed hook detected and re-enabled from its .1 file")
+}
+
+// TestSelectDetectsManualBackupDisabledInstall: a never-managed game whose
+// only OptiScaler trace is a branded backup rename (winmm.dll.bak)
+// surfaces as external+disabled on selection.
+func TestSelectDetectsManualBackupDisabledInstall(t *testing.T) {
+	s := NewSession(Deps{})
+	dir := t.TempDir()
+	addPlainRow(s, "Plain Game", dir, dir)
+
+	hook := filepath.Join(dir, "winmm.dll.bak")
+	if err := os.WriteFile(hook, testutil.StringInfoPE(false, map[string]string{"ProductName": "OptiScaler"}, [4]uint16{}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.Select(dir)
+
+	row := s.findRow(dir)
+	if row == nil || row.Status != domain.StatusExternal || !row.Disabled {
+		t.Fatalf("row = %+v, want external+disabled", row)
+	}
+	t.Log("backup-renamed manual install detected on selection")
+}

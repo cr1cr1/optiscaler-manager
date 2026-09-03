@@ -24,8 +24,10 @@ func (s *Session) ToggleDisabled(gameDir string) {
 		return
 	}
 	dir := row.InjectionDir
-	if name := pever.DisabledHook(dir); name != "" {
-		if err := os.Rename(filepath.Join(dir, name+pever.DisabledSuffix), filepath.Join(dir, name)); err != nil {
+	if hook, file := pever.DisabledHook(dir); file != "" {
+		// Enable: restore the real hook name from whatever suffix the
+		// park used (.disabled from the toggle, .1/.bak/... by hand).
+		if err := os.Rename(filepath.Join(dir, file), filepath.Join(dir, hook)); err != nil {
 			s.toast("enable failed: "+err.Error(), true)
 			return
 		}

@@ -56,7 +56,8 @@ func probeRowInstallState(r *GameRow) {
 		}
 		inj = filepath.Clean(d)
 	}
-	disabled := pever.DisabledHook(inj) != ""
+	_, disabledFile := pever.DisabledHook(inj)
+	disabled := disabledFile != ""
 	if r.Status == domain.StatusCommitted {
 		r.InjectionDir = inj
 		r.Disabled = disabled
@@ -86,7 +87,7 @@ func probeRowInstallState(r *GameRow) {
 		r.OptiScalerVersion = version
 		return
 	}
-	if pever.DisabledHookVerified(inj) != "" {
+	if _, f := pever.DisabledHookVerified(inj); f != "" {
 		r.InjectionDir = inj
 		r.Status = domain.StatusExternal
 		r.Actionable = false

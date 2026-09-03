@@ -83,7 +83,8 @@ func (s *Session) reconcileStatuses(rows []GameRow) {
 		// manifest: re-probe installed rows so a toggle done while the
 		// manager was not running renders correctly.
 		if rows[i].InjectionDir != "" && (rows[i].Status == domain.StatusCommitted || rows[i].Status == domain.StatusExternal) {
-			rows[i].Disabled = pever.DisabledHook(rows[i].InjectionDir) != ""
+			_, f := pever.DisabledHook(rows[i].InjectionDir)
+			rows[i].Disabled = f != ""
 		}
 	}
 }

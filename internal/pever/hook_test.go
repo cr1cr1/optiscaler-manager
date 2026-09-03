@@ -36,20 +36,20 @@ func TestActiveHook(t *testing.T) {
 
 func TestDisabledHook(t *testing.T) {
 	dir := t.TempDir()
-	if got := DisabledHook(dir); got != "" {
-		t.Fatalf("DisabledHook(empty dir) = %q, want \"\"", got)
+	if hook, file := DisabledHook(dir); file != "" {
+		t.Fatalf("DisabledHook(empty dir) = %q/%q, want \"\"", hook, file)
 	}
 	// An active hook alone is not disabled.
 	writeCandidate(t, dir, "dxgi.dll", identityPE(false, [2]string{"ProductName", "OptiScaler"}))
-	if got := DisabledHook(dir); got != "" {
-		t.Fatalf("DisabledHook(active only) = %q, want \"\"", got)
+	if hook, file := DisabledHook(dir); file != "" {
+		t.Fatalf("DisabledHook(active only) = %q/%q, want \"\"", hook, file)
 	}
 	// Renaming it away flips the answer to the disabled name.
 	if err := rename(dir, "dxgi.dll", "dxgi.dll"+DisabledSuffix); err != nil {
 		t.Fatal(err)
 	}
-	if got := DisabledHook(dir); got != "dxgi.dll" {
-		t.Fatalf("DisabledHook = %q, want dxgi.dll", got)
+	if hook, file := DisabledHook(dir); hook != "dxgi.dll" || file != "dxgi.dll"+DisabledSuffix {
+		t.Fatalf("DisabledHook = %q/%q, want dxgi.dll/dxgi.dll.disabled", hook, file)
 	}
 	// And ActiveHook no longer sees it.
 	if got := ActiveHook(dir); got != "" {
@@ -66,10 +66,47 @@ func TestDisabledHookPresenceIsEnough(t *testing.T) {
 	if err := writeFile(dir, "winmm.dll"+DisabledSuffix, []byte("not a PE")); err != nil {
 		t.Fatal(err)
 	}
-	if got := DisabledHook(dir); got != "winmm.dll" {
-		t.Fatalf("DisabledHook(unverifiable file) = %q, want winmm.dll (presence is enough)", got)
+	if hook, file := DisabledHook(dir); hook != "winmm.dll" || file != "winmm.dll"+DisabledSuffix {
+		t.Fatalf("DisabledHook(unverifiable file) = %q/%q, want winmm.dll/winmm.dll.disabled (presence is enough)", hook, file)
 	}
 	t.Log("presence-only detection honors the spec's obvious clause")
+}
+
+// A hand-renamed hook carries ANY suffix the user picked (.1, .bak, .old):
+// a known hook name plus a suffix is a renamed-away hook regardless of the
+// suffix's spelling, so backup-style renames also read as disabled.
+func TestDisabledHookArbitrarySuffix(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeFile(dir, "dxgi.dll.1", []byte("not a PE")); err != nil {
+		t.Fatal(err)
+	}
+	if hook, file := DisabledHook(dir); hook != "dxgi.dll" || file != "dxgi.dll.1" {
+		t.Fatalf("DisabledHook(.1) = %q/%q, want dxgi.dll/dxgi.dll.1", hook, file)
+	}
+	// A suffixed name that is no known hook is not a hook at all.
+	if err := rename(dir, "dxgi.dll.1", "random.dll.1"); err != nil {
+		t.Fatal(err)
+	}
+	if hook, file := DisabledHook(dir); file != "" {
+		t.Fatalf("DisabledHook(random.dll.1) = %q/%q, want \"\"", hook, file)
+	}
+	t.Log("arbitrary suffix on a known hook name reads as disabled")
+}
+
+// The manager's own .disabled suffix wins over backup-style renames so the
+// toggle round-trips deterministically when both are present.
+func TestDisabledHookPrefersManagerSuffix(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeFile(dir, "dxgi.dll.1", []byte("not a PE")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFile(dir, "winmm.dll"+DisabledSuffix, []byte("not a PE")); err != nil {
+		t.Fatal(err)
+	}
+	if hook, file := DisabledHook(dir); hook != "winmm.dll" || file != "winmm.dll"+DisabledSuffix {
+		t.Fatalf("DisabledHook = %q/%q, want the manager-suffixed winmm.dll.disabled", hook, file)
+	}
+	t.Log("exact .disabled suffix preferred over arbitrary suffixes")
 }
 
 // First-time external detection of an unmanaged dir is the exception: a
@@ -80,18 +117,33 @@ func TestDisabledHookVerified(t *testing.T) {
 	if err := writeFile(dir, "dxgi.dll"+DisabledSuffix, []byte("not a PE")); err != nil {
 		t.Fatal(err)
 	}
-	if got := DisabledHookVerified(dir); got != "" {
-		t.Fatalf("DisabledHookVerified(non-PE) = %q, want \"\" (no identity)", got)
+	if hook, file := DisabledHookVerified(dir); file != "" {
+		t.Fatalf("DisabledHookVerified(non-PE) = %q/%q, want \"\" (no identity)", hook, file)
 	}
 	writeCandidate(t, dir, "winmm.dll"+DisabledSuffix, identityPE(false, [2]string{"ProductName", "DXVK"}))
-	if got := DisabledHookVerified(dir); got != "" {
-		t.Fatalf("DisabledHookVerified(DXVK) = %q, want \"\" (not OptiScaler)", got)
+	if hook, file := DisabledHookVerified(dir); file != "" {
+		t.Fatalf("DisabledHookVerified(DXVK) = %q/%q, want \"\" (not OptiScaler)", hook, file)
 	}
 	writeCandidate(t, dir, "version.dll"+DisabledSuffix, identityPE(false, [2]string{"ProductName", "OptiScaler"}))
-	if got := DisabledHookVerified(dir); got != "version.dll" {
-		t.Fatalf("DisabledHookVerified(branded) = %q, want version.dll", got)
+	if hook, file := DisabledHookVerified(dir); hook != "version.dll" || file != "version.dll"+DisabledSuffix {
+		t.Fatalf("DisabledHookVerified(branded) = %q/%q, want version.dll/version.dll.disabled", hook, file)
 	}
 	t.Log("verified variant keeps the DXVK gate for discovery")
+}
+
+// The identity gate extends to arbitrary suffixes: a branded dxgi.dll.bak
+// is a disabled OptiScaler install, a DXVK dxgi.dll.1 is not.
+func TestDisabledHookVerifiedArbitrarySuffix(t *testing.T) {
+	dir := t.TempDir()
+	writeCandidate(t, dir, "dxgi.dll.bak", identityPE(false, [2]string{"ProductName", "OptiScaler"}))
+	if hook, file := DisabledHookVerified(dir); hook != "dxgi.dll" || file != "dxgi.dll.bak" {
+		t.Fatalf("DisabledHookVerified(.bak branded) = %q/%q, want dxgi.dll/dxgi.dll.bak", hook, file)
+	}
+	writeCandidate(t, dir, "winmm.dll.1", identityPE(false, [2]string{"ProductName", "DXVK"}))
+	if hook, _ := DisabledHookVerified(dir); hook == "winmm.dll" {
+		t.Fatalf("DisabledHookVerified(DXVK .1) matched %q, want the DXVK backup skipped", hook)
+	}
+	t.Log("verified arbitrary suffix keeps the DXVK gate")
 }
 
 func TestHookCandidatesCoverASI(t *testing.T) {

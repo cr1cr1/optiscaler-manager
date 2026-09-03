@@ -232,11 +232,12 @@ func enrich(g domain.Game, byInstallDir map[string]*domain.Manifest) LibraryEntr
 
 // probeInstallState fills Status/OptiScalerVersion/Disabled from on-disk
 // evidence for an entry whose manifest precedence has already run. An
-// unmanaged row with a branded hook is external; a hook renamed
-// <name>.disabled is still an install (external), just one the game will
-// not load. First-time detection verifies identity (a DXVK
-// dxgi.dll.disabled is not OptiScaler); the Disabled flag on an
-// established install only needs the suffix's presence.
+// unmanaged row with a branded hook is external; a hook renamed away
+// (<name>.disabled or any backup-style suffix) is still an install
+// (external), just one the game will not load. First-time detection
+// verifies identity (a DXVK dxgi.dll.disabled is not OptiScaler); the
+// Disabled flag on an established install only needs the suffix's
+// presence.
 func probeInstallState(e *LibraryEntry) {
 	if e.InjectionDir == "" {
 		return
@@ -245,13 +246,14 @@ func probeInstallState(e *LibraryEntry) {
 		if found, version := pever.DetectOptiScaler(e.InjectionDir); found {
 			e.Status = domain.StatusExternal
 			e.OptiScalerVersion = version // "" when the evidence chain runs dry
-		} else if pever.DisabledHookVerified(e.InjectionDir) != "" {
+		} else if _, f := pever.DisabledHookVerified(e.InjectionDir); f != "" {
 			e.Status = domain.StatusExternal
 			e.Disabled = true
 		}
 	}
 	if e.Status != "" && !e.Disabled {
-		e.Disabled = pever.DisabledHook(e.InjectionDir) != ""
+		_, f := pever.DisabledHook(e.InjectionDir)
+		e.Disabled = f != ""
 	}
 }
 

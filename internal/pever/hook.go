@@ -3,6 +3,7 @@ package pever
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // DisabledSuffix is the rename suffix the disable toggle applies to the
@@ -38,35 +39,64 @@ func ActiveHook(dir string) string {
 	return ""
 }
 
-// DisabledHook returns the hook name disabled in dir — <name>.disabled
-// present as a regular file — "" when none. Presence is the whole rule:
-// a known hook name carrying the suffix means OptiScaler is disabled,
-// even when the file itself cannot be identity-verified (hand-renamed,
-// stripped, unreadable). Use DisabledHookVerified instead when the answer
-// decides whether an UNMANAGED game counts as an OptiScaler install at
-// all — a DXVK dxgi.dll.disabled is not one.
-func DisabledHook(dir string) string {
-	for _, name := range hookCandidates {
-		if st, err := os.Stat(filepath.Join(dir, name+DisabledSuffix)); err == nil && !st.IsDir() {
-			return name
-		}
-	}
-	return ""
+// DisabledHook returns the hook disabled in dir: hook is the known
+// injection name the game would load (dxgi.dll), file the actual
+// renamed-away file on disk (dxgi.dll.disabled, dxgi.dll.1, dxgi.dll.bak).
+// Both "" when none. Presence is the whole rule: a known hook name
+// carrying ANY suffix means OptiScaler is parked, even when the file
+// itself cannot be identity-verified (hand-renamed, stripped,
+// unreadable). The manager's own .disabled suffix wins over backup-style
+// suffixes so the toggle round-trips deterministically. Use
+// DisabledHookVerified instead when the answer decides whether an
+// UNMANAGED game counts as an OptiScaler install at all — a DXVK
+// dxgi.dll.1 is not one.
+func DisabledHook(dir string) (hook, file string) {
+	return disabledHook(dir, false)
 }
 
 // DisabledHookVerified is DisabledHook with the OptiScaler identity gate
-// DetectOptiScaler applies: the .disabled file must parse as a PE
-// carrying an OptiScaler marker. First-time external detection of
-// unmanaged directories uses it so lookalike mods are never mislabeled;
-// rows whose install is already established (manifest, earlier probe)
-// use the presence-only DisabledHook.
-func DisabledHookVerified(dir string) string {
+// DetectOptiScaler applies: the renamed file must parse as a PE carrying
+// an OptiScaler marker. First-time external detection of unmanaged
+// directories uses it so lookalike mods are never mislabeled; rows whose
+// install is already established (manifest, earlier probe) use the
+// presence-only DisabledHook.
+func DisabledHookVerified(dir string) (hook, file string) {
+	return disabledHook(dir, true)
+}
+
+// disabledHook scans dir for a renamed-away hook. The manager suffix pass
+// runs first across all candidates; the second pass accepts any
+// <hook>.<suffix> file in candidate order (dir entries are sorted, so the
+// answer is deterministic). verified selects the identity gate.
+func disabledHook(dir string, verified bool) (hook, file string) {
+	match := func(path string) bool {
+		if verified {
+			return hookIdentified(path)
+		}
+		st, err := os.Stat(path)
+		return err == nil && !st.IsDir()
+	}
 	for _, name := range hookCandidates {
-		if hookIdentified(filepath.Join(dir, name+DisabledSuffix)) {
-			return name
+		if f := name + DisabledSuffix; match(filepath.Join(dir, f)) {
+			return name, f
 		}
 	}
-	return ""
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", ""
+	}
+	for _, name := range hookCandidates {
+		prefix := name + "."
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasPrefix(e.Name(), prefix) {
+				continue
+			}
+			if f := e.Name(); f != name+DisabledSuffix && match(filepath.Join(dir, f)) {
+				return name, f
+			}
+		}
+	}
+	return "", ""
 }
 
 // hookIdentified reports whether path is a regular file carrying an

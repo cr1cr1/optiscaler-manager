@@ -151,7 +151,8 @@ Between scans, selection is the freshness point: `Session.Select` (GUI card
 and list) and the TUI's detail-open both run `RefreshInstallState`, which
 re-probes the row's injection dir from disk (a few stats plus one bounded
 PE identity parse) and rewrites the row — and the cache — when it drifted.
-A hook installed, deleted, or renamed `.disabled` by hand thus renders
+A hook installed, deleted, or renamed away by hand (the manager's
+`.disabled` or any backup-style suffix like `.1`/`.bak`) thus renders
 correctly on the next click without a rescan. Manifest semantics mirror the
 scan: committed rows keep their manifest status (only the on-disk toggle
 drifts), external rows follow the disk exactly (a hand-deleted hook clears

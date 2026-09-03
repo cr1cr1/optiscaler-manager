@@ -2415,3 +2415,22 @@ keeps the row's install state on selection, and the disable/enable toggle
 renames the NEW hook name — every probe rescans the full known-candidate
 set per call, so nothing remembers a filename. Verified: `go vet ./...`
 clean; `go test ./...` clean (Linux).
+
+## 2026-08-28 — backup-style hook renames (.1/.bak/...) read as disabled
+
+`pever.DisabledHook` only matched the literal `.disabled` suffix, so a
+hook parked by hand as `dxgi.dll.1` rendered as enabled. The probe now
+accepts ANY `<known-hook>.<suffix>` file and returns both the hook base
+name and the actual file, so Enable restores `dxgi.dll` straight from
+`dxgi.dll.1`. The manager's own `.disabled` suffix wins when several
+parked copies exist (deterministic toggle round-trip); the verified
+variant keeps the DXVK identity gate on arbitrary suffixes for first-time
+external detection. Call sites updated: selection probe, warm-boot
+reconcile, scan enrich, enable toggle.
+
+Tests: pever cases for arbitrary suffix presence, manager-suffix
+preference, verified arbitrary suffix with the DXVK gate; ui cases for a
+committed row parked as `.1` (selection shows disabled, Enable restores
+the real name) and a branded `.bak` drop-in on an unmanaged game
+(external+disabled). Verified: `go vet ./...` clean; `go test ./...`
+clean (Linux).
