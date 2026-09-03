@@ -159,3 +159,54 @@ func TestSelectResolvesInjectionDir(t *testing.T) {
 	}
 	t.Log("selection resolved the injection dir and detected the hook")
 }
+
+// TestSelectFollowsHandRenamedHook: the user renamed the entrypoint DLL
+// to a different known hook name (dxgi.dll → winmm.dll) by hand. The
+// probes scan the whole candidate set on every call, so the row keeps
+// its install state and the disable toggle renames the NEW name.
+func TestSelectFollowsHandRenamedHook(t *testing.T) {
+	s := NewSession(Deps{})
+	dir := mkHookGame(t, s, "Hook Game") // committed, active dxgi.dll
+
+	if err := os.Rename(filepath.Join(dir, "dxgi.dll"), filepath.Join(dir, "winmm.dll")); err != nil {
+		t.Fatal(err)
+	}
+	s.Select(dir)
+	row := s.findRow(dir)
+	if row == nil || row.Status != domain.StatusCommitted || row.Disabled {
+		t.Fatalf("row = %+v after rename, want committed not-disabled", row)
+	}
+
+	// The toggle must rename the new entrypoint, not the remembered one.
+	s.ToggleDisabled(dir)
+	if _, err := os.Stat(filepath.Join(dir, "winmm.dll"+pever.DisabledSuffix)); err != nil {
+		t.Fatalf("renamed hook not disabled: %v", err)
+	}
+	if row := s.findRow(dir); row == nil || !row.Disabled {
+		t.Fatalf("row.Disabled = %+v after toggle, want true", row)
+	}
+	t.Log("selection and toggle followed the hand-renamed hook")
+}
+
+// TestSelectFollowsHandRenamedDisabledHook: same rename, but the user
+// also kept it disabled (dxgi.dll.disabled → winmm.dll.disabled).
+func TestSelectFollowsHandRenamedDisabledHook(t *testing.T) {
+	s := NewSession(Deps{})
+	dir := mkHookGame(t, s, "Hook Game")
+
+	if err := os.Rename(filepath.Join(dir, "dxgi.dll"), filepath.Join(dir, "winmm.dll"+pever.DisabledSuffix)); err != nil {
+		t.Fatal(err)
+	}
+	s.Select(dir)
+	row := s.findRow(dir)
+	if row == nil || row.Status != domain.StatusCommitted || !row.Disabled {
+		t.Fatalf("row = %+v after rename, want committed+disabled", row)
+	}
+
+	// Enable must restore the new name, not the old one.
+	s.ToggleDisabled(dir)
+	if _, err := os.Stat(filepath.Join(dir, "winmm.dll")); err != nil {
+		t.Fatalf("renamed hook not re-enabled: %v", err)
+	}
+	t.Log("selection and toggle followed the hand-renamed disabled hook")
+}

@@ -2408,3 +2408,10 @@ manual install, manual disabled install, hand-removed external, late
 injection-dir resolution) plus a TUI detail-screen test asserting the
 fresh external+disabled render. Verified: `go vet ./...` clean;
 `go test ./...` clean (Linux).
+
+Locked in two more `internal/ui/probe_test.go` cases: a hand-renamed
+entrypoint DLL (dxgi.dll ↔ winmm.dll, active and `.disabled` variants)
+keeps the row's install state on selection, and the disable/enable toggle
+renames the NEW hook name — every probe rescans the full known-candidate
+set per call, so nothing remembers a filename. Verified: `go vet ./...`
+clean; `go test ./...` clean (Linux).
