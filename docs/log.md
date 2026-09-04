@@ -2468,3 +2468,14 @@ stale statements and v0.13 features with no doc surface. Fixed:
 Fix: architecture.md's domain/ line named a nonexistent `InstallStatus`
 type; the map now lists `Status` (the 4+1 state machine keeps its own
 description on the same line).
+
+Test hardening after CI failures in the GUI package:
+- `TestCardButtonClick_FiresActionNotSelect` clicked the button row's
+  center, which lands in the inter-button gap on hosts whose font metrics
+  differ (no button activates, card press gesture hover-skipped, click
+  goes nowhere). It now clicks the row's left edge — the quick-action
+  button itself — font-metrics independent.
+- `TestGUIEmptyStateHasCTA` returned on EvScanStarted, so the running
+  scan's `persistCache` (before EvScanDone in runScan) raced TempDir
+  cleanup ("directory not empty" marks the test failed). It now waits
+  for the scan to settle (EvScanDone/EvScanFailed).

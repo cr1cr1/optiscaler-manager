@@ -32,8 +32,14 @@ func TestGUIEmptyStateHasCTA(t *testing.T) {
 	for time.Now().Before(deadline) {
 		select {
 		case ev := <-sess.Events():
-			if ev.Kind == ui.EvScanStarted {
-				t.Log("empty-state CTA started a scan")
+			// Wait for the scan to SETTLE, not just start: runScan
+			// persists the games cache before emitting EvScanDone, and
+			// returning early would let that write race TempDir cleanup
+			// ("directory not empty" marks the test failed).
+			if ev.Kind == ui.EvScanStarted || ev.Kind == ui.EvScanDone || ev.Kind == ui.EvScanFailed {
+				t.Logf("empty-state CTA scan event: %d", ev.Kind)
+			}
+			if ev.Kind == ui.EvScanDone || ev.Kind == ui.EvScanFailed {
 				return
 			}
 		case <-time.After(20 * time.Millisecond):

@@ -62,7 +62,11 @@ func TestCardButtonClick_FiresActionNotSelect(t *testing.T) {
 		t.Fatalf("card button rect not recorded: %+v", br)
 	}
 
-	clickRect(br, view)
+	// Click the row's left edge — the quick-action button — not the row's
+	// center: with the host's font metrics the center can land in the
+	// inter-button gap, where no button activates AND the card's press
+	// gesture is hover-skipped, so the click lands nowhere.
+	clickRect(Rect{Origin: Vec2{br.Origin[0] + 1, br.Origin[1]}, Size: Vec2{14, br.Size[1]}}, view)
 
 	deadline := time.Now().Add(15 * time.Second)
 	for sess.Snapshot().Confirm == nil && time.Now().Before(deadline) {
