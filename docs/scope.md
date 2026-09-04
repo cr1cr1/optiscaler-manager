@@ -208,7 +208,9 @@ evidence.
   shortcut in the GUI (that keybind is TUI-only).
 - Cache hydration reconciles install status from manifests only; version
   strings and covers shown at boot are the cached values until the next
-  scan.
+  scan. (Partially superseded in v0.13: selecting a row re-probes install
+  state and external-row versions from disk; covers and committed-row
+  versions still wait for a rescan.)
 - macOS remains blocked exactly as in v0.3 (shirei cocoa backend needs an
   Apple SDK); no macOS support is claimed.
 
@@ -306,7 +308,9 @@ closed; reopen only with new evidence.
   external install.
 - The external status is derived at scan time and cached in `games.json`
   until the next rescan; external installs added or removed while the
-  manager is not running surface only after a rescan.
+  manager is not running surface only after a rescan. (Superseded in
+  v0.13: the warm-boot reconcile and the selection-time re-probe surface
+  hand add/remove/toggle without a rescan — see the v0.13 section.)
 - Detection only runs for games with a resolvable injection dir.
 - Component versions stay hidden for external rows (see above) even when the
   external bundle's component DLLs are present.
@@ -432,7 +436,7 @@ closed; reopen only with new evidence.
 - Rows persist `TitleSource` + `SteamAppID` (games cache v5; v1–v4
   invalidated).
 
-## Later shipped scope (v0.9–v0.12)
+## Later shipped scope (v0.9–v0.13)
 
 Shipped and recorded in `docs/log.md`; collected here because they settled
 decisions the per-version sections above do not cover.
@@ -458,3 +462,37 @@ decisions the per-version sections above do not cover.
   user-pinnable via `UmuProtonPath` (empty = auto-detect from Steam
   `compatibilitytools.d`, Bottles `runners/`, and umu
   `compatibilitytools`).
+- **Hook disable/enable toggle** (v0.13): installed games get a
+  Disable/Enable affordance (GUI button in the detail panel, "disabled"
+  pill on the card; TUI `d` on the detail screen) that renames the injection hook
+  to a parked `<name>.disabled` (or restores it). The install keeps its
+  status and files; the parked state renders as a "disabled" pill. The
+  disable direction renames only an identity-verified OptiScaler hook
+  (a DXVK dxgi.dll is refused); the enable direction accepts any parked
+  variant of a known hook name, including hand backup-style suffixes
+  (`.1`, `.bak`).
+- **Selection-time install re-probe** (v0.13): selecting a game (GUI
+  card/list click, TUI detail-open) re-probes the injection dir from
+  disk, so hooks installed, removed, or renamed by hand since the last
+  scan render correctly without a rescan. Committed rows keep manifest
+  status; external rows follow the disk exactly; interrupted and
+  rolled-back rows are skipped (the repair surface owns them).
+- **Cover-art fallback for manual games** (v0.13): the recent CDN miss
+  marker no longer suppresses the title search (it skips only the CDN
+  retry); store-search binding prefers the best-scored acceptable
+  candidate; `custom_<folder>` ids never reach the CDN appid path;
+  identified rows retry the search with the resolved title.
+- **Card size setting** (v0.13): `settings.CardSize`
+  (small/medium/large, `OrDefault()` fallback) drives the GUI grid
+  card-size preset; GUI Settings selector + `Session.SetCardSize`.
+- **Interrupted-install repair surface at boot** (v0.13): warm boot
+  toasts installs left in_progress/failed; the GUI shows a persistent
+  banner and the TUI a warning line, both derived from row state so
+  cold and warm boots are covered; plain CLI commands print a stderr
+  warning naming the manifest (gated off for gui/tui/version).
+- **Refactors** (v0.13): `internal/jsoncache` shared JSON cache/cooldown
+  helpers (steam, protondb, storesearch caches); `settings.CardSize`
+  type; `Session.updateSettings` helper for the persisted setters;
+  `internal/ui` split into themed files; shared row helpers
+  (`HasInstall`, `DisableToggleLabel`, `InterruptedRows`); Go 1.27 +
+  shirei v0.6.7 with the vendor patches reapplied.

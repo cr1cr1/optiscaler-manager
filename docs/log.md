@@ -2434,3 +2434,33 @@ committed row parked as `.1` (selection shows disabled, Enable restores
 the real name) and a branded `.bak` drop-in on an unmanaged game
 (external+disabled). Verified: `go vet ./...` clean; `go test ./...`
 clean (Linux).
+
+## 2026-09-04 — docs: resolve code-vs-docs gaps found by full-tree outline
+
+ast-grep outline of every package, compared against the docs, surfaced
+stale statements and v0.13 features with no doc surface. Fixed:
+
+- `docs/architecture.md` package map: `cmd/install.go` now names all three
+  headless commands (install/uninstall/rollback); `app/` drops the
+  nonexistent `ScanLibrary` and names `probeInstallState`,
+  `ManualEntryWithResolver`, `CachedVersions`; the `covers/` line records
+  the full CDN → PCGW → hero → scored title search chain with the `.miss`
+  negative cache; the `ui/` entry lists the complete themed-file split
+  (lookup, identify, switch, upgrade, versions, rows, disable, probe);
+  `settings/` mentions CardSize; `tui/` notes the in-process INI editor.
+- `docs/architecture.md` gains a Hook disable/enable toggle (v0.13)
+  section: 8-name candidate set rescanned per call, asymmetric identity
+  gating (disable verified, enable presence-based on established
+  installs, `.disabled` preferred over backup suffixes), display-only
+  parked state.
+- `docs/safety.md` gains the hook rename safety section.
+- `docs/scope.md`: v0.6 limit "external installs surface only after a
+  rescan" superseded by the selection-time re-probe; v0.4 cache-hydration
+  limit noted as partially superseded; new v0.13 bullets (toggle,
+  re-probe, cover fallback, card size, boot repair surface, refactors).
+- `docs/plan.md`: v0.6/v0.7 review gates closed; v0.8–v0.13 pointer
+  section (task detail in log.md, scope in scope.md).
+- `docs/index.md`: current release v0.13; scope map range extended.
+- `README.md`: disable/enable in Features and the GUI section (detail
+  panel button, disabled badge, backup-suffix support), TUI detail `d`
+  key, card size in the Settings list, selection re-probe note.

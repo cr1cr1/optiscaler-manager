@@ -22,7 +22,9 @@ cmd/
   tui.go                    TuiCmd; second frontend on the same session
   session.go                newSession: shared session construction (gui + tui)
   scan.go                   headless game listing (store + versions columns)
-  install.go uninstall.go   headless install/uninstall <path>
+  install.go                headless install/uninstall/rollback <path>
+  deps.go                   shared Deps wiring + interrupted-manifest
+                            startup warning (gated off gui/tui/version)
 internal/
   domain/     Game (Store enum, AppName, ExePath, CompatPrefix), Release,
               Component, Kind, InstallStatus, Manifest, entries; Status
@@ -50,7 +52,10 @@ internal/
               rollback; uninstall; EAC check; ctx cancel at phase boundaries
               (cleanup under context.WithoutCancel)
   profile/    curated OptiScaler.ini writer
-  covers/     cover art: Steam CDN → store search → placeholder (disk cache)
+  covers/     cover art: Steam CDN by appid → PCGW → hero image → scored
+              title search (best candidate, PC tie-break) → placeholder;
+              disk cache plus a 7-day `.miss` negative marker that skips
+              only the CDN retry, never the title search
   steam/      title → appid lookup (steamcommunity.com SearchApps; 30d TTL
               disk cache, no auth)
   protondb/   appid → compatibility tier (protondb.com summaries API; 7d
@@ -61,7 +66,9 @@ internal/
   jsoncache/  shared JSON state-file helpers for the API client caches
               (generic Read/Write, 429/5xx cooldown markers); used by
               steam/, protondb/, and the steam store caches
-  settings/   persisted preferences (settings.json in the data root)
+  settings/   persisted preferences (settings.json in the data root):
+               default version, launch template, extra dirs, online
+               lookups, card size (CardSize type with OrDefault())
   version/    OptiScaler version-string ordering for upgrade eligibility
               (leading-v normalized, numeric segments, pre-release older
               than release; deliberately not full semver)
@@ -87,20 +94,29 @@ internal/
                (Linux): $EDITOR verbatim, $TERMINAL's basename picks the
                run-a-command convention, else the foot→konsole→
                gnome-terminal→kitty→alacritty→xterm chain; no shell
-  app/        shared orchestration: ScanLibrary, ScanAllLibraries (version
-              enrichment via classify+pever on managed installs), Install,
-              Uninstall, Rollback, ManualEntry, versioned bundle cache,
-              ops.go (Op, RunOps: errgroup, first error cancels siblings)
+  app/        shared orchestration: ScanAllLibraries (version
+              enrichment via classify+pever on managed installs;
+              probeInstallState adds the on-disk external/disabled probe
+              for unmanaged rows), Install, Uninstall, Rollback,
+              ManualEntry (+WithResolver), CachedVersions, versioned
+              bundle cache, ops.go (Op, RunOps: errgroup, first error
+              cancels siblings)
   ui/         frontend-agnostic Session: state, commands, events, consent,
               per-game CancelOp, sort mode; session.go keeps the types and
-              shared state helpers while scan.go, dirs.go, install.go,
-              launch.go, settings.go, browse.go carry the themed methods;
-              cache.go is the games.json library cache (schema-versioned,
-              atomic) behind Session.Start
+              shared state helpers while the themed methods live in
+              scan.go (pipeline + warm-boot reconcile), dirs.go,
+              install.go, launch.go, settings.go, browse.go, lookup.go +
+              identify.go (online identification), switch.go + upgrade.go
+              + versions.go (version switching, default memo), disable.go
+              (hook toggle), probe.go (selection-time re-probe), rows.go
+              (GameRow + display helpers); cache.go is the games.json
+              library cache (schema-versioned, atomic) behind
+              Session.Start
   gui/        shirei binding over ui.Session (ALL shirei imports live here);
               theme tokens, arrow-key grid nav, right-docked detail panel
   tui/        bubbletea binding over ui.Session (renders snapshots, forwards
-              keys; no business logic); multi-screen styled layout on
+              keys; no business logic beyond the in-process OptiScaler.ini
+              editor for `o`); multi-screen styled layout on
               bubbles spinner/textinput/viewport + lipgloss
 ```
 
@@ -188,6 +204,36 @@ on the row's injection dir) surfaces the row as external again. Uninstall of
 a never-managed external row is refused up front with a clean toast (the
 `app.ErrNotManaged` sentinel never leaks raw). `GameRow.CanOpenINI()`
 (committed or external) gates Open INI in both frontends.
+
+## Hook disable/enable toggle (v0.13)
+
+`Session.ToggleDisabled(gameDir)` parks the install's injection hook by
+rename: `dxgi.dll` ↔ `dxgi.dll.disabled`. A parked hook is not loaded by
+the game, so OptiScaler is off while the install stays on disk and keeps
+its status. The rename is atomic and runs synchronously (no op slot, no
+manifest write); the surface is a GUI button in the detail panel (the card
+renders the "disabled" pill, not a button) plus the TUI `d` key, both
+captioned by `GameRow.DisableToggleLabel()`.
+
+`pever.hookCandidates` is the 8-name candidate set (dxgi, winmm, version,
+dbghelp, d3d12, wininet, winhttp, OptiScaler.asi) and every probe
+rescans the whole set per call, so a hook the user renamed between known
+names is still found under its current name. Rename safety is asymmetric
+by design: the DISABLE direction is identity-gated (`pever.ActiveHook`
+parses the candidate PE for an OptiScaler marker, so a lookalike such as
+DXVK's dxgi.dll is refused with a toast), while the ENABLE direction is
+presence-based on established installs — a known hook name carrying the
+`.disabled` suffix or any hand backup-style suffix (`.1`, `.bak`, ...)
+is parked OptiScaler and is restored to its real hook name from
+whichever parked file is found, the manager's own suffix winning when
+several exist. The gate applies to parked hooks only at first-time
+detection of UNMANAGED directories (`pever.DisabledHookVerified`), where
+a DXVK `dxgi.dll.disabled` must not create an external install.
+
+`GameRow.Disabled` renders as a "disabled" pill (GUI card badge row and
+detail panel; TUI status line). The flag lives on disk, not in the
+manifest, so the warm-boot reconcile and the selection-time re-probe
+(Startup flow, above) both re-read it.
 
 ## Game-dir classification and container scan roots (v0.7)
 

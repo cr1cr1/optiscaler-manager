@@ -135,9 +135,10 @@ External OptiScaler detection and adopt flows. Scope recorded in
 - **T6**: TUI rendering — accent external status, adopt hint, open INI.
 - **T7**: CLI scan output characterization for external installs.
 - **T8**: docs wrap (this section, README, scope, architecture, log).
-- **T9**: review gate — placeholder, pending.
+- **T9**: review gate (complete — full-codebase review 2026-08-28;
+  follow-up commits in `docs/log.md`).
 
-## v0.7 milestone (in progress)
+## v0.7 milestone (complete, 2026-07-21)
 
 Game-dir vs container classification and its session integration: manual
 folders that are library roots become scan roots instead of phantom games.
@@ -152,7 +153,14 @@ task detail in `docs/log.md`.
   dropped, cover totals adjusted); `AddDirectory` three-way branch
   (game → async placeholder flow; container → scan-root registration +
   background rescan; empty → refused); title-priority pins; docs wrap.
-- **T3**: review gate — placeholder, pending.
+- **T3**: review gate (complete — full-codebase review 2026-08-28; follow-up commits in `docs/log.md`).
+
+## v0.8–v0.13 milestones
+
+No per-milestone waves recorded after v0.7; work continued as feature
+commits on `main`. Task detail lives in `docs/log.md`, settled scope in
+`docs/scope.md` (v0.8 identification section; v0.9–v0.13 in the
+"Later shipped scope" section).
 
 ## Risks
 

@@ -13,6 +13,9 @@ uninstalls cleanly when you're done. Available for **Linux and Windows** (amd64)
   every file it touches
 - Detects and adopts OptiScaler setups you installed by hand, so they become
   managed without losing your files
+- Disable or enable a managed install on demand: the injection hook is
+  renamed out of the way (`.disabled` or any backup suffix you chose)
+  instead of removed, so the toggle back is a single rename
 - Launch games straight from the app (Steam, Epic, GOG, or a custom template;
   on Linux, manually added Windows binaries can run through
   [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher) when
@@ -20,7 +23,7 @@ uninstalls cleanly when you're done. Available for **Linux and Windows** (amd64)
 - Both a graphical interface and a terminal UI over the same core
 - Open a game's `OptiScaler.ini` for editing right from the app
 - Settings for default OptiScaler version, scan directories, launch template,
-  and online lookups
+  online lookups, and card size
 - Works offline: everything degrades gracefully with no network, and online
   lookups can be turned off entirely
 
@@ -56,6 +59,10 @@ action reads **Adopt**: installing backs up the external files SHA-verified
 first, so the game becomes managed without losing your setup, and a later
 uninstall or rollback restores those files byte-identically.
 
+Selecting a game (clicking a card or row, opening the TUI detail screen)
+re-checks its OptiScaler state on disk, so files added, removed, or renamed
+by hand between scans show up without a rescan.
+
 Your state (manifests, backups, settings, library cache) lives outside game
 directories in `~/.local/share/optiscaler-manager`; downloaded bundles and
 cover art are cached in `~/.cache/optiscaler-manager`.
@@ -69,8 +76,13 @@ version pill is a dropdown: pick any cached bundle version (or the preference
 default, shown resolved) to switch to it, keeping your `OptiScaler.ini`.
 Arrow keys move the
 selection, Enter opens the detail panel, Esc closes it. The Settings window
-holds the default OptiScaler version, the scan-directory list, the launch
-template, the online game-info toggle, and the clear-cache action. The
+holds the default OptiScaler version, the card size, the scan-directory list,
+the launch template, the online game-info toggle, and the clear-cache action.
+Installed games get a Disable/Enable button in the detail panel: it parks
+the injection hook by renaming it — `.disabled`, or the backup name you
+chose if you renamed it by hand — instead of removing it, so the game
+stops loading OptiScaler until you toggle it back. A parked install shows
+a "disabled" badge on its card and in the detail panel. The
 "Online game info" toggle (on by default) gates Steam/ProtonDB lookups;
 turning it off gives you a fully offline scan. On Linux, the Settings
 window also exposes the umu-launcher integration: enable it to launch
@@ -97,7 +109,7 @@ build in Settings, or leave it blank to auto-detect from Steam
 | `/` | Filter, live as you type (`esc` clears) |
 | `s` | Toggle sort (default / name) |
 | `R` | Rescan the library |
-| Detail: `i` `v` `l` `c` `r` `o` | Install / switch version / launch / cancel / rollback / open OptiScaler.ini |
+| Detail: `i` `v` `l` `c` `r` `o` `d` | Install / switch version / launch / cancel / rollback / open OptiScaler.ini / disable-enable the OptiScaler hook |
 | Settings: `e` `t` `a` `d` `x` `o` `u` `p` | Edit version / edit launch template / add dir / remove dir (`y`/`n`) / clear bundle cache / toggle online game info / toggle umu-launcher / edit umu Proton path |
 | Confirm modal | `y` proceed, `n` cancel |
 

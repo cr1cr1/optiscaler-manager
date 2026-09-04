@@ -112,6 +112,27 @@ Mechanics:
   cancelled op restores the row's pre-op status and surfaces exactly one
   "Cancelled" toast/event — never the failure path.
 
+## Hook disable/enable rename
+
+The disable toggle performs one write inside a game directory — a rename
+of the install's injection hook. No file content is ever touched.
+
+- **Disable renames only an identity-verified hook.** `pever.ActiveHook`
+  parses the candidate PE for an OptiScaler marker before the rename, so
+  a lookalike (DXVK's `dxgi.dll`) is refused with a toast; a foreign
+  bytes-in-place file is never renamed.
+- **Enable is presence-based on established installs.** A known hook name
+  carrying the `.disabled` suffix (or a hand backup suffix like `.1` /
+  `.bak`) means parked OptiScaler and is restored to its real hook name.
+  The identity gate applies to parked hooks only at first-time detection
+  of unmanaged directories (`pever.DisabledHookVerified`), where a lookalike
+  `.disabled` file must not create an install.
+- The parked state is display-only: the manifest is untouched, the
+  install keeps its status, and re-enabling is a single atomic rename.
+  An install whose hook the user renamed to a name outside the known
+  candidate set is invisible to the toggle by design (same blind spot as
+  the scanner) — the game would not load it either.
+
 ## Launch safety
 
 Launching a game is fire-and-forget by design:
