@@ -27,7 +27,7 @@ cmd/
                             startup warning (gated off gui/tui/version)
 internal/
   domain/     Game (Store enum, AppName, ExePath, CompatPrefix), Release,
-              Component, Kind, InstallStatus, Manifest, entries; Status
+              Component, Kind, Manifest, entries; Status
               state machine: 4 persisted (in_progress/committed/failed/
               rolled_back) + 1 derived (external, scan-time only)
   store/      manifest + backup persistence (external root)

@@ -2464,3 +2464,7 @@ stale statements and v0.13 features with no doc surface. Fixed:
 - `README.md`: disable/enable in Features and the GUI section (detail
   panel button, disabled badge, backup-suffix support), TUI detail `d`
   key, card size in the Settings list, selection re-probe note.
+
+Fix: architecture.md's domain/ line named a nonexistent `InstallStatus`
+type; the map now lists `Status` (the 4+1 state machine keeps its own
+description on the same line).
