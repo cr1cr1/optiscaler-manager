@@ -243,21 +243,30 @@ func TestEnrichExternalVersionFromLog(t *testing.T) {
 	}
 }
 
-// TestEnrichExternalComponentVersionsSuppressed: component DLLs in an
-// external install belong to OptiScaler's bundle, not the game — they must
-// never be attributed as game tech versions.
-func TestEnrichExternalComponentVersionsSuppressed(t *testing.T) {
+// TestEnrichExternalComponentVersionsReported: the NVIDIA runtime DLLs in
+// an external install belong to the game, not OptiScaler's bundle (the
+// bundle ships only optiscaler/fakenvapi) — external rows report their
+// component versions so the DLSS pill (the update control) shows up in
+// both frontends' detail views.
+func TestEnrichExternalComponentVersionsReported(t *testing.T) {
 	steamRoot := mkSteamRoot(t)
 	game := mkExternalGame(t, steamRoot, "100", "External Bundle", "ExternalBundle",
 		map[string]string{"ProductName": "OptiScaler"}, [4]uint16{0, 9, 4, 0})
+	writeScanFile(t, filepath.Join(game, "nvngx_dlss.dll"), testutil.FixedVersionPE(3, 7, 20, 0))
 	writeScanFile(t, filepath.Join(game, "libxess.dll"), testutil.FixedVersionPE(1, 3, 0, 0))
 
 	e := scanOne(t, nil, steamRoot, "External Bundle")
 	if e.Status != domain.StatusExternal {
 		t.Fatalf("Status = %q, want %q", e.Status, domain.StatusExternal)
 	}
-	if len(e.ComponentVersions) != 0 {
-		t.Errorf("ComponentVersions = %v, want empty for external rows", e.ComponentVersions)
+	if got := e.ComponentVersions["dlss"]; got != "DLSS 3.7.20" {
+		t.Errorf("external row dlss component = %q, want %q", got, "DLSS 3.7.20")
+	}
+	if got := e.ComponentVersions["xess"]; got != "XeSS 1.2" {
+		t.Errorf("external row xess component = %q, want %q", got, "XeSS 1.2")
+	}
+	if e.OptiScalerVersion != "0.9.4.0" {
+		t.Errorf("OptiScalerVersion = %q, want %q — external detection unchanged", e.OptiScalerVersion, "0.9.4.0")
 	}
 }
 

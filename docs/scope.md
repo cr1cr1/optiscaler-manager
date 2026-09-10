@@ -283,8 +283,10 @@ closed; reopen only with new evidence.
 - **Bounded, unmanaged-only, async**: the probe runs inside the scan
   goroutine (no blocking on UI paths) with bounded reads, and only on
   unmanaged games — a store manifest stays authoritative where one exists.
-  Component versions are suppressed for external rows: those DLLs belong to
-  OptiScaler's bundle, not the game.
+  Component versions parse for external rows too (revised v0.14f): those
+  DLLs — NVIDIA runtime, FSR, XeSS — belong to the game; OptiScaler's
+  bundle ships none of them, and suppressing the versions hid the DLSS
+  update pill from hand-installed games.
 - **Derived status `external`**: `domain.StatusExternal` is computed at scan
   time and NEVER persisted to store manifests — the persisted state machine
   stays the four statuses. It renders in the GUI ("external", blue pill),

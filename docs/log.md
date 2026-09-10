@@ -2632,3 +2632,41 @@ opens the restore menu of local backup sets.
   legacy `dlss-staging` leftovers (no released version ever created
   one), manifest gate stronger than the OptiScaler existence-only check
   (documented in scope/safety).
+
+## 2026-09-12 — v0.14f: DLSS control reachable on external rows and at wide panels
+
+- User report: cards show DLSS/XeSS/SFR badges but the detail pane does not
+  always, so NVIDIA DLSS cannot be updated where needed. Diagnosed with a
+  headless GUI red test (external row + the three NVIDIA DLLs → assert the
+  panel control rects) plus a geometry probe over window widths; two
+  stacked causes found:
+  1. `app.enrichVersions` suppressed `ComponentVersions` for external rows
+     on the rationale "those DLLs are OptiScaler's" — factually wrong: the
+     OptiScaler bundle ships only `optiscaler.dll` and `fakenvapi.*`; the
+     NVIDIA/FSR/XeSS DLLs are the game's. External rows got no component
+     pills at all, so the DLSS control (and the TUI's enabled u/p hints)
+     never rendered for hand-installed games. Fix: components parse for
+     every row with a resolved injection dir; suppression test inverted
+     (`TestEnrichExternalComponentVersionsReported`).
+  2. The detail panel rendered status/pill rows BELOW the 2:3 cover art,
+     which scales with panel width (1.5 × width): past a ~320px panel the
+     cover alone overflows the scroll fold and the pill row was clipped to
+     a sliver (measured 268×19.5 → 269×14.3 → 0×0 across panel widths
+     300→330→360) — the update control out of view exactly where it is
+     needed. Fix: status and version-pill rows moved above the cover; they
+     can no longer fold. Existing panel assertion strengthened to render
+     the real `rootView` with the row selected (the old one passed
+     vacuously off stale card rects).
+- New tests: `TestDLSSControl_ExternalRow` (GUI, small + wide windows),
+  `TestEnrichExternalComponentVersionsReported` (app),
+  `TestDetailViewDLSSHintsTrackComponents` (TUI hint contract).
+- Accepted as-is: external rows' card pill row (version dropdown + DLSS
+  control ≈ 258px) clips at the fixed default card width (220px content) —
+  pre-existing card layout property shared by any wide pill set; the panel
+  is the actionable surface, cards keep the static DLSS tech badge.
+  Version-unreadable but name-classified DLLs still render a tech badge
+  without a version pill (honest degradation; the three-file update would
+  refuse anyway).
+- Docs: architecture.md external-probe and DLSS-control paragraphs
+  corrected (components parse for external rows; pills above the cover),
+  plan.md T3 and scope.md suppression claims revised.

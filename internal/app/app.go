@@ -261,14 +261,15 @@ func probeInstallState(e *LibraryEntry) {
 // version is a managed-install concern: committed manifest, OptiScaler.dll
 // present, or the bounded DetectOptiScaler probe for external rows — never
 // plain games. Component versions (the game's own upscaler DLLs, DLSS
-// included) parse for EVERY row with a resolved injection dir: the DLSS
-// version pill doubles as the update control, so a plain game with DLSS
-// must carry it too. External rows stay suppressed — their component DLLs
-// belong to the OptiScaler bundle, not the game. Parsing PEs for every
+// included) parse for EVERY row with a resolved injection dir, external
+// rows included — the NVIDIA runtime DLLs are the game's (the OptiScaler
+// bundle ships none of them), and the DLSS version pill doubles as the
+// update control, so suppressing it left hand-installed games un-updatable
+// while their cards still showed the DLSS badge. Parsing PEs for every
 // plain game stays bounded: classify.Dir already walks those dirs for the
 // tech badges, and only the few detected component DLLs are read.
 func enrichVersions(e *LibraryEntry, m *domain.Manifest) {
-	if e.InjectionDir == "" || e.Status == domain.StatusExternal {
+	if e.InjectionDir == "" {
 		return
 	}
 	managed := e.Status == domain.StatusCommitted ||

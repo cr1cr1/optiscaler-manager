@@ -12,6 +12,7 @@ import (
 	. "go.hasen.dev/shirei"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
+	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
@@ -87,12 +88,14 @@ func TestDLSSControl_RendersOnCardsAndPanel(t *testing.T) {
 		t.Fatalf("DLSS control not rendered on card: update %+v arrow %+v", m.dlssUpdateRect, m.dlssArrowRect)
 	}
 
-	// Detail panel renders the same control.
+	// Detail panel renders the same control (the row must be selected —
+	// without a selection the panel renders nothing and stale card rects
+	// would satisfy this assertion vacuously).
+	sess.Select(row.InstallDir)
 	m.state = sess.Snapshot()
-	panel := func() {
-		Container(Attrs(Viewport), func() { m.detailPanel() })
-	}
-	keyFrame(KeyCodeNone, 0, panel)
+	headlessFrames(t, 1100, 700)
+	keyFrame(KeyCodeNone, 0, m.rootView) // build
+	keyFrame(KeyCodeNone, 0, m.rootView) // capture rects from the previous frame
 	if m.dlssUpdateRect.Size[0] == 0 || m.dlssArrowRect.Size[0] == 0 {
 		t.Fatalf("DLSS control not rendered in detail panel: update %+v arrow %+v", m.dlssUpdateRect, m.dlssArrowRect)
 	}
@@ -110,6 +113,65 @@ func TestDLSSControl_RendersOnCardsAndPanel(t *testing.T) {
 	keyFrame(KeyCodeNone, 0, plainView)
 	if pm.dlssUpdateRect.Size[0] != 0 || pm.dlssArrowRect.Size[0] != 0 {
 		t.Errorf("plain game rendered a DLSS control: %+v / %+v", pm.dlssUpdateRect, pm.dlssArrowRect)
+	}
+}
+
+// externalDLSSFakes makes the fake game an external (hand-installed)
+// OptiScaler row — branded dxgi.dll, no manifest — carrying the three
+// versioned NVIDIA DLLs, so the scan's external probe and the DLSS pill
+// share one library.
+func externalDLSSFakes(t *testing.T) (*ui.Session, string) {
+	t.Helper()
+	sess, gameRoot := dlssGUIFakes(t, nil)
+	writeGUIFile(t, filepath.Join(gameRoot, "bin", "dxgi.dll"),
+		string(testutil.StringInfoPE(false, map[string]string{
+			"ProductName":      "OptiScaler",
+			"OriginalFilename": "OptiScaler.dll",
+		}, [4]uint16{0, 9, 4, 0})))
+	return sess, gameRoot
+}
+
+// TestDLSSControl_ExternalRow: a hand-installed (external) OptiScaler game
+// carrying the NVIDIA runtime set renders the DLSS update/restore control
+// in the detail panel at BOTH a small and a wide window. The card's static
+// DLSS tech badge must not be the only affordance: the control lives on
+// the component pill, which external rows suppressed entirely (the pills
+// were also folded out of view behind the 2:3 cover at wide panels).
+// Card-pill clipping at the fixed card width is a pre-existing card layout
+// property; the panel is the actionable surface.
+func TestDLSSControl_ExternalRow(t *testing.T) {
+	sess, _ := externalDLSSFakes(t)
+	row := scanOneRow(t, sess)
+	if row.Status != domain.StatusExternal {
+		t.Fatalf("setup: status %q, want external (branded dxgi.dll undetected)", row.Status)
+	}
+	hasDLSSBadge := false
+	for _, b := range row.TechBadges {
+		if b.Label == "DLSS" {
+			hasDLSSBadge = true
+		}
+	}
+	if !hasDLSSBadge {
+		t.Fatalf("setup: card carries no DLSS tech badge: %+v", row.TechBadges)
+	}
+	sess.Select(row.InstallDir)
+
+	for _, w := range []struct {
+		name string
+		w, h int
+	}{
+		{"small", 1100, 700}, // 330px panel: the 2:3 cover clipped the pill row
+		{"wide", 1600, 900},  // 480px panel: the cover alone overflowed the fold
+	} {
+		m := newModel(Config{Session: sess})
+		m.state = sess.Snapshot()
+		headlessFrames(t, w.w, w.h)
+		GetInputState().MousePoint = Vec2{-50, -50}
+		keyFrame(KeyCodeNone, 0, m.rootView) // build
+		keyFrame(KeyCodeNone, 0, m.rootView) // capture rects from the previous frame
+		if m.dlssUpdateRect.Size[0] == 0 || m.dlssArrowRect.Size[0] == 0 {
+			t.Errorf("%s window: external row rendered no DLSS control in the detail panel: update %+v arrow %+v", w.name, m.dlssUpdateRect, m.dlssArrowRect)
+		}
 	}
 }
 

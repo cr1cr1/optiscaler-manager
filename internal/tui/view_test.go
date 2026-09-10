@@ -471,3 +471,40 @@ func TestProgressViewZeroTotalNoPanic(t *testing.T) {
 		t.Errorf("zero-total progress line wrong: %q", plain)
 	}
 }
+
+// TestDetailViewDLSSHintsTrackComponents: the u/p NVIDIA actions render
+// enabled exactly when the row carries a detected DLSS component — the
+// manager populates components for every row with an injection dir
+// (external installs included), so a hand-installed game with the NVIDIA
+// set must not see the dimmed "needs the NVIDIA DLL set" variant.
+func TestDetailViewDLSSHintsTrackComponents(t *testing.T) {
+	base := ui.GameRow{
+		Title:        "DLSS Game",
+		AppID:        "100",
+		InstallDir:   "/games/dlss",
+		InjectionDir: "/games/dlss/bin",
+		Platform:     "Steam",
+		Status:       domain.StatusExternal,
+	}
+
+	t.Run("external row with the NVIDIA set shows enabled u/p", func(t *testing.T) {
+		row := base
+		row.Components = []string{"DLSS 3.7.20"}
+		out := detailModelFor(t, row).detailView(100, 40)
+		plain := sgrRE.ReplaceAllString(out, "")
+		if strings.Contains(plain, "needs the NVIDIA DLL set") {
+			t.Errorf("external row with DLSS components rendered the dimmed hint: %q", plain)
+		}
+		if !strings.Contains(plain, "u  update NVIDIA DLSS set") {
+			t.Errorf("update hint missing: %q", plain)
+		}
+	})
+
+	t.Run("row without components keeps the dimmed hint", func(t *testing.T) {
+		out := detailModelFor(t, base).detailView(100, 40)
+		plain := sgrRE.ReplaceAllString(out, "")
+		if !strings.Contains(plain, "needs the NVIDIA DLL set") {
+			t.Errorf("component-less row lost the dimmed hint: %q", plain)
+		}
+	})
+}

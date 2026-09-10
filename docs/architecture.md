@@ -198,8 +198,9 @@ bounded (size cap + LimitReader, same hardening as the rest of pever), the
 probe runs inside the scan goroutine, and manifests stay authoritative:
 managed games are never probed. A match yields the derived status
 `domain.StatusExternal` with a version from the manifest.json →
-OptiScaler.log → PE FileVersion chain; component versions are suppressed for
-external rows (those DLLs are OptiScaler's, not the game's).
+OptiScaler.log → PE FileVersion chain; component versions parse for
+external rows too — those DLLs are the game's (the OptiScaler bundle
+ships none of them).
 
 The status model is 4 persisted + 1 derived: `in_progress`, `committed`,
 `failed`, `rolled_back` are written to store manifests; `external` exists
@@ -250,12 +251,18 @@ The DLSS version pill doubles as a control wherever a row reports a
 NVIDIA runtime from the official NVIDIA/DLSS repository, and a small ▼
 arrow beside it opens the restore menu of local backups. The control
 renders on the card and in the detail panel; busy games fall back to the
-static pill. Component versions now parse for plain games too (rows
-without any OptiScaler install) — `classify.Dir` already walked those
-directories for the tech badges, and only the few detected component
-DLLs get a bounded PE read — so the control is reachable without an
-OptiScaler install. External rows stay suppressed (their component DLLs
-are the bundle's, not the game's).
+static pill. Component versions parse for EVERY row with a resolved
+injection dir — plain games (no OptiScaler install) and external rows
+(hand-installed OptiScaler) alike: the NVIDIA runtime DLLs are the
+game's, not the bundle's (OptiScaler ships only `optiscaler.dll` and
+`fakenvapi.*`), and a suppressed pill would leave hand-installed games
+un-updatable while their cards still showed the DLSS badge.
+`classify.Dir` already walked those directories for the tech badges, and
+only the few detected component DLLs get a bounded PE read. In the
+detail panel the status and version-pill rows sit ABOVE the 2:3 cover
+art: the cover scales with the panel width, so past a ~320px panel it
+alone overflows the scroll fold — pills below it would be out of view
+exactly where the update control is needed.
 
 `dlss.Update` is a three-file transaction, never a per-DLL picker: it
 requires the complete existing set (`nvngx_dlss.dll`, `nvngx_dlssd.dll`,

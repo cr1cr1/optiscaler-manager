@@ -127,7 +127,9 @@ External OptiScaler detection and adopt flows. Scope recorded in
   version-info identity; `testutil.StringInfoPE` synthetic-PE fixture.
 - **T2**: `domain.StatusExternal` — derived status, never persisted.
 - **T3**: app enrich probes unmanaged rows (bounded, async in the scan
-  goroutine); component versions suppressed for external rows;
+  goroutine); component versions parse for external rows too (the NVIDIA
+  runtime DLLs are the game's, not the bundle's — revised v0.14f, the
+  original suppression left hand-installed games without the DLSS pill);
   `app.ErrNotManaged` sentinel.
 - **T4**: session adopt/refuse/re-detect flows + `GameRow.CanOpenINI`;
   keystone adopt→uninstall→byte-identical-restore test.
