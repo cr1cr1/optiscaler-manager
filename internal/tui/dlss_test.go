@@ -77,7 +77,7 @@ func dlssEnv(t *testing.T) (*ui.Session, string, string) {
 func TestTUIDetailUpdateDLSS(t *testing.T) {
 	sess, _, bin := dlssEnv(t)
 	m := Model{sess: sess, screen: screenDetail, detailDir: gameDirOf(sess)}
-	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	_ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 
 	pollUntil(t, "updated NVIDIA set", func() bool {
 		for _, name := range dlss.Files {
@@ -147,7 +147,7 @@ func TestTUIDetailRestoreDLSSPick(t *testing.T) {
 func TestTUIGamesKeyUpdateDLSS(t *testing.T) {
 	sess, _, bin := dlssEnv(t)
 	m := Model{sess: sess, screen: screenGames, cursor: 0}
-	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	_ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	pollUntil(t, "updated NVIDIA set", func() bool {
 		v, err := fileVersion(filepath.Join(bin, "nvngx_dlss.dll"))
 		return err == nil && v == "310.9.1.0"
@@ -162,7 +162,7 @@ func TestTUIDetailUpdateDLSSRefusesMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := Model{sess: sess, screen: screenDetail, detailDir: gameDirOf(sess)}
-	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	_ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	pollUntil(t, "warning toast", func() bool {
 		snap := sess.Snapshot()
 		for _, to := range snap.Toasts {

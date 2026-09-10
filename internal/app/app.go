@@ -282,9 +282,8 @@ func enrichVersions(e *LibraryEntry, m *domain.Manifest) {
 	e.ComponentVersions = ComponentVersions(e.InjectionDir)
 }
 
-// componentVersions parses each detected upscaler DLL under dir and maps it
+// ComponentVersions parses each detected upscaler DLL under dir and maps it
 // to the vendor marketing name. Unparseable DLLs are skipped, never fatal.
-// ComponentVersions reads known upscaler DLL versions in dir. Invalid files are skipped.
 func ComponentVersions(dir string) map[string]string {
 	var out map[string]string
 	for _, f := range classify.DirFiles(dir) {

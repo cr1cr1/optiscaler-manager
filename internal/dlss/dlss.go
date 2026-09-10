@@ -93,7 +93,7 @@ func Update(ctx context.Context, c *Client, dataRoot, gameDir string) (Snapshot,
 	if err != nil {
 		return Snapshot{}, err
 	}
-	defer os.RemoveAll(stage)
+	defer func() { _ = os.RemoveAll(stage) }()
 	for _, name := range Files {
 		if _, err := c.download(ctx, commit, name, filepath.Join(stage, name)); err != nil {
 			return Snapshot{}, err
@@ -175,7 +175,7 @@ func (c *Client) commit(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("dlss: resolve source: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("dlss: resolve source: unexpected HTTP %d", resp.StatusCode)
 	}
@@ -201,7 +201,7 @@ func (c *Client) download(ctx context.Context, commit, name, dest string) (strin
 	if err != nil {
 		return "", fmt.Errorf("dlss: download %s: %w", name, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("dlss: download %s: unexpected HTTP %d", name, resp.StatusCode)
 	}
@@ -326,16 +326,16 @@ func copyReaderHashed(r io.Reader, dest string) (string, error) {
 	name := tmp.Name()
 	h := sha256.New()
 	if _, err := io.Copy(io.MultiWriter(tmp, h), r); err != nil {
-		tmp.Close()
-		os.Remove(name)
+		_ = tmp.Close()
+		_ = os.Remove(name)
 		return "", err
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return "", err
 	}
 	if err := os.Rename(name, dest); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
