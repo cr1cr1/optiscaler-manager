@@ -2589,3 +2589,21 @@ opens the restore menu of local backup sets.
   (scope.md v0.14), the TUI's one-candidate-at-a-time restore idiom,
   restore leaving a fresh snapshot of the current set (reversibility),
   `dropdownPosFor` rect-keyed clamp variant, whitespace-only re-indents.
+
+## 2026-09-12 — v0.14d: DLSS download cache (OptiScaler bundle-cache pattern)
+
+- `dlss.Update` stages from a commit-keyed download cache,
+  `<cacheDir>/dlss/<commit>/`, instead of a throwaway temp dir: a
+  `manifest.json` pins each member's SHA-256, cached members re-verify
+  against it on every update, and missing/mismatched members refetch
+  through the same raw-file routine — a cached update costs one
+  commits-API call and zero DLL downloads. TDD in two red→green slices
+  (reuse-without-second-download; tampered-valid-PE refetch).
+- The transient `dlss-staging` dir is gone; the cache is the same shape
+  as the OptiScaler one (`<cacheDir>/optiscaler/<version>/`) and holds
+  only re-derivable downloads. `app.UpdateDLSS`/`dlss.Update` gain a
+  cacheRoot param (session passes `deps.CacheDir`); snapshots stay under
+  the state root.
+- Docs: README (feature bullet + DLSS section), architecture (package
+  map + cache description), safety (cache re-verify rule), scope (v0.14
+  bullet). Green: full `go test ./...`, vet, golangci-lint 0 issues.

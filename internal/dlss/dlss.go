@@ -76,8 +76,9 @@ func (s Snapshot) Label() string {
 
 // Update downloads all three files at one immutable NVIDIA commit, backs up
 // the current complete set, then replaces the files. A failed replacement
-// restores every original before returning.
-func Update(ctx context.Context, c *Client, dataRoot, gameDir string) (Snapshot, error) {
+// restores every original before returning. Downloads are cached per commit
+// under cacheRoot (OptiScaler bundle-cache pattern: fetch once per version).
+func Update(ctx context.Context, c *Client, cacheRoot, dataRoot, gameDir string) (Snapshot, error) {
 	if err := requireFiles(gameDir); err != nil {
 		return Snapshot{}, err
 	}
@@ -88,19 +89,11 @@ func Update(ctx context.Context, c *Client, dataRoot, gameDir string) (Snapshot,
 	if err != nil {
 		return Snapshot{}, err
 	}
-	stagingRoot := filepath.Join(dataRoot, "dlss-staging")
-	if err := os.MkdirAll(stagingRoot, 0o700); err != nil {
-		return Snapshot{}, err
-	}
-	stage, err := os.MkdirTemp(stagingRoot, "update-*")
+	stage, err := c.stage(ctx, cacheRoot, commit)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	defer func() { _ = os.RemoveAll(stage) }()
 	for _, name := range Files {
-		if _, err := c.download(ctx, commit, name, filepath.Join(stage, name)); err != nil {
-			return Snapshot{}, err
-		}
 		if _, err := pever.FileVersion(filepath.Join(stage, name)); err != nil {
 			return Snapshot{}, fmt.Errorf("dlss: invalid downloaded %s: %w", name, err)
 		}
@@ -202,6 +195,85 @@ func (c *Client) commit(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("dlss: invalid source commit %q", body.SHA)
 	}
 	return body.SHA, nil
+}
+
+// stage ensures the commit-keyed download cache holds a complete file set,
+// fetching only the missing or hash-failed members through the same
+// raw-file routine as before (same source, same destination shape as the
+// OptiScaler bundle cache). A manifest.json pins each member's SHA-256, so
+// a tampered cache file is refetched, never installed.
+func (c *Client) stage(ctx context.Context, cacheRoot, commit string) (string, error) {
+	if cacheRoot == "" {
+		return "", fmt.Errorf("dlss: no download cache root")
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	dir := filepath.Join(cacheRoot, "dlss", commit)
+	rec, err := loadCacheRecord(dir)
+	if err != nil {
+		// An unreadable or corrupt manifest degrades to a full refetch: the
+		// cache is re-derivable, never precious.
+		log.Warn().Err(err).Msg("dlss: unreadable cache manifest, refetching")
+		rec = cacheRecord{}
+	}
+	files := make(map[string]string, len(Files))
+	fetched := false
+	for _, name := range Files {
+		if want := rec.Files[name]; want != "" {
+			if h, err := fileSHA256(filepath.Join(dir, name)); err == nil && h == want {
+				files[name] = h
+				continue // verified cache hit
+			}
+		}
+		h, err := c.download(ctx, commit, name, filepath.Join(dir, name))
+		if err != nil {
+			return "", err
+		}
+		files[name] = h
+		fetched = true
+	}
+	if fetched {
+		if err := writeCacheRecord(dir, files); err != nil {
+			return "", err
+		}
+	}
+	return dir, nil
+}
+
+// cacheRecord pins the expected SHA-256 of every member of one cached
+// commit.
+type cacheRecord struct {
+	Files map[string]string `json:"files"`
+}
+
+// loadCacheRecord reads the cache manifest; a missing one is an empty
+// record (full refetch), a corrupt one an error the caller degrades.
+func loadCacheRecord(dir string) (cacheRecord, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if os.IsNotExist(err) {
+		return cacheRecord{}, nil
+	}
+	if err != nil {
+		return cacheRecord{}, err
+	}
+	var r cacheRecord
+	if err := json.Unmarshal(data, &r); err != nil {
+		return cacheRecord{}, fmt.Errorf("dlss: parse cache manifest: %w", err)
+	}
+	return r, nil
+}
+
+// writeCacheRecord persists the manifest after a (partial) refetch.
+func writeCacheRecord(dir string, files map[string]string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	data, err := json.Marshal(cacheRecord{Files: files})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "manifest.json"), data, 0o644)
 }
 
 func (c *Client) download(ctx context.Context, commit, name, dest string) (string, error) {

@@ -17,7 +17,7 @@ func (s *Session) UpdateDLSS(gameDir string) { go s.doUpdateDLSS(gameDir) }
 
 func (s *Session) doUpdateDLSS(gameDir string) {
 	s.runDLSSOp(gameDir, "Updating NVIDIA DLSS…", func(ctx context.Context) error {
-		_, err := app.UpdateDLSS(ctx, s.deps.DLSS, s.deps.SettingsRoot, gameDir)
+		_, err := app.UpdateDLSS(ctx, s.deps.DLSS, s.deps.CacheDir, s.deps.SettingsRoot, gameDir)
 		return err
 	}, "Updated NVIDIA DLSS")
 }

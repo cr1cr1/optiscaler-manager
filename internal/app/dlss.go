@@ -9,12 +9,13 @@ import (
 
 // UpdateDLSS replaces the complete existing NVIDIA runtime set in a game's
 // resolved injection directory. It never installs a missing runtime DLL.
-func UpdateDLSS(ctx context.Context, client *dlss.Client, dataRoot, gameRoot string) (dlss.Snapshot, error) {
+// Downloads are cached per commit under cacheRoot.
+func UpdateDLSS(ctx context.Context, client *dlss.Client, cacheRoot, dataRoot, gameRoot string) (dlss.Snapshot, error) {
 	dir, err := resolveInjectionDir(gameRoot)
 	if err != nil {
 		return dlss.Snapshot{}, err
 	}
-	return dlss.Update(ctx, client, dataRoot, dir)
+	return dlss.Update(ctx, client, cacheRoot, dataRoot, dir)
 }
 
 // RestoreDLSS restores a complete prior NVIDIA runtime set into a game's

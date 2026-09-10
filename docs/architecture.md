@@ -49,9 +49,10 @@ internal/
   gh/         GitHub releases: glob asset match, cooldown cache
   dlss/       NVIDIA DLSS runtime updater (opt-in, on user action):
               resolves NVIDIA/DLSS main to an immutable commit, downloads
-              the three lib/Windows_x86_64/rel DLLs at that commit, and
-              keeps transactional snapshot backups (hash-verified) under
-              the state root for restore
+              the three lib/Windows_x86_64/rel DLLs at that commit into a
+              commit-keyed download cache under cacheDir (OptiScaler
+              bundle-cache pattern), and keeps transactional snapshot
+              backups (hash-verified) under the state root for restore
   archive/    7z extraction with hostile-input defenses (sevenzip)
   installer/  transaction core: stage → validate → backup → copy → manifest;
               rollback; uninstall; EAC check; ctx cancel at phase boundaries
@@ -259,13 +260,21 @@ are the bundle's, not the game's).
 `dlss.Update` is a three-file transaction, never a per-DLL picker: it
 requires the complete existing set (`nvngx_dlss.dll`, `nvngx_dlssd.dll`,
 `nvngx_dlssg.dll` must all be present — the updater updates, it never
-injects a component the game did not ship), downloads the three files
-from `lib/Windows_x86_64/rel` at ONE immutable commit (resolved via the
-GitHub API, never mutable `main` raw URLs), stages them in the state
-root, backs the current files up as a snapshot, then swaps them in. Any
-failure or cancellation restores the complete snapshot before
-returning; no partial set survives. Downloads validate as PE images
-before any game-dir write. `dlss.Restore` backs the current set up
+injects a component the game did not ship), fetches the three files from
+`lib/Windows_x86_64/rel` at ONE immutable commit (resolved via the
+GitHub API, never mutable `main` raw URLs), backs the current files up
+as a snapshot, then swaps them in. Any failure or cancellation restores
+the complete snapshot before returning; no partial set survives.
+Downloads validate as PE images before any game-dir write.
+
+Downloads are cached per commit at `<cacheDir>/dlss/<commit>/` — the
+same pattern as the OptiScaler bundle cache (`<cacheDir>/optiscaler/<version>/`):
+a `manifest.json` pins each member's SHA-256, cached members are
+re-verified against it on every update, and any missing or mismatched
+member is refetched through the same routine, so a commit that is
+already cached costs one tiny GitHub API call and no DLL downloads. The
+cache holds only re-derivable downloads; snapshots stay under the state
+root. `dlss.Restore` backs the current set up
 first (so a restore is itself reversible), SHA-256 verifies every
 snapshot member BEFORE the first copy, and then swaps the whole set
 back.

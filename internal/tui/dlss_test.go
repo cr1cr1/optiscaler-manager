@@ -59,6 +59,7 @@ func dlssEnv(t *testing.T) (*ui.Session, string, string) {
 		Store:        store.New(filepath.Join(root, "data")),
 		GH:           gh.NewWithBaseURL(nil, filepath.Join(root, "cache"), srv.URL),
 		DLSS:         dlss.NewWithBaseURLs(nil, srv.URL, srv.URL),
+		CacheDir:     filepath.Join(root, "cache"),
 		SettingsRoot: filepath.Join(root, "settings"),
 	})
 	seedGamesCache(t, filepath.Join(root, "settings"), []ui.GameRow{{

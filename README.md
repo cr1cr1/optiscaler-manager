@@ -19,7 +19,8 @@ uninstalls cleanly when you're done. Available for **Linux and Windows** (amd64)
   `nvngx_dlssd.dll`, and `nvngx_dlssg.dll` from one pinned source commit,
   with a hash-verified backup of your current set and a restore menu
   (`▼` in the GUI, `p` on the TUI detail screen) — the app ships no
-  NVIDIA files itself
+  NVIDIA files itself. Downloads are cached per source commit and reused
+  while that commit stays current.
 - Disable or enable a managed install on demand: the injection hook is
   renamed out of the way (`.disabled` or any backup suffix you chose)
   instead of removed, so the toggle back is a single rename
@@ -68,7 +69,10 @@ pinned commit. All three must already exist: the updater never adds
 components a game did not ship. Every update and restore first writes a
 hash-verified backup of your current set; the ▼ button beside the label
 lists those backups, and restoring one asks for confirmation first.
-Downloaded NVIDIA files are subject to NVIDIA's RTX SDK license.
+Downloaded NVIDIA files are subject to NVIDIA's RTX SDK license. Like the
+OptiScaler bundles, they are cached per source commit under the app's
+cache directory and reused while the commit stays current; a cached file
+that fails its recorded SHA-256 is fetched again.
 
 Games with a hand-installed OptiScaler setup show as **external**. The install
 action reads **Adopt**: installing backs up the external files SHA-verified

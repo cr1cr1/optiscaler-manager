@@ -514,6 +514,12 @@ decisions the per-version sections above do not cover.
   `<data-root>/dlss-backups/`; the pill's ▼ arrow lists them (newest
   first), a pick asks for confirmation, and a confirmed restore swaps
   the complete set back after verifying snapshot hashes.
+- **Commit-keyed download cache**: like the OptiScaler bundle cache,
+  downloaded NVIDIA DLLs persist per source commit under
+  `<cacheDir>/dlss/<commit>/` and are reused (after SHA-256
+  re-verification against the cache manifest) while that commit stays
+  current; a cached update costs one commits-API call and no DLL
+  downloads.
 - **Session integration**: the ops ride the per-game busy/cancel slot;
   success re-probes component versions so the pill updates immediately.
 - **Plain-game component enrichment**: component versions now parse for
