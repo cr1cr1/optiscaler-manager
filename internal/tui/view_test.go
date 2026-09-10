@@ -387,11 +387,14 @@ func TestGameRowLineCycleIndicator(t *testing.T) {
 
 	check := func(t *testing.T, candidate, wantSub string) {
 		t.Helper()
-		m := Model{sess: e.sess, cycle: &versionCycle{
-			dir:  row.InstallDir,
-			list: []string{candidate, "v0.9.4-test"},
-			idx:  0,
-			cur:  "v0.9.4-test",
+		m := Model{sess: e.sess, cycle: &stagedCycle{
+			dir: row.InstallDir,
+			items: []stagedItem{
+				{ID: candidate, Label: candidate},
+				{ID: "v0.9.4-test", Label: "v0.9.4-test"},
+			},
+			idx: 0,
+			cur: "v0.9.4-test",
 		}}
 		line := m.gameRowLine(row, 20, 80, false)
 		t.Logf("rendered cycling row: %q", line)

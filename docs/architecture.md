@@ -277,8 +277,12 @@ the OptiScaler manifests: uninstalling or switching OptiScaler never
 touches the game's NVIDIA runtime, and the restore menu is the only
 downgrade path (no version picker, no update checks — the action always
 fetches the current HEAD commit). The GUI confirm gate reuses the
-session's `ConfirmDLSSRestore` kind; declining runs nothing. TUI/CLI
-surfaces are deferred (the requested interaction is the GUI label).
+session's `ConfirmDLSSRestore` kind; declining runs nothing. The TUI
+mirrors the control: `u` on the games screen or detail screen dispatches
+the update, and `p` on the detail screen stages a restore pick that
+cycles the snapshots (enter confirm, esc cancel, same row-modal pattern
+as the version cycle) before the same session confirmation gate. CLI
+surfaces remain deferred.
 
 Licensing: the NVIDIA/DLSS repository is distributed under NVIDIA's RTX
 SDK license (not an open-source license). This manager ships no NVIDIA

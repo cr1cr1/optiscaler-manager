@@ -2543,3 +2543,24 @@ opens the restore menu of local backup sets.
 - Deferred (scope.md): TUI/CLI surfaces, DLSS-FG/DLSSD-only actions,
   version picker, update-available/scheduled checks, bulk update,
   snapshot pruning.
+
+## 2026-09-12 — v0.14b: DLSS update/restore in the TUI
+
+- TUI parity for the NVIDIA DLSS control: `u` on the games screen and the
+  detail screen dispatches `Session.UpdateDLSS`; `p` on the detail screen
+  stages a restore pick over `Session.DLSSSnapshots` (newest first) using
+  the same row-modal staged pattern as the version cycle — `p` advances,
+  `enter` confirms, `esc` cancels, any other key drops the stage.
+- `versionCycle` generalized into `stagedCycle` (items with id+label,
+  restore flag): one advance/confirm code path serves version switches
+  (same-version dispatch still suppressed, S13) and snapshot restores
+  (always dispatch — the session confirmation gate protects the write).
+- `dlss.Snapshot.Label()` is the shared display name (backed-up DLSS SR
+  version + local time); the GUI restore menu now renders it too, so the
+  label logic lives in one place.
+- TDD: `internal/tui/dlss_test.go` — update replaces all three files and
+  refreshes the row's component label, restore pick renders and
+  confirm-gates through `AnswerConfirm`, games-screen `u` parity, and the
+  missing-DLL refusal leaves no backup dir. Green: full `go test ./...`.
+- Docs: README keymap + feature bullet, architecture (TUI keys), safety
+  (both frontends confirm), scope (TUI removed from the deferred list).

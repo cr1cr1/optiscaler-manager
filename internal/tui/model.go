@@ -60,18 +60,28 @@ type Model struct {
 	mode         inputMode
 	spin         spinner.Model
 	confirmRmDir string // directory pending inline remove confirmation
-	cycle        *versionCycle
+	cycle        *stagedCycle
 }
 
-// versionCycle is a staged per-game version switch: the Versions(dir)
-// snapshot taken at the first 'v', the index of the currently shown
-// candidate, and the version the row had at staging time (so confirming
-// the unchanged version can be suppressed here, not just in the core).
-type versionCycle struct {
-	dir  string
-	list []string
-	idx  int
-	cur  string
+// stagedItem is one pickable entry: ID selects the target (an OptiScaler
+// version tag, or a DLSS snapshot id), Label is what the stage line renders.
+type stagedItem struct {
+	ID    string
+	Label string
+}
+
+// stagedCycle is a staged per-game pick: the session-provided candidates
+// snapshotted at the staging keypress, the index of the currently shown
+// candidate, and — for version switches — the version the row had at
+// staging time (so confirming the unchanged version is suppressed here,
+// not just in the core). restore selects the dispatch and the advance key
+// ('p' for restores, 'v' for versions).
+type stagedCycle struct {
+	dir     string
+	items   []stagedItem
+	idx     int
+	cur     string
+	restore bool
 }
 
 // stageCycle starts version staging on dir's row: the first 'v' snapshots
@@ -88,43 +98,88 @@ func (m *Model) stageCycle(dir string) {
 	if len(list) < 2 {
 		return
 	}
+	items := make([]stagedItem, len(list))
 	idx := -1 // not found: the advance below lands on the newest entry
 	for i, v := range list {
+		items[i] = stagedItem{ID: v, Label: v}
 		if v == row.OptiScalerVersion {
 			idx = i
-			break
 		}
 	}
-	m.cycle = &versionCycle{dir: dir, list: list, idx: idx, cur: row.OptiScalerVersion}
+	m.cycle = &stagedCycle{dir: dir, items: items, idx: idx, cur: row.OptiScalerVersion}
+	m.advanceCycle()
+}
+
+// stageRestore stages a DLSS snapshot restore pick: the first 'p' snapshots
+// Session.DLSSSnapshots(dir) (newest first, one disk read on the keypress)
+// and lands on the first entry. Rows without the NVIDIA DLL set and games
+// with no snapshots are a no-op; restoring always confirm-gates through the
+// session afterwards.
+func (m *Model) stageRestore(dir string) {
+	row := findRow(m.sess.Snapshot().Rows, dir)
+	if row == nil || !hasDLSS(*row) {
+		return
+	}
+	snaps := m.sess.DLSSSnapshots(dir)
+	if len(snaps) == 0 {
+		return
+	}
+	items := make([]stagedItem, len(snaps))
+	for i, s := range snaps {
+		items[i] = stagedItem{ID: s.ID, Label: s.Label()}
+	}
+	m.cycle = &stagedCycle{dir: dir, items: items, idx: -1, restore: true}
 	m.advanceCycle()
 }
 
 // advanceCycle moves the staged candidate to the next entry, wrapping
-// around; the stage is dropped if the row lost its install mid-cycle.
+// around; the stage is dropped if the row lost its eligibility mid-cycle.
 func (m *Model) advanceCycle() {
 	c := m.cycle
 	if c == nil {
 		return
 	}
-	if row := findRow(m.sess.Snapshot().Rows, c.dir); row == nil || !switchable(*row) {
+	eligible := switchable
+	if c.restore {
+		eligible = hasDLSS
+	}
+	if row := findRow(m.sess.Snapshot().Rows, c.dir); row == nil || !eligible(*row) {
 		m.cycle = nil
 		return
 	}
-	c.idx = (c.idx + 1) % len(c.list)
+	c.idx = (c.idx + 1) % len(c.items)
 }
 
-// confirmCycle dispatches the staged switch when the candidate differs
-// from the version the row had at staging time; wrapping back to the
-// current version (S13) dispatches nothing.
+// confirmCycle dispatches the staged pick. Version switches dispatch only
+// when the candidate differs from the version at staging time (wrapping
+// back to the current version, S13, dispatches nothing); a restore pick
+// always dispatches — the user named an exact snapshot, and the session
+// confirm gate protects the write anyway.
 func (m *Model) confirmCycle() {
 	c := m.cycle
 	m.cycle = nil
 	if c == nil {
 		return
 	}
-	if cand := c.list[c.idx]; cand != c.cur {
-		m.sess.SwitchVersion(c.dir, cand)
+	cand := c.items[c.idx]
+	if c.restore {
+		m.sess.RestoreDLSS(c.dir, cand.ID)
+		return
 	}
+	if cand.ID != c.cur {
+		m.sess.SwitchVersion(c.dir, cand.ID)
+	}
+}
+
+// hasDLSS reports whether the row carries a detected DLSS component —
+// the cheap signal that the NVIDIA runtime DLLs may be on disk.
+func hasDLSS(r ui.GameRow) bool {
+	for _, c := range r.Components {
+		if strings.HasPrefix(c, "DLSS") {
+			return true
+		}
+	}
+	return false
 }
 
 // findRow returns the snapshot row for dir, or nil.
@@ -267,14 +322,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	// A staged version switch is row-modal: 'v' advances the candidate,
-	// Enter confirms (dispatching only when the candidate differs from the
-	// staged-from version), Esc cancels. Any other key drops the stage and
-	// falls through to its normal binding, so cursor moves, screen
-	// switches, and rescans can never carry a stale stage along.
+	// A staged version switch or DLSS restore pick is row-modal: the
+	// advance key ('v' versions, 'p' restores) moves the candidate, Enter
+	// confirms (version switches dispatch only when the candidate differs
+	// from the staged-from version), Esc cancels. Any other key drops the
+	// stage and falls through to its normal binding, so cursor moves,
+	// screen switches, and rescans can never carry a stale stage along.
 	if m.cycle != nil {
+		advance := "v"
+		if m.cycle.restore {
+			advance = "p"
+		}
 		switch msg.String() {
-		case "v":
+		case advance:
 			m.advanceCycle()
 			return m, nil
 		case "enter":
@@ -347,6 +407,10 @@ func (m Model) gamesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if dir := selectedDir(rows, m.cursor); dir != "" {
 			m.sess.Launch(dir)
 		}
+	case "u":
+		if dir := selectedDir(rows, m.cursor); dir != "" {
+			m.sess.UpdateDLSS(dir)
+		}
 	case "c":
 		if dir := selectedDir(rows, m.cursor); dir != "" {
 			m.sess.CancelOp(dir)
@@ -384,6 +448,10 @@ func (m Model) detailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "d":
 		m.sess.ToggleDisabled(dir)
+	case "u":
+		m.sess.UpdateDLSS(dir)
+	case "p":
+		m.stageRestore(dir)
 	case "o":
 		if row := m.detailRow(); row != nil && row.CanOpenINI() {
 			return m, openINIEditor(m.sess, dir)

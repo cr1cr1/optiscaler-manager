@@ -15,10 +15,11 @@ uninstalls cleanly when you're done. Available for **Linux and Windows** (amd64)
   managed without losing your files
 - Update NVIDIA DLSS from the official
   [NVIDIA/DLSS](https://github.com/NVIDIA/DLSS) repository on demand: press
-  the DLSS version label to fetch `nvngx_dlss.dll`, `nvngx_dlssd.dll`, and
-  `nvngx_dlssg.dll` from one pinned source commit, with a hash-verified
-  backup of your current set and a restore menu — the app ships no NVIDIA
-  files itself
+  the DLSS version label (GUI) or `u` (TUI) to fetch `nvngx_dlss.dll`,
+  `nvngx_dlssd.dll`, and `nvngx_dlssg.dll` from one pinned source commit,
+  with a hash-verified backup of your current set and a restore menu
+  (`▼` in the GUI, `p` on the TUI detail screen) — the app ships no
+  NVIDIA files itself
 - Disable or enable a managed install on demand: the injection hook is
   renamed out of the way (`.disabled` or any backup suffix you chose)
   instead of removed, so the toggle back is a single rename
@@ -119,12 +120,13 @@ build in Settings, or leave it blank to auto-detect from Steam
 | `enter` | Open the detail screen (`esc` back) |
 | `i` | Install / uninstall (quick toggle) |
 | `v` | Switch OptiScaler version (cycle candidates, `enter` confirm, `esc` cancel) |
+| `u` | Update the NVIDIA DLSS set from the official repository |
 | `l` | Launch game |
 | `c` | Cancel the busy operation |
 | `/` | Filter, live as you type (`esc` clears) |
 | `s` | Toggle sort (default / name) |
 | `R` | Rescan the library |
-| Detail: `i` `v` `l` `c` `r` `o` `d` | Install / switch version / launch / cancel / rollback / open OptiScaler.ini / disable-enable the OptiScaler hook |
+| Detail: `i` `v` `u` `p` `l` `c` `r` `o` `d` | Install / switch version / update the NVIDIA DLSS set / restore a DLSS backup (cycle, `enter` confirm, then `y`) / launch / cancel / rollback / open OptiScaler.ini / disable-enable the OptiScaler hook |
 | Settings: `e` `t` `a` `d` `x` `o` `u` `p` | Edit version / edit launch template / add dir / remove dir (`y`/`n`) / clear bundle cache / toggle online game info / toggle umu-launcher / edit umu Proton path |
 | Confirm modal | `y` proceed, `n` cancel |
 

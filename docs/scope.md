@@ -522,7 +522,7 @@ decisions the per-version sections above do not cover.
   shows the pressable DLSS label. `classify.Dir` already walked those
   dirs for tech badges; only detected component DLLs get a bounded PE
   read.
-- **Deferred**: TUI/CLI surfaces, DLSS-FG/DLSSD-only actions, version
+- **Deferred**: CLI surfaces, DLSS-FG/DLSSD-only actions, version
   picker, update-available checks, scheduled checks, bulk update,
   snapshot pruning (the newest-first menu plus ~115 MB per snapshot
   stays acceptable; revisit when a user accumulates dozens).

@@ -58,6 +58,19 @@ type File struct {
 	SHA256  string `json:"sha256"`
 }
 
+// Label is the display name of a snapshot: the backed-up DLSS Super
+// Resolution version plus the local creation time.
+func (s Snapshot) Label() string {
+	version := "unknown"
+	for _, f := range s.Files {
+		if f.Name == "nvngx_dlss.dll" {
+			version = f.Version
+			break
+		}
+	}
+	return "DLSS " + version + " · " + s.CreatedAt.Local().Format("2006-01-02 15:04")
+}
+
 // Update downloads all three files at one immutable NVIDIA commit, backs up
 // the current complete set, then replaces the files. A failed replacement
 // restores every original before returning.

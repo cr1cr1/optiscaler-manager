@@ -1116,7 +1116,7 @@ func TestTUIVersionCycleEscDispatchesNothing(t *testing.T) {
 	if m.cycle == nil {
 		t.Fatal("'v' on an installed row did not stage a version switch")
 	}
-	if got := m.cycle.list[m.cycle.idx]; got != "v0.10.0-test" {
+	if got := m.cycle.items[m.cycle.idx].Label; got != "v0.10.0-test" {
 		t.Fatalf("first candidate = %q, want v0.10.0-test (next after current)", got)
 	}
 	t.Logf("staged-cycle frame (version cell shows the candidate):\n%s", m.View())
@@ -1151,7 +1151,7 @@ func TestTUIVersionCycleWrapToCurrentDispatchesNothing(t *testing.T) {
 	if m.cycle == nil {
 		t.Fatal("staging vanished after two 'v' presses")
 	}
-	if got := m.cycle.list[m.cycle.idx]; got != installed {
+	if got := m.cycle.items[m.cycle.idx].Label; got != installed {
 		t.Fatalf("wrapped candidate = %q, want the current %q", got, installed)
 	}
 

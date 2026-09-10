@@ -335,11 +335,11 @@ func (m Model) gameRowLine(r ui.GameRow, tw, w int, selected bool) string {
 		version = "—"
 	}
 	versionCell := cell(version, colVersion)
-	if m.cycle != nil && m.cycle.dir == r.InstallDir {
+	if m.cycle != nil && !m.cycle.restore && m.cycle.dir == r.InstallDir {
 		// Staged switch: the candidate replaces the version cell. The
 		// plain text is truncated BEFORE styling (same rule as
 		// badgesCell) so no SGR sequence is ever split or left unclosed.
-		cand := trunc("→ "+m.cycle.list[m.cycle.idx], colVersion)
+		cand := trunc("→ "+m.cycle.items[m.cycle.idx].Label, colVersion)
 		versionCell = lipgloss.NewStyle().Width(colVersion).Render(styleBusy.Render(cand))
 	}
 	status := string(r.Status)
@@ -423,8 +423,10 @@ func (m Model) detailView(w, contentH int) string {
 		b.WriteString(styleTitle.Render(row.Title) + "\n")
 		fmt.Fprintf(&b, "%s · AppID %s\n", row.Platform, row.AppID)
 		fmt.Fprintf(&b, "Path: %s\n", row.InstallDir)
-		if m.cycle != nil && m.cycle.dir == row.InstallDir {
-			fmt.Fprintf(&b, "OptiScaler: %s → %s (enter confirm · esc cancel)\n", version, m.cycle.list[m.cycle.idx])
+		if m.cycle != nil && m.cycle.restore && m.cycle.dir == row.InstallDir {
+			fmt.Fprintf(&b, "DLSS: restore %s (enter confirm · esc cancel)\n", m.cycle.items[m.cycle.idx].Label)
+		} else if m.cycle != nil && m.cycle.dir == row.InstallDir {
+			fmt.Fprintf(&b, "OptiScaler: %s → %s (enter confirm · esc cancel)\n", version, m.cycle.items[m.cycle.idx].Label)
 		} else {
 			fmt.Fprintf(&b, "OptiScaler: %s\n", version)
 		}
@@ -448,6 +450,14 @@ func (m Model) detailView(w, contentH int) string {
 		if row.Status == "committed" || row.Status == "external" {
 			b.WriteString("  v  switch version (cycle · enter confirm · esc cancel)\n")
 		}
+		dlssUpdate := "  u  update NVIDIA DLSS set"
+		dlssRestore := "  p  restore NVIDIA DLSS backup"
+		if !hasDLSS(*row) {
+			dlssUpdate = styleDimmedAction.Render(dlssUpdate + " (needs the NVIDIA DLL set)")
+			dlssRestore = styleDimmedAction.Render(dlssRestore + " (needs the NVIDIA DLL set)")
+		}
+		b.WriteString(dlssUpdate + "\n")
+		b.WriteString(dlssRestore + "\n")
 		b.WriteString("  l  launch\n")
 		b.WriteString("  c  cancel operation\n")
 		rollback := "  r  rollback"
@@ -536,9 +546,9 @@ func (m Model) settingsView(w, contentH int) string {
 func helpView() string {
 	return styleHeader.Render("Keyboard reference") + "\n\n" + strings.Join([]string{
 		"Global    1 games · 2 settings · 3 help · 4 about · q / ctrl+c quit",
-		"Games     j/k move · enter detail · i install/uninstall · v switch version · l launch · c cancel",
+		"Games     j/k move · enter detail · i install/uninstall · v switch version · u update NVIDIA DLSS · l launch · c cancel",
 		"          / filter · R rescan · s sort",
-		"Detail    i install · v switch version · l launch · c cancel · r rollback · o open INI · esc back",
+		"Detail    i install · v switch version · u update NVIDIA DLSS · p restore DLSS backup · l launch · c cancel · r rollback · o open INI · d disable/enable · esc back",
 		"Settings  e edit version · t edit template · a add dir · d remove dir",
 		"          o toggle online game info · u toggle umu-launcher · p edit umu Proton path · x clear bundle cache",
 		"Confirm   y proceed · n cancel",

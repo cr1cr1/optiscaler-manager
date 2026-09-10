@@ -5,7 +5,6 @@ import (
 
 	. "go.hasen.dev/shirei"
 
-	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
@@ -102,7 +101,7 @@ func (m *model) dlssRestoreMenu(e *ui.GameRow) {
 			m.dlssSnapshotItems = m.dlssSnapshotItems[:0]
 			for _, snap := range snaps {
 				snap := snap
-				label := snapshotLabel(snap)
+				label := snap.Label()
 				Container(Attrs(Row, Expand, Pad2(sp4, sp8), Corners(2)), func() {
 					m.dlssSnapshotItems = append(m.dlssSnapshotItems, dlssSnapshotItem{id: snap.ID, label: label, rect: GetScreenRectOf(CurrentId())})
 					Label(label, FontSize(12), TextColorVec(txtMain))
@@ -124,20 +123,6 @@ func (m *model) dlssRestoreMenu(e *ui.GameRow) {
 	if menuID != nil && !IdIsHovered(m.dlssArrowID) && !IdIsHovered(menuID) && GetFrameInput().Mouse == MouseClick {
 		m.openDLSSDir = ""
 	}
-}
-
-func snapshotLabel(s dlss.Snapshot) string {
-	version := "unknown"
-	for _, f := range s.Files {
-		if f.Name == "nvngx_dlss.dll" {
-			version = f.Version
-			break
-		}
-	}
-	if version == "" {
-		version = "unknown"
-	}
-	return "DLSS " + version + " · " + s.CreatedAt.Local().Format("2006-01-02 15:04")
 }
 
 // dropdownPosFor anchors a popup below a screen rect, clamped to the
