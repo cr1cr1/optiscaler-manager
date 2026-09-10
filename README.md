@@ -13,6 +13,12 @@ uninstalls cleanly when you're done. Available for **Linux and Windows** (amd64)
   every file it touches
 - Detects and adopts OptiScaler setups you installed by hand, so they become
   managed without losing your files
+- Update NVIDIA DLSS from the official
+  [NVIDIA/DLSS](https://github.com/NVIDIA/DLSS) repository on demand: press
+  the DLSS version label to fetch `nvngx_dlss.dll`, `nvngx_dlssd.dll`, and
+  `nvngx_dlssg.dll` from one pinned source commit, with a hash-verified
+  backup of your current set and a restore menu — the app ships no NVIDIA
+  files itself
 - Disable or enable a managed install on demand: the injection hook is
   renamed out of the way (`.disabled` or any backup suffix you chose)
   instead of removed, so the toggle back is a single rename
@@ -53,6 +59,15 @@ Each installed game manages its own OptiScaler version: the version selector
 offers the versions already downloaded in the bundle cache plus the default
 version from preferences, and switching installs the chosen version while
 keeping the game's existing `OptiScaler.ini` tweaks.
+
+The DLSS version label is also a control (GUI only): pressing it updates the
+game's NVIDIA runtime — all three DLLs (`nvngx_dlss.dll`, `nvngx_dlssd.dll`,
+`nvngx_dlssg.dll`) together, from the official NVIDIA/DLSS repository at one
+pinned commit. All three must already exist: the updater never adds
+components a game did not ship. Every update and restore first writes a
+hash-verified backup of your current set; the ▼ button beside the label
+lists those backups, and restoring one asks for confirmation first.
+Downloaded NVIDIA files are subject to NVIDIA's RTX SDK license.
 
 Games with a hand-installed OptiScaler setup show as **external**. The install
 action reads **Adopt**: installing backs up the external files SHA-verified

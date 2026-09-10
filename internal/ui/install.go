@@ -102,6 +102,8 @@ func (s *Session) AnswerConfirm(accept bool) {
 		go s.doInstallVersion(c.GameDir, c.Version, false, true)
 	case ConfirmVersionSwitch:
 		go s.doSwitchVersion(c.GameDir, c.Version, true)
+	case ConfirmDLSSRestore:
+		go s.doRestoreDLSS(c.GameDir, c.SnapshotID)
 	}
 }
 

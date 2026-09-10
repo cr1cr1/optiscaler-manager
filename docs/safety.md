@@ -155,3 +155,37 @@ Launching a game is fire-and-forget by design:
   `UmuProtonPath` (empty = auto-detect from Steam/Bottles/umu runner
   dirs). The toggle defaults off; off-Linux the hook is nil and this path
   never fires.
+
+## NVIDIA DLSS update/restore
+
+The DLSS control replaces three game files (`nvngx_dlss.dll`,
+`nvngx_dlssd.dll`, `nvngx_dlssg.dll`) in one transaction. Rules:
+
+- **Update never injects.** The complete existing set is required: all
+  three DLLs must already exist in the injection directory, and any
+  missing member refuses the update with zero writes. This keeps the
+  manager from adding DLSS-D or DLSS-FG files a game never shipped.
+- **The source is pinned to one immutable commit.** The commit SHA is
+  resolved via the GitHub API first; all three files are then fetched
+  from that exact commit. Mutable `main` raw URLs are never fetched, so
+  a mixed-commit set is impossible.
+- **Downloads validate before any game-dir write.** Each staged file
+  must parse as a PE image; anything else aborts the update.
+- **The snapshot is persisted and hash-verified before the first swap.**
+  Every backed-up file's SHA-256 is recorded in `snapshot.json`; on
+  failure or cancellation the complete set is restored from the
+  verified snapshot before the op returns (cancellation runs the
+  restore to completion, like the installer's rollback).
+- **Restore verifies then swaps.** A snapshot restore first backs the
+  current set up (restores are reversible), verifies every snapshot
+  member against its recorded hash, and only then copies. A tampered
+  or truncated backup never reaches the game directory.
+- **Snapshots are outside the OptiScaler manifests.** Uninstall,
+  rollback, and version switches never touch the NVIDIA runtime or its
+  backups; the restore menu is the only way a snapshot comes back.
+- **Licensing note.** The NVIDIA/DLSS repository ships under NVIDIA's
+  RTX SDK license, which is not an open-source license and restricts
+  redistribution. This manager bundles no NVIDIA bytes: it downloads
+  them on explicit user action and stores local restore copies. Any
+  repackaging or shipping of these DLLs is the user's responsibility
+  under that license.

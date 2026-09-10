@@ -2479,3 +2479,67 @@ Test hardening after CI failures in the GUI package:
   scan's `persistCache` (before EvScanDone in runScan) raced TempDir
   cleanup ("directory not empty" marks the test failed). It now waits
   for the scan to settle (EvScanDone/EvScanFailed).
+
+## 2026-09-10 — v0.14: NVIDIA DLSS runtime update + restore
+
+New feature: the GUI's DLSS version pill becomes a control. Pressing the
+version area updates the game's NVIDIA runtime; a small ▼ arrow beside it
+opens the restore menu of local backup sets.
+
+- `internal/dlss` (new): `Files` is the fixed three-name set
+  (`nvngx_dlss.dll`, `nvngx_dlssd.dll`, `nvngx_dlssg.dll`). `Update`
+  requires the complete existing set (never injects a component the game
+  did not ship), resolves NVIDIA/DLSS `main` to an immutable commit SHA
+  via the GitHub API, downloads all three `lib/Windows_x86_64/rel` files
+  at that commit (mutable `main` raw URLs are never fetched), stages
+  them in the state root, validates each as a PE image, backs the
+  current set up as a hash-verified snapshot, then swaps them in; any
+  failure or cancellation restores the complete snapshot before
+  returning. `Restore` backs the current set up first (restores are
+  reversible), verifies every snapshot member's SHA-256 BEFORE the
+  first copy (a tampered backup never reaches the game dir), then swaps
+  the whole set back. `Snapshots` lists them newest first. Snapshots
+  live at `<data-root>/dlss-backups/<sha256(installDir)[:16]>/<id>/`
+  with `snapshot.json` (created-at, per-file version + SHA-256, source
+  commit). Deliberately separate from OptiScaler manifests: uninstall /
+  switch / rollback never touch the NVIDIA runtime or its backups.
+  Tests: update replaces all three from one commit, restore returns the
+  complete prior set, missing-member refusal, tampered-backup refusal,
+  cancelled update leaves files untouched.
+- `internal/app`: `UpdateDLSS`, `RestoreDLSS`, `DLSSSnapshots` resolve
+  the injection dir and call into `dlss`; `componentVersions` is now
+  the exported `ComponentVersions`.
+- Component-version enrichment widened: plain games (any row with a
+  resolved injection dir) now report DLSS/FSR/XeSS versions, so the
+  DLSS control is reachable without an OptiScaler install (the README
+  already promised detected upscaler versions on the grid).
+  OptiScaler-version enrichment stays managed-only; external rows stay
+  suppressed (bundle-owned DLLs). `TestLibraryEntryComponentVersions`
+  updated to pin the new contract.
+- `internal/ui`: `Session.UpdateDLSS`, `Session.DLSSSnapshots`,
+  `Session.RestoreDLSS` (confirm-gated via the new `ConfirmDLSSRestore`
+  kind + `Confirmation.SnapshotID`; `AnswerConfirm(true)` resumes the
+  restore). Ops ride the per-game busy/cancel slot; success re-probes
+  component versions so the pill updates immediately
+  (`refreshComponentVersions`, ordering identical to scan's toRow).
+- `internal/gui`: `dlssControl` renders the dual-color DLSS pill —
+  "DLSS:" keeps the component green, the version renders in main text
+  color — as two focusables (update area, restore arrow) on the card
+  and in the detail panel. Non-DLSS pills and busy games fall back to
+  the static `badgePill`. The card's press-exclusion now covers the
+  update area, the arrow, and an open restore menu, so a control press
+  never selects the card. The menu lists snapshots newest first with a
+  keyboard-accessible trigger (Enter/Space), Esc closes it, a click
+  outside closes it, and a pick routes through
+  `Session.RestoreDLSS` (confirmation modal, accept restores).
+  Test seams: `dlssUpdateFn`/`dlssRestoreFn` dispatch captures, rects +
+  menu items as observability seams; the busy-state test gates the fake
+  commit endpoint so the in-flight state is deterministic.
+- `cmd/session.go`: `Deps.DLSS` wired (`dlss.New(httpClient)`).
+- Docs: architecture (package map + NVIDIA DLSS update section),
+  safety (update/restore rules + NVIDIA RTX SDK license note),
+  scope (v0.14 section), README (feature bullet + usage section),
+  this log entry.
+- Deferred (scope.md): TUI/CLI surfaces, DLSS-FG/DLSSD-only actions,
+  version picker, update-available/scheduled checks, bulk update,
+  snapshot pruning.

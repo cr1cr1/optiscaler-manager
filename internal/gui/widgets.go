@@ -412,10 +412,10 @@ func themedInputState(buf *string, hint string, icon widgets.IconGlyph, st *edit
 		r := []rune(*buf)
 		lo, hi, hasSel := st.selRange(len(r))
 		Container(Attrs(Row, Gap(sp8), CrossMid, Grow(1)), func() {
-		if icon != widgets.NoIcon {
+			if icon != widgets.NoIcon {
 				widgets.Icon(icon, FontSize(13), TextColorVec(txtMuted))
 			}
-		Container(Attrs(Row, Gap(0), CrossMid, Grow(1), MinSize(0, 16)), func() {
+			Container(Attrs(Row, Gap(0), CrossMid, Grow(1), MinSize(0, 16)), func() {
 				st.textRect = GetScreenRect()
 				switch {
 				case hasSel:

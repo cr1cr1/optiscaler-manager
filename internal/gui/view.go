@@ -298,12 +298,12 @@ func (m *model) actionList() {
 		// selected.
 		m.listRowRects = make([]Rect, len(rows))
 		m.listSelectedRect = Rect{}
-	VirtualListView("games", len(rows),
-		func(i int) any { return rows[i].InstallDir },
-		func(i int, w float32) float32 { return 38 },
-		func(i int, w float32) {
-			e := rows[i]
-			Container(Attrs(Row, CrossMid, Gap(sp8), Pad2(1, sp12), MinSize(w, 36), Corners(radiusS)), func() {
+		VirtualListView("games", len(rows),
+			func(i int) any { return rows[i].InstallDir },
+			func(i int, w float32) float32 { return 38 },
+			func(i int, w float32) {
+				e := rows[i]
+				Container(Attrs(Row, CrossMid, Gap(sp8), Pad2(1, sp12), MinSize(w, 36), Corners(radiusS)), func() {
 					m.listRowRects[i] = GetScreenRectOf(CurrentId())
 					if i == m.selIdx {
 						m.listSelRect = m.listRowRects[i]
@@ -428,13 +428,18 @@ func (m *model) detailPanel() {
 				Container(Attrs(Row, Gap(sp4)), func() {
 					start := 0
 					// The OptiScaler pill is the version dropdown; component
-					// and Proton pills stay static.
+					// and Proton pills stay static — except DLSS, whose pill
+					// is the update/restore control (same as on the card).
 					if b, ok := optiBadge(e); ok {
 						m.versionDropdown(e, b.Label, b.Tone)
 						start = 1
 					}
 					for _, p := range pills[start:] {
-						badgePill(p.Label, p.Tone)
+						if strings.HasPrefix(p.Label, "DLSS ") {
+							m.dlssControl(e, p.Label)
+						} else {
+							badgePill(p.Label, p.Tone)
+						}
 					}
 				})
 			}

@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
+	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
 	"github.com/cr1cr1/optiscaler-manager/internal/launch"
@@ -88,6 +89,7 @@ const (
 	// EAC consent already granted — a mid-switch pause used to strand the
 	// game uninstalled with the ini already deleted.
 	ConfirmVersionSwitch
+	ConfirmDLSSRestore
 )
 
 // Confirmation is a pending consent request. Installs never proceed past
@@ -100,7 +102,8 @@ type Confirmation struct {
 	// for the configured default): a version-switched install paused at a
 	// consent gate resumes at the SAME tag, not whatever the default
 	// happens to resolve to when the answer lands.
-	Version string
+	Version    string
+	SnapshotID string // complete NVIDIA DLL set selected for restoration
 }
 
 // Toast is a transient notification.
@@ -128,6 +131,7 @@ type State struct {
 type Deps struct {
 	Store        *store.Store
 	GH           *gh.Client
+	DLSS         *dlss.Client
 	Covers       *covers.Covers
 	CacheDir     string
 	SteamRoot    string

@@ -496,3 +496,33 @@ decisions the per-version sections above do not cover.
   `internal/ui` split into themed files; shared row helpers
   (`HasInstall`, `DisableToggleLabel`, `InterruptedRows`); Go 1.27 +
   shirei v0.6.7 with the vendor patches reapplied.
+
+## v0.14 scope (NVIDIA DLSS runtime updater)
+
+- **On-demand, on-user-action only**: the DLSS version pill (GUI card
+  and detail panel) doubles as the update control; nothing downloads
+  without a press, and no NVIDIA bytes ship with this app.
+- **Three-file transaction**: `nvngx_dlss.dll`, `nvngx_dlssd.dll`,
+  `nvngx_dlssg.dll` update together; the complete existing set is
+  required (no injection of components a game never shipped).
+- **Immutable-commit source**: NVIDIA/DLSS `main` resolves to a commit
+  SHA via the GitHub API; files come from
+  `lib/Windows_x86_64/rel/<name>` at that exact commit. No mutable-URL
+  fetches, no release/version picker, no update-available polling.
+- **Snapshot backups + restore menu**: every update and restore first
+  persists a hash-verified snapshot of the current set under
+  `<data-root>/dlss-backups/`; the pill's ▼ arrow lists them (newest
+  first), a pick asks for confirmation, and a confirmed restore swaps
+  the complete set back after verifying snapshot hashes.
+- **Session integration**: the ops ride the per-game busy/cancel slot;
+  success re-probes component versions so the pill updates immediately.
+- **Plain-game component enrichment**: component versions now parse for
+  every row with a resolved injection dir (external rows stay
+  suppressed), so a game with DLSS but no OptiScaler install still
+  shows the pressable DLSS label. `classify.Dir` already walked those
+  dirs for tech badges; only detected component DLLs get a bounded PE
+  read.
+- **Deferred**: TUI/CLI surfaces, DLSS-FG/DLSSD-only actions, version
+  picker, update-available checks, scheduled checks, bulk update,
+  snapshot pruning (the newest-first menu plus ~115 MB per snapshot
+  stays acceptable; revisit when a user accumulates dozens).

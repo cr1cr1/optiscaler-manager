@@ -453,8 +453,8 @@ func TestGrid_TabPastLastVisibleCardScrollsForward(t *testing.T) {
 
 	headlessFrames(t, 700, 400)
 	VirtualListView_ScrollToIndex("grid", 0) // reset scroll inherited from prior tests
-	keyFrame(KeyCodeNone, 0, m.rootView) // scroll applies
-	keyFrame(KeyCodeNone, 0, m.rootView) // cards re-render at the top
+	keyFrame(KeyCodeNone, 0, m.rootView)     // scroll applies
+	keyFrame(KeyCodeNone, 0, m.rootView)     // cards re-render at the top
 	vr := m.visibleRows()
 	if len(vr) == 0 {
 		t.Fatal("no visible rows after drain")

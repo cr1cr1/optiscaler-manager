@@ -47,6 +47,11 @@ internal/
               DetectOptiScaler (external-install probe: injection-name
               candidates matched by PE version-info identity, bounded reads)
   gh/         GitHub releases: glob asset match, cooldown cache
+  dlss/       NVIDIA DLSS runtime updater (opt-in, on user action):
+              resolves NVIDIA/DLSS main to an immutable commit, downloads
+              the three lib/Windows_x86_64/rel DLLs at that commit, and
+              keeps transactional snapshot backups (hash-verified) under
+              the state root for restore
   archive/    7z extraction with hostile-input defenses (sevenzip)
   installer/  transaction core: stage → validate → backup → copy → manifest;
               rollback; uninstall; EAC check; ctx cancel at phase boundaries
@@ -98,6 +103,7 @@ internal/
               enrichment via classify+pever on managed installs;
               probeInstallState adds the on-disk external/disabled probe
               for unmanaged rows), Install, Uninstall, Rollback,
+              UpdateDLSS/RestoreDLSS/DLSSSnapshots (NVIDIA runtime set),
               ManualEntry (+WithResolver), CachedVersions, versioned
               bundle cache, ops.go (Op, RunOps: errgroup, first error
               cancels siblings)
@@ -108,7 +114,8 @@ internal/
               install.go, launch.go, settings.go, browse.go, lookup.go +
               identify.go (online identification), switch.go + upgrade.go
               + versions.go (version switching, default memo), disable.go
-              (hook toggle), probe.go (selection-time re-probe), rows.go
+              (hook toggle), dlss.go (NVIDIA runtime update/restore ops +
+              confirmation), probe.go (selection-time re-probe), rows.go
               (GameRow + display helpers); cache.go is the games.json
               library cache (schema-versioned, atomic) behind
               Session.Start
@@ -234,6 +241,49 @@ a DXVK `dxgi.dll.disabled` must not create an external install.
 detail panel; TUI status line). The flag lives on disk, not in the
 manifest, so the warm-boot reconcile and the selection-time re-probe
 (Startup flow, above) both re-read it.
+
+## NVIDIA DLSS runtime update (v0.14)
+
+The DLSS version pill doubles as a control wherever a row reports a
+`DLSS <version>` component: pressing the version area updates the game's
+NVIDIA runtime from the official NVIDIA/DLSS repository, and a small ▼
+arrow beside it opens the restore menu of local backups. The control
+renders on the card and in the detail panel; busy games fall back to the
+static pill. Component versions now parse for plain games too (rows
+without any OptiScaler install) — `classify.Dir` already walked those
+directories for the tech badges, and only the few detected component
+DLLs get a bounded PE read — so the control is reachable without an
+OptiScaler install. External rows stay suppressed (their component DLLs
+are the bundle's, not the game's).
+
+`dlss.Update` is a three-file transaction, never a per-DLL picker: it
+requires the complete existing set (`nvngx_dlss.dll`, `nvngx_dlssd.dll`,
+`nvngx_dlssg.dll` must all be present — the updater updates, it never
+injects a component the game did not ship), downloads the three files
+from `lib/Windows_x86_64/rel` at ONE immutable commit (resolved via the
+GitHub API, never mutable `main` raw URLs), stages them in the state
+root, backs the current files up as a snapshot, then swaps them in. Any
+failure or cancellation restores the complete snapshot before
+returning; no partial set survives. Downloads validate as PE images
+before any game-dir write. `dlss.Restore` backs the current set up
+first (so a restore is itself reversible), SHA-256 verifies every
+snapshot member BEFORE the first copy, and then swaps the whole set
+back.
+
+Snapshots live at `<data-root>/dlss-backups/<sha256(installDir)[:16]>/<id>/`
+with one `snapshot.json` each (created-at, per-file version + SHA-256,
+source commit for update snapshots). They are deliberately separate from
+the OptiScaler manifests: uninstalling or switching OptiScaler never
+touches the game's NVIDIA runtime, and the restore menu is the only
+downgrade path (no version picker, no update checks — the action always
+fetches the current HEAD commit). The GUI confirm gate reuses the
+session's `ConfirmDLSSRestore` kind; declining runs nothing. TUI/CLI
+surfaces are deferred (the requested interaction is the GUI label).
+
+Licensing: the NVIDIA/DLSS repository is distributed under NVIDIA's RTX
+SDK license (not an open-source license). This manager ships no NVIDIA
+bytes; it downloads them on explicit user action from NVIDIA's official
+repository and stores restore copies locally. See docs/safety.md.
 
 ## Game-dir classification and container scan roots (v0.7)
 

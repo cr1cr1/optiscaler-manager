@@ -197,6 +197,9 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 	m.tierPillRect = Rect{}
 	m.ddTriggerID = nil
 	m.ddFocusRing = false
+	m.dlssUpdateID = nil
+	m.dlssArrowID = nil
+	m.dlssMenuID = nil
 	Container(Attrs(Focusable, Pad(cardPad), Gap(cardGapV), FixSize(float32(cardW), float32(cardH)), BackgroundVec(bgCard), Corners(radiusM), Clip), func() {
 		m.lastRenderedIdx = idx
 		if m.cardIDs != nil {
@@ -322,7 +325,11 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 					start = 1
 				}
 				for _, p := range pills[start:] {
-					badgePill(p.Label, p.Tone)
+					if strings.HasPrefix(p.Label, "DLSS ") {
+						m.dlssControl(&e, p.Label)
+					} else {
+						badgePill(p.Label, p.Tone)
+					}
 				}
 			})
 		}
@@ -362,7 +369,13 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 		// own press gesture entirely.
 		overButtons := btnRowID != nil && IdIsHovered(btnRowID)
 		overDropdown := m.ddTriggerID != nil && IdIsHovered(m.ddTriggerID)
-		if !overButtons && !overDropdown && PressAction() && m.sess != nil {
+		// The DLSS control (update area, restore arrow, open restore menu)
+		// gets the same protection: a press there belongs to the control,
+		// never to the card's select gesture.
+		overDLSS := (m.dlssUpdateID != nil && IdIsHovered(m.dlssUpdateID)) ||
+			(m.dlssArrowID != nil && IdIsHovered(m.dlssArrowID)) ||
+			(m.dlssMenuID != nil && IdIsHovered(m.dlssMenuID))
+		if !overButtons && !overDropdown && !overDLSS && PressAction() && m.sess != nil {
 			// A card click is also a cursor move. The focus grab itself is
 			// FocusOnClick's job (mouse-down frame); cardFocusPending
 			// re-asserts it after the panel re-nests the grid (see above).

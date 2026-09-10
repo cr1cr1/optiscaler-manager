@@ -1,0 +1,176 @@
+package dlss
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
+)
+
+func TestUpdateBacksUpAndReplacesAllNVIDIADLLs(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i, name := range Files {
+		if err := os.WriteFile(filepath.Join(game, name), testutil.FixedVersionPE(1, 0, uint16(i), 0), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sha := strings.Repeat("a", 40)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/repos/NVIDIA/DLSS/commits/main":
+			_, _ = w.Write([]byte(`{"sha":"` + sha + `"}`))
+		case strings.Contains(r.URL.Path, "/"+sha+"/lib/Windows_x86_64/rel/"):
+			_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, game)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.SourceCommit != sha {
+		t.Fatalf("source commit %q, want %q", snap.SourceCommit, sha)
+	}
+	for _, name := range Files {
+		v, err := fileVersion(filepath.Join(game, name))
+		if err != nil || v != "310.9.1.0" {
+			t.Fatalf("%s version %q, err=%v", name, v, err)
+		}
+		v, err = fileVersion(filepath.Join(root, "dlss-backups", snapshotGameID(game), snap.ID, name))
+		if err != nil || !strings.HasPrefix(v, "1.0.") {
+			t.Fatalf("backup %s version %q, err=%v", name, v, err)
+		}
+	}
+}
+
+func TestRestoreRestoresCompletePriorSnapshot(t *testing.T) {
+	root, game := t.TempDir(), ""
+	game = filepath.Join(root, "game")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i, name := range Files {
+		if err := os.WriteFile(filepath.Join(game, name), testutil.FixedVersionPE(1, 0, uint16(i), 0), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sha := strings.Repeat("b", 40)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/NVIDIA/DLSS/commits/main" {
+			_, _ = w.Write([]byte(`{"sha":"` + sha + `"}`))
+			return
+		}
+		_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
+	}))
+	defer server.Close()
+	first, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, game)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Restore(context.Background(), root, game, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	for i, name := range Files {
+		v, err := fileVersion(filepath.Join(game, name))
+		want := "1.0." + string(rune('0'+i))
+		if err != nil || v != want+".0" {
+			t.Fatalf("restored %s version %q, want %q (err=%v)", name, v, want+".0", err)
+		}
+	}
+}
+
+func TestUpdateRefusesWhenAnyNVIDIADLLIsMissing(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(game, Files[0]), testutil.FixedVersionPE(1, 0, 0, 0), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Update(context.Background(), nil, root, game); err == nil || !strings.Contains(err.Error(), Files[1]) {
+		t.Fatalf("err %v, want missing %s", err, Files[1])
+	}
+}
+
+// TestRestoreRefusesTamperedBackup: a backup whose bytes no longer match
+// the snapshot record must never reach the game directory.
+func TestRestoreRefusesTamperedBackup(t *testing.T) {
+	root, game := t.TempDir(), ""
+	game = filepath.Join(root, "game")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i, name := range Files {
+		if err := os.WriteFile(filepath.Join(game, name), testutil.FixedVersionPE(1, 0, uint16(i), 0), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sha := strings.Repeat("c", 40)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/NVIDIA/DLSS/commits/main" {
+			_, _ = w.Write([]byte(`{"sha":"` + sha + `"}`))
+			return
+		}
+		_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
+	}))
+	defer server.Close()
+	first, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, game)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Tamper with one backed-up member after a successful update.
+	backupFile := filepath.Join(root, "dlss-backups", snapshotGameID(game), first.ID, Files[2])
+	if err := os.WriteFile(backupFile, []byte("tampered"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Restore(context.Background(), root, game, first.ID); err == nil || !strings.Contains(err.Error(), "verification") {
+		t.Fatalf("Restore err %v, want backup verification failure", err)
+	}
+	for _, name := range Files {
+		v, err := fileVersion(filepath.Join(game, name))
+		if err != nil || v != "310.9.1.0" {
+			t.Fatalf("%s changed to %q after refused restore (err=%v); game dir must stay untouched", name, v, err)
+		}
+	}
+}
+
+// TestUpdateCancelledLeavesFilesUntouched: a dead context must produce a
+// cancellation error and zero file changes.
+func TestUpdateCancelledLeavesFilesUntouched(t *testing.T) {
+	root, game := t.TempDir(), ""
+	game = filepath.Join(root, "game")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i, name := range Files {
+		if err := os.WriteFile(filepath.Join(game, name), testutil.FixedVersionPE(2, 0, uint16(i), 0), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := Update(ctx, New(nil), root, game); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err %v, want context.Canceled", err)
+	}
+	for i, name := range Files {
+		v, err := fileVersion(filepath.Join(game, name))
+		if err != nil || v != "2.0."+string(rune('0'+i))+".0" {
+			t.Fatalf("%s changed to %q after cancelled update (err=%v)", name, v, err)
+		}
+	}
+}

@@ -257,34 +257,35 @@ func probeInstallState(e *LibraryEntry) {
 	}
 }
 
-// enrichVersions fills OptiScalerVersion/ComponentVersions for managed
-// installs only (committed manifest or OptiScaler.dll present). External
-// rows are skipped: their version already came from the bounded
-// DetectOptiScaler probe above, and their component DLLs belong to
-// OptiScaler's bundle, not the game. Parsing PEs for every plain game
-// would multiply scan I/O for no benefit. When the on-disk evidence chain
-// (manifest.json → log → ini) yields no version — e.g. a fresh install
-// that has not run yet — the committed store manifest's resolved version
-// is the fallback.
+// enrichVersions fills OptiScalerVersion/ComponentVersions. The OptiScaler
+// version is a managed-install concern: committed manifest, OptiScaler.dll
+// present, or the bounded DetectOptiScaler probe for external rows — never
+// plain games. Component versions (the game's own upscaler DLLs, DLSS
+// included) parse for EVERY row with a resolved injection dir: the DLSS
+// version pill doubles as the update control, so a plain game with DLSS
+// must carry it too. External rows stay suppressed — their component DLLs
+// belong to the OptiScaler bundle, not the game. Parsing PEs for every
+// plain game stays bounded: classify.Dir already walks those dirs for the
+// tech badges, and only the few detected component DLLs are read.
 func enrichVersions(e *LibraryEntry, m *domain.Manifest) {
 	if e.InjectionDir == "" || e.Status == domain.StatusExternal {
 		return
 	}
 	managed := e.Status == domain.StatusCommitted ||
 		fileExists(filepath.Join(e.InjectionDir, "OptiScaler.dll"))
-	if !managed {
-		return
+	if managed {
+		e.OptiScalerVersion = pever.OptiScalerVersion(e.InjectionDir)
+		if e.OptiScalerVersion == "" && m != nil {
+			e.OptiScalerVersion = m.Resolved.Version
+		}
 	}
-	e.OptiScalerVersion = pever.OptiScalerVersion(e.InjectionDir)
-	if e.OptiScalerVersion == "" && m != nil {
-		e.OptiScalerVersion = m.Resolved.Version
-	}
-	e.ComponentVersions = componentVersions(e.InjectionDir)
+	e.ComponentVersions = ComponentVersions(e.InjectionDir)
 }
 
 // componentVersions parses each detected upscaler DLL under dir and maps it
 // to the vendor marketing name. Unparseable DLLs are skipped, never fatal.
-func componentVersions(dir string) map[string]string {
+// ComponentVersions reads known upscaler DLL versions in dir. Invalid files are skipped.
+func ComponentVersions(dir string) map[string]string {
 	var out map[string]string
 	for _, f := range classify.DirFiles(dir) {
 		kind, ok := peverKind(f.Kind)

@@ -157,9 +157,14 @@ func TestLibraryEntryComponentVersions(t *testing.T) {
 	if !ok {
 		t.Fatal("unmanaged game missing")
 	}
-	if len(u.ComponentVersions) != 0 || u.OptiScalerVersion != "" {
-		t.Errorf("unmanaged game enriched (components=%v optiscaler=%q); "+
-			"PE parsing must be guarded to managed installs", u.ComponentVersions, u.OptiScalerVersion)
+	// Plain games report their own upscaler DLL versions (the DLSS pill is
+	// the update control, so a DLSS-less-looking plain game would hide the
+	// feature) but never an OptiScaler version — that stays managed-only.
+	if got := u.ComponentVersions["dlss"]; got != "DLSS 3.7.20" {
+		t.Errorf("plain game dlss component = %q, want %q", got, "DLSS 3.7.20")
+	}
+	if u.OptiScalerVersion != "" {
+		t.Errorf("plain game OptiScalerVersion = %q; version enrichment must stay managed-only", u.OptiScalerVersion)
 	}
 }
 

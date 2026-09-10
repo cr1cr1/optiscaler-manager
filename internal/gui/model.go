@@ -46,6 +46,15 @@ type model struct {
 	hoveredDir          string                        // install dir of the card under the mouse, "" when none
 	cardRect            Rect                          // screen rect of the last rendered card (hover test seam)
 	cardBtnRect         Rect                          // screen rect of the card's first button (click routing test seam)
+	dlssUpdateRect      Rect                          // screen rect of the DLSS update area (click routing test seam)
+	dlssArrowRect       Rect                          // screen rect of the DLSS restore-menu arrow (click routing test seam)
+	dlssUpdateID        ContainerId                   // container id of the DLSS update area (hover-exclusion seam)
+	dlssArrowID         ContainerId                   // container id of the DLSS restore-menu arrow (hover-exclusion seam)
+	dlssMenuID          ContainerId                   // container id of the open DLSS restore menu (click-outside seam)
+	dlssSnapshotItems   []dlssSnapshotItem            // current DLSS restore-menu rows (menu test seam)
+	openDLSSDir         string                        // game whose DLSS restore menu is open ("" = none)
+	dlssUpdateFn        func(gameDir string)          // DLSS update dispatch seam: nil in production (Session.UpdateDLSS)
+	dlssRestoreFn       func(gameDir, snapID string)  // DLSS restore dispatch seam: nil in production (Session.RestoreDLSS)
 	titleRect           Rect                          // screen rect of the card's fixed two-line title slot (title sizing test seam)
 	bannerRect          Rect                          // screen rect of the interrupted-install banner (repair surface test seam)
 	sidebarRects        []Rect                        // screen rects of the sidebar nav items (uniformity test seam)
@@ -235,5 +244,29 @@ func (m *model) dispatchSwitchVersion(gameDir, version string) {
 	}
 	if m.sess != nil {
 		m.sess.SwitchVersion(gameDir, version)
+	}
+}
+
+// dispatchUpdateDLSS forwards a DLSS-control press to the session's async
+// updater; dlssUpdateFn is the test seam (mirrors switchVersionFn).
+func (m *model) dispatchUpdateDLSS(gameDir string) {
+	if m.dlssUpdateFn != nil {
+		m.dlssUpdateFn(gameDir)
+		return
+	}
+	if m.sess != nil {
+		m.sess.UpdateDLSS(gameDir)
+	}
+}
+
+// dispatchRestoreDLSS forwards a restore-menu pick to the session's
+// confirm-gated restorer; dlssRestoreFn is the test seam.
+func (m *model) dispatchRestoreDLSS(gameDir, snapshotID string) {
+	if m.dlssRestoreFn != nil {
+		m.dlssRestoreFn(gameDir, snapshotID)
+		return
+	}
+	if m.sess != nil {
+		m.sess.RestoreDLSS(gameDir, snapshotID)
 	}
 }

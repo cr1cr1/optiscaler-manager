@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
+	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
 	"github.com/cr1cr1/optiscaler-manager/internal/protondb"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
@@ -32,6 +33,7 @@ func newSession(d *Deps) *ui.Session {
 	return ui.NewSession(ui.Deps{
 		Store:        d.Store,
 		GH:           d.GH,
+		DLSS:         dlss.New(httpClient),
 		Covers:       coverClient,
 		CacheDir:     d.CacheDir,
 		Settings:     prefs,
