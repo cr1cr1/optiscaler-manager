@@ -18,6 +18,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/jsoncache"
 	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 )
 
@@ -77,7 +78,8 @@ func (s Snapshot) Label() string {
 // Update downloads all three files at one immutable NVIDIA commit, backs up
 // the current complete set, then replaces the files. A failed replacement
 // restores every original before returning. Downloads are cached per commit
-// under cacheRoot (OptiScaler bundle-cache pattern: fetch once per version).
+// under cacheRoot (same layout as the OptiScaler bundle cache — fetch once
+// per version — plus a SHA-256 manifest).
 func Update(ctx context.Context, c *Client, cacheRoot, dataRoot, gameDir string) (Snapshot, error) {
 	if err := requireFiles(gameDir); err != nil {
 		return Snapshot{}, err
@@ -89,12 +91,12 @@ func Update(ctx context.Context, c *Client, cacheRoot, dataRoot, gameDir string)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	stage, err := c.stage(ctx, cacheRoot, commit)
+	cached, err := c.ensureCache(ctx, cacheRoot, commit)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	for _, name := range Files {
-		if _, err := pever.FileVersion(filepath.Join(stage, name)); err != nil {
+		if _, err := pever.FileVersion(filepath.Join(cached, name)); err != nil {
 			return Snapshot{}, fmt.Errorf("dlss: invalid downloaded %s: %w", name, err)
 		}
 	}
@@ -109,7 +111,7 @@ func Update(ctx context.Context, c *Client, cacheRoot, dataRoot, gameDir string)
 			}
 			return Snapshot{}, err
 		}
-		if _, err := copyHashed(filepath.Join(stage, name), filepath.Join(gameDir, name)); err != nil {
+		if _, err := copyHashed(filepath.Join(cached, name), filepath.Join(gameDir, name)); err != nil {
 			if rerr := restoreFiles(dataRoot, gameDir, snap); rerr != nil {
 				return Snapshot{}, errors.Join(err, rerr)
 			}
@@ -197,12 +199,15 @@ func (c *Client) commit(ctx context.Context) (string, error) {
 	return body.SHA, nil
 }
 
-// stage ensures the commit-keyed download cache holds a complete file set,
-// fetching only the missing or hash-failed members through the same
-// raw-file routine as before (same source, same destination shape as the
-// OptiScaler bundle cache). A manifest.json pins each member's SHA-256, so
-// a tampered cache file is refetched, never installed.
-func (c *Client) stage(ctx context.Context, cacheRoot, commit string) (string, error) {
+// ensureCache ensures the commit-keyed download cache holds a complete
+// file set, fetching only the missing or hash-failed members through the
+// same raw-file routine as before (same source, same destination shape as
+// the OptiScaler bundle cache). A manifest.json pins each member's
+// SHA-256, so a tampered cache file is refetched, never installed. A
+// freshly downloaded member is PE-validated BEFORE its hash is recorded:
+// a lying 200 must never earn a manifest entry, or the hash gate would
+// legitimize the garbage on every later update.
+func (c *Client) ensureCache(ctx context.Context, cacheRoot, commit string) (string, error) {
 	if cacheRoot == "" {
 		return "", fmt.Errorf("dlss: no download cache root")
 	}
@@ -230,11 +235,14 @@ func (c *Client) stage(ctx context.Context, cacheRoot, commit string) (string, e
 		if err != nil {
 			return "", err
 		}
+		if _, err := pever.FileVersion(filepath.Join(dir, name)); err != nil {
+			return "", fmt.Errorf("dlss: invalid downloaded %s: %w", name, err)
+		}
 		files[name] = h
 		fetched = true
 	}
 	if fetched {
-		if err := writeCacheRecord(dir, files); err != nil {
+		if err := jsoncache.Write(filepath.Join(dir, "manifest.json"), cacheRecord{Files: files}); err != nil {
 			return "", err
 		}
 	}
@@ -262,18 +270,6 @@ func loadCacheRecord(dir string) (cacheRecord, error) {
 		return cacheRecord{}, fmt.Errorf("dlss: parse cache manifest: %w", err)
 	}
 	return r, nil
-}
-
-// writeCacheRecord persists the manifest after a (partial) refetch.
-func writeCacheRecord(dir string, files map[string]string) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	data, err := json.Marshal(cacheRecord{Files: files})
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, "manifest.json"), data, 0o644)
 }
 
 func (c *Client) download(ctx context.Context, commit, name, dest string) (string, error) {

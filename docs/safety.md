@@ -169,14 +169,21 @@ The DLSS control replaces three game files (`nvngx_dlss.dll`,
   resolved via the GitHub API first; all three files are then fetched
   from that exact commit. Mutable `main` raw URLs are never fetched, so
   a mixed-commit set is impossible.
-- **Downloads validate before any game-dir write.** Each staged file
-  must parse as a PE image; anything else aborts the update.
+- **Downloads validate before any game-dir write.** Each downloaded file
+  is PE-validated before its hash is recorded in the download cache and
+  again before any game-dir write; anything else aborts the update and
+  leaves the cache without a manifest entry, so a lying HTTP 200 can
+  never be legitimized by the cache.
 - **Cached downloads re-verify before install.** Downloads persist in a
   commit-keyed cache (`<cacheDir>/dlss/<commit>/`) with a manifest of
   per-file SHA-256 digests. On every update each cached member is
   re-hashed against the manifest; a missing, unreadable, or mismatched
-  member is refetched from the pinned commit instead of installed, so a
-  tampered or truncated cache file can never reach the game directory.
+  member is refetched from the pinned commit instead of installed, so an
+  accidentally tampered or truncated cache file can never reach the game
+  directory. The manifest itself is unsigned and lives in the app's own
+  data dir — the same trust domain as the game dir — so deliberate
+  manifest-plus-bytes tampering is out of scope; corruption degrades to
+  a logged full refetch.
   The cache holds only re-derivable downloads — it is never a restore
   source (that is the snapshot store) and never ships with the app.
 - **The snapshot is persisted, re-verified, and hash-complete before the

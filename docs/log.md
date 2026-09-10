@@ -2607,3 +2607,28 @@ opens the restore menu of local backup sets.
 - Docs: README (feature bullet + DLSS section), architecture (package
   map + cache description), safety (cache re-verify rule), scope (v0.14
   bullet). Green: full `go test ./...`, vet, golangci-lint 0 issues.
+
+## 2026-09-12 — v0.14e: DLSS cache review follow-ups (standards + spec axes)
+
+- Robustness gap closed TDD-first (`TestUpdateRefetchesAfterRefusedDownload`,
+  red: the healed-source run re-served cached garbage): `ensureCache`
+  (renamed from `stage`) now PE-validates each freshly downloaded member
+  before its SHA-256 is recorded in the cache manifest, so a lying 200
+  can never earn a manifest entry and legitimize garbage forever.
+- `writeCacheRecord` deleted in favor of the shared `jsoncache.Write`;
+  `TestUpdateFetchesNewCommitWhenMainMoves` pins the moved-commit
+  contract (fresh cache dir per resolved SHA, stale bytes never served);
+  the 3-DLL test seeding deduplicated into `seedGame`.
+- Docs corrected: architecture.md now says the dlss cache is the same
+  layout as the OptiScaler bundle cache *plus* a manifest (the OptiScaler
+  cache has no manifest and no per-update re-verify); safety.md limits
+  the tamper claim to accidental corruption (the unsigned manifest lives
+  in the same trust domain as the game dir) and documents the
+  download-time PE gate; README/scope mention the moved-commit fetch.
+- Accepted as-is: sibling `cacheRoot/dataRoot/gameDir` string params
+  (ponytail), non-atomic manifest write (a torn manifest degrades to a
+  logged full refetch), partial-fetch redownloading the whole set,
+  empty-cacheRoot hard error (protects the keyed-cache invariant),
+  legacy `dlss-staging` leftovers (no released version ever created
+  one), manifest gate stronger than the OptiScaler existence-only check
+  (documented in scope/safety).

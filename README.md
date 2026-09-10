@@ -71,8 +71,10 @@ hash-verified backup of your current set; the ▼ button beside the label
 lists those backups, and restoring one asks for confirmation first.
 Downloaded NVIDIA files are subject to NVIDIA's RTX SDK license. Like the
 OptiScaler bundles, they are cached per source commit under the app's
-cache directory and reused while the commit stays current; a cached file
-that fails its recorded SHA-256 is fetched again.
+cache directory and reused while the commit stays current (a moved `main`
+fetches the new commit); every cached file is re-checked against the
+cache manifest — SHA-256 mismatch or failed PE validation means it is
+fetched again, never installed.
 
 Games with a hand-installed OptiScaler setup show as **external**. The install
 action reads **Adopt**: installing backs up the external files SHA-verified

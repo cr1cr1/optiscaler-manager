@@ -265,14 +265,20 @@ injects a component the game did not ship), fetches the three files from
 GitHub API, never mutable `main` raw URLs), backs the current files up
 as a snapshot, then swaps them in. Any failure or cancellation restores
 the complete snapshot before returning; no partial set survives.
-Downloads validate as PE images before any game-dir write.
+Downloads validate as PE images before any game-dir write — and before
+the download cache records them.
 
 Downloads are cached per commit at `<cacheDir>/dlss/<commit>/` — the
-same pattern as the OptiScaler bundle cache (`<cacheDir>/optiscaler/<version>/`):
-a `manifest.json` pins each member's SHA-256, cached members are
-re-verified against it on every update, and any missing or mismatched
-member is refetched through the same routine, so a commit that is
-already cached costs one tiny GitHub API call and no DLL downloads. The
+same layout as the OptiScaler bundle cache
+(`<cacheDir>/optiscaler/<version>/`, fetch-once-per-version under one
+cacheDir root); on top of that layout the dlss cache adds a
+`manifest.json` pinning each member's SHA-256. Cached members are
+re-verified against it on every update, freshly downloaded members are
+PE-validated before their hash is recorded, and any missing or
+mismatched member is refetched through the same routine — so a commit
+that is already cached costs one tiny GitHub API call and no DLL
+downloads, and a moved `main` resolves to a fresh commit dir whose
+bytes are fetched (a stale cache dir is never served). The
 cache holds only re-derivable downloads; snapshots stay under the state
 root. `dlss.Restore` backs the current set up
 first (so a restore is itself reversible), SHA-256 verifies every

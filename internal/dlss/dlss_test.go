@@ -25,11 +25,7 @@ func TestUpdateBacksUpAndReplacesAllNVIDIADLLs(t *testing.T) {
 	if err := os.MkdirAll(game, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for i, name := range Files {
-		if err := os.WriteFile(filepath.Join(game, name), testutil.FixedVersionPE(1, 0, uint16(i), 0), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	seedGame(t, game, 1, 0)
 
 	sha := strings.Repeat("a", 40)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -74,11 +70,7 @@ func TestUpdateReusesCachedCommitWithoutSecondDownload(t *testing.T) {
 	if err := os.MkdirAll(game, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for i, name := range Files {
-		if err := os.WriteFile(filepath.Join(game, name), testutil.FixedVersionPE(1, 0, uint16(i), 0), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	seedGame(t, game, 1, 0)
 
 	sha := strings.Repeat("e", 40)
 	raws := 0
@@ -127,6 +119,66 @@ func TestUpdateReusesCachedCommitWithoutSecondDownload(t *testing.T) {
 	}
 }
 
+// TestUpdateFetchesNewCommitWhenMainMoves pins the moved-commit half of
+// the cache contract: main re-resolves on every update, so a moved commit
+// maps to a fresh cache dir whose bytes are fetched — stale cached bytes
+// are never served.
+func TestUpdateFetchesNewCommitWhenMainMoves(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seedGame(t, game, 1, 0)
+
+	shaA, shaB := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	moved := false
+	raws := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/NVIDIA/DLSS/commits/main" {
+			sha := shaA
+			if moved {
+				sha = shaB
+			}
+			_, _ = w.Write([]byte(`{"sha":"` + sha + `"}`))
+			return
+		}
+		raws++
+		if strings.Contains(r.URL.Path, "/"+shaB+"/") {
+			_, _ = w.Write(testutil.FixedVersionPE(310, 10, 0, 0))
+			return
+		}
+		_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
+	}))
+	defer server.Close()
+	client := NewWithBaseURLs(server.Client(), server.URL, server.URL)
+
+	if _, err := Update(context.Background(), client, root, root, game); err != nil {
+		t.Fatal(err)
+	}
+	if raws != len(Files) {
+		t.Fatalf("first update fetched %d files, want %d", raws, len(Files))
+	}
+	moved = true
+	if _, err := Update(context.Background(), client, root, root, game); err != nil {
+		t.Fatal(err)
+	}
+	if raws != 2*len(Files) {
+		t.Fatalf("moved commit fetched %d extra files, want %d", raws-len(Files), len(Files))
+	}
+	for _, name := range Files {
+		v, err := fileVersion(filepath.Join(game, name))
+		if err != nil || v != "310.10.0.0" {
+			t.Fatalf("%s version %q after move, want 310.10.0.0 (err=%v)", name, v, err)
+		}
+	}
+	for _, sha := range []string{shaA, shaB} {
+		if _, err := os.Stat(filepath.Join(root, "dlss", sha, "manifest.json")); err != nil {
+			t.Fatalf("cache for %s incomplete: %v", sha[:8], err)
+		}
+	}
+}
+
 // TestUpdateRefetchesTamperedCacheEntry: a cache file whose bytes no longer
 // match the recorded download hash is refetched, never installed. The
 // tampered bytes are a valid PE so only the hash gate can catch them.
@@ -137,11 +189,7 @@ func TestUpdateRefetchesTamperedCacheEntry(t *testing.T) {
 	if err := os.MkdirAll(game, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for i, name := range Files {
-		if err := os.WriteFile(filepath.Join(game, name), testutil.FixedVersionPE(1, 0, uint16(i), 0), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	seedGame(t, game, 1, 0)
 	sha := strings.Repeat("f", 40)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/NVIDIA/DLSS/commits/main" {
@@ -175,17 +223,58 @@ func TestUpdateRefetchesTamperedCacheEntry(t *testing.T) {
 	}
 }
 
+// TestUpdateRefetchesAfterRefusedDownload: a download that fails the PE
+// gate must never be recorded in the cache manifest — otherwise a
+// consistently lying source would legitimize garbage forever (the hash
+// gate passes, the PE gate fails, and no refetch ever triggers). After
+// the source heals, the next update must fetch the real bytes.
+func TestUpdateRefetchesAfterRefusedDownload(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seedGame(t, game, 1, 0)
+
+	sha := strings.Repeat("d", 40)
+	lies := true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/NVIDIA/DLSS/commits/main" {
+			_, _ = w.Write([]byte(`{"sha":"` + sha + `"}`))
+			return
+		}
+		if lies && strings.HasSuffix(r.URL.Path, "/"+Files[2]) {
+			_, _ = w.Write([]byte("not a PE image"))
+			return
+		}
+		_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
+	}))
+	defer server.Close()
+	client := NewWithBaseURLs(server.Client(), server.URL, server.URL)
+
+	if _, err := Update(context.Background(), client, root, root, game); err == nil {
+		t.Fatal("lying download must fail the update")
+	}
+	assertGameUnchanged(t, game, "1.0.0.0")
+	lies = false
+	if _, err := Update(context.Background(), client, root, root, game); err != nil {
+		t.Fatalf("update after the source healed failed: %v", err)
+	}
+	for _, name := range Files {
+		v, err := fileVersion(filepath.Join(game, name))
+		if err != nil || v != "310.9.1.0" {
+			t.Fatalf("%s version %q after healed refetch (err=%v)", name, v, err)
+		}
+	}
+}
+
 func TestRestoreRestoresCompletePriorSnapshot(t *testing.T) {
 	root, game := t.TempDir(), ""
 	game = filepath.Join(root, "game")
 	if err := os.MkdirAll(game, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for i, name := range Files {
-		if err := os.WriteFile(filepath.Join(game, name), testutil.FixedVersionPE(1, 0, uint16(i), 0), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	seedGame(t, game, 1, 0)
 	sha := strings.Repeat("b", 40)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/NVIDIA/DLSS/commits/main" {
@@ -233,11 +322,7 @@ func TestRestoreRefusesTamperedBackup(t *testing.T) {
 	if err := os.MkdirAll(game, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for i, name := range Files {
-		if err := os.WriteFile(filepath.Join(game, name), testutil.FixedVersionPE(1, 0, uint16(i), 0), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	seedGame(t, game, 1, 0)
 	sha := strings.Repeat("c", 40)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/NVIDIA/DLSS/commits/main" {
@@ -275,11 +360,7 @@ func TestUpdateCancelledLeavesFilesUntouched(t *testing.T) {
 	if err := os.MkdirAll(game, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for i, name := range Files {
-		if err := os.WriteFile(filepath.Join(game, name), testutil.FixedVersionPE(2, 0, uint16(i), 0), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	seedGame(t, game, 2, 0)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := Update(ctx, New(nil), root, root, game); !errors.Is(err, context.Canceled) {
@@ -344,11 +425,7 @@ func updatedGame(t *testing.T) (root, game string, snap Snapshot) {
 	if err := os.MkdirAll(game, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for i, name := range Files {
-		if err := os.WriteFile(filepath.Join(game, name), testutil.FixedVersionPE(1, 0, uint16(i), 0), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	seedGame(t, game, 1, 0)
 	sha := strings.Repeat("c", 40)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/NVIDIA/DLSS/commits/main" {
@@ -363,6 +440,17 @@ func updatedGame(t *testing.T) (root, game string, snap Snapshot) {
 		t.Fatal(err)
 	}
 	return root, game, snap
+}
+
+// seedGame writes a complete pre-update DLSS set into dir; the per-file
+// patch version distinguishes the members in assertions.
+func seedGame(t *testing.T, dir string, maj, min uint16) {
+	t.Helper()
+	for i, name := range Files {
+		if err := os.WriteFile(filepath.Join(dir, name), testutil.FixedVersionPE(maj, min, uint16(i), 0), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func assertGameUnchanged(t *testing.T, game, want string) {
