@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/app"
 	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
@@ -17,24 +16,10 @@ import (
 func (s *Session) UpdateDLSS(gameDir string) { go s.doUpdateDLSS(gameDir) }
 
 func (s *Session) doUpdateDLSS(gameDir string) {
-	pre := preOpStatus(s.findRow(gameDir))
-	ctx, ok := s.registerOp(gameDir)
-	if !ok {
-		s.toast("operation already in progress for this game", true)
-		return
-	}
-	s.opStarted("Updating NVIDIA DLSS…")
-	_, err := app.UpdateDLSS(ctx, s.deps.DLSS, s.deps.SettingsRoot, gameDir)
-	s.finishOp(gameDir)
-	switch {
-	case errors.Is(err, context.Canceled):
-		s.opCancelled(gameDir, pre)
-	case err != nil:
-		s.opFailed(err)
-	default:
-		s.refreshComponentVersions(gameDir)
-		s.opDone("Updated NVIDIA DLSS", gameDir)
-	}
+	s.runDLSSOp(gameDir, "Updating NVIDIA DLSS…", func(ctx context.Context) error {
+		_, err := app.UpdateDLSS(ctx, s.deps.DLSS, s.deps.SettingsRoot, gameDir)
+		return err
+	}, "Updated NVIDIA DLSS")
 }
 
 // DLSSSnapshots returns the complete backed-up NVIDIA runtime sets that can
@@ -66,14 +51,24 @@ func (s *Session) RestoreDLSS(gameDir, snapshotID string) {
 }
 
 func (s *Session) doRestoreDLSS(gameDir, snapshotID string) {
+	s.runDLSSOp(gameDir, "Restoring NVIDIA DLSS…", func(ctx context.Context) error {
+		_, err := app.RestoreDLSS(ctx, s.deps.SettingsRoot, gameDir, snapshotID)
+		return err
+	}, "Restored NVIDIA DLSS")
+}
+
+// runDLSSOp is the shared shell of the NVIDIA DLSS operations: register the
+// per-game op slot, run under it, settle. Success always re-probes the
+// row's component versions so the DLSS label updates immediately.
+func (s *Session) runDLSSOp(gameDir, started string, run func(ctx context.Context) error, done string) {
 	pre := preOpStatus(s.findRow(gameDir))
 	ctx, ok := s.registerOp(gameDir)
 	if !ok {
 		s.toast("operation already in progress for this game", true)
 		return
 	}
-	s.opStarted("Restoring NVIDIA DLSS…")
-	_, err := app.RestoreDLSS(ctx, s.deps.SettingsRoot, gameDir, snapshotID)
+	s.opStarted(started)
+	err := run(ctx)
 	s.finishOp(gameDir)
 	switch {
 	case errors.Is(err, context.Canceled):
@@ -82,7 +77,7 @@ func (s *Session) doRestoreDLSS(gameDir, snapshotID string) {
 		s.opFailed(err)
 	default:
 		s.refreshComponentVersions(gameDir)
-		s.opDone("Restored NVIDIA DLSS", gameDir)
+		s.opDone(done, gameDir)
 	}
 }
 
@@ -103,19 +98,4 @@ func (s *Session) refreshComponentVersions(gameDir string) {
 	}
 	s.mu.Unlock()
 	s.persistCache()
-}
-
-// componentLabels orders the version map exactly like scan's toRow does
-// (alphabetical keys: dlss, fsr, xess).
-func componentLabels(versions map[string]string) []string {
-	keys := make([]string, 0, len(versions))
-	for k := range versions {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	out := make([]string, 0, len(keys))
-	for _, k := range keys {
-		out = append(out, versions[k])
-	}
-	return out
 }

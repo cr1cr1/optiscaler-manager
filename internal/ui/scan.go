@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -373,14 +372,7 @@ func (s *Session) toRow(ctx context.Context, e app.LibraryEntry) GameRow {
 		SteamAppID:        e.Game.SteamAppID,
 		TitleSource:       string(e.Game.TitleSource),
 	}
-	keys := make([]string, 0, len(e.ComponentVersions))
-	for k := range e.ComponentVersions {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		row.Components = append(row.Components, e.ComponentVersions[k])
-	}
+	row.Components = componentLabels(e.ComponentVersions)
 	for _, tech := range e.Tech {
 		row.TechBadges = append(row.TechBadges, badgeForTech(tech))
 	}

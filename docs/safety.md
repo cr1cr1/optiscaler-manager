@@ -171,11 +171,16 @@ The DLSS control replaces three game files (`nvngx_dlss.dll`,
   a mixed-commit set is impossible.
 - **Downloads validate before any game-dir write.** Each staged file
   must parse as a PE image; anything else aborts the update.
-- **The snapshot is persisted and hash-verified before the first swap.**
-  Every backed-up file's SHA-256 is recorded in `snapshot.json`; on
-  failure or cancellation the complete set is restored from the
-  verified snapshot before the op returns (cancellation runs the
-  restore to completion, like the installer's rollback).
+- **The snapshot is persisted, re-verified, and hash-complete before the
+  first swap.** Every backed-up file's SHA-256 is recorded in
+  `snapshot.json`, and the persisted snapshot files are re-hashed from
+  disk before any game-dir write (mismatch removes the snapshot and
+  refuses). Restore additionally refuses a record with blanked hashes, so
+  a tampered `snapshot.json` cannot bypass the gate. On failure or
+  cancellation the complete set is restored from the verified snapshot
+  before the op returns (cancellation runs the restore to completion,
+  like the installer's rollback); a rollback that itself fails is
+  reported alongside the primary error.
 - **Restore verifies then swaps.** A snapshot restore first backs the
   current set up (restores are reversible), verifies every snapshot
   member against its recorded hash, and only then copies. A tampered

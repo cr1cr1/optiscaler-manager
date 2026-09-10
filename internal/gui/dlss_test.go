@@ -248,3 +248,85 @@ func TestDLSSControl_BusyGameShowsStaticPill(t *testing.T) {
 		t.Errorf("released update did not complete: %q", got)
 	}
 }
+
+// TestDLSSMenuRowsKeyboardPickable: Tab from the arrow walks into the menu
+// rows and Enter on a focused row dispatches the restore pick — the menu
+// is keyboard-reachable, not mouse-only.
+func TestDLSSMenuRowsKeyboardPickable(t *testing.T) {
+	sess, _ := dlssGUIFakes(t, nil)
+	row := scanOneRow(t, sess)
+	sess.UpdateDLSS(row.InstallDir)
+	waitSessEvent(t, sess, ui.EvOpDone)
+
+	m := newModel(Config{Session: sess})
+	var restored []string
+	m.dlssRestoreFn = func(_, id string) { restored = append(restored, id) }
+
+	headlessFrames(t, 400, 800)
+	GetInputState().MousePoint = Vec2{-50, -50}
+	row = sess.VisibleRows()[0]
+	view := cardView(m, row)
+	keyFrame(KeyCodeNone, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	ar := m.dlssArrowRect
+	if ar.Size[0] == 0 {
+		t.Fatal("no DLSS arrow rect")
+	}
+	clickRect(ar, view)
+	keyFrame(KeyCodeNone, 0, view) // menu rows render
+	if len(m.dlssSnapshotItems) != 1 {
+		t.Fatalf("menu rows %d, want 1", len(m.dlssSnapshotItems))
+	}
+	cid := m.dlssSnapshotItems[0].cid
+
+	focused := false
+	for tabs := 1; tabs <= 6; tabs++ {
+		keyFrame(KeyTab, 0, view)
+		keyFrame(KeyCodeNone, 0, view) // focus change settles
+		if IdHasFocus(cid) {
+			focused = true
+			t.Logf("menu row focused after %d Tab(s)", tabs)
+			break
+		}
+	}
+	if !focused {
+		t.Fatal("menu row never took keyboard focus via Tab")
+	}
+
+	keyFrame(KeyEnter, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if len(restored) != 1 {
+		t.Fatalf("Enter on the focused row dispatched %d restores, want 1", len(restored))
+	}
+	if m.openDLSSDir != "" {
+		t.Errorf("pick did not close the menu (open %q)", m.openDLSSDir)
+	}
+}
+
+// TestDLSSMenuRendersCapturedSnapshotList: the menu renders the list
+// captured at open (m.dlssSnaps) — the backup directory is read once at
+// open, not per frame, and the rows stay stable across settle frames.
+func TestDLSSMenuRendersCapturedSnapshotList(t *testing.T) {
+	sess, _ := dlssGUIFakes(t, nil)
+	row := scanOneRow(t, sess)
+	sess.UpdateDLSS(row.InstallDir)
+	waitSessEvent(t, sess, ui.EvOpDone)
+
+	m := newModel(Config{Session: sess})
+	headlessFrames(t, 400, 800)
+	GetInputState().MousePoint = Vec2{-50, -50}
+	row = sess.VisibleRows()[0]
+	view := cardView(m, row)
+	keyFrame(KeyCodeNone, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	clickRect(m.dlssArrowRect, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if len(m.dlssSnaps) != 1 || len(m.dlssSnapshotItems) != 1 {
+		t.Fatalf("open menu state: captured %d snapshots, %d rows rendered", len(m.dlssSnaps), len(m.dlssSnapshotItems))
+	}
+	keyFrame(KeyCodeNone, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if len(m.dlssSnapshotItems) != 1 {
+		t.Errorf("open menu did not keep its captured rows across settle frames")
+	}
+}

@@ -23,7 +23,7 @@ type dlssEnv struct {
 	dlssRoot string
 }
 
-func newDLSEnv(t *testing.T, withDLLs bool) *dlssEnv {
+func newDLSSEnv(t *testing.T, withDLLs bool) *dlssEnv {
 	t.Helper()
 	e := &dlssEnv{testEnv: newTestEnv(t), dlssRoot: t.TempDir()}
 	mux := http.NewServeMux()
@@ -70,7 +70,7 @@ func dlssDLLVersion(t *testing.T, e *dlssEnv, name string) string {
 // version refreshes, and a confirmed restore brings the complete prior set
 // back.
 func TestUpdateDLSSAndRestoreRoundTrip(t *testing.T) {
-	e := newDLSEnv(t, true)
+	e := newDLSSEnv(t, true)
 	row := scanOneDLSSRow(t, e)
 
 	e.sess.UpdateDLSS(row.InstallDir)
@@ -120,7 +120,7 @@ func TestUpdateDLSSAndRestoreRoundTrip(t *testing.T) {
 // TestUpdateDLSSMissingDLLRefused: an incomplete NVIDIA set is never
 // updated and never written to.
 func TestUpdateDLSSMissingDLLRefused(t *testing.T) {
-	e := newDLSEnv(t, false)
+	e := newDLSSEnv(t, false)
 	row := scanOneDLSSRow(t, e)
 	if err := os.WriteFile(filepath.Join(e.bin, dlss.Files[0]), testutil.FixedVersionPE(3, 7, 20, 0), 0o644); err != nil {
 		t.Fatal(err)
@@ -142,7 +142,7 @@ func TestUpdateDLSSMissingDLLRefused(t *testing.T) {
 // TestRestoreDLSSDeclineLeavesUntouched: declining the confirmation must
 // run no operation and change no bytes.
 func TestRestoreDLSSDeclineLeavesUntouched(t *testing.T) {
-	e := newDLSEnv(t, true)
+	e := newDLSSEnv(t, true)
 	row := scanOneDLSSRow(t, e)
 	e.sess.RestoreDLSS(row.InstallDir, "nonexistent")
 	if c := e.sess.Snapshot().Confirm; c != nil {

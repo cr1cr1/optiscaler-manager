@@ -11,6 +11,7 @@ import (
 
 	. "go.hasen.dev/shirei"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
@@ -52,6 +53,7 @@ type model struct {
 	dlssArrowID         ContainerId                   // container id of the DLSS restore-menu arrow (hover-exclusion seam)
 	dlssMenuID          ContainerId                   // container id of the open DLSS restore menu (click-outside seam)
 	dlssSnapshotItems   []dlssSnapshotItem            // current DLSS restore-menu rows (menu test seam)
+	dlssSnaps           []dlss.Snapshot               // snapshot list captured when the menu opened
 	openDLSSDir         string                        // game whose DLSS restore menu is open ("" = none)
 	dlssUpdateFn        func(gameDir string)          // DLSS update dispatch seam: nil in production (Session.UpdateDLSS)
 	dlssRestoreFn       func(gameDir, snapID string)  // DLSS restore dispatch seam: nil in production (Session.RestoreDLSS)

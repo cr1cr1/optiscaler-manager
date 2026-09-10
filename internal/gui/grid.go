@@ -325,11 +325,7 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 					start = 1
 				}
 				for _, p := range pills[start:] {
-					if strings.HasPrefix(p.Label, "DLSS ") {
-						m.dlssControl(&e, p.Label)
-					} else {
-						badgePill(p.Label, p.Tone)
-					}
+					m.componentPill(&e, p)
 				}
 			})
 		}

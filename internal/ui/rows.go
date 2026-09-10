@@ -69,6 +69,23 @@ const (
 	SortName
 )
 
+// componentLabels orders a component-version map into the display label
+// slice the way toRow has always shown them: alphabetical keys (dlss, fsr,
+// xess), values in that order. Shared by the scan pipeline and the DLSS
+// post-op refresh so both paths order pills identically.
+func componentLabels(versions map[string]string) []string {
+	keys := make([]string, 0, len(versions))
+	for k := range versions {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, versions[k])
+	}
+	return out
+}
+
 // badgeForTech maps a classified upscaler kind to its display badge.
 func badgeForTech(kind string) Badge {
 	switch {

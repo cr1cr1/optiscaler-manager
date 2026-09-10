@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 )
@@ -98,7 +101,7 @@ func Update(ctx context.Context, c *Client, dataRoot, gameDir string) (Snapshot,
 		if _, err := c.download(ctx, commit, name, filepath.Join(stage, name)); err != nil {
 			return Snapshot{}, err
 		}
-		if _, err := fileVersion(filepath.Join(stage, name)); err != nil {
+		if _, err := pever.FileVersion(filepath.Join(stage, name)); err != nil {
 			return Snapshot{}, fmt.Errorf("dlss: invalid downloaded %s: %w", name, err)
 		}
 	}
@@ -108,11 +111,15 @@ func Update(ctx context.Context, c *Client, dataRoot, gameDir string) (Snapshot,
 	}
 	for _, name := range Files {
 		if err := ctx.Err(); err != nil {
-			_ = restoreFiles(dataRoot, gameDir, snap)
+			if rerr := restoreFiles(dataRoot, gameDir, snap); rerr != nil {
+				return Snapshot{}, errors.Join(err, rerr)
+			}
 			return Snapshot{}, err
 		}
 		if _, err := copyHashed(filepath.Join(stage, name), filepath.Join(gameDir, name)); err != nil {
-			_ = restoreFiles(dataRoot, gameDir, snap)
+			if rerr := restoreFiles(dataRoot, gameDir, snap); rerr != nil {
+				return Snapshot{}, errors.Join(err, rerr)
+			}
 			return Snapshot{}, err
 		}
 	}
@@ -136,7 +143,9 @@ func Restore(ctx context.Context, dataRoot, gameDir, id string) (Snapshot, error
 		return Snapshot{}, err
 	}
 	if err := restoreFiles(dataRoot, gameDir, target); err != nil {
-		_ = restoreFiles(dataRoot, gameDir, current)
+		if rerr := restoreFiles(dataRoot, gameDir, current); rerr != nil {
+			return Snapshot{}, errors.Join(err, rerr)
+		}
 		return Snapshot{}, err
 	}
 	return current, nil
@@ -158,9 +167,13 @@ func Snapshots(dataRoot, gameDir string) ([]Snapshot, error) {
 			continue
 		}
 		s, err := load(dataRoot, gameDir, e.Name())
-		if err == nil {
-			out = append(out, s)
+		if err != nil {
+			// A partial backup (crash mid-copy) is never restorable; say so
+			// instead of silently dropping it.
+			log.Warn().Err(err).Str("snapshot", e.Name()).Msg("dlss: dropping unloadable snapshot")
+			continue
 		}
+		out = append(out, s)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	return out, nil
@@ -230,7 +243,7 @@ func backup(dataRoot, gameDir, source string) (Snapshot, error) {
 		// ponytail: an unreadable version resource only degrades the menu
 		// label to "unknown" — the backup's fidelity is the bytes, so a
 		// stripped-resource DLL must not block an update.
-		v, _ := fileVersion(path)
+		v, _ := pever.FileVersion(path)
 		h, err := copyHashed(path, filepath.Join(dir, name))
 		if err != nil {
 			return Snapshot{}, err
@@ -244,12 +257,27 @@ func backup(dataRoot, gameDir, source string) (Snapshot, error) {
 	if err := os.WriteFile(filepath.Join(dir, "snapshot.json"), data, 0o600); err != nil {
 		return Snapshot{}, err
 	}
+	// Re-verify the persisted snapshot before any caller swaps a file: the
+	// recorded hashes describe the copy stream, but only the bytes on disk
+	// protect the originals (installer invariant 3 precedent).
+	for _, f := range s.Files {
+		h, err := fileSHA256(filepath.Join(dir, f.Name))
+		if err != nil {
+			_ = os.RemoveAll(dir)
+			return Snapshot{}, fmt.Errorf("dlss: snapshot verify %s: %w", f.Name, err)
+		}
+		if h != f.SHA256 {
+			_ = os.RemoveAll(dir)
+			return Snapshot{}, fmt.Errorf("dlss: snapshot verify %s: hash mismatch", f.Name)
+		}
+	}
 	return s, nil
 }
 
 // restoreFiles copies a snapshot back into the game dir. Every member is
-// SHA-verified against the snapshot record BEFORE the first copy, so a
-// corrupted or tampered backup can never reach the game directory half-way.
+// SHA-verified against the snapshot record BEFORE the first copy, and a
+// record with a missing hash is refused: a tampered snapshot.json that
+// blanked its hashes must not bypass the gate.
 func restoreFiles(dataRoot, gameDir string, s Snapshot) error {
 	for _, f := range s.Files {
 		path := filepath.Join(snapshotsDir(dataRoot, gameDir), s.ID, f.Name)
@@ -257,7 +285,7 @@ func restoreFiles(dataRoot, gameDir string, s Snapshot) error {
 		if err != nil {
 			return err
 		}
-		if f.SHA256 != "" && h != f.SHA256 {
+		if f.SHA256 == "" || h != f.SHA256 {
 			return fmt.Errorf("dlss: backup %s failed verification", f.Name)
 		}
 	}
@@ -304,7 +332,6 @@ func snapshotGameID(gameDir string) string {
 	sum := sha256.Sum256([]byte(filepath.Clean(gameDir)))
 	return hex.EncodeToString(sum[:])[:16]
 }
-func fileVersion(path string) (string, error) { return pever.FileVersion(path) }
 
 func copyHashed(src, dest string) (string, error) {
 	in, err := os.Open(src)

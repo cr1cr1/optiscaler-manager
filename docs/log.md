@@ -2564,3 +2564,28 @@ opens the restore menu of local backup sets.
   missing-DLL refusal leaves no backup dir. Green: full `go test ./...`.
 - Docs: README keymap + feature bullet, architecture (TUI keys), safety
   (both frontends confirm), scope (TUI removed from the deferred list).
+
+## 2026-09-12 — v0.14c: code-review fixes (two-axis review of the DLSS work)
+
+- Standards + Spec review ran in parallel over `6872619...HEAD`. Fixed
+  from the reports:
+  - `dlss.backup` re-hashes the persisted snapshot files before any
+    game-dir write (installer invariant-3 precedent) and removes a
+    mismatching snapshot; `restoreFiles` refuses records with blanked
+    hashes (tamper-gate bypass closed; two new package tests).
+  - `dlss.Update`/`Restore` rollback failures are reported alongside the
+    primary error (`errors.Join`), no longer best-effort discarded.
+  - `dlss.Snapshots` logs a warning when it drops an unloadable
+    (partial/corrupt) snapshot dir instead of silently skipping it.
+  - GUI restore-menu rows are focusable and keyboard-pickable (Tab walks
+    in from the arrow, Enter/Space activates — tested); the menu renders
+    the snapshot list captured at open instead of re-reading the backup
+    dir every frame.
+  - Extractions: `app.resolveInjectionDir` (shared prelude),
+    `ui.runDLSSOp` (shared op shell), `ui.componentLabels` (shared with
+    scan's toRow), `gui.componentPill` (shared pill routing);
+    `dlss.fileVersion` middle man removed; `newDLSEnv` → `newDLSSEnv`.
+- Accepted as-is (documented): component enrichment for every plain game
+  (scope.md v0.14), the TUI's one-candidate-at-a-time restore idiom,
+  restore leaving a fresh snapshot of the current set (reversibility),
+  `dropdownPosFor` rect-keyed clamp variant, whitespace-only re-indents.

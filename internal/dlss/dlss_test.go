@@ -2,6 +2,7 @@ package dlss
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -10,8 +11,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
 )
+
+// fileVersion keeps the test assertions readable; the prod-side delegate
+// was removed (pever.FileVersion is called directly).
+func fileVersion(path string) (string, error) { return pever.FileVersion(path) }
 
 func TestUpdateBacksUpAndReplacesAllNVIDIADLLs(t *testing.T) {
 	root := t.TempDir()
@@ -172,5 +178,85 @@ func TestUpdateCancelledLeavesFilesUntouched(t *testing.T) {
 		if err != nil || v != "2.0."+string(rune('0'+i))+".0" {
 			t.Fatalf("%s changed to %q after cancelled update (err=%v)", name, v, err)
 		}
+	}
+}
+
+// TestRestoreRefusesTamperedSnapshot: a snapshot file corrupted after the
+// backup must never reach the game directory.
+func TestRestoreRefusesTamperedSnapshot(t *testing.T) {
+	root, game, snap := updatedGame(t)
+	bak := filepath.Join(root, "dlss-backups", snapshotGameID(game), snap.ID, "nvngx_dlss.dll")
+	data, err := os.ReadFile(bak)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bak, append(data, 0xFF), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Restore(context.Background(), root, game, snap.ID); err == nil {
+		t.Fatal("restore accepted a tampered snapshot")
+	}
+	assertGameUnchanged(t, game, "310.9.1.0")
+}
+
+// TestRestoreRefusesBlankedHashes: a snapshot record whose hashes were
+// stripped must not bypass verification.
+func TestRestoreRefusesBlankedHashes(t *testing.T) {
+	root, game, snap := updatedGame(t)
+	dir := filepath.Join(root, "dlss-backups", snapshotGameID(game), snap.ID)
+	// Blank only the record; the backup files on disk stay untouched, so
+	// the game dir must remain 310.9.1.0 after the refusal.
+	snap.Files = nil
+	for _, name := range Files {
+		snap.Files = append(snap.Files, File{Name: name})
+	}
+	record, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "snapshot.json"), record, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Restore(context.Background(), root, game, snap.ID); err == nil {
+		t.Fatal("restore accepted a snapshot with blanked hashes")
+	}
+	assertGameUnchanged(t, game, "310.9.1.0")
+}
+
+// updatedGame runs one update against a fake NVIDIA endpoint and returns
+// the roots plus the resulting snapshot.
+func updatedGame(t *testing.T) (root, game string, snap Snapshot) {
+	t.Helper()
+	root = t.TempDir()
+	game = filepath.Join(root, "game")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i, name := range Files {
+		if err := os.WriteFile(filepath.Join(game, name), testutil.FixedVersionPE(1, 0, uint16(i), 0), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sha := strings.Repeat("c", 40)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/NVIDIA/DLSS/commits/main" {
+			_, _ = w.Write([]byte(`{"sha":"` + sha + `"}`))
+			return
+		}
+		_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
+	}))
+	defer server.Close()
+	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, game)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root, game, snap
+}
+
+func assertGameUnchanged(t *testing.T, game, want string) {
+	t.Helper()
+	v, err := fileVersion(filepath.Join(game, "nvngx_dlss.dll"))
+	if err != nil || v != want {
+		t.Fatalf("game DLL changed to %q (err %v), want %q", v, err, want)
 	}
 }

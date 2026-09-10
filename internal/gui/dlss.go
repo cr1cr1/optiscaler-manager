@@ -9,11 +9,25 @@ import (
 )
 
 // dlssSnapshotItem is the restore menu's observability seam: one entry per
-// rendered menu row (snapshot id, label, screen rect).
+// rendered menu row (snapshot id, label, screen rect, container id for
+// keyboard-focus tests).
 type dlssSnapshotItem struct {
 	id    string
 	label string
 	rect  Rect
+	cid   ContainerId
+}
+
+// componentPill renders one version-pill entry: the DLSS pill is the
+// interactive update/restore control, every other component a static
+// badge. Both the card and the detail panel route through this so the
+// dispatch rule lives in exactly one place.
+func (m *model) componentPill(e *ui.GameRow, p ui.Badge) {
+	if strings.HasPrefix(p.Label, "DLSS ") {
+		m.dlssControl(e, p.Label)
+		return
+	}
+	badgePill(p.Label, p.Tone)
 }
 
 // dlssControl renders the DLSS component pill as a dual-color control:
@@ -75,20 +89,25 @@ func (m *model) dlssControl(e *ui.GameRow, label string) {
 }
 
 // openDLSSRestore toggles the per-game restore menu; only one is open at a
-// time (mirrors openDropdownDir).
+// time (mirrors openDropdownDir). The snapshot list is captured ONCE at
+// open — reading the backup directory per frame would be wasted I/O.
 func (m *model) openDLSSRestore(gameDir string) {
 	if m.openDLSSDir == gameDir {
 		m.openDLSSDir = ""
 		return
 	}
+	snaps := m.sess.DLSSSnapshots(gameDir)
+	if len(snaps) == 0 {
+		return
+	}
 	m.openDLSSDir = gameDir
+	m.dlssSnaps = snaps
 }
 
 // dlssRestoreMenu lists the complete backed-up NVIDIA sets, newest first;
-// picking one asks the session for confirmation.
+// picking one (mouse or keyboard) asks the session for confirmation.
 func (m *model) dlssRestoreMenu(e *ui.GameRow) {
-	snaps := m.sess.DLSSSnapshots(e.InstallDir)
-	if len(snaps) == 0 {
+	if len(m.dlssSnaps) == 0 {
 		m.openDLSSDir = ""
 		return
 	}
@@ -99,13 +118,29 @@ func (m *model) dlssRestoreMenu(e *ui.GameRow) {
 			menuID = CurrentId()
 			m.dlssMenuID = CurrentId()
 			m.dlssSnapshotItems = m.dlssSnapshotItems[:0]
-			for _, snap := range snaps {
+			for _, snap := range m.dlssSnaps {
 				snap := snap
 				label := snap.Label()
-				Container(Attrs(Row, Expand, Pad2(sp4, sp8), Corners(2)), func() {
-					m.dlssSnapshotItems = append(m.dlssSnapshotItems, dlssSnapshotItem{id: snap.ID, label: label, rect: GetScreenRectOf(CurrentId())})
+				Container(Attrs(Focusable, Row, Expand, Pad2(sp4, sp8), Corners(2)), func() {
+					FocusOnClick()
+					CycleFocusOnTab()
+					activated := false
+					if HasFocus() {
+						ModAttrs(func(a *AttrSet) {
+							a.BorderWidth = 1
+							a.BorderColor = focusBorder
+						})
+						if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
+							GetFrameInput().Key = KeyCodeNone
+							activated = true
+						}
+					}
+					m.dlssSnapshotItems = append(m.dlssSnapshotItems, dlssSnapshotItem{id: snap.ID, label: label, rect: GetScreenRectOf(CurrentId()), cid: CurrentId()})
 					Label(label, FontSize(12), TextColorVec(txtMain))
 					if PressAction() {
+						activated = true
+					}
+					if activated {
 						m.openDLSSDir = ""
 						m.dispatchRestoreDLSS(e.InstallDir, snap.ID)
 					}
