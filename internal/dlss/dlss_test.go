@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/jsoncache"
 	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
 )
@@ -40,7 +41,7 @@ func TestUpdateBacksUpAndReplacesAllNVIDIADLLs(t *testing.T) {
 	}))
 	defer server.Close()
 
-	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, root, game)
+	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, root, game, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +91,7 @@ func TestUpdateReusesCachedCommitWithoutSecondDownload(t *testing.T) {
 	defer server.Close()
 	client := NewWithBaseURLs(server.Client(), server.URL, server.URL)
 
-	first, err := Update(context.Background(), client, cache, root, game)
+	first, err := Update(context.Background(), client, cache, root, game, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +106,7 @@ func TestUpdateReusesCachedCommitWithoutSecondDownload(t *testing.T) {
 
 	// Second update of the same commit: the network is closed for business.
 	refuse = true
-	if _, err := Update(context.Background(), client, cache, root, game); err != nil {
+	if _, err := Update(context.Background(), client, cache, root, game, ""); err != nil {
 		t.Fatalf("cached update failed: %v", err)
 	}
 	if raws != len(Files) {
@@ -153,14 +154,14 @@ func TestUpdateFetchesNewCommitWhenMainMoves(t *testing.T) {
 	defer server.Close()
 	client := NewWithBaseURLs(server.Client(), server.URL, server.URL)
 
-	if _, err := Update(context.Background(), client, root, root, game); err != nil {
+	if _, err := Update(context.Background(), client, root, root, game, ""); err != nil {
 		t.Fatal(err)
 	}
 	if raws != len(Files) {
 		t.Fatalf("first update fetched %d files, want %d", raws, len(Files))
 	}
 	moved = true
-	if _, err := Update(context.Background(), client, root, root, game); err != nil {
+	if _, err := Update(context.Background(), client, root, root, game, ""); err != nil {
 		t.Fatal(err)
 	}
 	if raws != 2*len(Files) {
@@ -201,14 +202,14 @@ func TestUpdateRefetchesTamperedCacheEntry(t *testing.T) {
 	defer server.Close()
 	client := NewWithBaseURLs(server.Client(), server.URL, server.URL)
 
-	if _, err := Update(context.Background(), client, cache, root, game); err != nil {
+	if _, err := Update(context.Background(), client, cache, root, game, ""); err != nil {
 		t.Fatal(err)
 	}
 	tampered := filepath.Join(cache, "dlss", sha, Files[0])
 	if err := os.WriteFile(tampered, testutil.FixedVersionPE(9, 9, 9, 9), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Update(context.Background(), client, cache, root, game); err != nil {
+	if _, err := Update(context.Background(), client, cache, root, game, ""); err != nil {
 		t.Fatalf("update with tampered cache entry failed: %v", err)
 	}
 	for _, name := range Files {
@@ -252,12 +253,12 @@ func TestUpdateRefetchesAfterRefusedDownload(t *testing.T) {
 	defer server.Close()
 	client := NewWithBaseURLs(server.Client(), server.URL, server.URL)
 
-	if _, err := Update(context.Background(), client, root, root, game); err == nil {
+	if _, err := Update(context.Background(), client, root, root, game, ""); err == nil {
 		t.Fatal("lying download must fail the update")
 	}
 	assertGameUnchanged(t, game, "1.0.0.0")
 	lies = false
-	if _, err := Update(context.Background(), client, root, root, game); err != nil {
+	if _, err := Update(context.Background(), client, root, root, game, ""); err != nil {
 		t.Fatalf("update after the source healed failed: %v", err)
 	}
 	for _, name := range Files {
@@ -284,7 +285,7 @@ func TestRestoreRestoresCompletePriorSnapshot(t *testing.T) {
 		_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
 	}))
 	defer server.Close()
-	first, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, root, game)
+	first, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, root, game, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +310,7 @@ func TestUpdateRefusesWhenAnyNVIDIADLLIsMissing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(game, Files[0]), testutil.FixedVersionPE(1, 0, 0, 0), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Update(context.Background(), nil, root, root, game); err == nil || !strings.Contains(err.Error(), Files[1]) {
+	if _, err := Update(context.Background(), nil, root, root, game, ""); err == nil || !strings.Contains(err.Error(), Files[1]) {
 		t.Fatalf("err %v, want missing %s", err, Files[1])
 	}
 }
@@ -332,7 +333,7 @@ func TestRestoreRefusesTamperedBackup(t *testing.T) {
 		_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
 	}))
 	defer server.Close()
-	first, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, root, game)
+	first, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, root, game, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +364,7 @@ func TestUpdateCancelledLeavesFilesUntouched(t *testing.T) {
 	seedGame(t, game, 2, 0)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := Update(ctx, New(nil), root, root, game); !errors.Is(err, context.Canceled) {
+	if _, err := Update(ctx, New(nil), root, root, game, ""); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err %v, want context.Canceled", err)
 	}
 	for i, name := range Files {
@@ -435,7 +436,7 @@ func updatedGame(t *testing.T) (root, game string, snap Snapshot) {
 		_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
 	}))
 	defer server.Close()
-	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, root, game)
+	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, root, game, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -458,5 +459,181 @@ func assertGameUnchanged(t *testing.T, game, want string) {
 	v, err := fileVersion(filepath.Join(game, "nvngx_dlss.dll"))
 	if err != nil || v != want {
 		t.Fatalf("game DLL changed to %q (err %v), want %q", v, err, want)
+	}
+}
+
+// TestLatestResolvesPublishedVersionWithoutDownloading: the startup
+// availability check reads the published version from the tags API — one
+// small metadata call. It must never fetch runtime bytes: the raw-file
+// endpoint refuses with 500 and the test counts every hit it would log.
+func TestLatestResolvesPublishedVersionWithoutDownloading(t *testing.T) {
+	sha := strings.Repeat("7", 40)
+	raws := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/NVIDIA/DLSS/tags":
+			// Newest-first is not a documented GitHub contract: the check
+			// must pick the greatest VERSION among the fetched tags, not
+			// trust the listing order.
+			_, _ = w.Write([]byte(`[
+				{"name":"v310.2.0","commit":{"sha":"` + strings.Repeat("1", 40) + `"}},
+				{"name":"v310.9.1","commit":{"sha":"` + sha + `"}},
+				{"name":"v310.7.0","commit":{"sha":"` + strings.Repeat("2", 40) + `"}}
+			]`))
+		default:
+			raws++
+			http.Error(w, "startup check must not download runtime bytes", http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+
+	lat, err := NewWithBaseURLs(server.Client(), server.URL, server.URL).Latest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lat.Version != "310.9.1" || lat.Commit != sha {
+		t.Fatalf("latest = %+v, want version 310.9.1 commit %s", lat, sha)
+	}
+	if raws != 0 {
+		t.Errorf("raw endpoint hit %d times during the startup check", raws)
+	}
+}
+
+// TestLatestErrorsWithoutTags: an empty tag list is a resolution failure,
+// never a silent "version unknown that looks like success".
+func TestLatestErrorsWithoutTags(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+	if _, err := NewWithBaseURLs(server.Client(), server.URL, server.URL).Latest(context.Background()); err == nil {
+		t.Fatal("expected an error for an empty tag list")
+	}
+}
+
+// TestCachedVersionReadsNewestCompleteCacheSet: the startup cached-half is
+// local-only — complete commit dirs report their nvngx_dlss.dll PE version,
+// newest wins; incomplete or absent sets report nothing.
+func TestCachedVersionReadsNewestCompleteCacheSet(t *testing.T) {
+	cache := t.TempDir()
+	if v, commit := CachedVersion(cache); v != "" || commit != "" {
+		t.Fatalf("empty cache = %q/%q, want empty", v, commit)
+	}
+	seedCacheDir(t, cache, strings.Repeat("a", 40), 310, 6)
+	seedCacheDir(t, cache, strings.Repeat("b", 40), 310, 9)
+	if v, commit := CachedVersion(cache); v != "310.9.0.0" || commit != strings.Repeat("b", 40) {
+		t.Fatalf("cached = %q/%q, want 310.9.0.0 @ b-padded commit", v, commit)
+	}
+	// An incomplete set (missing member) is invisible to the check.
+	incomplete := filepath.Join(cache, "dlss", strings.Repeat("c", 40))
+	if err := os.MkdirAll(incomplete, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rec := cacheRecord{Files: map[string]string{Files[0]: "h0", Files[1]: "h1"}}
+	if err := jsoncache.Write(filepath.Join(incomplete, "manifest.json"), rec); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(incomplete, Files[0]), testutil.FixedVersionPE(311, 0, 0, 0), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if v, commit := CachedVersion(cache); v != "310.9.0.0" || commit != strings.Repeat("b", 40) {
+		t.Fatalf("after incomplete dir = %q/%q, want 310.9.0.0 @ b-padded commit", v, commit)
+	}
+}
+
+// seedCacheDir plants one complete commit-keyed cache dir with a manifest
+// pinning the real member digests.
+func seedCacheDir(t *testing.T, cacheRoot, commit string, maj, min uint16) {
+	t.Helper()
+	dir := filepath.Join(cacheRoot, "dlss", commit)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{}
+	for i, name := range Files {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, testutil.FixedVersionPE(maj, min, uint16(i), 0), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		h, err := fileSHA256(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = h
+	}
+	if err := jsoncache.Write(filepath.Join(dir, "manifest.json"), cacheRecord{Files: files}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestUpdateUsesCommitHintWithoutNetwork: when the startup check's published
+// commit is already in the cache, pressing the DLSS badge installs straight
+// from the cache with zero network — the "fetch from cache if latest, else
+// download" contract. An unknown hint falls back to the online resolve.
+func TestUpdateUsesCommitHintWithoutNetwork(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	cache := filepath.Join(root, "cache")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seedGame(t, game, 1, 0)
+	hint := strings.Repeat("a", 40)
+	seedCacheDir(t, cache, hint, 310, 9)
+
+	commits, raws := 0, 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/NVIDIA/DLSS/commits/main":
+			commits++
+			http.Error(w, "cache hit must not resolve online", http.StatusInternalServerError)
+		default:
+			raws++
+			http.Error(w, "cache hit must not download", http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+
+	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), cache, root, game, hint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.SourceCommit != hint {
+		t.Fatalf("source commit %q, want the cached hint %q", snap.SourceCommit, hint)
+	}
+	if commits != 0 || raws != 0 {
+		t.Errorf("cache-hit update hit the network (commits %d, raws %d)", commits, raws)
+	}
+	assertGameVersion(t, game, "310.9.0.0")
+
+	// A hint whose cache dir does not exist falls back to the online
+	// resolve + download.
+	missing := strings.Repeat("b", 40)
+	var rawsFallback int
+	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/NVIDIA/DLSS/commits/main":
+			_, _ = w.Write([]byte(`{"sha":"` + strings.Repeat("c", 40) + `"}`))
+		default:
+			rawsFallback++
+			_, _ = w.Write(testutil.FixedVersionPE(310, 10, 0, 0))
+		}
+	}))
+	defer server2.Close()
+	if _, err := Update(context.Background(), NewWithBaseURLs(server2.Client(), server2.URL, server2.URL), cache, root, game, missing); err != nil {
+		t.Fatal(err)
+	}
+	if rawsFallback == 0 {
+		t.Errorf("cache-miss hint fetched no runtime files (commits resolved, downloads %d)", rawsFallback)
+	}
+	assertGameVersion(t, game, "310.10.0.0")
+}
+
+// assertGameVersion reads the game's DLSS version, failing on any error.
+func assertGameVersion(t *testing.T, game, want string) {
+	t.Helper()
+	v, err := fileVersion(filepath.Join(game, "nvngx_dlss.dll"))
+	if err != nil || v != want {
+		t.Fatalf("game DLSS version = %q (err %v), want %q", v, err, want)
 	}
 }

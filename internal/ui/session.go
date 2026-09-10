@@ -47,6 +47,10 @@ const (
 	EvOpCancelled
 	EvConfirm
 	EvScanProgress
+	// EvDLSSStatus pokes the frontends after the startup DLSS availability
+	// check settled (State.DLSSLatest/DLSSCached changed). The event is
+	// only a poke; renderers re-read the snapshot.
+	EvDLSSStatus
 )
 
 // Scan progress phases, in pipeline order. "covers" includes the manual
@@ -125,6 +129,15 @@ type State struct {
 	Confirm    *Confirmation
 	Toasts     []Toast
 	Progress   *ScanProgress // scan pipeline counters, nil when no scan runs
+	// DLSS availability status, filled by the startup check (never a
+	// download): DLSSLatest is the published version on GitHub (zero when
+	// unknown/offline), DLSSCached the newest version in the local
+	// download cache. DLSSLatest.Commit — or, when the online half is
+	// unknown, DLSSCachedCommit — doubles as the cache-key hint the next
+	// DLSS update installs from.
+	DLSSLatest       dlss.Latest
+	DLSSCached       string
+	DLSSCachedCommit string
 }
 
 // Deps wires the session to the lower layers.

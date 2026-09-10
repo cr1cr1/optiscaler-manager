@@ -18,8 +18,10 @@ import (
 // phantom container rows; 4: v0.7.2 removed platform/junk rows and changed
 // title resolution, so v0.7.1 caches carry rejected rows; 5: v0.8 added
 // identification sources and Steam app ids to rows, so v0.7.2 caches
-// carry titles the new resolver would replace).
-const cacheSchemaVersion = 5
+// carry titles the new resolver would replace; 6: v0.14g added the DLSS
+// readiness/version fields to rows, so v0.8 caches would warm-boot with
+// static DLSS pills until a manual rescan).
+const cacheSchemaVersion = 6
 
 // gamesCache is the persisted games list: display-ready rows written on
 // every library change and read once at Start so a warm boot skips the scan.

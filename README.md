@@ -66,7 +66,14 @@ The DLSS version label is also a control (GUI only): pressing it updates the
 game's NVIDIA runtime — all three DLLs (`nvngx_dlss.dll`, `nvngx_dlssd.dll`,
 `nvngx_dlssg.dll`) together, from the official NVIDIA/DLSS repository at one
 pinned commit. All three must already exist: the updater never adds
-components a game did not ship. Every update and restore first writes a
+components a game did not ship. A DLL whose version resource does not
+parse still shows a pressable bare `DLSS` pill. On startup (online
+lookups enabled) the app makes one GitHub tags call to learn the
+published version — it is shown in the TUI detail view and marks the
+update label when your set is older; no DLL bytes are fetched then.
+Pressing the label is cache-first: if the published commit is already in
+the download cache it installs from there, otherwise the commit is
+resolved and fetched. Every update and restore first writes a
 hash-verified backup of your current set; the ▼ button beside the label
 lists those backups, and restoring one asks for confirmation first.
 Downloaded NVIDIA files are subject to NVIDIA's RTX SDK license. Like the

@@ -385,6 +385,7 @@ func (m *model) detailPanel() {
 	Container(Attrs(FixWidth(panelW), Expand, BackgroundVec(bgPanel)), func() {
 		m.detailPanelRect = GetScreenRectOf(CurrentId())
 		Container(Attrs(Grow(1), Expand, Pad(sp16), Gap(sp12), Viewport, Clip), func() {
+			ScrollOnInput()
 			Container(Attrs(Row, CrossMid, Gap(sp8)), func() {
 				Label(e.Title, FontSize(16), TextColorVec(txtMain), FontWeight(WeightBold))
 				Filler(1)
@@ -410,11 +411,13 @@ func (m *model) detailPanel() {
 					}
 				}
 			})
-			// Status and version pills render ABOVE the cover: the cover is
-			// a 2:3 portrait that scales with the panel width, so past a
-			// ~320px panel it alone overflows the scroll fold and pushes
-			// everything below it — the DLSS update control included — out
-			// of view. The actionable pills must never fold.
+			// Status and version pills stay UNDER the poster (the
+			// long-standing layout). The 2:3 cover scales with panel width
+			// and can push them past the fold; ScrollOnInput above makes
+			// the fold reachable instead of reordering the pane.
+			coverW := panelW - 2*sp16
+			m.coverArt(*e, coverW, coverW*coverRatio)
+			muted(e.InstallDir)
 			Container(Attrs(Row, Gap(sp4), CrossMid), func() {
 				txt("Status:")
 				badgePill(statusLabel(e), statusTone(e))
@@ -441,9 +444,6 @@ func (m *model) detailPanel() {
 					}
 				})
 			}
-			coverW := panelW - 2*sp16
-			m.coverArt(*e, coverW, coverW*coverRatio)
-			muted(e.InstallDir)
 			Container(Attrs(Gap(2)), func() {
 				if e.Platform != "" {
 					detailField("Platform", e.Platform)

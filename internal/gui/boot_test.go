@@ -19,7 +19,9 @@ func TestGUIStartCachedShowsCachedRows(t *testing.T) {
 		d.SettingsRoot = root
 		d.Settings = settings.Defaults()
 	})
-	cacheJSON := `{"version":5,"rows":[{"Title":"Cached Game","InstallDir":"/games/cached","Platform":"Manual"}]}`
+	// Version must track ui's cacheSchemaVersion (6 since v0.14g's DLSS row
+	// fields) or the warm boot rejects the cache and scans instead.
+	cacheJSON := `{"version":6,"rows":[{"Title":"Cached Game","InstallDir":"/games/cached","Platform":"Manual"}]}`
 	if err := os.WriteFile(filepath.Join(root, "games.json"), []byte(cacheJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}

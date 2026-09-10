@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
@@ -21,6 +22,8 @@ import (
 type dlssEnv struct {
 	*testEnv
 	dlssRoot string
+	raws     atomic.Int64 // runtime-byte hits; the startup check must log none
+	refuse   atomic.Bool  // set to make every NVIDIA endpoint return 500
 }
 
 func newDLSSEnv(t *testing.T, withDLLs bool) *dlssEnv {
@@ -28,9 +31,25 @@ func newDLSSEnv(t *testing.T, withDLLs bool) *dlssEnv {
 	e := &dlssEnv{testEnv: newTestEnv(t), dlssRoot: t.TempDir()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repos/NVIDIA/DLSS/commits/main", func(w http.ResponseWriter, r *http.Request) {
+		if e.refuse.Load() {
+			http.Error(w, "refused", http.StatusInternalServerError)
+			return
+		}
 		_, _ = w.Write([]byte(`{"sha":"` + strings.Repeat("d", 40) + `"}`))
 	})
+	mux.HandleFunc("/repos/NVIDIA/DLSS/tags", func(w http.ResponseWriter, r *http.Request) {
+		if e.refuse.Load() {
+			http.Error(w, "refused", http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(`[{"name":"v310.9.1","commit":{"sha":"` + strings.Repeat("e", 40) + `"}}]`))
+	})
 	mux.HandleFunc("/NVIDIA/DLSS/", func(w http.ResponseWriter, r *http.Request) {
+		e.raws.Add(1)
+		if e.refuse.Load() {
+			http.Error(w, "refused", http.StatusInternalServerError)
+			return
+		}
 		_, _ = w.Write(testutil.FixedVersionPE(310, 5, 3, 0))
 	})
 	srv := httptest.NewServer(mux)
@@ -165,5 +184,123 @@ func TestRestoreDLSSDeclineLeavesUntouched(t *testing.T) {
 	}
 	if got := len(e.sess.DLSSSnapshots(row.InstallDir)); got != 1 {
 		t.Errorf("declined restore created %d snapshots, want 1", got)
+	}
+}
+
+// seedDLSSCache plants a complete commit-keyed download-cache dir (three
+// runtime files plus the manifest pinning their real digests), the shape
+// ensureCache leaves behind.
+func seedDLSSCache(t *testing.T, cacheRoot, commit string, maj, min uint16) {
+	t.Helper()
+	testutil.SeedDLSSCacheDir(t, cacheRoot, commit, dlssCacheFiles(maj, min))
+}
+
+// dlssCacheFiles builds the three-file NVIDIA runtime set at one version.
+func dlssCacheFiles(maj, min uint16) map[string][]byte {
+	files := map[string][]byte{}
+	for i, name := range dlss.Files {
+		files[name] = testutil.FixedVersionPE(maj, min, uint16(i), 0)
+	}
+	return files
+}
+
+// TestCheckDLSSStartupStatus: the startup check fills the published version
+// and commit from one small tags call and the local cache's newest version,
+// and never downloads runtime bytes.
+func TestCheckDLSSStartupStatus(t *testing.T) {
+	e := newDLSSEnv(t, true)
+	e.sess.SetOnlineLookups(true) // the fixture defaults it off; the check is an online lookup
+	seedDLSSCache(t, e.sess.deps.CacheDir, strings.Repeat("a", 40), 310, 6)
+
+	e.sess.CheckDLSS(context.Background())
+	waitEvent(t, e.sess, EvDLSSStatus)
+	st := e.sess.Snapshot()
+	if st.DLSSLatest.Version != "310.9.1" || st.DLSSLatest.Commit != strings.Repeat("e", 40) {
+		t.Fatalf("DLSSLatest = %+v, want 310.9.1 @ e-padded commit", st.DLSSLatest)
+	}
+	if st.DLSSCached != "310.6.0.0" {
+		t.Errorf("DLSSCached = %q, want 310.6.0.0 (newest complete cache set)", st.DLSSCached)
+	}
+	if st.DLSSCachedCommit != strings.Repeat("a", 40) {
+		t.Errorf("DLSSCachedCommit = %q, want the a-padded commit", st.DLSSCachedCommit)
+	}
+	if raws := e.raws.Load(); raws != 0 {
+		t.Errorf("startup check downloaded runtime bytes %d times", raws)
+	}
+}
+
+// TestCheckDLSSOfflineLookupsOff: with online lookups disabled the check
+// stays local — no tags call, no published version — but the cached half
+// still fills, so an offline press can serve from the download cache.
+func TestCheckDLSSOfflineLookupsOff(t *testing.T) {
+	e := newDLSSEnv(t, true)
+	e.sess.SetOnlineLookups(false)
+	seedDLSSCache(t, e.sess.deps.CacheDir, strings.Repeat("a", 40), 310, 6)
+
+	e.sess.CheckDLSS(context.Background())
+	if st := e.sess.Snapshot(); st.DLSSLatest.Version != "" || st.DLSSLatest.Commit != "" {
+		t.Fatalf("offline check filled DLSSLatest: %+v", st.DLSSLatest)
+	}
+	if st := e.sess.Snapshot(); st.DLSSCached != "310.6.0.0" || st.DLSSCachedCommit != strings.Repeat("a", 40) {
+		t.Fatalf("offline check left the cached half empty: %+v / %q", st.DLSSCached, st.DLSSCachedCommit)
+	}
+}
+
+// TestUpdateDLSSRefreshesCachedStatus: a successful update re-fills the
+// download cache, so the session's cached-version status moves to the
+// installed version.
+func TestUpdateDLSSRefreshesCachedStatus(t *testing.T) {
+	e := newDLSSEnv(t, true)
+	row := scanOneDLSSRow(t, e)
+
+	e.sess.UpdateDLSS(row.InstallDir)
+	waitEvent(t, e.sess, EvOpDone)
+	if got := e.sess.Snapshot().DLSSCached; got != "310.5.3.0" {
+		t.Errorf("DLSSCached after update = %q, want 310.5.3.0", got)
+	}
+}
+
+// TestUpdateDLSSUsesStartupCommitHint: with the published commit already in
+// the download cache, pressing the DLSS badge installs from the cache with
+// zero network — even with every endpoint refusing.
+func TestUpdateDLSSUsesStartupCommitHint(t *testing.T) {
+	e := newDLSSEnv(t, true)
+	row := scanOneDLSSRow(t, e)
+	hint := strings.Repeat("e", 40)
+	seedDLSSCache(t, e.sess.deps.CacheDir, hint, 310, 9)
+	e.sess.mu.Lock()
+	e.sess.st.DLSSLatest = dlss.Latest{Version: "310.9.1", Commit: hint}
+	e.sess.mu.Unlock()
+	// Every endpoint refuses: the cache-hit update must not touch them.
+	e.refuse.Store(true)
+
+	e.sess.UpdateDLSS(row.InstallDir)
+	waitEvent(t, e.sess, EvOpDone)
+	if got := dlssDLLVersion(t, e, dlss.Files[0]); got != "310.9.0.0" {
+		t.Errorf("%s after cache-hit update = %q, want 310.9.0.0", dlss.Files[0], got)
+	}
+}
+
+// TestUpdateDLSSUsesCachedCommitOffline: with no published version known
+// (online lookups off, failed startup check) a press still serves from the
+// download cache when the startup check recorded a cached commit — the
+// update itself needs no network for a cached set.
+func TestUpdateDLSSUsesCachedCommitOffline(t *testing.T) {
+	e := newDLSSEnv(t, true)
+	e.sess.SetOnlineLookups(false)
+	row := scanOneDLSSRow(t, e)
+	commit := strings.Repeat("a", 40)
+	seedDLSSCache(t, e.sess.deps.CacheDir, commit, 310, 9)
+	e.sess.CheckDLSS(context.Background()) // local half only: fills DLSSCachedCommit
+	if got := e.sess.Snapshot().DLSSCachedCommit; got != commit {
+		t.Fatalf("setup: cached commit %q, want %q", got, commit)
+	}
+	// Every endpoint refuses: the cache-served update must not touch them.
+	e.refuse.Store(true)
+
+	e.sess.UpdateDLSS(row.InstallDir)
+	waitEvent(t, e.sess, EvOpDone)
+	if got := dlssDLLVersion(t, e, dlss.Files[0]); got != "310.9.0.0" {
+		t.Errorf("%s after offline cache update = %q, want 310.9.0.0", dlss.Files[0], got)
 	}
 }

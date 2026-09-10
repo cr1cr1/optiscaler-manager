@@ -393,6 +393,14 @@ func tierTone(tier string) ui.Tone {
 	}
 }
 
+// orKnown renders a version-ish string for display, "—" when unknown.
+func orKnown(v string) string {
+	if v == "" {
+		return "—"
+	}
+	return v
+}
+
 // detailView renders the selected game's metadata panel and its actions.
 func (m Model) detailView(w, contentH int) string {
 	row := m.detailRow()
@@ -440,6 +448,15 @@ func (m Model) detailView(w, contentH int) string {
 		}
 		if row.CompatPrefix != "" {
 			fmt.Fprintf(&b, "Proton: %s\n", row.CompatPrefix)
+		}
+		// Startup DLSS availability check: the published version the next
+		// update brings and what the download cache already holds, so the
+		// user knows whether pressing the badge hits the cache or network.
+		if m.sess != nil {
+			if st := m.sess.Snapshot(); st.DLSSLatest.Version != "" || st.DLSSCached != "" {
+				fmt.Fprintf(&b, "DLSS published: %s · cached: %s\n",
+					orKnown(st.DLSSLatest.Version), orKnown(st.DLSSCached))
+			}
 		}
 		b.WriteString("\n" + styleHeader.Render("Actions") + "\n")
 		install := "  i  install/uninstall"

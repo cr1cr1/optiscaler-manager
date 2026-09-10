@@ -505,13 +505,15 @@ func TestSetSortOrdersVisibleRows(t *testing.T) {
 	t.Log("sort modes: name alphabetical, default actionable-first, invalid = default")
 }
 
-// TestStart_PreV4CacheFallsThroughToScan: games.json files written before
-// schema v5 carry rows produced by older identification semantics —
-// v0.7's phantom container rows (v2), v0.7.1's platform/junk rows (v3),
-// and v0.7.2 rows without identification sources (v4). Every older
-// schema loads as empty and Start falls through to a real scan.
-func TestStart_PreV4CacheFallsThroughToScan(t *testing.T) {
-	for _, version := range []int{1, 2, 3, 4} {
+// TestStart_PreV6CacheFallsThroughToScan: games.json files written before
+// schema v6 carry rows produced by older semantics — v0.7's phantom
+// container rows (v2), v0.7.1's platform/junk rows (v3), v0.7.2 rows
+// without identification sources (v4), and v0.8 rows without the DLSS
+// readiness/version fields (v5), which would warm-boot as static pills
+// until a manual rescan. Every older schema loads as empty and Start
+// falls through to a real scan.
+func TestStart_PreV6CacheFallsThroughToScan(t *testing.T) {
+	for _, version := range []int{1, 2, 3, 4, 5} {
 		t.Run(string(rune('0'+version)), func(t *testing.T) {
 			e := newTestEnv(t)
 			e.sess.deps.SettingsRoot = t.TempDir()
@@ -538,5 +540,5 @@ func TestStart_PreV4CacheFallsThroughToScan(t *testing.T) {
 			}
 		})
 	}
-	t.Log("pre-v4 caches invalidated; Start fell through to scan")
+	t.Log("pre-v6 caches invalidated; Start fell through to scan")
 }

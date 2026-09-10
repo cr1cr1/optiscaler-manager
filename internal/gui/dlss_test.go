@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -22,7 +23,7 @@ import (
 // endpoint and plants the three versioned NVIDIA DLLs in the game's bin.
 // gate, when non-nil, blocks the fake commit endpoint so an update op can
 // be held in-flight deterministically.
-func dlssGUIFakes(t *testing.T, gate chan struct{}) (*ui.Session, string) {
+func dlssGUIFakes(t *testing.T, gate chan struct{}) (*ui.Session, string, string) {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repos/NVIDIA/DLSS/commits/main", func(w http.ResponseWriter, r *http.Request) {
@@ -36,14 +37,16 @@ func dlssGUIFakes(t *testing.T, gate chan struct{}) (*ui.Session, string) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
+	var cacheRoot string
 	sess, gameRoot := guiFakes(t, func(d *ui.Deps) {
 		d.DLSS = dlss.NewWithBaseURLs(srv.Client(), srv.URL, srv.URL)
+		cacheRoot = d.CacheDir
 	})
 	bin := filepath.Join(gameRoot, "bin")
 	for i, name := range dlss.Files {
 		writeGUIFile(t, filepath.Join(bin, name), string(testutil.FixedVersionPE(3, 7, uint16(20+i), 0)))
 	}
-	return sess, gameRoot
+	return sess, gameRoot, cacheRoot
 }
 
 // waitSessEvent drains session events until kind arrives.
@@ -75,7 +78,7 @@ func dlssVersionOnDisk(t *testing.T, gameRoot, name string) string {
 // renders the dual-color control (update area + restore arrow) on the card
 // AND in the detail panel; a row without DLSS renders neither.
 func TestDLSSControl_RendersOnCardsAndPanel(t *testing.T) {
-	sess, _ := dlssGUIFakes(t, nil)
+	sess, _, _ := dlssGUIFakes(t, nil)
 	row := scanOneRow(t, sess)
 	m := newModel(Config{Session: sess})
 
@@ -122,7 +125,7 @@ func TestDLSSControl_RendersOnCardsAndPanel(t *testing.T) {
 // share one library.
 func externalDLSSFakes(t *testing.T) (*ui.Session, string) {
 	t.Helper()
-	sess, gameRoot := dlssGUIFakes(t, nil)
+	sess, gameRoot, _ := dlssGUIFakes(t, nil)
 	writeGUIFile(t, filepath.Join(gameRoot, "bin", "dxgi.dll"),
 		string(testutil.StringInfoPE(false, map[string]string{
 			"ProductName":      "OptiScaler",
@@ -133,12 +136,10 @@ func externalDLSSFakes(t *testing.T) (*ui.Session, string) {
 
 // TestDLSSControl_ExternalRow: a hand-installed (external) OptiScaler game
 // carrying the NVIDIA runtime set renders the DLSS update/restore control
-// in the detail panel at BOTH a small and a wide window. The card's static
-// DLSS tech badge must not be the only affordance: the control lives on
-// the component pill, which external rows suppressed entirely (the pills
-// were also folded out of view behind the 2:3 cover at wide panels).
-// Card-pill clipping at the fixed card width is a pre-existing card layout
-// property; the panel is the actionable surface.
+// in the detail panel, whose status/version pills sit UNDER the poster (the
+// long-standing layout). At a small window they fit in the fold; at a wide
+// window the 2:3 cover pushes them past it and the panel's wheel scroll
+// brings them back — reachability without reordering the pane.
 func TestDLSSControl_ExternalRow(t *testing.T) {
 	sess, _ := externalDLSSFakes(t)
 	row := scanOneRow(t, sess)
@@ -156,21 +157,191 @@ func TestDLSSControl_ExternalRow(t *testing.T) {
 	}
 	sess.Select(row.InstallDir)
 
-	for _, w := range []struct {
-		name string
-		w, h int
-	}{
-		{"small", 1100, 700}, // 330px panel: the 2:3 cover clipped the pill row
-		{"wide", 1600, 900},  // 480px panel: the cover alone overflowed the fold
-	} {
-		m := newModel(Config{Session: sess})
-		m.state = sess.Snapshot()
-		headlessFrames(t, w.w, w.h)
+	// Small window: the pill row fits below the poster.
+	m := newModel(Config{Session: sess})
+	m.state = sess.Snapshot()
+	headlessFrames(t, 1100, 700)
+	GetInputState().MousePoint = Vec2{-50, -50}
+	keyFrame(KeyCodeNone, 0, m.rootView) // build
+	keyFrame(KeyCodeNone, 0, m.rootView) // capture rects from the previous frame
+	if m.dlssUpdateRect.Size[0] == 0 || m.dlssArrowRect.Size[0] == 0 {
+		t.Fatalf("small window: external row rendered no DLSS control in the detail panel: update %+v arrow %+v", m.dlssUpdateRect, m.dlssArrowRect)
+	}
+
+	// Wide window: the pills sit under the poster, past the fold. Wheel
+	// input over the panel scrolls them into view.
+	m = newModel(Config{Session: sess})
+	m.state = sess.Snapshot()
+	headlessFrames(t, 1600, 900)
+	keyFrame(KeyCodeNone, 0, m.rootView) // build (captures detailPanelRect)
+	panel := m.detailPanelRect
+	if panel.Size[0] == 0 {
+		t.Fatal("setup: detail panel rect empty")
+	}
+	GetInputState().MousePoint = Vec2{panel.Origin[0] + panel.Size[0]/2, panel.Origin[1] + panel.Size[1]/2}
+	for i := 0; i < 3; i++ {
+		keyFrame(KeyCodeNone, 0, m.rootView) // hover settles
+		GetFrameInput().Scroll = Vec2{0, 600}
+		RunFrameFn(m.rootView)
+		GetFrameInput().Scroll = Vec2{}
+	}
+	keyFrame(KeyCodeNone, 0, m.rootView) // capture rects from the previous frame
+	if m.dlssUpdateRect.Size[0] == 0 || m.dlssArrowRect.Size[0] == 0 {
+		t.Fatalf("wide window after wheel scroll: no DLSS control: update %+v arrow %+v", m.dlssUpdateRect, m.dlssArrowRect)
+	}
+}
+
+// strippedDLSSFakes replaces the planted NVIDIA DLLs with version-stripped
+// PE images — the shape of real installs whose version resources do not
+// parse, the exact card-badge-but-no-detail-pill report.
+func strippedDLSSFakes(t *testing.T) (*ui.Session, string, string) {
+	t.Helper()
+	sess, gameRoot, cacheRoot := dlssGUIFakes(t, nil)
+	bin := filepath.Join(gameRoot, "bin")
+	for _, name := range dlss.Files {
+		writeGUIFile(t, filepath.Join(bin, name), string(testutil.StringInfoPE(false, nil, [4]uint16{})))
+	}
+	return sess, gameRoot, cacheRoot
+}
+
+// TestDLSSControl_StrippedVersionStillUpdatable: a game whose NVIDIA DLLs
+// have no readable version still renders the DLSS pill (bare "DLSS", same
+// label the card's tech badge shows) and the pill remains the interactive
+// update control — pressing it installs the published set. The pill row
+// sits under the poster; the panel's wheel scroll brings it into view when
+// the fold cuts it (long install paths wrap and push it down).
+func TestDLSSControl_StrippedVersionStillUpdatable(t *testing.T) {
+	sess, gameRoot, _ := strippedDLSSFakes(t)
+	row := scanOneRow(t, sess)
+	if !row.DLSSReady {
+		t.Fatalf("setup: complete set not marked ready (components %v)", row.Components)
+	}
+	if row.DLSSVersion != "" {
+		t.Fatalf("setup: stripped DLL parsed a version %q", row.DLSSVersion)
+	}
+	var dlssPill string
+	for _, c := range row.Components {
+		if c == "DLSS" {
+			dlssPill = c
+			break
+		}
+	}
+	if dlssPill != "DLSS" {
+		t.Fatalf("stripped DLSS pill missing: components %v", row.Components)
+	}
+
+	sess.Select(row.InstallDir)
+	m := newModel(Config{Session: sess})
+	m.state = sess.Snapshot()
+	headlessFrames(t, 1100, 700)
+	GetInputState().MousePoint = Vec2{-50, -50}
+	keyFrame(KeyCodeNone, 0, m.rootView) // build
+	panel := m.detailPanelRect
+	if panel.Size[0] == 0 {
+		t.Fatal("setup: detail panel rect empty")
+	}
+	GetInputState().MousePoint = Vec2{panel.Origin[0] + panel.Size[0]/2, panel.Origin[1] + panel.Size[1]/2}
+	for i := 0; i < 3; i++ {
+		keyFrame(KeyCodeNone, 0, m.rootView) // hover settles
+		GetFrameInput().Scroll = Vec2{0, 600}
+		RunFrameFn(m.rootView)
+		GetFrameInput().Scroll = Vec2{}
+	}
+	keyFrame(KeyCodeNone, 0, m.rootView) // capture rects from the previous frame
+	ur := m.dlssUpdateRect
+	if ur.Size[0] == 0 {
+		t.Fatalf("version-stripped game rendered no DLSS control after scroll (pill %q)", dlssPill)
+	}
+	clickRect(ur, m.rootView)
+	waitSessEvent(t, sess, ui.EvOpDone)
+	for _, name := range dlss.Files {
+		if got := dlssVersionOnDisk(t, gameRoot, name); got != "310.5.3.0" {
+			t.Errorf("%s after click = %q, want 310.5.3.0", name, got)
+		}
+	}
+}
+
+// TestDLSSControl_CachedMarkerOffline: with online lookups off and a newer
+// set in the download cache, the pill's version segment renders the cached
+// version as the update marker — the cached half of the availability check
+// must be visible, not just the TUI line. Measured as the version segment
+// growing once the check fills DLSSCached (the bare pill's version area is
+// near-empty otherwise).
+func TestDLSSControl_CachedMarkerOffline(t *testing.T) {
+	sess, _, cacheRoot := strippedDLSSFakes(t)
+	row := scanOneRow(t, sess)
+	sess.Select(row.InstallDir)
+	m := newModel(Config{Session: sess})
+	m.state = sess.Snapshot()
+
+	revealWidth := func() float32 {
+		headlessFrames(t, 1100, 700)
 		GetInputState().MousePoint = Vec2{-50, -50}
 		keyFrame(KeyCodeNone, 0, m.rootView) // build
+		panel := m.detailPanelRect
+		if panel.Size[0] == 0 {
+			t.Fatal("setup: detail panel rect empty")
+		}
+		GetInputState().MousePoint = Vec2{panel.Origin[0] + panel.Size[0]/2, panel.Origin[1] + panel.Size[1]/2}
+		for i := 0; i < 3; i++ {
+			keyFrame(KeyCodeNone, 0, m.rootView)
+			GetFrameInput().Scroll = Vec2{0, 600}
+			RunFrameFn(m.rootView)
+			GetFrameInput().Scroll = Vec2{}
+		}
 		keyFrame(KeyCodeNone, 0, m.rootView) // capture rects from the previous frame
-		if m.dlssUpdateRect.Size[0] == 0 || m.dlssArrowRect.Size[0] == 0 {
-			t.Errorf("%s window: external row rendered no DLSS control in the detail panel: update %+v arrow %+v", w.name, m.dlssUpdateRect, m.dlssArrowRect)
+		return m.dlssUpdateRect.Size[0]
+	}
+	base := revealWidth()
+	if base == 0 {
+		t.Fatal("no DLSS control before the cached marker")
+	}
+
+	commit := strings.Repeat("a", 40)
+	files := map[string][]byte{}
+	for i, name := range dlss.Files {
+		files[name] = testutil.FixedVersionPE(310, 9, uint16(i), 0)
+	}
+	testutil.SeedDLSSCacheDir(t, cacheRoot, commit, files)
+	sess.CheckDLSS(context.Background()) // online lookups off: fills the cached half only
+	m.state = sess.Snapshot()
+	if m.state.DLSSCached != "310.9.0.0" {
+		t.Fatalf("setup: DLSSCached %q, want 310.9.0.0", m.state.DLSSCached)
+	}
+	marked := revealWidth()
+	if marked <= base {
+		t.Errorf("version segment did not grow with the cached marker: base %.1f, marked %.1f", base, marked)
+	}
+}
+
+// TestDLSSUpdateTargetMarker: the update-available marker appended to the
+// DLSS control's version segment appears exactly when a known candidate —
+// the startup check's published version, or the download cache when the
+// online half is unknown (offline mode, failed lookup) — is newer than the
+// applied version, or the applied version is unreadable.
+func TestDLSSUpdateTargetMarker(t *testing.T) {
+	cases := []struct {
+		name    string
+		applied string
+		online  string
+		cached  string
+		want    string
+	}{
+		{"nothing known", "3.7.20.0", "", "", ""},
+		{"older applied, online known", "3.7.20.0", "310.9.1", "", "310.9.1"},
+		{"current applied", "310.9.1.0", "310.9.1", "", ""},
+		{"newer applied", "310.10.0.0", "310.9.1", "", ""},
+		{"unreadable applied", "", "310.9.1", "", "310.9.1"},
+		{"online unknown, cached newer", "3.7.20.0", "", "310.5.3.0", "310.5.3.0"},
+		{"online unknown, cached current", "310.5.3.0", "", "310.5.3.0", ""},
+		{"online unknown, cached older", "310.9.0.0", "", "310.5.3.0", ""},
+		{"online unknown, cached unreadable", "", "", "310.5.3.0", "310.5.3.0"},
+		{"cached fresher than lagging tag", "3.7.20.0", "310.9.1", "310.9.2.0", "310.9.2.0"},
+		{"online wins over older cache", "3.7.20.0", "310.9.1", "310.5.3.0", "310.9.1"},
+	}
+	for _, tc := range cases {
+		if got := dlssUpdateTarget(&ui.GameRow{DLSSVersion: tc.applied}, tc.online, tc.cached); got != tc.want {
+			t.Errorf("%s: dlssUpdateTarget = %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }
@@ -178,7 +349,7 @@ func TestDLSSControl_ExternalRow(t *testing.T) {
 // TestDLSSUpdateClick_FiresUpdateNotSelect: clicking the version area
 // starts the update op and never selects the card.
 func TestDLSSUpdateClick_FiresUpdateNotSelect(t *testing.T) {
-	sess, gameRoot := dlssGUIFakes(t, nil)
+	sess, gameRoot, _ := dlssGUIFakes(t, nil)
 	row := scanOneRow(t, sess)
 	m := newModel(Config{Session: sess})
 
@@ -211,7 +382,7 @@ func TestDLSSUpdateClick_FiresUpdateNotSelect(t *testing.T) {
 // sets, Esc closes it, a menu pick asks for confirmation, and accepting
 // restores the complete set.
 func TestDLSSRestoreMenu_FullFlow(t *testing.T) {
-	sess, gameRoot := dlssGUIFakes(t, nil)
+	sess, gameRoot, _ := dlssGUIFakes(t, nil)
 	row := scanOneRow(t, sess)
 
 	// Produce one backup via a real update.
@@ -278,7 +449,7 @@ func TestDLSSRestoreMenu_FullFlow(t *testing.T) {
 // control collapses to the static pill (no click targets, no menu).
 func TestDLSSControl_BusyGameShowsStaticPill(t *testing.T) {
 	gate := make(chan struct{})
-	sess, gameRoot := dlssGUIFakes(t, gate)
+	sess, gameRoot, _ := dlssGUIFakes(t, gate)
 	row := scanOneRow(t, sess)
 	m := newModel(Config{Session: sess})
 	sess.UpdateDLSS(row.InstallDir) // held in-flight by the gated endpoint
@@ -315,7 +486,7 @@ func TestDLSSControl_BusyGameShowsStaticPill(t *testing.T) {
 // rows and Enter on a focused row dispatches the restore pick — the menu
 // is keyboard-reachable, not mouse-only.
 func TestDLSSMenuRowsKeyboardPickable(t *testing.T) {
-	sess, _ := dlssGUIFakes(t, nil)
+	sess, _, _ := dlssGUIFakes(t, nil)
 	row := scanOneRow(t, sess)
 	sess.UpdateDLSS(row.InstallDir)
 	waitSessEvent(t, sess, ui.EvOpDone)
@@ -369,7 +540,7 @@ func TestDLSSMenuRowsKeyboardPickable(t *testing.T) {
 // captured at open (m.dlssSnaps) — the backup directory is read once at
 // open, not per frame, and the rows stay stable across settle frames.
 func TestDLSSMenuRendersCapturedSnapshotList(t *testing.T) {
-	sess, _ := dlssGUIFakes(t, nil)
+	sess, _, _ := dlssGUIFakes(t, nil)
 	row := scanOneRow(t, sess)
 	sess.UpdateDLSS(row.InstallDir)
 	waitSessEvent(t, sess, ui.EvOpDone)

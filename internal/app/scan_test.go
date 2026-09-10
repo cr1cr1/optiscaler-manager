@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
@@ -119,6 +120,88 @@ func TestScanLibraryMultiStore(t *testing.T) {
 	}
 	if mg.Game.ExePath == "" {
 		t.Error("manual game ExePath empty, want resolved binary")
+	}
+}
+
+// TestComponentVersionsBareLabelsAndRawDLSS pins the card-badge parity fix:
+// a DLL whose version resource is unreadable must still yield its bare kind
+// label ("DLSS", "FSR", …) — the card's tech badge comes from file
+// presence, and a details pane that skipped the pill left versionless
+// installs with no DLSS update control at all. The second return is the
+// DLSS runtime's raw PE version — the applied version the update-
+// availability check compares against the online published version.
+func TestComponentVersionsBareLabelsAndRawDLSS(t *testing.T) {
+	stripped := t.TempDir()
+	writeScanFile(t, filepath.Join(stripped, "nvngx_dlss.dll"), testutil.StringInfoPE(false, nil, [4]uint16{}))
+	writeScanFile(t, filepath.Join(stripped, "amd_fidelityfx_dx12.dll"), testutil.FixedVersionPE(1, 0, 1, 41314))
+	writeScanFile(t, filepath.Join(stripped, "nvngx_dlssg.dll"), testutil.FixedVersionPE(310, 5, 3, 0))
+
+	versions, dlssRaw := ComponentVersions(stripped)
+	if got := versions["dlss"]; got != "DLSS" {
+		t.Errorf("stripped dlss = %q, want bare %q", got, "DLSS")
+	}
+	if got := versions["fsr"]; got != "FSR 3.1.4" {
+		t.Errorf("readable fsr = %q, want %q", got, "FSR 3.1.4")
+	}
+	if got := versions["dlss-fg"]; got != "DLSS-FG" {
+		t.Errorf("dlss-fg = %q, want static %q", got, "DLSS-FG")
+	}
+	if dlssRaw != "" {
+		t.Errorf("dlssRaw for a version-stripped DLL = %q, want empty", dlssRaw)
+	}
+
+	versioned := t.TempDir()
+	writeScanFile(t, filepath.Join(versioned, "nvngx_dlss.dll"), testutil.FixedVersionPE(3, 7, 20, 0))
+	versions, dlssRaw = ComponentVersions(versioned)
+	if got := versions["dlss"]; got != "DLSS 3.7.20" {
+		t.Errorf("versioned dlss = %q, want %q", got, "DLSS 3.7.20")
+	}
+	if dlssRaw != "3.7.20.0" {
+		t.Errorf("dlssRaw = %q, want %q", dlssRaw, "3.7.20.0")
+	}
+}
+
+// TestLibraryEntryDLSSReadiness: the entry records the DLSS runtime's raw
+// version and whether the complete three-file set is present — the gates
+// that decide whether the DLSS pill is the interactive update control or a
+// static badge.
+func TestLibraryEntryDLSSReadiness(t *testing.T) {
+	steamRoot := mkSteamRoot(t)
+
+	partial := mkSteamGame(t, steamRoot, "300", "Partial Game", "PartialGame")
+	writeScanFile(t, filepath.Join(partial, "partialgame.exe"), []byte("GAME"))
+	writeScanFile(t, filepath.Join(partial, "nvngx_dlss.dll"), testutil.FixedVersionPE(3, 7, 20, 0))
+
+	ready := mkSteamGame(t, steamRoot, "301", "Ready Game", "ReadyGame")
+	writeScanFile(t, filepath.Join(ready, "readygame.exe"), []byte("GAME"))
+	for i, name := range dlss.Files {
+		writeScanFile(t, filepath.Join(ready, name), testutil.FixedVersionPE(3, 7, uint16(20+i), 0))
+	}
+
+	entries, err := ScanAllLibraries(context.Background(), nil, ScanAllOptions{SteamRoot: steamRoot})
+	if err != nil {
+		t.Fatalf("ScanAllLibraries: %v", err)
+	}
+	byName := entriesByName(entries)
+	p, ok := byName["Partial Game"]
+	if !ok {
+		t.Fatal("partial game missing")
+	}
+	if p.DLSSVersion != "3.7.20.0" {
+		t.Errorf("partial DLSSVersion = %q, want 3.7.20.0", p.DLSSVersion)
+	}
+	if p.DLSSReady {
+		t.Error("partial set must not be update-ready")
+	}
+	r, ok := byName["Ready Game"]
+	if !ok {
+		t.Fatal("ready game missing")
+	}
+	if !r.DLSSReady {
+		t.Error("complete set must be update-ready")
+	}
+	if r.DLSSVersion != "3.7.20.0" {
+		t.Errorf("ready DLSSVersion = %q, want 3.7.20.0", r.DLSSVersion)
 	}
 }
 

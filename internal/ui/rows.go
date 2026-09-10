@@ -57,6 +57,13 @@ type GameRow struct {
 	CompatPrefix      string       // Proton prefix (linux only); "" when absent
 	OptiScalerVersion string       // "" when not installed or unknown
 	Components        []string     // marketing names, e.g. ["DLSS 3.7.10","FSR 3.1.4"]
+	// DLSSVersion is the raw PE version of nvngx_dlss.dll ("1.2.3.4" form,
+	// "" unreadable/absent): the applied version the frontends compare
+	// against the session's DLSSLatest to mark an update as available.
+	// DLSSReady reports the complete three-file runtime set — only ready
+	// rows render the DLSS pill as the interactive update control.
+	DLSSVersion string
+	DLSSReady   bool
 }
 
 // SortMode selects the row ordering VisibleRows applies.

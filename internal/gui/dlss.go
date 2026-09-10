@@ -6,6 +6,7 @@ import (
 	. "go.hasen.dev/shirei"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
+	"github.com/cr1cr1/optiscaler-manager/internal/version"
 )
 
 // dlssSnapshotItem is the restore menu's observability seam: one entry per
@@ -23,11 +24,39 @@ type dlssSnapshotItem struct {
 // badge. Both the card and the detail panel route through this so the
 // dispatch rule lives in exactly one place.
 func (m *model) componentPill(e *ui.GameRow, p ui.Badge) {
-	if strings.HasPrefix(p.Label, "DLSS ") {
+	if isDLSSPill(p.Label) {
 		m.dlssControl(e, p.Label)
 		return
 	}
 	badgePill(p.Label, p.Tone)
+}
+
+// isDLSSPill reports whether a component label is the DLSS control's pill:
+// the versioned "DLSS 4.5" or the bare "DLSS" a version-stripped DLL
+// degrades to. "DLSS-FG" is a static badge — frame generation has no
+// update path.
+func isDLSSPill(label string) bool {
+	return label == "DLSS" || strings.HasPrefix(label, "DLSS ")
+}
+
+// dlssUpdateTarget is the update-available marker appended to the DLSS
+// control's version segment: the best known candidate — the startup
+// check's published version, or the download cache when the online half
+// is unknown (offline mode, failed lookup), whichever is newer — when the
+// applied raw version is either unreadable or older than it. "" = up to
+// date (or status unknown).
+func dlssUpdateTarget(e *ui.GameRow, online, cached string) string {
+	candidate := online
+	if cached != "" && (candidate == "" || version.Compare(cached, candidate) > 0) {
+		candidate = cached
+	}
+	if candidate == "" {
+		return ""
+	}
+	if e.DLSSVersion != "" && version.Compare(e.DLSSVersion, candidate) >= 0 {
+		return ""
+	}
+	return candidate
 }
 
 // dlssControl renders the DLSS component pill as a dual-color control:
@@ -36,7 +65,7 @@ func (m *model) componentPill(e *ui.GameRow, p ui.Badge) {
 // small arrow opens the backup-set restore menu. Non-DLSS pills and busy
 // games fall back to the static badgePill.
 func (m *model) dlssControl(e *ui.GameRow, label string) {
-	if m.sess == nil || !strings.HasPrefix(label, "DLSS ") || m.sess.OpBusy(e.InstallDir) {
+	if m.sess == nil || !e.DLSSReady || !isDLSSPill(label) || m.sess.OpBusy(e.InstallDir) {
 		if m.openDLSSDir == e.InstallDir {
 			m.openDLSSDir = "" // the control is gone; never leave a ghost menu
 		}
@@ -44,6 +73,12 @@ func (m *model) dlssControl(e *ui.GameRow, label string) {
 		return
 	}
 	version := strings.TrimSpace(strings.TrimPrefix(label, "DLSS"))
+	if target := dlssUpdateTarget(e, m.state.DLSSLatest.Version, m.state.DLSSCached); target != "" {
+		if version != "" {
+			version += " → "
+		}
+		version += target
+	}
 	Container(Attrs(Row, Gap(1), Corners(radiusS), BackgroundVec(toneColor(ui.ToneGreen))), func() {
 		Container(Attrs(Focusable, Row, CrossMid, Pad2(3, 3), Corners(radiusS)), func() {
 			FocusOnClick()

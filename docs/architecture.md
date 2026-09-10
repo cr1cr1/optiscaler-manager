@@ -246,10 +246,15 @@ manifest, so the warm-boot reconcile and the selection-time re-probe
 
 ## NVIDIA DLSS runtime update (v0.14)
 
-The DLSS version pill doubles as a control wherever a row reports a
-`DLSS <version>` component: pressing the version area updates the game's
-NVIDIA runtime from the official NVIDIA/DLSS repository, and a small ▼
-arrow beside it opens the restore menu of local backups. The control
+The DLSS version pill doubles as a control wherever a row reports a DLSS
+component — the versioned `DLSS <version>` pill or the bare `DLSS` pill a
+version-unreadable DLL degrades to (the bare label matches the card's
+tech badge, so a DLL whose version resource does not parse stays
+updatable instead of silently vanishing from the detail view; an
+unreadable applied version simply counts as older). Pressing the version
+area updates the game's NVIDIA runtime from the official NVIDIA/DLSS
+repository, and a small ▼ arrow beside it opens the restore menu of
+local backups. The control
 renders on the card and in the detail panel; busy games fall back to the
 static pill. Component versions parse for EVERY row with a resolved
 injection dir — plain games (no OptiScaler install) and external rows
@@ -259,10 +264,40 @@ game's, not the bundle's (OptiScaler ships only `optiscaler.dll` and
 un-updatable while their cards still showed the DLSS badge.
 `classify.Dir` already walked those directories for the tech badges, and
 only the few detected component DLLs get a bounded PE read. In the
-detail panel the status and version-pill rows sit ABOVE the 2:3 cover
-art: the cover scales with the panel width, so past a ~320px panel it
-alone overflows the scroll fold — pills below it would be out of view
-exactly where the update control is needed.
+detail panel the status and version-pill rows sit UNDER the 2:3 cover
+art, as before; the cover scales with the panel width, so at narrow
+windows the pill row can fall past the scroll fold — the panel viewport
+scrolls on wheel input (with a scrollbar), which keeps every row
+reachable without moving the pills off their familiar place. When the
+startup check knows the published version and the applied one is
+unreadable or older, the control's version segment grows a
+` → <published>` marker.
+
+## DLSS published-version check and cache-first updates (v0.14g)
+
+On startup (when online lookups are enabled) the session makes ONE call —
+GitHub's tags API for NVIDIA/DLSS (`/repos/NVIDIA/DLSS/tags?per_page=10`;
+newest-first is not a documented GitHub contract, so the greatest VERSION
+among the fetched tags wins, each carrying its commit SHA) — and stores
+the published version and commit; no DLL bytes are downloaded, and a
+failure stays silent (the status line just keeps its em-dashes). The TUI
+detail view shows `DLSS published: <v> · cached: <v>`, and the GUI's
+update marker uses the published half — or the cached half when the
+online one is unknown (offline mode, failed lookup): the cache's version
+then marks the pill too, so a newer cached set is never invisible.
+
+On a user press the update is cache-first: `dlss.Update` takes a commit
+hint — the startup check's tag commit, or the newest cached commit when
+the published one is unknown — and uses it only when that commit already
+sits complete in the download cache — otherwise it re-resolves `main` to
+the current immutable commit as before. Install always copies FROM the
+cache dir, never straight from the network. One tags call per startup,
+one API resolve per uncached commit; the tag→SHA may briefly lag `main`
+(a tag published before the latest commit), which only matters for a
+cache hit of an already-installed set — the installed version is not
+overwritten (the update marker shows nothing when applied >= published).
+The TUI mirrors the check with the same one-call policy; CLI surfaces
+remain deferred.
 
 `dlss.Update` is a three-file transaction, never a per-DLL picker: it
 requires the complete existing set (`nvngx_dlss.dll`, `nvngx_dlssd.dll`,
@@ -285,7 +320,9 @@ PE-validated before their hash is recorded, and any missing or
 mismatched member is refetched through the same routine — so a commit
 that is already cached costs one tiny GitHub API call and no DLL
 downloads, and a moved `main` resolves to a fresh commit dir whose
-bytes are fetched (a stale cache dir is never served). The
+bytes are fetched (a stale cache dir is never served). Presses with a
+known published commit skip even that resolve while the commit is
+complete in cache (the cache-first hint above). The
 cache holds only re-derivable downloads; snapshots stay under the state
 root. `dlss.Restore` backs the current set up
 first (so a restore is itself reversible), SHA-256 verifies every

@@ -171,15 +171,11 @@ func (m *Model) confirmCycle() {
 	}
 }
 
-// hasDLSS reports whether the row carries a detected DLSS component —
-// the cheap signal that the NVIDIA runtime DLLs may be on disk.
+// hasDLSS reports whether the row is DLSS-ready: the complete three-file
+// NVIDIA runtime set is present, so update and restore can run. A bare
+// "DLSS" pill (version-stripped DLLs) is ready; a DLSS-FG-only game is not.
 func hasDLSS(r ui.GameRow) bool {
-	for _, c := range r.Components {
-		if strings.HasPrefix(c, "DLSS") {
-			return true
-		}
-	}
-	return false
+	return r.DLSSReady
 }
 
 // findRow returns the snapshot row for dir, or nil.

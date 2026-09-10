@@ -3,14 +3,19 @@ package tui
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
@@ -473,10 +478,11 @@ func TestProgressViewZeroTotalNoPanic(t *testing.T) {
 }
 
 // TestDetailViewDLSSHintsTrackComponents: the u/p NVIDIA actions render
-// enabled exactly when the row carries a detected DLSS component — the
-// manager populates components for every row with an injection dir
-// (external installs included), so a hand-installed game with the NVIDIA
-// set must not see the dimmed "needs the NVIDIA DLL set" variant.
+// enabled exactly when the row is DLSS-ready — the complete three-file
+// NVIDIA runtime set is present (components parse for every row with an
+// injection dir, external installs included), so a hand-installed game with
+// the NVIDIA set must not see the dimmed "needs the NVIDIA DLL set"
+// variant. A bare "DLSS" pill (version-stripped DLLs) is ready too.
 func TestDetailViewDLSSHintsTrackComponents(t *testing.T) {
 	base := ui.GameRow{
 		Title:        "DLSS Game",
@@ -487,24 +493,105 @@ func TestDetailViewDLSSHintsTrackComponents(t *testing.T) {
 		Status:       domain.StatusExternal,
 	}
 
-	t.Run("external row with the NVIDIA set shows enabled u/p", func(t *testing.T) {
+	t.Run("ready row shows enabled u/p", func(t *testing.T) {
 		row := base
 		row.Components = []string{"DLSS 3.7.20"}
+		row.DLSSReady = true
 		out := detailModelFor(t, row).detailView(100, 40)
 		plain := sgrRE.ReplaceAllString(out, "")
 		if strings.Contains(plain, "needs the NVIDIA DLL set") {
-			t.Errorf("external row with DLSS components rendered the dimmed hint: %q", plain)
+			t.Errorf("ready row rendered the dimmed hint: %q", plain)
 		}
 		if !strings.Contains(plain, "u  update NVIDIA DLSS set") {
 			t.Errorf("update hint missing: %q", plain)
 		}
 	})
 
-	t.Run("row without components keeps the dimmed hint", func(t *testing.T) {
-		out := detailModelFor(t, base).detailView(100, 40)
+	t.Run("bare DLSS pill is ready too", func(t *testing.T) {
+		row := base
+		row.Components = []string{"DLSS"}
+		row.DLSSReady = true
+		out := detailModelFor(t, row).detailView(100, 40)
 		plain := sgrRE.ReplaceAllString(out, "")
-		if !strings.Contains(plain, "needs the NVIDIA DLL set") {
-			t.Errorf("component-less row lost the dimmed hint: %q", plain)
+		if strings.Contains(plain, "needs the NVIDIA DLL set") {
+			t.Errorf("bare-DLSS ready row rendered the dimmed hint: %q", plain)
 		}
 	})
+
+	t.Run("unready row keeps the dimmed hint", func(t *testing.T) {
+		row := base
+		row.Components = []string{"DLSS 3.7.20"}
+		out := detailModelFor(t, row).detailView(100, 40)
+		plain := sgrRE.ReplaceAllString(out, "")
+		if !strings.Contains(plain, "needs the NVIDIA DLL set") {
+			t.Errorf("unready row lost the dimmed hint: %q", plain)
+		}
+	})
+}
+
+// TestDetailViewDLSSStatusLine: once the startup check filled the published
+// and cached DLSS versions, the detail view shows them so the user can see
+// whether pressing the badge would hit the cache or download. The check runs
+// for real against a fake tags endpoint; the download cache is seeded the
+// shape ensureCache leaves.
+func TestDetailViewDLSSStatusLine(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/NVIDIA/DLSS/tags", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[{"name":"v310.9.1","commit":{"sha":"` + strings.Repeat("e", 40) + `"}}]`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	row := ui.GameRow{
+		Title:        "DLSS Game",
+		AppID:        "100",
+		InstallDir:   "/games/dlss",
+		InjectionDir: "/games/dlss/bin",
+		Platform:     "Steam",
+		Status:       domain.StatusExternal,
+		Components:   []string{"DLSS 3.7.20"},
+		DLSSReady:    true,
+		DLSSVersion:  "3.7.20.0",
+	}
+	settingsDir := t.TempDir()
+	var cacheDir string
+	e := newTestEnv(t, func(d *ui.Deps) {
+		d.SettingsRoot = settingsDir
+		d.DLSS = dlss.NewWithBaseURLs(srv.Client(), srv.URL, srv.URL)
+		cacheDir = d.CacheDir
+	})
+	seedTUIDLSSCache(t, cacheDir, strings.Repeat("a", 40), 310, 6)
+	seedGamesCache(t, settingsDir, []ui.GameRow{row})
+	e.sess.SetOnlineLookups(true)
+	e.sess.Start(context.Background())
+	m := Model{sess: e.sess, screen: screenDetail, detailDir: row.InstallDir}
+	waitDLSSStatus(t, m)
+	plain := sgrRE.ReplaceAllString(m.detailView(100, 40), "")
+	if !strings.Contains(plain, "published: 310.9.1") || !strings.Contains(plain, "cached: 310.6.0.0") {
+		t.Errorf("DLSS status line missing from detail view:\n%s", plain)
+	}
+}
+
+// waitDLSSStatus blocks until the startup check has filled
+// State.DLSSLatest (bounded, failing the test on timeout).
+func waitDLSSStatus(t *testing.T, m Model) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for m.sess.Snapshot().DLSSLatest.Version == "" {
+		if time.Now().After(deadline) {
+			t.Fatal("startup DLSS check never reported a published version")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// seedTUIDLSSCache plants a complete commit-keyed download-cache dir via
+// the shared testutil seeder (same shape the tui cache tests need).
+func seedTUIDLSSCache(t *testing.T, cacheRoot, commit string, maj, min uint16) {
+	t.Helper()
+	files := map[string][]byte{}
+	for i, name := range dlss.Files {
+		files[name] = testutil.FixedVersionPE(maj, min, uint16(i), 0)
+	}
+	testutil.SeedDLSSCacheDir(t, cacheRoot, commit, files)
 }

@@ -2670,3 +2670,91 @@ opens the restore menu of local backup sets.
 - Docs: architecture.md external-probe and DLSS-control paragraphs
   corrected (components parse for external rows; pills above the cover),
   plan.md T3 and scope.md suppression claims revised.
+
+## 2026-09-12 — v0.14g: pills back under the poster; bare-label DLSS parity; startup published check with cache-first presses
+
+- User feedback on v0.14f, two points: (1) the pill relocation above the
+  cover art is rejected — restore the familiar under-poster order; (2) the
+  real card-badge/detail-pill divergence was still unfixed — a game whose
+  NVIDIA DLLs carry no readable version resource showed the card's DLSS
+  badge but NO detail pill at all, so NVIDIA DLSS could not be updated
+  there. Plus a new flow request: remember the applied version, check the
+  published one once on startup (no downloads), and make a press fetch
+  from cache when current, else download — installing always from cache.
+- Root cause of (2) found and fixed: `ComponentVersions` SKIPPED a
+  component whose PE version read failed, so a version-stripped DLL
+  produced no detail pill while the card's filename-based badge still
+  showed `DLSS`. Fix: the version-parse failure now degrades to a bare
+  kind label (`DLSS`), matching the card badge; pinned versions still win
+  over bare labels in the merge order. `DLSS-FG` renders as a static pill
+  for card parity (frame generation has no update path; `isDLSSPill` keeps
+  it out of the interactive control).
+- Layout (1): detail panel order reverted to header → cover → path →
+  status row → pills row → fields (comment explains the revert); the
+  panel viewport now scrolls on wheel input (`ScrollOnInput` + the
+  pre-existing `scrollBars()`), so a fold-cut pill row stays reachable
+  without moving it. Geometry probes measured the pill row at Y≈647 of a
+  661px fold at panel width 330 — under the poster but reachable by
+  scroll; long install paths (they wrap) can push it just past the fold,
+  which is exactly what the wheel scroll is for.
+- Startup check: one GitHub tags-API call for NVIDIA/DLSS
+  (`/repos/NVIDIA/DLSS/tags?per_page=10` — greatest VERSION among the
+  fetched tags, each with its commit SHA; newest-first is not a
+  documented GitHub contract, and the old `version.json` plan was dropped
+  after a live 404 check proved that file does not exist on `main`),
+  gated on online lookups, failures silent. `dlss.Client.Latest` returns `Latest{Version, Commit}`; the
+  session stores it (`State.DLSSLatest`) and broadcasts `EvDLSSStatus`.
+  The TUI detail view shows `DLSS published: <v> · cached: <v>`.
+- Cache-first press: `dlss.Update` gained a commit-hint parameter used
+  ONLY when that commit is complete in the download cache
+  (`cacheComplete` checks manifest membership + file presence);
+  otherwise it re-resolves `main` as before — the stale-bytes invariant
+  is untouched. Install always copies from the cache dir. The hint is the
+  startup commit, falling back to the newest CACHED commit when the
+  online half is unknown (offline mode, failed check) — an offline press
+  on a cached set needs zero network. The GUI's update marker follows the
+  same candidate order (published, else cached) so a newer cached set is
+  never invisible; accepted edge: a tag may briefly lag `main`, which
+  only matters for a cache hit of an already-installed set (the update
+  marker suppresses itself when applied >= published).
+- `dlss.CachedVersion(cacheRoot)` reports the newest complete cached
+  commit's runtime version (PE-read of the cached `nvngx_dlss.dll`),
+  surfaced in `State.DLSSCached` and refreshed after every DLSS op.
+- `LibraryEntry` gained `DLSSVersion` (raw PE version of the applied
+  `nvngx_dlss.dll`) and `DLSSReady` (complete three-file set), persisted
+  through games.json; the TUI's `u`/`p` hints now gate on `DLSSReady`
+  instead of a versioned component label, so bare-label games get honest
+  TUI hints too. The GUI update marker (`dlssUpdateTarget`) shows
+  ` → <published>` when the applied version is unreadable or older.
+- New tests: app `TestComponentVersionsBareLabelsAndRawDLSS`,
+  `TestLibraryEntryDLSSReadiness`; dlss `TestLatestResolvesPublishedVersionWithoutDownloading`,
+  `TestLatestErrorsWithoutTags`, `TestCachedVersionReadsNewestCompleteCacheSet`,
+  `TestUpdateUsesCommitHintWithoutNetwork`; ui `TestCheckDLSSStartupStatus`,
+  `TestCheckDLSSOfflineLookupsOff`, `TestUpdateDLSSRefreshesCachedStatus`,
+  `TestUpdateDLSSUsesStartupCommitHint`, `TestUpdateDLSSUsesCachedCommitOffline`;
+  gui `TestDLSSControl_StrippedVersionStillUpdatable`
+  (bare pill + scroll reachability + click installs the published set),
+  `TestDLSSControl_CachedMarkerOffline` (cached half marks the pill
+  offline), `TestDLSSUpdateTargetMarker` (candidate = published, else
+  cached); tui `TestDetailViewDLSSHintsTrackComponents`
+  (rewritten: ready/bare/unready), `TestDetailViewDLSSStatusLine`; ui
+  `TestStart_PreV6CacheFallsThroughToScan` (schema 6 invalidation).
+- Reverted v0.14f's above-cover move per user decision; the v0.14f
+  external-row parse fix itself stays (it was correct and necessary).
+  The small-window "pills fit" assertions were replaced by scroll
+  reachability — probe-measured: the pill row can sit a hair past the
+  fold depending on install-path wrap length, so fit-at-window is
+  path-length-dependent and unreachable-by-design is the honest test.
+- Review-round hardening (both axes): the games-list cache schema bumped
+  to 6 so v0.8 warm-boot caches (rows without the DLSS fields) fall
+  through to a real scan instead of showing static DLSS pills until a
+  manual rescan; the cache-seeding test helper deduplicated into
+  `testutil.SeedDLSSCacheDir` (the dlss package keeps its own seeder — a
+  testutil→dlss import would cycle); `isHexSHA`/`dlssCacheDir` extracted
+  in the dlss package; `TestUpdateUsesCommitHintWithoutNetwork`'s fallback
+  path now asserts downloads actually happened.
+- Docs: architecture.md DLSS section rewritten (under-poster order +
+  scroll, bare-label pills, new "published-version check and cache-first
+  updates" section), scope.md v0.14 bullet updated (startup tags call,
+  cache-first hint, bare-label degradation; "update-available checks"
+  removed from deferred), README DLSS paragraph extended.

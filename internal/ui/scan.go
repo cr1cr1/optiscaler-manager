@@ -20,8 +20,12 @@ import (
 // Start boots the library: a warm games cache hydrates the rows
 // synchronously (status reconciled from store manifests — no PE parsing, no
 // reclassification) and no scan runs; a missing or unusable cache falls
-// through to Scan. Safe to call once at frontend boot.
+// through to Scan. Safe to call once at frontend boot. The DLSS
+// availability check runs here too: the cached half is local, the online
+// half is async (one tags call, no runtime bytes) like the warm-boot
+// default-version resolve.
 func (s *Session) Start(ctx context.Context) {
+	s.CheckDLSS(ctx)
 	rows := loadGamesCache(s.deps.SettingsRoot, s.deps.GOOS)
 	if len(rows) == 0 {
 		s.Scan(ctx)
@@ -373,6 +377,8 @@ func (s *Session) toRow(ctx context.Context, e app.LibraryEntry) GameRow {
 		TitleSource:       string(e.Game.TitleSource),
 	}
 	row.Components = componentLabels(e.ComponentVersions)
+	row.DLSSVersion = e.DLSSVersion
+	row.DLSSReady = e.DLSSReady
 	for _, tech := range e.Tech {
 		row.TechBadges = append(row.TechBadges, badgeForTech(tech))
 	}

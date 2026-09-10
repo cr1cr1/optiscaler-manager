@@ -21,6 +21,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/classify"
 	"github.com/cr1cr1/optiscaler-manager/internal/discovery"
+	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
 	"github.com/cr1cr1/optiscaler-manager/internal/installer"
@@ -128,6 +129,13 @@ type LibraryEntry struct {
 
 	OptiScalerVersion string            // "" when not installed or unknown
 	ComponentVersions map[string]string // "dlss"/"fsr"/"xess" → marketing name
+	// DLSSVersion is the raw PE version of the game's nvngx_dlss.dll (""
+	// unreadable/absent) — the applied version the DLSS
+	// update-availability check compares against the online published
+	// version. DLSSReady reports the complete three-file NVIDIA runtime
+	// set: only then is the DLSS pill the interactive update control.
+	DLSSVersion string
+	DLSSReady   bool
 	// Disabled reports the install's injection hook renamed to
 	// <name>.disabled: OptiScaler is present but the game will not load it.
 	Disabled bool
@@ -269,7 +277,19 @@ func probeInstallState(e *LibraryEntry) {
 // plain game stays bounded: classify.Dir already walks those dirs for the
 // tech badges, and only the few detected component DLLs are read.
 func enrichVersions(e *LibraryEntry, m *domain.Manifest) {
-	if e.InjectionDir == "" {
+	// Version pills parse from the injection dir. A game whose injection
+	// dir never resolved still gets presence-only pills parsed from its
+	// install root — the card tech badges come from that same walk, and a
+	// details pane showing nothing while the card shows badges is exactly
+	// the card/detail divergence this guards against. Ready/version stay
+	// injection-dir facts: without a resolved dir there is nothing the
+	// DLSS update can act on.
+	dir := e.InjectionDir
+	presence := dir
+	if presence == "" {
+		presence = e.Game.InstallDir
+	}
+	if presence == "" {
 		return
 	}
 	managed := e.Status == domain.StatusCommitted ||
@@ -280,33 +300,62 @@ func enrichVersions(e *LibraryEntry, m *domain.Manifest) {
 			e.OptiScalerVersion = m.Resolved.Version
 		}
 	}
-	e.ComponentVersions = ComponentVersions(e.InjectionDir)
+	if e.InjectionDir == "" {
+		var labels map[string]string
+		labels, _ = ComponentVersions(presence)
+		e.ComponentVersions = labels
+		return
+	}
+	e.ComponentVersions, e.DLSSVersion = ComponentVersions(e.InjectionDir)
+	e.DLSSReady = dlss.Complete(e.InjectionDir)
 }
 
 // ComponentVersions parses each detected upscaler DLL under dir and maps it
-// to the vendor marketing name. Unparseable DLLs are skipped, never fatal.
-func ComponentVersions(dir string) map[string]string {
-	var out map[string]string
+// to the vendor marketing name. A DLL whose version resource is unreadable
+// degrades to its bare kind label ("DLSS", "FSR", "XeSS") instead of being
+// skipped: the card tech badges come from file presence alone, so dropping
+// the pill made the details pane show fewer badges than the card — and for
+// DLSS that dropped the update control entirely. DLSS-FG has no marketing
+// table and no update path; it renders its static kind label. The second
+// return is the raw PE version of the first readable nvngx_dlss.dll — the
+// applied version the update-availability check compares against.
+func ComponentVersions(dir string) (map[string]string, string) {
+	dlssRaw := ""
+	seen := map[string]bool{}   // kind attempted at least once
+	pinned := map[string]bool{} // kind holds a final versioned label
+	out := map[string]string{}
 	for _, f := range classify.DirFiles(dir) {
-		kind, ok := peverKind(f.Kind)
-		if !ok {
-			continue // e.g. DLSS-FG has no marketing table
-		}
 		key := strings.ToLower(f.Kind.String())
-		if _, dup := out[key]; dup {
+		kind, versioned := peverKind(f.Kind)
+		if !versioned && f.Kind != domain.KindDLSSFG {
 			continue
 		}
+		// One member per kind: a pinned version wins and later members of
+		// the kind are skipped; until then every member is retried, so a
+		// version-stripped first copy does not hide a readable second one.
+		if seen[key] && (pinned[key] || !versioned) {
+			continue
+		}
+		seen[key] = true
 		raw, err := pever.FileVersion(f.Path)
 		if err != nil {
-			log.Debug().Err(err).Str("dll", f.Path).Msg("upscaler DLL version unreadable, skipping")
+			log.Debug().Err(err).Str("dll", f.Path).Msg("upscaler DLL version unreadable, degrading to bare label")
+			if _, any := out[key]; !any {
+				out[key] = f.Kind.String()
+			}
 			continue
 		}
-		if out == nil {
-			out = map[string]string{}
+		if versioned {
+			out[key] = pever.MarketingName(kind, raw)
+			pinned[key] = true
+		} else {
+			out[key] = f.Kind.String() // DLSS-FG: static, no marketing table
 		}
-		out[key] = pever.MarketingName(kind, raw)
+		if key == "dlss" && dlssRaw == "" {
+			dlssRaw = raw
+		}
 	}
-	return out
+	return out, dlssRaw
 }
 
 func peverKind(k domain.Kind) (pever.Kind, bool) {

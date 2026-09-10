@@ -510,7 +510,14 @@ decisions the per-version sections above do not cover.
 - **Immutable-commit source**: NVIDIA/DLSS `main` resolves to a commit
   SHA via the GitHub API; files come from
   `lib/Windows_x86_64/rel/<name>` at that exact commit. No mutable-URL
-  fetches, no release/version picker, no update-available polling.
+  fetches, no release/version picker. The published version is learned
+  from ONE tags-API call on startup (greatest version among the fetched
+  tags → version + commit; no DLL bytes) and a press is cache-first: the
+  known commit — the published tag's, or the download cache's newest when
+  the online half is unknown — is used only while it is complete in the
+  download cache, else `main` re-resolves. Warm-boot caches from older
+  app versions are invalidated (schema 6) so the new row fields are
+  always present.
 - **Snapshot backups + restore menu**: every update and restore first
   persists a hash-verified snapshot of the current set under
   `<data-root>/dlss-backups/`; the pill's ▼ arrow lists them (newest
@@ -527,12 +534,14 @@ decisions the per-version sections above do not cover.
 - **Session integration**: the ops ride the per-game busy/cancel slot;
   success re-probes component versions so the pill updates immediately.
 - **Plain-game component enrichment**: component versions now parse for
-  every row with a resolved injection dir (external rows stay
-  suppressed), so a game with DLSS but no OptiScaler install still
-  shows the pressable DLSS label. `classify.Dir` already walked those
+  every row with a resolved injection dir (external rows included since
+  v0.14f), so a game with DLSS but no OptiScaler install still shows
+  the pressable DLSS label. A DLL whose version resource does not
+  parse degrades to a bare `DLSS` pill that stays pressable.
+  `classify.Dir` already walked those
   dirs for tech badges; only detected component DLLs get a bounded PE
   read.
 - **Deferred**: CLI surfaces, DLSS-FG/DLSSD-only actions, version
-  picker, update-available checks, scheduled checks, bulk update,
+  picker, scheduled checks, bulk update,
   snapshot pruning (the newest-first menu plus ~115 MB per snapshot
   stays acceptable; revisit when a user accumulates dozens).

@@ -20,6 +20,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/jsoncache"
 	"github.com/cr1cr1/optiscaler-manager/internal/pever"
+	"github.com/cr1cr1/optiscaler-manager/internal/version"
 )
 
 // Files is the NVIDIA DLSS runtime set. Updates and restores always handle it together.
@@ -75,21 +76,37 @@ func (s Snapshot) Label() string {
 	return "DLSS " + version + " · " + s.CreatedAt.Local().Format("2006-01-02 15:04")
 }
 
-// Update downloads all three files at one immutable NVIDIA commit, backs up
-// the current complete set, then replaces the files. A failed replacement
-// restores every original before returning. Downloads are cached per commit
-// under cacheRoot (same layout as the OptiScaler bundle cache — fetch once
-// per version — plus a SHA-256 manifest).
-func Update(ctx context.Context, c *Client, cacheRoot, dataRoot, gameDir string) (Snapshot, error) {
+// Latest is the published NVIDIA DLSS runtime version as seen at check
+// time. Version is the newest tag ("310.9.1" form); Commit is the commit
+// that tag points at — the cache-key hint Update installs from.
+type Latest struct {
+	Version string
+	Commit  string
+}
+
+// Update installs the NVIDIA runtime set for gameDir from the download
+// cache: a commit hint whose cache dir is complete (the startup check's
+// published commit already fetched) is served with zero network; anything
+// else resolves main's head, fetches missing members into the cache, and
+// installs from that cache dir — never straight from the network. Backs up
+// the current complete set first; a failed replacement restores every
+// original before returning. Downloads are cached per commit under
+// cacheRoot (same layout as the OptiScaler bundle cache — fetch once per
+// version — plus a SHA-256 manifest).
+func Update(ctx context.Context, c *Client, cacheRoot, dataRoot, gameDir, commitHint string) (Snapshot, error) {
 	if err := requireFiles(gameDir); err != nil {
 		return Snapshot{}, err
 	}
 	if c == nil {
 		return Snapshot{}, fmt.Errorf("dlss: no download client")
 	}
-	commit, err := c.commit(ctx)
-	if err != nil {
-		return Snapshot{}, err
+	commit := commitHint
+	if commit == "" || !cacheComplete(cacheRoot, commit) {
+		resolved, err := c.commit(ctx)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		commit = resolved
 	}
 	cached, err := c.ensureCache(ctx, cacheRoot, commit)
 	if err != nil {
@@ -199,6 +216,126 @@ func (c *Client) commit(ctx context.Context) (string, error) {
 	return body.SHA, nil
 }
 
+// isHexSHA reports whether s is a 40-char hex commit SHA — the only shape
+// the update flow accepts out of the GitHub API.
+func isHexSHA(s string) bool {
+	return len(s) == 40 && strings.Trim(s, "0123456789abcdef") == ""
+}
+
+// dlssCacheDir is the download-cache layout for one commit, sibling of the
+// OptiScaler bundle cache under the shared cacheDir root. An empty commit
+// yields the dlss cache root itself.
+func dlssCacheDir(cacheRoot, commit string) string {
+	return filepath.Join(cacheRoot, "dlss", commit)
+}
+
+// Latest resolves the newest published DLSS runtime version WITHOUT
+// downloading runtime bytes: one small tags-API call returns the newest
+// tag and the commit it points at. This is the startup check half of the
+// update flow; the runtime files themselves are only ever fetched on user
+// action (Update).
+func (c *Client) Latest(ctx context.Context) (Latest, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiBase+"/repos/NVIDIA/DLSS/tags?per_page=10", nil)
+	if err != nil {
+		return Latest{}, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return Latest{}, fmt.Errorf("dlss: resolve published version: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return Latest{}, fmt.Errorf("dlss: resolve published version: unexpected HTTP %d", resp.StatusCode)
+	}
+	var body []struct {
+		Name   string `json:"name"`
+		Commit struct {
+			SHA string `json:"sha"`
+		} `json:"commit"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return Latest{}, fmt.Errorf("dlss: decode published version: %w", err)
+	}
+	// Newest-first is not a documented GitHub contract: pick the greatest
+	// version among the fetched tags. A tag whose version or commit SHA
+	// does not parse is not a servable candidate; no candidate at all is
+	// the error.
+	best := -1
+	for i, tag := range body {
+		name := strings.TrimPrefix(tag.Name, "v")
+		if name == "" || !isHexSHA(tag.Commit.SHA) {
+			continue
+		}
+		if best == -1 || version.Compare(name, strings.TrimPrefix(body[best].Name, "v")) > 0 {
+			best = i
+		}
+	}
+	if best == -1 {
+		return Latest{}, fmt.Errorf("dlss: no servable published versions")
+	}
+	return Latest{Version: strings.TrimPrefix(body[best].Name, "v"), Commit: body[best].Commit.SHA}, nil
+}
+
+// cacheComplete reports whether a commit's cache dir holds a manifest entry
+// and a regular file for every runtime member. Existence-only, the same
+// reuse check as the OptiScaler bundle cache — ensureCache re-hashes and
+// PE-validates every member before any install, so the display/hint path
+// needs no digest pass.
+// ponytail: existence-only completeness; a corrupted member costs one
+// refetch at press time, caught by the same gate that already guards it.
+func cacheComplete(cacheRoot, commit string) bool {
+	if cacheRoot == "" {
+		return false
+	}
+	rec, err := loadCacheRecord(dlssCacheDir(cacheRoot, commit))
+	if err != nil {
+		return false
+	}
+	for _, name := range Files {
+		if rec.Files[name] == "" {
+			return false
+		}
+		st, err := os.Stat(filepath.Join(dlssCacheDir(cacheRoot, commit), name))
+		if err != nil || !st.Mode().IsRegular() {
+			return false
+		}
+	}
+	return true
+}
+
+// CachedVersion returns the newest version available in the local download
+// cache ("" when none) and the commit dir that holds it: every complete
+// commit dir's nvngx_dlss.dll is PE-read and the greatest version wins.
+// Local-only — the startup check's cached half never touches the network;
+// the commit lets an offline press serve the cache without resolving
+// online first.
+// ponytail: PE-reads every complete cache dir; the cache holds a handful
+// of commits, so the bounded reads stay trivial. Version-pin them in the
+// manifest if this ever grows.
+func CachedVersion(cacheRoot string) (string, string) {
+	entries, err := os.ReadDir(dlssCacheDir(cacheRoot, ""))
+	if err != nil {
+		return "", ""
+	}
+	best, bestCommit := "", ""
+	for _, e := range entries {
+		if !e.IsDir() || !cacheComplete(cacheRoot, e.Name()) {
+			continue
+		}
+		v, err := pever.FileVersion(filepath.Join(dlssCacheDir(cacheRoot, e.Name()), Files[0]))
+		if err != nil {
+			// Unreadable cache bytes can't be displayed or served; the
+			// next update refetches them anyway.
+			log.Warn().Err(err).Str("dir", e.Name()).Msg("dlss: cached DLL unreadable")
+			continue
+		}
+		if best == "" || version.Compare(v, best) > 0 {
+			best, bestCommit = v, e.Name()
+		}
+	}
+	return best, bestCommit
+}
+
 // ensureCache ensures the commit-keyed download cache holds a complete
 // file set, fetching only the missing or hash-failed members through the
 // same raw-file routine as before (same source, same destination shape as
@@ -214,7 +351,7 @@ func (c *Client) ensureCache(ctx context.Context, cacheRoot, commit string) (str
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	dir := filepath.Join(cacheRoot, "dlss", commit)
+	dir := dlssCacheDir(cacheRoot, commit)
 	rec, err := loadCacheRecord(dir)
 	if err != nil {
 		// An unreadable or corrupt manifest degrades to a full refetch: the
@@ -298,6 +435,11 @@ func requireFiles(gameDir string) error {
 	}
 	return nil
 }
+
+// Complete reports whether gameDir holds the complete regular-file NVIDIA
+// runtime set — the scan-layer gate that decides whether the DLSS pill is
+// the interactive update control or a static badge.
+func Complete(gameDir string) bool { return requireFiles(gameDir) == nil }
 
 func backup(dataRoot, gameDir, source string) (Snapshot, error) {
 	id := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
