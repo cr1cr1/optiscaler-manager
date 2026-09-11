@@ -2805,3 +2805,67 @@ opens the restore menu of local backup sets.
   snapshots still deduplicate).
 - Docs: architecture.md press-compare and dedup paragraphs, scope.md
   v0.14 bullet, README DLSS paragraph.
+
+## 2026-09-12 — v0.14i: one dropdown machinery for all menus; hand cursor over clickables
+
+- User request: the DLSS pill's restore menu implemented its own arrow and
+  its own dropdown menu — make it use the same menu as the OptiScaler
+  version picker with the same functionality, use the same (larger) arrow
+  for both, and make every clickable component hover with the `hand`
+  cursor.
+- Prerequisite repair first (commit `3fd798d`): the dependency upgrade's
+  `go mod vendor` had wiped all eight vendored shirei patches; they were
+  spliced onto the pristine v0.6.10 sources (v0.12 resize-redraw and
+  v0.15 skip-unchanged-frames are superseded upstream and no longer
+  reapplied — the CSD guard now asserts the upstream mechanisms), and the
+  app was adapted to v0.6.10's new widget semantics (`ButtonExt`/
+  `ToggleSwitchExt` faces are self-focusing tab stops that activate on
+  key release; the app wrappers are geometry + focus ring only; the sort
+  trigger consumes menu keys before its face renders; settings tests
+  follow the new press→release rhythm and the trap's auto-focus on open).
+- New `internal/gui/dropdown.go`: the shared dropdown machinery
+  (`dropdownState`, `dropdownOpenKeys`, `dropdownRow`, `dropdownPopup`,
+  `dropdownDismiss`, `dropdownArrow`). `versionDropdown`, `sortDropdown`
+  (trigger + rows), and `dlssRestoreMenu` all render through it; the
+  duplicated popup/keyboard/dismissal copies are gone and
+  `dropdownPosFor` (the rect-keyed variant the DLSS menu needed) is
+  deleted — the menu anchors through the trigger's container id like the
+  others.
+- DLSS restore menu behavior change (the point of the task): rows are no
+  longer Tab stops with their own focus rings; the clicked arrow trigger
+  keeps keyboard focus and drives the menu — Down/Up move a wrapping
+  highlight (starting on the newest snapshot), Enter picks the
+  highlighted row and closes, a moving mouse adopts the highlight, Esc
+  and click-outside dismiss. `openDLSSRestore` now reports the new open
+  state so the per-card `Use` state stays the single source of truth;
+  one menu open at a time across cards and panel via `m.openDLSSDir`
+  (ghost instances clear themselves).
+- One arrow: `dropdownArrow()` (the larger sorted-down icon glyph,
+  FontSize 11) is shared by the version picker's trigger and the DLSS
+  pill; the DLSS pill's old smaller `▼` text glyph (FontSize 10) is gone.
+  A test pins the DLSS arrow's rendered width to the shared arrow's.
+- Hand cursor (vendor patch v0.17, TDD): shirei gains
+  `CursorShapeDefault`/`CursorShapePointer` (wp_cursor_shape values) and
+  a `MouseCursorShape` var picked per frame from the hover chain —
+  innermost first: `TextEntry` keeps the arrow, the first `Focusable` or
+  `PointerHand` container asks for the pointing hand. The wayland backend
+  applies the shape after every frame before the unchanged-frame early
+  return (hover moves apply without repaint); tiers: compositor shape →
+  themed hand (`hand2`/`hand`/`pointing_hand`/`pointer`) → drawn arrow.
+  The app marks themed inputs `TextEntry` and the non-focusable click
+  affordances (sidebar items, view-switch segments, dropdown rows)
+  `PointerHand`; focusable components already get the hand. Headless
+  tests assert the picked shape per hover target
+  (`internal/gui/cursor_test.go`); X11/Win32 keep static cursors
+  (documented).
+- Tests: new `TestDLSSMenuKeyboardNavPicksHighlighted` (two-snapshot
+  seeding; Down/wrap/Up, Enter pick + close, hover adopt),
+  `TestDLSSArrow_UsesSharedDropdownArrow`, `TestMouseCursorShape_*`
+  (hover rule, app clickables, sidebar/segment chrome); the old
+  Tab-into-DLSS-rows test replaced by the nav model. Existing version/sort
+  dropdown, card, grid, settings, and focus tests pass unchanged in
+  behavior (rhythm updates only where v0.6.10's press→release semantics
+  require them).
+- Docs: architecture.md shared-dropdown + cursor section, DLSS section
+  pointer to it; vendor-patches.md v0.17 entry + v0.6.10 reapplication
+  notes.

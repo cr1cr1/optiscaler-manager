@@ -11,6 +11,7 @@ import (
 	"time"
 
 	. "go.hasen.dev/shirei"
+	. "go.hasen.dev/shirei/widgets"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
@@ -482,14 +483,25 @@ func TestDLSSControl_BusyGameShowsStaticPill(t *testing.T) {
 	}
 }
 
-// TestDLSSMenuRowsKeyboardPickable: Tab from the arrow walks into the menu
-// rows and Enter on a focused row dispatches the restore pick — the menu
-// is keyboard-reachable, not mouse-only.
-func TestDLSSMenuRowsKeyboardPickable(t *testing.T) {
-	sess, _, _ := dlssGUIFakes(t, nil)
+// TestDLSSMenuKeyboardNavPicksHighlighted: the restore menu shares the
+// version dropdown's keyboard model — the clicked arrow trigger keeps focus
+// and drives the menu: Down/Up move the highlight (wrapping), Enter picks
+// the highlighted row and closes, and a moving mouse adopts the highlight.
+// Rows are highlight-driven, not Tab stops.
+func TestDLSSMenuKeyboardNavPicksHighlighted(t *testing.T) {
+	sess, gameRoot, _ := dlssGUIFakes(t, nil)
 	row := scanOneRow(t, sess)
+	// Two snapshots: back up the shipped set, rewrite the game DLLs at a
+	// different version, back up again.
 	sess.UpdateDLSS(row.InstallDir)
 	waitSessEvent(t, sess, ui.EvOpDone)
+	bin := filepath.Join(gameRoot, "bin")
+	writeGUIFile(t, filepath.Join(bin, dlss.Files[0]), string(testutil.FixedVersionPE(4, 1, 0, 0)))
+	sess.UpdateDLSS(row.InstallDir)
+	waitSessEvent(t, sess, ui.EvOpDone)
+	if snaps := sess.DLSSSnapshots(row.InstallDir); len(snaps) != 2 {
+		t.Fatalf("setup: %d snapshots, want 2", len(snaps))
+	}
 
 	m := newModel(Config{Session: sess})
 	var restored []string
@@ -506,34 +518,102 @@ func TestDLSSMenuRowsKeyboardPickable(t *testing.T) {
 		t.Fatal("no DLSS arrow rect")
 	}
 	clickRect(ar, view)
-	keyFrame(KeyCodeNone, 0, view) // menu rows render
-	if len(m.dlssSnapshotItems) != 1 {
-		t.Fatalf("menu rows %d, want 1", len(m.dlssSnapshotItems))
+	keyFrame(KeyCodeNone, 0, view) // menu rows render; the highlight starts on the first row
+	if len(m.dlssSnapshotItems) != 2 {
+		t.Fatalf("menu rows %d, want 2", len(m.dlssSnapshotItems))
 	}
-	cid := m.dlssSnapshotItems[0].cid
-
-	focused := false
-	for tabs := 1; tabs <= 6; tabs++ {
-		keyFrame(KeyTab, 0, view)
-		keyFrame(KeyCodeNone, 0, view) // focus change settles
-		if IdHasFocus(cid) {
-			focused = true
-			t.Logf("menu row focused after %d Tab(s)", tabs)
-			break
-		}
-	}
-	if !focused {
-		t.Fatal("menu row never took keyboard focus via Tab")
+	if !m.dlssSnapshotItems[0].hl || m.dlssSnapshotItems[1].hl {
+		t.Fatalf("open-time highlight %v/%v, want row 0", m.dlssSnapshotItems[0].hl, m.dlssSnapshotItems[1].hl)
 	}
 
+	// Down moves to row 1; Down again wraps to row 0; Up back to row 1.
+	keyFrame(KeyDown, 0, view) // the focused trigger consumes and moves the highlight
+	if !m.dlssSnapshotItems[1].hl || m.dlssSnapshotItems[0].hl {
+		t.Fatalf("after Down: %v/%v, want row 1", m.dlssSnapshotItems[0].hl, m.dlssSnapshotItems[1].hl)
+	}
+	keyFrame(KeyDown, 0, view)
+	if !m.dlssSnapshotItems[0].hl || m.dlssSnapshotItems[1].hl {
+		t.Fatalf("after wrapping Down: %v/%v, want row 0", m.dlssSnapshotItems[0].hl, m.dlssSnapshotItems[1].hl)
+	}
+	keyFrame(KeyUp, 0, view)
+	if !m.dlssSnapshotItems[1].hl || m.dlssSnapshotItems[0].hl {
+		t.Fatalf("after Up: %v/%v, want row 1", m.dlssSnapshotItems[0].hl, m.dlssSnapshotItems[1].hl)
+	}
+
+	// Enter picks the highlighted row: the restore dispatches and the menu
+	// closes.
 	keyFrame(KeyEnter, 0, view)
-	keyFrame(KeyCodeNone, 0, view)
 	if len(restored) != 1 {
-		t.Fatalf("Enter on the focused row dispatched %d restores, want 1", len(restored))
+		t.Fatalf("Enter on the highlighted row dispatched %d restores, want 1", len(restored))
 	}
 	if m.openDLSSDir != "" {
 		t.Errorf("pick did not close the menu (open %q)", m.openDLSSDir)
 	}
+
+	// Hover-adopt: reopening the menu and moving the mouse over a row
+	// adopts it as the highlight (the mouse-motion gate).
+	clickRect(ar, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if m.openDLSSDir == "" {
+		t.Fatal("reopen did not open the menu")
+	}
+	if !m.dlssSnapshotItems[0].hl {
+		t.Fatalf("reopen highlight %v/%v, want row 0", m.dlssSnapshotItems[0].hl, m.dlssSnapshotItems[1].hl)
+	}
+	target := m.dlssSnapshotItems[1].rect
+	GetInputState().MousePoint = Vec2{target.Origin[0] + 5, target.Origin[1] + target.Size[1]/2}
+	keyFrame(KeyCodeNone, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if !m.dlssSnapshotItems[1].hl || m.dlssSnapshotItems[0].hl {
+		t.Fatalf("hover did not adopt row 1: %v/%v", m.dlssSnapshotItems[0].hl, m.dlssSnapshotItems[1].hl)
+	}
+	t.Log("DLSS menu: highlight nav, Enter pick, and hover adopt via the shared model")
+}
+
+// TestDLSSArrow_UsesSharedDropdownArrow: the DLSS pill's arrow is the same
+// larger sorted-down icon the version-dropdown trigger uses, not the old
+// smaller text glyph.
+func TestDLSSArrow_UsesSharedDropdownArrow(t *testing.T) {
+	// Reference widths, rendered standalone: the shared larger icon arrow
+	// and the rejected smaller text glyph, each in the DLSS arrow's padding.
+	headlessFrames(t, 200, 100)
+	var iconRef, labelRef Rect
+	refView := func() {
+		Container(Attrs(Viewport, Row), func() {
+			// Same wrapper as the DLSS arrow container, so the widths are
+			// comparable: the icon's rect alone would miss the padding.
+			Container(Attrs(Pad2(3, 5), Corners(radiusS)), func() {
+				Icon(TypArrowSortedDown, FontSize(11), TextColor(0, 0, 96, 1))
+				iconRef = GetScreenRectOf(CurrentId())
+			})
+			Container(Attrs(Pad2(3, 5), Corners(radiusS)), func() {
+				Label("▼", FontSize(10), TextColor(0, 0, 96, 1))
+				labelRef = GetScreenRectOf(CurrentId())
+			})
+		})
+	}
+	keyFrame(KeyCodeNone, 0, refView)
+	keyFrame(KeyCodeNone, 0, refView)
+	if iconRef.Size[0] == 0 || labelRef.Size[0] == 0 || iconRef.Size[0] == labelRef.Size[0] {
+		t.Fatalf("reference arrows must resolve and differ: icon %v label %v", iconRef.Size, labelRef.Size)
+	}
+
+	sess, _, _ := dlssGUIFakes(t, nil)
+	row := scanOneRow(t, sess)
+	m := newModel(Config{Session: sess})
+	headlessFrames(t, 400, 800)
+	GetInputState().MousePoint = Vec2{-50, -50}
+	view := cardView(m, row)
+	keyFrame(KeyCodeNone, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if m.dlssArrowRect.Size[0] == 0 {
+		t.Fatal("no DLSS arrow rect")
+	}
+	if m.dlssArrowRect.Size[0] != iconRef.Size[0] {
+		t.Errorf("DLSS arrow width %v, want the shared dropdown arrow's %v (rejected small glyph: %v)",
+			m.dlssArrowRect.Size[0], iconRef.Size[0], labelRef.Size[0])
+	}
+	t.Log("DLSS arrow matches the shared dropdown arrow")
 }
 
 // TestDLSSMenuRendersCapturedSnapshotList: the menu renders the list

@@ -10,13 +10,14 @@ import (
 )
 
 // dlssSnapshotItem is the restore menu's observability seam: one entry per
-// rendered menu row (snapshot id, label, screen rect, container id for
-// keyboard-focus tests).
+// rendered menu row (snapshot id, label, screen rect, container id, and the
+// keyboard/hover highlight state).
 type dlssSnapshotItem struct {
 	id    string
 	label string
 	rect  Rect
 	cid   ContainerId
+	hl    bool
 }
 
 // componentPill renders one version-pill entry: the DLSS pill is the
@@ -79,6 +80,16 @@ func (m *model) dlssControl(e *ui.GameRow, label string) {
 		}
 		version += target
 	}
+	// The restore menu shares the version dropdown's machinery and its
+	// single-open coordination: st.open is this instance's render flag,
+	// m.openDLSSDir names the one open menu. A card re-rendering every frame
+	// (or the same game's panel instance) whose menu is not the owner clears
+	// its flag instead of floating a stale popup.
+	st := Use[dropdownState]("dlss-restore")
+	if st.open && m.openDLSSDir != e.InstallDir {
+		st.open = false
+	}
+	enterPick := false
 	Container(Attrs(Row, Gap(1), Corners(radiusS), BackgroundVec(toneColor(ui.ToneGreen))), func() {
 		Container(Attrs(Focusable, Row, CrossMid, Pad2(3, 3), Corners(radiusS)), func() {
 			FocusOnClick()
@@ -102,109 +113,98 @@ func (m *model) dlssControl(e *ui.GameRow, label string) {
 			FocusOnClick()
 			m.dlssArrowID = CurrentId()
 			m.dlssArrowRect = GetScreenRectOf(CurrentId())
+			st.btnID = CurrentId()
 			activated := false
-			if HasFocus() && (GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace) {
-				GetFrameInput().Key = KeyCodeNone
-				activated = true
+			if HasFocus() {
+				if st.open {
+					// The focused arrow owns the open menu's navigation
+					// (the shared dropdown model): Up/Down move the
+					// highlight, Enter picks, Space toggles closed.
+					var spaceClose bool
+					enterPick, spaceClose = dropdownOpenKeys(st, len(m.dlssSnaps))
+					if spaceClose {
+						activated = true
+					}
+				}
+				if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
+					GetFrameInput().Key = KeyCodeNone
+					activated = true
+				}
 			}
-			Label("▼", FontSize(10), TextColor(0, 0, 96, 1))
+			dropdownArrow()
 			if PressAction() {
 				activated = true
 			}
 			if activated {
-				m.openDLSSRestore(e.InstallDir)
+				st.open = m.openDLSSRestore(e.InstallDir)
+				if st.open {
+					st.hl = -1 // re-initialize the highlight on the popup frame
+				}
 			}
 		})
 	})
-	if m.openDLSSDir == e.InstallDir {
-		m.dlssRestoreMenu(e)
+	if st.open {
+		m.dlssRestoreMenu(e, enterPick)
 	}
 }
 
-// openDLSSRestore toggles the per-game restore menu; only one is open at a
-// time (mirrors openDropdownDir). The snapshot list is captured ONCE at
-// open — reading the backup directory per frame would be wasted I/O.
-func (m *model) openDLSSRestore(gameDir string) {
+// openDLSSRestore toggles the per-game restore menu and reports the new
+// open state; only one is open at a time (mirrors openDropdownDir). The
+// snapshot list is captured ONCE at open — reading the backup directory
+// per frame would be wasted I/O.
+func (m *model) openDLSSRestore(gameDir string) bool {
 	if m.openDLSSDir == gameDir {
 		m.openDLSSDir = ""
-		return
+		return false
 	}
 	snaps := m.sess.DLSSSnapshots(gameDir)
 	if len(snaps) == 0 {
-		return
+		return false
 	}
 	m.openDLSSDir = gameDir
 	m.dlssSnaps = snaps
+	return true
 }
 
-// dlssRestoreMenu lists the complete backed-up NVIDIA sets, newest first;
-// picking one (mouse or keyboard) asks the session for confirmation.
-func (m *model) dlssRestoreMenu(e *ui.GameRow) {
+// dlssRestoreMenu lists the complete backed-up NVIDIA sets, newest first,
+// on the shared dropdown machinery (same popup, same keyboard navigation
+// and dismissal as the version picker — the arrow trigger keeps focus and
+// drives the menu); picking one (mouse or highlighted-Enter) asks the
+// session for confirmation.
+func (m *model) dlssRestoreMenu(e *ui.GameRow, enterPick bool) {
+	st := Use[dropdownState]("dlss-restore")
 	if len(m.dlssSnaps) == 0 {
+		st.open = false
 		m.openDLSSDir = ""
 		return
 	}
-	menuID := ContainerId(nil)
-	Popup(func() {
-		Container(Attrs(MinWidth(220), MaxWidth(360), Corners(radiusS), Pad2(sp4, 0), Gap(2), Clip, BackgroundVec(bgPanel), BorderWidth(1), BorderColorVec(border), elevateOverlay), func() {
-			ModAttrs(FloatVec(dropdownPosFor(m.dlssArrowRect)))
-			menuID = CurrentId()
-			m.dlssMenuID = CurrentId()
-			m.dlssSnapshotItems = m.dlssSnapshotItems[:0]
-			for _, snap := range m.dlssSnaps {
-				snap := snap
-				label := snap.Label()
-				Container(Attrs(Focusable, Row, Expand, Pad2(sp4, sp8), Corners(2)), func() {
-					FocusOnClick()
-					activated := false
-					if HasFocus() {
-						ModAttrs(func(a *AttrSet) {
-							a.BorderWidth = 1
-							a.BorderColor = focusBorder
-						})
-						if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
-							GetFrameInput().Key = KeyCodeNone
-							activated = true
-						}
-					}
-					m.dlssSnapshotItems = append(m.dlssSnapshotItems, dlssSnapshotItem{id: snap.ID, label: label, rect: GetScreenRectOf(CurrentId()), cid: CurrentId()})
-					Label(label, FontSize(12), TextColorVec(txtMain))
-					if PressAction() {
-						activated = true
-					}
-					if activated {
-						m.openDLSSDir = ""
-						m.dispatchRestoreDLSS(e.InstallDir, snap.ID)
+	dropdownPopup(st, 220, 360, func(mouseMoved bool) {
+		if st.hl < 0 {
+			// Open-time init: the highlight starts on the first (newest) row.
+			st.hl = 0
+		}
+		m.dlssSnapshotItems = m.dlssSnapshotItems[:0]
+		for i, snap := range m.dlssSnaps {
+			snap := snap
+			dropdownRow(st, i, enterPick, mouseMoved,
+				func(hl bool) {
+					Label(snap.Label(), FontSize(12), TextColorVec(txtMain))
+					m.dlssSnapshotItems = append(m.dlssSnapshotItems, dlssSnapshotItem{id: snap.ID, label: snap.Label(), rect: GetScreenRectOf(CurrentId()), cid: CurrentId(), hl: hl})
+				},
+				func(keyboard bool) {
+					m.openDLSSDir = ""
+					m.dispatchRestoreDLSS(e.InstallDir, snap.ID)
+					if keyboard {
+						FocusImmediateOn(st.btnID)
 					}
 				})
-			}
-		})
+		}
 	})
+	// The card's click handler excludes presses under the open menu; the
+	// popup's panel id lives in st.menuID (dropdownPopup), mirrored here.
+	m.dlssMenuID = st.menuID
 	// Dismissal AFTER the popup rendered (menu.go ordering): Esc closes
 	// without dispatch and is consumed so the global handler cannot also
 	// close the detail panel; a click outside trigger and menu closes too.
-	if GetFrameInput().Key == KeyEscape {
-		GetFrameInput().Key = KeyCodeNone
-		m.openDLSSDir = ""
-	}
-	if menuID != nil && !IdIsHovered(m.dlssArrowID) && !IdIsHovered(menuID) && GetFrameInput().Mouse == MouseClick {
-		m.openDLSSDir = ""
-	}
-}
-
-// dropdownPosFor anchors a popup below a screen rect, clamped to the
-// window — dropdownPos keyed by rect instead of container id.
-func dropdownPosFor(r Rect) Vec2 {
-	pos := r.Origin
-	pos[1] += r.Size[1] + 4
-	self := GetResolvedSize()
-	if pos[0]+self[0] > GetHost().WindowSize[0] {
-		pos[0] = GetHost().WindowSize[0] - self[0] - 4
-	}
-	if pos[1]+self[1] > GetHost().WindowSize[1] {
-		pos[1] = GetHost().WindowSize[1] - self[1] - 4
-	}
-	pos[0] = max(0, pos[0])
-	pos[1] = max(0, pos[1])
-	return pos
+	dropdownDismiss(st, func() { m.openDLSSDir = "" })
 }

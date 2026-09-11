@@ -253,8 +253,9 @@ tech badge, so a DLL whose version resource does not parse stays
 updatable instead of silently vanishing from the detail view; an
 unreadable applied version simply counts as older). Pressing the version
 area updates the game's NVIDIA runtime from the official NVIDIA/DLSS
-repository, and a small ▼ arrow beside it opens the restore menu of
-local backups. The control
+repository, and the shared dropdown arrow beside it opens the restore
+menu of local backups — the same popup, keyboard model, and dismissal as
+the version picker (see "Shared dropdown menus" below). The control
 renders on the card and in the detail panel; busy games fall back to the
 static pill. Component versions parse for EVERY row with a resolved
 injection dir — plain games (no OptiScaler install) and external rows
@@ -356,6 +357,41 @@ Licensing: the NVIDIA/DLSS repository is distributed under NVIDIA's RTX
 SDK license (not an open-source license). This manager ships no NVIDIA
 bytes; it downloads them on explicit user action from NVIDIA's official
 repository and stores restore copies locally. See docs/safety.md.
+
+## Shared dropdown menus and pointer cursor (v0.14i)
+
+Every dropdown in the GUI — the per-game OptiScaler version picker, the
+toolbar sort menu, and the DLSS restore menu — renders through one
+machinery (`internal/gui/dropdown.go`), extracted when the DLSS restore
+menu stopped carrying its own popup copy. The trigger is the focus owner:
+while its popup is open it consumes Up/Down (move the wrapping highlight),
+Enter (pick the highlighted row) and Space (toggle closed); rows adopt the
+highlight from the mouse only on actual mouse motion (a resting mouse
+cannot fight the arrow keys); the popup renders through Popup (root scope,
+so it escapes the card's Clip), anchored below the trigger and clamped to
+the window; Esc closes without dispatch and is consumed before the global
+Esc handler, and a click outside both trigger and popup closes without
+dispatch. Each dropdown keeps its own observability seam (rendered rows
+with rects and highlight state) and its own open-time highlight init
+(the ticked version, the current sort mode, the newest snapshot).
+Coordination: one dropdown open at a time per mechanism — the version
+picker via `m.openDropdownDir`, the DLSS menu via `m.openDLSSDir` with a
+per-card-instance `Use` state that clears itself when another card owns
+the field.
+
+Hovering any clickable component shows the pointing hand: shirei carries
+a small cursor-shape patch (vendor patch v0.17, see docs/vendor-patches.md)
+whose hover-chain rule picks the shape every frame — a text entry keeps
+the default arrow (the caret signals editability), the first clickable
+node (`Focusable` or an explicit `PointerHand`) asks for the pointing
+hand. The app sets `TextEntry` on the themed inputs and `PointerHand` on
+the click affordances that are not focusable (sidebar items, view-switch
+segments, dropdown rows); buttons, cards, pills' controls, and dropdown
+triggers get the hand via `Focusable`. The wayland backend applies the
+picked shape after every frame — before the unchanged-frame early return,
+so hover moves work without a repaint — via the compositor's
+wp_cursor_shape protocol, falling back to the theme's hand cursor, then
+the drawn arrow. X11 and Win32 keep their static cursors.
 
 ## Game-dir classification and container scan roots (v0.7)
 
