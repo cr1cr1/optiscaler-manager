@@ -290,14 +290,19 @@ On a user press the update is cache-first: `dlss.Update` takes a commit
 hint — the startup check's tag commit, or the newest cached commit when
 the published one is unknown — and uses it only when that commit already
 sits complete in the download cache — otherwise it re-resolves `main` to
-the current immutable commit as before. Install always copies FROM the
-cache dir, never straight from the network. One tags call per startup,
-one API resolve per uncached commit; the tag→SHA may briefly lag `main`
-(a tag published before the latest commit), which only matters for a
-cache hit of an already-installed set — the installed version is not
-overwritten (the update marker shows nothing when applied >= published).
-The TUI mirrors the check with the same one-call policy; CLI surfaces
-remain deferred.
+the current immutable commit as before. Before any write the press
+compares the target against the installed set: byte-identical members
+(the cache's own digests) or a readable applied version at or above the
+target settle as a graceful no-op (`AlreadyLatestError` → an
+informational "NVIDIA DLSS already at <v>" toast, no snapshot, no file
+changes); an unreadable applied version is not provably current, so the
+update proceeds. Install always copies FROM the cache dir, never
+straight from the network. One tags call per startup, one API resolve
+per uncached commit; the tag→SHA may briefly lag `main` (a tag published
+before the latest commit), which only matters for a cache hit of an
+already-installed set — the update marker shows nothing when applied >=
+published. The TUI mirrors the check with the same one-call policy; CLI
+surfaces remain deferred.
 
 `dlss.Update` is a three-file transaction, never a per-DLL picker: it
 requires the complete existing set (`nvngx_dlss.dll`, `nvngx_dlssd.dll`,
@@ -331,17 +336,21 @@ back.
 
 Snapshots live at `<data-root>/dlss-backups/<sha256(installDir)[:16]>/<id>/`
 with one `snapshot.json` each (created-at, per-file version + SHA-256,
-source commit for update snapshots). They are deliberately separate from
-the OptiScaler manifests: uninstalling or switching OptiScaler never
-touches the game's NVIDIA runtime, and the restore menu is the only
-downgrade path (no version picker, no update checks — the action always
-fetches the current HEAD commit). The GUI confirm gate reuses the
-session's `ConfirmDLSSRestore` kind; declining runs nothing. The TUI
-mirrors the control: `u` on the games screen or detail screen dispatches
-the update, and `p` on the detail screen stages a restore pick that
-cycles the snapshots (enter confirm, esc cancel, same row-modal pattern
-as the version cycle) before the same session confirmation gate. CLI
-surfaces remain deferred.
+source commit for update snapshots). A backup whose member digests an
+existing snapshot already holds is REUSED, not duplicated — the
+update/restore ping-pong cannot pile up identical ~115 MB dirs (the
+current set is hashed first; a digest match returns the prior snapshot
+untouched, on a miss the copy proceeds as before). They are deliberately
+separate from the OptiScaler manifests: uninstalling or switching
+OptiScaler never touches the game's NVIDIA runtime, and the restore menu
+is the only downgrade path (no version picker, no update checks — the
+action always fetches the current HEAD commit). The GUI confirm gate
+reuses the session's `ConfirmDLSSRestore` kind; declining runs nothing.
+The TUI mirrors the control: `u` on the games screen or detail screen
+dispatches the update, and `p` on the detail screen stages a restore pick
+that cycles the snapshots (enter confirm, esc cancel, same row-modal
+pattern as the version cycle) before the same session confirmation gate.
+CLI surfaces remain deferred.
 
 Licensing: the NVIDIA/DLSS repository is distributed under NVIDIA's RTX
 SDK license (not an open-source license). This manager ships no NVIDIA

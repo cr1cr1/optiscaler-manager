@@ -104,10 +104,14 @@ func TestUpdateReusesCachedCommitWithoutSecondDownload(t *testing.T) {
 		}
 	}
 
-	// Second update of the same commit: the network is closed for business.
+	// Second update of the same commit: the network is closed for business,
+	// and the installed set already matches the target — a graceful no-op
+	// (no refetch, no reinstall, no duplicate backup).
 	refuse = true
-	if _, err := Update(context.Background(), client, cache, root, game, ""); err != nil {
-		t.Fatalf("cached update failed: %v", err)
+	_, err = Update(context.Background(), client, cache, root, game, "")
+	var already *AlreadyLatestError
+	if !errors.As(err, &already) || already.Version != "310.9.1.0" {
+		t.Fatalf("cached update err = %v, want AlreadyLatestError{310.9.1.0}", err)
 	}
 	if raws != len(Files) {
 		t.Fatalf("cache hit fetched %d extra files, want 0", raws-len(Files))
@@ -192,11 +196,13 @@ func TestUpdateRefetchesTamperedCacheEntry(t *testing.T) {
 	}
 	seedGame(t, game, 1, 0)
 	sha := strings.Repeat("f", 40)
+	raws := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/NVIDIA/DLSS/commits/main" {
 			_, _ = w.Write([]byte(`{"sha":"` + sha + `"}`))
 			return
 		}
+		raws++
 		_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
 	}))
 	defer server.Close()
@@ -205,12 +211,23 @@ func TestUpdateRefetchesTamperedCacheEntry(t *testing.T) {
 	if _, err := Update(context.Background(), client, cache, root, game, ""); err != nil {
 		t.Fatal(err)
 	}
+	if raws != len(Files) {
+		t.Fatalf("first update fetched %d files, want %d", raws, len(Files))
+	}
 	tampered := filepath.Join(cache, "dlss", sha, Files[0])
 	if err := os.WriteFile(tampered, testutil.FixedVersionPE(9, 9, 9, 9), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Update(context.Background(), client, cache, root, game, ""); err != nil {
-		t.Fatalf("update with tampered cache entry failed: %v", err)
+	// The hash gate refetches the tampered member (one extra download), and
+	// the installed set then already matches the repaired cache: the press
+	// settles as a graceful no-op with the game bytes untouched.
+	_, err := Update(context.Background(), client, cache, root, game, "")
+	var already *AlreadyLatestError
+	if !errors.As(err, &already) || already.Version != "310.9.1.0" {
+		t.Fatalf("update with tampered cache entry: err = %v, want AlreadyLatestError{310.9.1.0}", err)
+	}
+	if raws != len(Files)+1 {
+		t.Fatalf("tampered member fetched %d extra files, want 1", raws-len(Files))
 	}
 	for _, name := range Files {
 		v, err := fileVersion(filepath.Join(game, name))
@@ -635,5 +652,189 @@ func assertGameVersion(t *testing.T, game, want string) {
 	v, err := fileVersion(filepath.Join(game, "nvngx_dlss.dll"))
 	if err != nil || v != want {
 		t.Fatalf("game DLSS version = %q (err %v), want %q", v, err, want)
+	}
+}
+
+// TestUpdateAlreadyLatestIsNoOp: pressing the DLSS badge must compare the
+// target against the installed set — byte-identical members (the cache's
+// own digests), or a readable applied version at or above the target — and
+// refuse the reinstall and its backup gracefully.
+func TestUpdateAlreadyLatestIsNoOp(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		applied [2]uint16
+		cached  [2]uint16
+		want    string
+		stays   string // the applied version the no-op must leave untouched
+	}{
+		{"byte-identical set", [2]uint16{310, 9}, [2]uint16{310, 9}, "310.9.0.0", "310.9.0.0"},
+		{"applied newer than cache", [2]uint16{311, 0}, [2]uint16{310, 9}, "311.0.0.0", "311.0.0.0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			game := filepath.Join(root, "game")
+			cache := filepath.Join(root, "cache")
+			if err := os.MkdirAll(game, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			seedGame(t, game, tc.applied[0], tc.applied[1])
+			hint := strings.Repeat("a", 40)
+			seedCacheDir(t, cache, hint, tc.cached[0], tc.cached[1])
+
+			commits, raws := 0, 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/repos/NVIDIA/DLSS/commits/main":
+					commits++
+				default:
+					raws++
+				}
+				http.Error(w, "already-latest press must not touch the network", http.StatusInternalServerError)
+			}))
+			defer server.Close()
+
+			_, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), cache, root, game, hint)
+			var already *AlreadyLatestError
+			if !errors.As(err, &already) {
+				t.Fatalf("update err = %v, want AlreadyLatestError", err)
+			}
+			if already.Version != tc.want {
+				t.Errorf("already-latest version = %q, want %q", already.Version, tc.want)
+			}
+			assertGameVersion(t, game, tc.stays)
+			if commits != 0 || raws != 0 {
+				t.Errorf("no-op press hit the network (commits %d, raws %d)", commits, raws)
+			}
+			if snaps, _ := Snapshots(root, game); len(snaps) != 0 {
+				t.Errorf("no-op press created %d snapshots", len(snaps))
+			}
+		})
+	}
+}
+
+// TestUpdateRestoreBackupsDeduplicated: a backup whose member digests an
+// existing snapshot already holds is reused, not duplicated — the
+// update/restore ping-pong must not pile up identical ~115 MB dirs.
+func TestUpdateRestoreBackupsDeduplicated(t *testing.T) {
+	root := t.TempDir()
+	game := filepath.Join(root, "game")
+	cache := filepath.Join(root, "cache")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seedGame(t, game, 310, 5)
+	seedCacheDir(t, cache, strings.Repeat("a", 40), 310, 6)
+	seedCacheDir(t, cache, strings.Repeat("b", 40), 310, 7)
+
+	commits, raws := 0, 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/NVIDIA/DLSS/commits/main" {
+			commits++
+		} else {
+			raws++
+		}
+		http.Error(w, "cached updates must not touch the network", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	client := NewWithBaseURLs(server.Client(), server.URL, server.URL)
+
+	update := func(hint string) {
+		t.Helper()
+		if _, err := Update(context.Background(), client, cache, root, game, hint); err != nil {
+			t.Fatal(err)
+		}
+	}
+	updateAlreadyLatest := func(hint, want string) {
+		t.Helper()
+		_, err := Update(context.Background(), client, cache, root, game, hint)
+		var already *AlreadyLatestError
+		if !errors.As(err, &already) || already.Version != want {
+			t.Fatalf("update err = %v, want AlreadyLatestError{%s}", err, want)
+		}
+	}
+	restore := func(id string) {
+		t.Helper()
+		if _, err := Restore(context.Background(), root, game, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	snapAt := func(v string) string {
+		t.Helper()
+		snaps, err := Snapshots(root, game)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range snaps {
+			if s.Files[0].Version == v {
+				return s.ID
+			}
+		}
+		t.Fatalf("no snapshot holding %s in %+v", v, snaps)
+		return ""
+	}
+	assertSnapshots := func(want ...string) {
+		t.Helper()
+		snaps, err := Snapshots(root, game)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(snaps) != len(want) {
+			t.Fatalf("snapshots %d (%+v), want %d versions %v", len(snaps), snaps, len(want), want)
+		}
+		seen := map[string]bool{}
+		for _, s := range snaps {
+			seen[s.Files[0].Version] = true
+		}
+		for _, v := range want {
+			if !seen[v] {
+				t.Errorf("missing snapshot holding %s", v)
+			}
+		}
+	}
+
+	update(strings.Repeat("a", 40)) // backs up 310.5 → S1, installs 310.6
+	assertSnapshots("310.5.0.0")
+	update(strings.Repeat("b", 40)) // backs up 310.6 → S2, installs 310.7
+	assertSnapshots("310.5.0.0", "310.6.0.0")
+	restore(snapAt("310.5.0.0")) // backs up 310.7 → S3, back to 310.5
+	assertSnapshots("310.5.0.0", "310.6.0.0", "310.7.0.0")
+	restore(snapAt("310.5.0.0")) // current set == target: its backup is S1, reused
+	assertSnapshots("310.5.0.0", "310.6.0.0", "310.7.0.0")
+	update(strings.Repeat("a", 40)) // backs up 310.5 → S1 again (reused), installs 310.6
+	assertSnapshots("310.5.0.0", "310.6.0.0", "310.7.0.0")
+	updateAlreadyLatest(strings.Repeat("a", 40), "310.6.0.0")
+	assertSnapshots("310.5.0.0", "310.6.0.0", "310.7.0.0")
+	update(strings.Repeat("b", 40)) // backs up 310.6 → S2 again (reused), installs 310.7
+	assertSnapshots("310.5.0.0", "310.6.0.0", "310.7.0.0")
+	updateAlreadyLatest(strings.Repeat("b", 40), "310.7.0.0")
+	assertSnapshots("310.5.0.0", "310.6.0.0", "310.7.0.0")
+	assertGameVersion(t, game, "310.7.0.0")
+
+	// A tampered prior snapshot is not a dedup candidate: its recorded
+	// digests match the installed set, but its stored bytes must re-verify
+	// before reuse — the identical press writes a fresh, self-verified
+	// backup instead of aliasing corrupted bytes.
+	s3 := snapAt("310.7.0.0")
+	if err := os.WriteFile(filepath.Join(snapshotsDir(root, game), s3, Files[0]), []byte("tampered"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	restore(snapAt("310.5.0.0")) // backs up current 310.7 fresh (S3 unusable), then restores S1
+	assertGameVersion(t, game, "310.5.0.0")
+	update(strings.Repeat("a", 40)) // S1 (310.5, intact) is still reused; installs 310.6
+	assertGameVersion(t, game, "310.6.0.0")
+
+	snaps, err := Snapshots(root, game)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byVersion := map[string]int{}
+	for _, s := range snaps {
+		byVersion[s.Files[0].Version]++
+	}
+	if len(snaps) != 4 || byVersion["310.5.0.0"] != 1 || byVersion["310.6.0.0"] != 1 || byVersion["310.7.0.0"] != 2 {
+		t.Fatalf("snapshots after tamper (count %d): %+v — want one 310.5, one 310.6, two 310.7 (fresh backup written)", len(snaps), snaps)
+	}
+	if commits != 0 || raws != 0 {
+		t.Errorf("cached sequence hit the network (commits %d, raws %d)", commits, raws)
 	}
 }

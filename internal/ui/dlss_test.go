@@ -304,3 +304,29 @@ func TestUpdateDLSSUsesCachedCommitOffline(t *testing.T) {
 		t.Errorf("%s after offline cache update = %q, want 310.9.0.0", dlss.Files[0], got)
 	}
 }
+
+// TestUpdateDLSSAlreadyLatest: a press on an already-current set settles
+// gracefully — an informational done event naming the version, no failure,
+// no duplicate backup, no file changes.
+func TestUpdateDLSSAlreadyLatest(t *testing.T) {
+	e := newDLSSEnv(t, true)
+	row := scanOneDLSSRow(t, e)
+
+	e.sess.UpdateDLSS(row.InstallDir)
+	waitEvent(t, e.sess, EvOpDone)
+	if snaps := e.sess.DLSSSnapshots(row.InstallDir); len(snaps) != 1 {
+		t.Fatalf("snapshots after first update %d, want 1", len(snaps))
+	}
+
+	e.sess.UpdateDLSS(row.InstallDir)
+	ev := waitEvent(t, e.sess, EvOpDone)
+	if !strings.Contains(ev.Text, "already at 310.5.3.0") {
+		t.Errorf("already-latest text %q, want it to name the version", ev.Text)
+	}
+	if snaps := e.sess.DLSSSnapshots(row.InstallDir); len(snaps) != 1 {
+		t.Errorf("snapshots after no-op press %d, want 1", len(snaps))
+	}
+	if got := dlssDLLVersion(t, e, dlss.Files[0]); got != "310.5.3.0" {
+		t.Errorf("%s changed on no-op press: %q", dlss.Files[0], got)
+	}
+}

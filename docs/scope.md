@@ -522,7 +522,10 @@ decisions the per-version sections above do not cover.
   persists a hash-verified snapshot of the current set under
   `<data-root>/dlss-backups/`; the pill's ▼ arrow lists them (newest
   first), a pick asks for confirmation, and a confirmed restore swaps
-  the complete set back after verifying snapshot hashes.
+  the complete set back after verifying snapshot hashes. Backups
+  deduplicate by member digests (identical sets reuse the existing
+  snapshot), and a press on an already-current set is a graceful no-op
+  ("already at <v>") with no snapshot and no file changes.
 - **Commit-keyed download cache**: same layout as the OptiScaler bundle
   cache — downloaded NVIDIA DLLs persist per source commit under
   `<cacheDir>/dlss/<commit>/` — plus a `manifest.json` pinning each

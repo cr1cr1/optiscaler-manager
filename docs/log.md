@@ -2758,3 +2758,50 @@ opens the restore menu of local backup sets.
   updates" section), scope.md v0.14 bullet updated (startup tags call,
   cache-first hint, bare-label degradation; "update-available checks"
   removed from deferred), README DLSS paragraph extended.
+
+## 2026-09-12 — v0.14h: already-latest presses are no-ops; duplicate backups deduplicated
+
+- User report after exercising v0.14g: pressing the DLSS pill/badge did
+  not check whether the target DLLs were already installed (compared
+  against the download cache), and backups were created regardless of an
+  existing identical backup — so repeat presses reinstalled the same set
+  and piled up duplicate snapshot dirs (~115 MB each).
+- Press-side no-op: `dlss.Update` now compares the resolved target
+  against the installed set BEFORE any write — byte-identical members
+  (the game files' SHA-256 vs the cache manifest digests) or a readable
+  applied version at or above the target settle as a graceful
+  `AlreadyLatestError{Version}` with zero network, zero file changes and
+  zero snapshots; the session maps it to an informational
+  "NVIDIA DLSS already at <v>" done toast instead of a failure. An
+  unreadable applied version is NOT provably current, so the bare-label
+  case still updates. A tampered cache entry still refetches first
+  (ensureCache runs before the compare), then no-ops — the repair keeps
+  working.
+- Backup dedup: `dlss.backup` hashes the current set first and reuses an
+  existing snapshot whose member digests match exactly (found via the
+  same `Snapshots` loader the restore menu uses) instead of writing a
+  duplicate dir; on a miss the copy-verify flow is unchanged. Covers
+  both callers (update pre-backup and restore's own backup) in one guard.
+- The no-op's version names the INSTALLED set (the target's when the
+  members are byte-identical, the applied one when it is newer than the
+  cache) — the toast never names a version the game does not hold.
+- Review-round hardening: dedup candidates are re-verified against their
+  own record before reuse (a tampered snapshot dir is never aliased into
+  a rollback — the identical press writes a fresh, self-verified backup
+  instead; the candidate compare is name-keyed, order-agnostic; an
+  unreadable snapshot index logs a warning and falls through to a fresh
+  backup).
+- New tests: dlss `TestUpdateAlreadyLatestIsNoOp` (byte-identical +
+  applied-newer, no network/snapshot/file change),
+  `TestUpdateRestoreBackupsDeduplicated` (update→restore ping-pong holds
+  exactly three distinct sets, network stays untouched); ui
+  `TestUpdateDLSSAlreadyLatest` (graceful done text, one snapshot,
+  unchanged files). Existing contract tests revised to the new no-op
+  outcome: `TestUpdateReusesCachedCommitWithoutSecondDownload` (second
+  press = AlreadyLatest, still zero downloads) and
+  `TestUpdateRefetchesTamperedCacheEntry` (refetch counted, then
+  already-latest); `TestUpdateRestoreBackupsDeduplicated` also proves a
+  tampered prior snapshot is not reused (fresh backup written, intact
+  snapshots still deduplicate).
+- Docs: architecture.md press-compare and dedup paragraphs, scope.md
+  v0.14 bullet, README DLSS paragraph.

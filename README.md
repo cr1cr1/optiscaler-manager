@@ -73,7 +73,11 @@ published version — it is shown in the TUI detail view and marks the
 update label when your set is older; no DLL bytes are fetched then.
 Pressing the label is cache-first: if the published commit is already in
 the download cache it installs from there, otherwise the commit is
-resolved and fetched. Every update and restore first writes a
+resolved and fetched. Pressing when the game already holds the target
+set (or a newer one) is a graceful no-op — it reports the installed
+version and writes nothing. Backups deduplicate: a set whose files an
+existing backup already holds is reused instead of copied again.
+Every update and restore first writes a
 hash-verified backup of your current set; the ▼ button beside the label
 lists those backups, and restoring one asks for confirmation first.
 Downloaded NVIDIA files are subject to NVIDIA's RTX SDK license. Like the

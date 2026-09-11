@@ -128,9 +128,14 @@ func (s *Session) runDLSSOp(gameDir, started string, run func(ctx context.Contex
 	s.opStarted(started)
 	err := run(ctx)
 	s.finishOp(gameDir)
+	var already *dlss.AlreadyLatestError
 	switch {
 	case errors.Is(err, context.Canceled):
 		s.opCancelled(gameDir, pre)
+	case errors.As(err, &already):
+		// Nothing was installed, nothing changed: settle as an
+		// informational success naming the version, not a failure.
+		s.opDone(fmt.Sprintf("NVIDIA DLSS already at %s", already.Version), gameDir)
 	case err != nil:
 		s.opFailed(err)
 	default:

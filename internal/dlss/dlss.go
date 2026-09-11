@@ -112,10 +112,26 @@ func Update(ctx context.Context, c *Client, cacheRoot, dataRoot, gameDir, commit
 	if err != nil {
 		return Snapshot{}, err
 	}
+	targetVersion := ""
 	for _, name := range Files {
-		if _, err := pever.FileVersion(filepath.Join(cached, name)); err != nil {
+		v, err := pever.FileVersion(filepath.Join(cached, name))
+		if err != nil {
 			return Snapshot{}, fmt.Errorf("dlss: invalid downloaded %s: %w", name, err)
 		}
+		if name == Files[0] { // the main DLL carries the set's version
+			targetVersion = v
+		}
+	}
+	// Already latest? A press must not reinstall the same set over itself
+	// (and pile up a duplicate backup for it): byte-identical members — the
+	// cache's own digests — or a readable applied version at or above the
+	// target settle as a graceful no-op. An unreadable applied version is
+	// NOT provably current, so the update proceeds (the bare-label case).
+	if sameSet(gameDir, cached) {
+		return Snapshot{}, &AlreadyLatestError{Version: targetVersion}
+	}
+	if applied, err := pever.FileVersion(filepath.Join(gameDir, Files[0])); err == nil && version.Compare(applied, targetVersion) >= 0 {
+		return Snapshot{}, &AlreadyLatestError{Version: applied}
 	}
 	snap, err := backup(dataRoot, gameDir, commit)
 	if err != nil {
@@ -441,7 +457,58 @@ func requireFiles(gameDir string) error {
 // the interactive update control or a static badge.
 func Complete(gameDir string) bool { return requireFiles(gameDir) == nil }
 
+// AlreadyLatestError reports that the game's NVIDIA runtime already holds
+// the update target: a press settles as a graceful no-op instead of
+// reinstalling the same set over itself.
+type AlreadyLatestError struct {
+	Version string // the version the installed set already holds
+}
+
+func (e *AlreadyLatestError) Error() string {
+	return fmt.Sprintf("dlss: already at %s", e.Version)
+}
+
+// sameSet reports whether the game's runtime set is byte-identical to the
+// cached one: every member's SHA-256 equals the cached member's manifest
+// digest. Any read or record failure yields false — an unreadable set is
+// not provably identical, so the update proceeds.
+func sameSet(gameDir, cacheDir string) bool {
+	rec, err := loadCacheRecord(cacheDir)
+	if err != nil {
+		return false
+	}
+	for _, name := range Files {
+		want := rec.Files[name]
+		if want == "" {
+			return false
+		}
+		if h, err := fileSHA256(filepath.Join(gameDir, name)); err != nil || h != want {
+			return false
+		}
+	}
+	return true
+}
+
 func backup(dataRoot, gameDir, source string) (Snapshot, error) {
+	// The current set is hashed first so a digest-identical prior snapshot
+	// can be reused untouched (update/restore ping-pong must not pile up
+	// duplicate ~115 MB dirs).
+	// ponytail: on a dedup miss the files are read twice (this hash probe,
+	// then copyHashed); stream-copy with a digest-on-the-fly if that ever
+	// matters.
+	current := make([]File, 0, len(Files))
+	for _, name := range Files {
+		path := filepath.Join(gameDir, name)
+		v, _ := pever.FileVersion(path)
+		h, err := fileSHA256(path)
+		if err != nil {
+			return Snapshot{}, fmt.Errorf("dlss: backup %s: %w", name, err)
+		}
+		current = append(current, File{Name: name, Version: v, SHA256: h})
+	}
+	if prior := identicalSnapshot(dataRoot, gameDir, current); prior.ID != "" {
+		return prior, nil
+	}
 	id := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 	dir := filepath.Join(snapshotsDir(dataRoot, gameDir), id)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -482,6 +549,54 @@ func backup(dataRoot, gameDir, source string) (Snapshot, error) {
 		}
 	}
 	return s, nil
+}
+
+// identicalSnapshot returns an existing snapshot whose members carry
+// exactly the current set's digests (zero value when none): update and
+// restore ping-pong reuses it instead of writing a duplicate backup. A
+// candidate's stored bytes are re-verified against its record before
+// reuse — a tampered snapshot dir must never alias into a rollback.
+// ponytail: linear scan of the game's snapshot index per backup — the list
+// stays a handful of entries since dedup keeps it that way; index by
+// digest set if a user ever accumulates dozens.
+func identicalSnapshot(dataRoot, gameDir string, current []File) Snapshot {
+	prior, err := Snapshots(dataRoot, gameDir)
+	if err != nil {
+		log.Warn().Err(err).Msg("dlss: snapshot index unreadable, writing a fresh backup")
+		return Snapshot{}
+	}
+	recorded := make(map[string]string, len(current))
+	for _, f := range current {
+		recorded[f.Name] = f.SHA256
+	}
+	for _, s := range prior {
+		if len(s.Files) != len(current) {
+			continue
+		}
+		match := true
+		for _, f := range s.Files {
+			if recorded[f.Name] != f.SHA256 {
+				match = false
+				break
+			}
+		}
+		if !match {
+			continue
+		}
+		usable := true
+		for _, f := range s.Files {
+			h, err := fileSHA256(filepath.Join(snapshotsDir(dataRoot, gameDir), s.ID, f.Name))
+			if err != nil || h != f.SHA256 {
+				usable = false
+				break
+			}
+		}
+		if usable {
+			return s
+		}
+		log.Warn().Str("snapshot", s.ID).Msg("dlss: dedup candidate failed verification, writing a fresh backup")
+	}
+	return Snapshot{}
 }
 
 // restoreFiles copies a snapshot back into the game dir. Every member is
