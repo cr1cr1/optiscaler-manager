@@ -2,6 +2,8 @@
 /bin/
 /dist/
 /tmp/
+/tmp/gopath/
+.gocache/
 /config/
 .env
 .*.env

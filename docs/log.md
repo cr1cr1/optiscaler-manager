@@ -2999,3 +2999,10 @@ opens the restore menu of local backup sets.
   `…AbsorbedSingleTick` / `…DispatchesLatest`, gh `TestResolveConcurrent`.
   Full `go test ./...` and the race detector pass; docs updated
   (architecture startup pre-warm section, scope v0.15, this log).
+
+## 2026-09-11 — chore: ignore the .gocache build cache directory
+
+- `.gocache/` at the repo root is a stray local Go build cache (525 MB,
+  left behind by GOCACHE overrides during test runs). Added to
+  `.gitignore` next to `/tmp/` so `git status` stays clean. No code
+  change; no doc surface beyond this entry.
