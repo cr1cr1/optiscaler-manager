@@ -49,7 +49,7 @@ func (*handler) HandleSeatName(wl.SeatNameEvent) {}
 func (*handler) HandlePointerEnter(ev wl.PointerEnterEvent) {
 	pointerSerial = ev.Serial
 	cursorEnterSerial = ev.Serial // PATCHED by optiscaler-manager (v0.17): set_shape/set_cursor accept only the enter serial
-	applyCursor(ev.Serial) // Wayland needs us to set the cursor on every enter
+	applyCursor(ev.Serial)        // Wayland needs us to set the cursor on every enter
 	shirei.GetInputState().MousePoint = shirei.Vec2{ev.SurfaceX, ev.SurfaceY}
 	dirty = true
 }

@@ -763,9 +763,9 @@ type AttrSet struct {
 	// keeps the default arrow over a text-editing container; PointerHand
 	// requests the pointing hand over a click affordance — the ONLY cursor
 	// hand trigger (focusability does not imply one).
-	TextEntry bool
+	TextEntry   bool
 	PointerHand bool
-	FocusTrap       bool // this container wants to be a focus trap (only for modals)
+	FocusTrap   bool // this container wants to be a focus trap (only for modals)
 	// TabAfter, when set, orders this container's focusable subtree immediately
 	// after that id in the tab ring. Source-order collect still runs; a post-pass
 	// splices the run. Unset (nil) leaves the subtree where it was collected.

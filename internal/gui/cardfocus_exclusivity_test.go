@@ -83,12 +83,12 @@ func TestCardFocus_ClickOtherCardBlursButton(t *testing.T) {
 	}
 }
 
-// TestCardFocus_TabLeavesNoButtonRingOnPriorCard (H(b): TAB WALK): Tabbing
-// from card A onto its inner controls must not leave card A's selIdx cursor
-// ring lit alongside the focused control's own ring — the one-ring rule
-// (gridCardFocused) only tracks CARDS, so a focused inner control leaves
-// the cursor ring on: the double ring. Tabbing on to card B must leave
-// nothing of card A focused and exactly one ring.
+// TestCardFocus_TabLeavesNoButtonRingOnPriorCard (H(b): TAB WALK): focus is
+// contextual per card — while one of card A's inner controls holds focus,
+// CARD A hosts the focus ring (the user model: a child control or menu must
+// not hide the parent's ring); the inner control does not add a second one.
+// Tabbing on to card B moves the single ring to card B and leaves nothing
+// of card A focused.
 func TestCardFocus_TabLeavesNoButtonRingOnPriorCard(t *testing.T) {
 	sess, rows := seedGridSession(t, 3)
 	m := newModel(Config{Session: sess})
@@ -98,13 +98,17 @@ func TestCardFocus_TabLeavesNoButtonRingOnPriorCard(t *testing.T) {
 	m.selIdx = 0
 
 	// Card A's button holds focus while the cursor still sits on card A:
-	// the cursor ring must be suppressed (the focused control wears the
-	// only ring). gridCursorRect is the ring seam; reset it and render one
-	// frame — any ring drawn re-records it.
+	// the card hosts the ring (contextual focus). gridCursorRect is the
+	// ring seam; reset it and render one frame — the hosting card must
+	// re-record ITS rect.
+	want := m.cardIDs[rows[0].InstallDir]
 	m.gridCursorRect = Rect{}
 	keyFrame(KeyCodeNone, 0, m.rootView)
-	if m.gridCursorRect.Size[0] != 0 {
-		t.Errorf("cursor ring drawn on card A (rect %+v) while its button holds focus; want it suppressed (double ring)", m.gridCursorRect)
+	if m.gridCursorRect.Size[0] == 0 {
+		t.Fatal("no ring recorded while card A's button holds focus; want the card to host the contextual ring")
+	}
+	if m.gridCursorRect != GetScreenRectOf(want) {
+		t.Errorf("ring rect %+v while card A's button holds focus, want card A's own rect %+v (contextual ring)", m.gridCursorRect, GetScreenRectOf(want))
 	}
 
 	// Keep Tabbing until card B's container holds focus (button count

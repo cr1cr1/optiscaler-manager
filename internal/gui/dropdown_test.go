@@ -637,10 +637,11 @@ func focusDDTrigger(t *testing.T, m *model, view FrameFn) {
 	t.Fatalf("version dropdown trigger never took focus via Tab (ddTriggerID %v)", m.ddTriggerID)
 }
 
-// TestVersionDropdown_TabFocusRing: the trigger is a Tab stop (Focusable +
-// CycleFocusOnTab) and draws its focus-ring branch (focusBorder) exactly
-// while it holds keyboard focus (seam: m.ddFocusRing, mirroring
-// m.listFocusRing).
+// TestVersionDropdown_TabFocusRing: the trigger is a Tab stop, and inside a
+// card the ring is CONTEXTUAL: the hosting card wears the focus ring while
+// the trigger holds keyboard focus, and the trigger does not add a second
+// one (the card context is the ring; the pill's own ring branch only draws
+// outside a card, e.g. in the detail panel — seam: m.ddFocusRing).
 func TestVersionDropdown_TabFocusRing(t *testing.T) {
 	sess, gameRoot := dropdownFakes(t)
 	markExternal(t, filepath.Join(gameRoot, "bin"), [4]uint16{0, 7, 0, 0})
@@ -657,10 +658,73 @@ func TestVersionDropdown_TabFocusRing(t *testing.T) {
 	}
 
 	focusDDTrigger(t, m, view)
-	if !m.ddFocusRing {
-		t.Error("focus ring not drawn while the trigger holds keyboard focus")
+	if !IdHasFocus(m.ddTriggerID) {
+		t.Fatal("Tab did not focus the version trigger")
 	}
-	t.Log("Tab focused the trigger and the focus ring drew only while focused")
+	if m.ddFocusRing {
+		t.Error("trigger drew its own ring inside a card; want the hosting card's contextual ring only")
+	}
+	if m.cardRingOnDir != row.InstallDir {
+		t.Errorf("hosting card %q did not take the contextual ring (cardRingOnDir %q)", row.InstallDir, m.cardRingOnDir)
+	}
+	t.Log("Tab focused the trigger and the hosting card wore the contextual ring")
+}
+
+// TestVersionDropdown_MenuOpenKeepsCardRing: opening the menu from the
+// version pill on a focused card must not hide the card's focus ring — the
+// pill (a child of the card) keeps the hosting card's contextual ring lit
+// for the whole menu interaction (user: a child menu must not trigger focus
+// ring hiding on the parent).
+func TestVersionDropdown_MenuOpenKeepsCardRing(t *testing.T) {
+	sess, gameRoot := dropdownFakes(t)
+	markExternal(t, filepath.Join(gameRoot, "bin"), [4]uint16{0, 7, 0, 0})
+	row := scanExternalRow(t, sess)
+	m := newModel(Config{Session: sess})
+
+	headlessFrames(t, 1200, 700)
+	GetInputState().MousePoint = Vec2{-50, -50}
+	// All frames run through the real root view so the card registry and
+	// the recorded rects match the geometry the click lands on.
+	view := m.rootView
+	keyFrame(KeyCodeNone, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	// Focus the card, then open the menu from its pill (the click moves
+	// focus INTO the card's subtree — the ring must survive that move).
+	cardID := m.cardIDs[row.InstallDir]
+	if cardID == nil {
+		t.Fatal("card id not recorded")
+	}
+	FocusImmediateOn(cardID)
+	keyFrame(KeyCodeNone, 0, view)
+	if !IdHasFocus(cardID) {
+		t.Fatal("card did not take focus")
+	}
+	tr := m.versionDDRects[row.InstallDir]
+	if tr.Size[0] == 0 {
+		t.Fatal("version trigger rect not recorded")
+	}
+	clickRect(tr, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if m.openDropdownDir != row.InstallDir {
+		t.Fatalf("menu did not open for %q (open %q)", row.InstallDir, m.openDropdownDir)
+	}
+	if m.cardRingOnDir != row.InstallDir {
+		t.Errorf("menu open: hosting card ring lost (cardRingOnDir %q) — the child menu hid the parent's ring", m.cardRingOnDir)
+	}
+	if m.gridCursorRect.Size[0] == 0 {
+		t.Error("menu open: no ring recorded at all; want the card's contextual ring")
+	}
+	// Esc closes; the ring stays with the card context (focus returns
+	// within the card).
+	keyFrame(KeyEscape, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if m.openDropdownDir != "" {
+		t.Fatal("Esc did not close the menu")
+	}
+	if m.cardRingOnDir != row.InstallDir {
+		t.Errorf("after close: hosting card ring lost (cardRingOnDir %q)", m.cardRingOnDir)
+	}
+	t.Log("menu open/close kept the hosting card's contextual ring")
 }
 
 // TestVersionDropdown_EnterSpaceToggle: Enter and Space on the FOCUSED

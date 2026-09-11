@@ -74,7 +74,8 @@ type model struct {
 	listID              ContainerId                   // the list view's focusable wrapper (Tab focus nav test seam)
 	listFocusPending    bool                          // deferred row-click focus grab: consumed once by actionList with the wrapper's fresh identity
 	listFocusRing       bool                          // whether the list wrapper drew its focus ring on the last frame (focus ring test seam)
-	gridCursorRect      Rect                          // screen rect of the ringed grid card: the focused card, or the keyboard-cursor card when no card is focused (cursor chrome test seam, mirrors listSelRect)
+	gridCursorRect      Rect                          // screen rect of the ringed grid card: the card whose subtree holds focus (contextual ring), or the keyboard-cursor card when none does (cursor chrome test seam, mirrors listSelRect)
+	cardRingOnDir       string                        // the card currently hosting the contextual focus ring (focus within its subtree); child controls suppress their own ring while set to their dir
 	cardFocusPending    string                        // deferred per-card focus grab: install dir of the card that re-asserts focus on its next render (the detail panel re-nests the grid, orphaning path-scoped ids; mirrors listFocusPending)
 	scrollCursorPending bool                          // deferred scroll-into-view: set by Enter when opening the panel, consumed once in gridView after fitCards recomputes cols
 	prevCursorID        ContainerId                   // the cursor card's identity node from LAST frame — gridView compares it with this frame's node to detect actual identity churn (pointer changed) vs intentional focus move (pointer same)
@@ -125,9 +126,11 @@ func Run(ctx context.Context, cfg Config) error {
 	m := newModel(cfg)
 	m.ctx = ctx
 	m.boot(ctx)
-	shireiapp.Run(m.rootView)
+	view := m.rootView
+	shireiapp.Run(view)
 	return nil
 }
+
 
 // boot kicks off the session's cache-first startup: a warm games cache shows
 // rows instantly; a cold cache falls through to a full scan inside Start.

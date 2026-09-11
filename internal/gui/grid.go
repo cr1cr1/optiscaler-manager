@@ -187,16 +187,20 @@ func (m *model) gridView() {
 // hovered game on the model. The card itself is the focus stop (Focusable +
 // CycleFocusOnTab + FocusOnClick): click AND Tab focus it, and Tab then
 // walks its inner focusables in render order (version dropdown, buttons).
-// The card wears the focus ring when it holds focus, or when it is the
-// keyboard cursor (idx == selIdx) while no card is focused — one ring only
-// (cursor wins over hover; both are 1.5px borders, so the ring never
-// shifts card geometry).
+// The card HOSTS the focus ring whenever focus sits anywhere in its
+// subtree — the card itself, a pill, a button, the trigger of an open
+// menu — so interacting with a child never blanks the parent's ring
+// (contextual focus; child controls suppress their own ring while hosted).
+// When no card subtree holds focus, the keyboard cursor's card wears it
+// instead — one ring only (cursor wins over hover; both are 1.5px borders,
+// so the ring never shifts card geometry).
 func (m *model) gameCard(e ui.GameRow, idx int) {
 	cardW, cardH := m.cardW, m.cardH
 	coverW := float32(cardW - 2*cardPad)
 	m.tierPillRect = Rect{}
 	m.ddTriggerID = nil
 	m.ddFocusRing = false
+	m.cardRingOnDir = ""
 	m.dlssUpdateID = nil
 	m.dlssArrowID = nil
 	m.dlssMenuID = nil
@@ -245,14 +249,17 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 			m.hoveredDir = ""
 		}
 		m.cardRect = GetScreenRectOf(CurrentId())
-		// Ring = HasFocus() — same as every other focusable component
-		// (buttons, toggles, dropdowns). No passive cursor ring, no
-		// suppression maps: if the card holds keyboard focus, it draws
-		// the ring; otherwise nothing. BorderWidth matches hover's 1.5
-		// so the ring never shifts card layout.
-		if HasFocus() {
+		// Ring = focus within the card's subtree (the card itself, or any
+		// child — a pill, a button, the trigger of an open menu). The card
+		// HOSTS the contextual ring: a child control or its open menu must
+		// not hide the parent's ring just because focus moved into the
+		// subtree (children suppress their own ring while hosted — see
+		// versionDropdown). BorderWidth matches hover's 1.5 so the ring
+		// never shifts card layout.
+		if IdHasFocusWithin(CurrentId()) {
 			m.gridCursorRect = m.cardRect
 			m.cardRingClip = m.rowClipRect
+			m.cardRingOnDir = e.InstallDir
 			ModAttrs(func(a *AttrSet) {
 				a.BorderWidth = 1.5
 				a.BorderColor = focusBorder

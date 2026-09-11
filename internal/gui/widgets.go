@@ -668,11 +668,17 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 		st.btnID = CurrentId()
 		activated := false
 		if HasFocus() {
-			m.ddFocusRing = true
-			ModAttrs(func(a *AttrSet) {
-				a.BorderWidth = 2
-				a.BorderColor = focusBorder
-			})
+			// Inside a card the card HOSTS the contextual ring (focus is
+			// within its subtree) and the pill adds nothing — one ring per
+			// context. Outside a card (detail panel) the pill wears its
+			// own.
+			if m.cardRingOnDir != e.InstallDir {
+				m.ddFocusRing = true
+				ModAttrs(func(a *AttrSet) {
+					a.BorderWidth = 2
+					a.BorderColor = focusBorder
+				})
+			}
 			if st.open {
 				// With the popup open the trigger owns menu navigation via
 				// the shared dropdown keys (Up/Down highlight, Enter pick,

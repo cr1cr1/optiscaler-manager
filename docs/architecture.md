@@ -379,6 +379,15 @@ picker via `m.openDropdownDir`, the DLSS menu via `m.openDLSSDir` with a
 per-card-instance `Use` state that clears itself when another card owns
 the field.
 
+Focus inside the grid is contextual per card: the card HOSTS the focus
+ring while focus sits anywhere in its subtree — the card itself, a pill,
+a button, the trigger of an open menu — so opening a menu from a pill
+never blanks the parent's ring (a child must not trigger focus-ring
+hiding on its parent). Hosted child controls suppress their own ring
+(the version pill checks `m.cardRingOnDir`); when no card subtree holds
+focus, the keyboard cursor's card wears the ring instead. Exactly one
+ring is ever lit.
+
 Hovering a click affordance — a button or a pressable pill — shows the
 pointing hand, and nothing else does: shirei carries a small cursor-shape
 patch (vendor patch v0.17, see docs/vendor-patches.md) whose hover-chain

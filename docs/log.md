@@ -2908,3 +2908,38 @@ opens the restore menu of local backup sets.
 - Docs: architecture.md cursor paragraph rewritten; vendor-patches.md
   v0.17 files list gains `waylandinput_linux.go` and documents the enter
   serial rule; guard test covers the new file.
+
+## 2026-09-11 — v0.14j: contextual card focus ring; flicker case closed; sluggishness telemetry
+
+- User report: opening a menu from the optiscaler/DLSS pill on a card hid
+  the card's focus ring for the interaction; and the GUI felt overall
+  sluggish (suspected missing GPU acceleration or redundant repaints).
+- Contextual ring (the fix): `gameCard` now hosts the focus ring while
+  focus sits anywhere in its subtree (`IdHasFocusWithin`) — card focused,
+  a pill held, a button, or the trigger of an open menu — instead of only
+  when the card node itself held focus. The version pill suppresses its
+  own ring while its hosting card wears it (`m.cardRingOnDir` seam), so
+  exactly one ring stays lit per context and interacting with a child
+  (opening a menu) never blanks the parent's ring. The H(b) exclusivity
+  test and the version-trigger ring test were rewritten to the contextual
+  model (the card hosts; no second ring), and a new test pins the exact
+  reported scenario: menu open → ring stays, menu close → ring stays.
+- Flicker: not reproducible in instrumented runs — two feedback loops
+  (headless churn probe kept as `dropdown_idle_test.go`: open/close menus
+  then assert the loop settles to no-changes/no-next-frame; real-compositor
+  screenshot diffs at ~5Hz against the app's own content hashes were
+  pixel-stable through menu open/hold/close). The temporary
+  `[DEBUG-flkr]` instrumentation (frame-hash logging, pixel dumps, the
+  self-driving probe) is stripped; the dedicated pointer-enter serial for
+  cursor updates (previously only in the working tree) is now committed.
+- Sluggishness telemetry (from the user's own session logs, 4811 frames):
+  the GPU path is ACTIVE (one startup `framebuffer incomplete` hiccup,
+  zero per-frame software fallbacks), frame build cost p50=0.5ms
+  p99=1.5ms — the loop is fast; ~10-17 discrete 20-75ms build hitches per
+  minute at interaction moments are the felt cost. Eliminated as causes:
+  GPU fallback, GC pauses (gctrace: sub-ms, sparse), font-table eviction
+  (raising the idle window changed nothing — experiment reverted), and
+  layout settle passes (identical ContainerBuilt on slow frames). The
+  hitches are shirei-internal (build-phase only); if they matter enough
+  to hunt further, the next lever is an execution trace around a hitch
+  frame upstream, not app-side changes.
