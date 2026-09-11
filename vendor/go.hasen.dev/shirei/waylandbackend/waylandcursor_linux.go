@@ -325,8 +325,8 @@ func applyCursor(serial uint32) {
 	if img := themedCursorImage(cs, shape); img != nil && attachThemedCursor(serial, img, cs) {
 		return
 	}
-	// ponytail: drawing a hand bitmap for the theme-less fallback tier is
-	// not worth it; such systems keep the arrow everywhere.
+	// The drawn-bitmap tier stays the arrow for every shape: it only runs
+	// on theme-less systems, and a hand bitmap is not worth the bytes.
 	if !cursorReady || cursorScale != cs {
 		buildCursor(cs)
 	}

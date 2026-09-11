@@ -255,7 +255,9 @@ a gap is worse than minor distortion (imperceptible for near-2:3 art).
 
 **Reapplying after `go mod vendor`.** Re-apply the stretch in `softrender.go`
 (`dwl, dhl = s.Rect.Size[0], s.Rect.Size[1]`) and re-add `ImageFill` in
-`images.go`; the guard fails while either is missing.
+`images.go` — AFTER `RestrictedSize` (a naive insert before the function
+cuts into its doc comment; the v0.6.10 reapplication made that mistake and
+severed the comment); the guard fails while either is missing.
 
 ## shirei: Wayland skip-unchanged-frames (v0.15) — SUPERSEDED
 

@@ -393,19 +393,6 @@ func Image(fpath string, maxSize Vec2) {
 }
 
 // RestrictedSize scales size down to fit within maxSize while preserving aspect
-// ImageFill draws an image stretched to exactly fill the given size,
-// ignoring aspect ratio. PATCHED by optiscaler-manager (v0.14): for grid
-// cover thumbnails where a gap is worse than minor distortion. Reapply
-// after `go mod vendor` (see docs/vendor-patches.md).
-func ImageFill(fpath string, size Vec2) {
-	if LoadImage(fpath) == nil {
-		return
-	}
-	Container(AttrSet{MaxSize: size, MinSize: size, Clip: true}, func() {
-		ui.current.imageId = GetImageId(fpath)
-	})
-}
-
 // ratio. A zero maxSize component leaves that dimension unconstrained; size is
 // only ever shrunk, never enlarged.
 func RestrictedSize(size Vec2, maxSize Vec2) Vec2 {
@@ -419,4 +406,17 @@ func RestrictedSize(size Vec2, maxSize Vec2) Vec2 {
 	}
 	scale := min(scaleX, scaleY)
 	return Vec2Mul(size, scale)
+}
+
+// ImageFill draws an image stretched to exactly fill the given size,
+// ignoring aspect ratio. PATCHED by optiscaler-manager (v0.14): for grid
+// cover thumbnails where a gap is worse than minor distortion. Reapply
+// after `go mod vendor` (see docs/vendor-patches.md).
+func ImageFill(fpath string, size Vec2) {
+	if LoadImage(fpath) == nil {
+		return
+	}
+	Container(AttrSet{MaxSize: size, MinSize: size, Clip: true}, func() {
+		ui.current.imageId = GetImageId(fpath)
+	})
 }

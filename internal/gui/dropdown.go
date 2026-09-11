@@ -31,12 +31,12 @@ type dropdownState struct {
 	prevMouse Vec2
 }
 
-// dropdownOpenKeys consumes the menu-navigation keys for a dropdown trigger
-// while its popup is open: Up/Down move the highlight (wrapping), Enter
-// reports a pick of the highlighted row, Space toggles the popup closed.
-// Every key is consumed so no frame-end fallback (or the trigger's own
-// face, for ButtonExt triggers) can also see it.
-func dropdownOpenKeys(st *dropdownState, n int) (enterPick, toggle bool) {
+// dropdownMenuKeys consumes the menu-navigation keys for a dropdown
+// trigger while its popup is open: Up/Down move the highlight (wrapping),
+// Enter reports a pick of the highlighted row, Space reports the
+// toggle-closed gesture. Every key is consumed so no frame-end fallback
+// (or the trigger's own face, for ButtonExt triggers) can also see it.
+func dropdownMenuKeys(st *dropdownState, n int) (enterPick, spaceToggle bool) {
 	switch GetFrameInput().Key {
 	case KeyDown, KeyUp:
 		if n > 0 {
@@ -54,9 +54,9 @@ func dropdownOpenKeys(st *dropdownState, n int) (enterPick, toggle bool) {
 		enterPick = true
 	case KeySpace:
 		GetFrameInput().Key = KeyCodeNone
-		toggle = true
+		spaceToggle = true
 	}
-	return enterPick, toggle
+	return enterPick, spaceToggle
 }
 
 // dropdownRow renders one popup row with the shared dropdown behavior: the
@@ -140,9 +140,10 @@ func dropdownDismiss(st *dropdownState, onClosed func()) {
 }
 
 // dropdownArrow is the one dropdown affordance arrow: the larger
-// sorted-down icon glyph shared by the version-dropdown trigger, the sort
-// trigger, and the DLSS pill (the DLSS pill used to render a smaller text
-// glyph of its own).
+// sorted-down icon glyph shared by the version-dropdown trigger and the
+// DLSS pill (the DLSS pill used to render a smaller text glyph of its
+// own). The sort trigger's arrow is its ButtonExt icon attr — same glyph,
+// same size, button-skinned.
 func dropdownArrow() {
 	Icon(TypArrowSortedDown, FontSize(11), TextColor(0, 0, 96, 1))
 }

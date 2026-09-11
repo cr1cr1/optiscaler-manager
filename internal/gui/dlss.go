@@ -10,13 +10,12 @@ import (
 )
 
 // dlssSnapshotItem is the restore menu's observability seam: one entry per
-// rendered menu row (snapshot id, label, screen rect, container id, and the
-// keyboard/hover highlight state).
+// rendered menu row (snapshot id, label, screen rect, and the keyboard/
+// hover highlight state).
 type dlssSnapshotItem struct {
 	id    string
 	label string
 	rect  Rect
-	cid   ContainerId
 	hl    bool
 }
 
@@ -120,9 +119,9 @@ func (m *model) dlssControl(e *ui.GameRow, label string) {
 					// The focused arrow owns the open menu's navigation
 					// (the shared dropdown model): Up/Down move the
 					// highlight, Enter picks, Space toggles closed.
-					var spaceClose bool
-					enterPick, spaceClose = dropdownOpenKeys(st, len(m.dlssSnaps))
-					if spaceClose {
+					var spaceToggle bool
+					enterPick, spaceToggle = dropdownMenuKeys(st, len(m.dlssSnaps))
+					if spaceToggle {
 						activated = true
 					}
 				}
@@ -186,10 +185,11 @@ func (m *model) dlssRestoreMenu(e *ui.GameRow, enterPick bool) {
 		m.dlssSnapshotItems = m.dlssSnapshotItems[:0]
 		for i, snap := range m.dlssSnaps {
 			snap := snap
+			label := snap.Label()
 			dropdownRow(st, i, enterPick, mouseMoved,
 				func(hl bool) {
-					Label(snap.Label(), FontSize(12), TextColorVec(txtMain))
-					m.dlssSnapshotItems = append(m.dlssSnapshotItems, dlssSnapshotItem{id: snap.ID, label: snap.Label(), rect: GetScreenRectOf(CurrentId()), cid: CurrentId(), hl: hl})
+					Label(label, FontSize(12), TextColorVec(txtMain))
+					m.dlssSnapshotItems = append(m.dlssSnapshotItems, dlssSnapshotItem{id: snap.ID, label: label, rect: GetScreenRectOf(CurrentId()), hl: hl})
 				},
 				func(keyboard bool) {
 					m.openDLSSDir = ""

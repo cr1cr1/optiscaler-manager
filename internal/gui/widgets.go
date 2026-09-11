@@ -678,9 +678,9 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 				// the shared dropdown keys (Up/Down highlight, Enter pick,
 				// Space closes); all consumed so no frame-end fallback can
 				// also see them.
-				var spaceClose bool
-				enterPick, spaceClose = dropdownOpenKeys(st, len(m.versionDDItems))
-				if spaceClose {
+				var spaceToggle bool
+				enterPick, spaceToggle = dropdownMenuKeys(st, len(m.versionDDItems))
+				if spaceToggle {
 					activated = true
 				}
 			} else if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
@@ -846,9 +846,9 @@ func (m *model) sortDropdown() {
 			// With the popup open the trigger owns menu navigation via the
 			// shared dropdown keys (Up/Down highlight, Enter pick, Space
 			// closes); all consumed so the face cannot also see them.
-			var spaceClose bool
-			enterPick, spaceClose = dropdownOpenKeys(st, len(m.sortMenuItems))
-			if spaceClose && !disabled {
+			var spaceToggle bool
+			enterPick, spaceToggle = dropdownMenuKeys(st, len(m.sortMenuItems))
+			if spaceToggle && !disabled {
 				activated = true
 			}
 		}

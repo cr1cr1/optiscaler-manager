@@ -520,8 +520,11 @@ decisions the per-version sections above do not cover.
   always present.
 - **Snapshot backups + restore menu**: every update and restore first
   persists a hash-verified snapshot of the current set under
-  `<data-root>/dlss-backups/`; the pill's ▼ arrow lists them (newest
-  first), a pick asks for confirmation, and a confirmed restore swaps
+  `<data-root>/dlss-backups/`; the pill's shared dropdown arrow lists
+  them (newest first) through the same dropdown machinery as the version
+  picker (v0.14i: the focused arrow trigger drives Down/Up/Enter
+  highlight navigation, hover adopts on motion, Esc/click-outside
+  dismiss), a pick asks for confirmation, and a confirmed restore swaps
   the complete set back after verifying snapshot hashes. Backups
   deduplicate by member digests (identical sets reuse the existing
   snapshot), and a press on an already-current set is a graceful no-op

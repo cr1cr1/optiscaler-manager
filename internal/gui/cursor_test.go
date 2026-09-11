@@ -76,12 +76,13 @@ func TestMouseCursorShape_HoverPicksShape(t *testing.T) {
 // shape in a real view: hand over the button, arrow over the text field.
 func TestMouseCursorShape_AppClickables(t *testing.T) {
 	headlessFrames(t, 400, 200)
+	buf := ""
 	var btn, field Rect
 	view := func() {
 		Container(Attrs(Viewport), func() {
 			focusableButton(NoIcon, "Go")
 			btn = GetScreenRectOf(GetLastId())
-			themedInput(&probeBuf, "latest", NoIcon, MinSize(160, 26))
+			themedInput(&buf, "latest", NoIcon, MinSize(160, 26))
 			field = GetScreenRectOf(GetLastId())
 		})
 	}
@@ -124,8 +125,7 @@ func TestMouseCursorShape_AppChrome(t *testing.T) {
 		t.Errorf("sidebar item: cursor shape %d, want pointer", got)
 	}
 
-	sess, vm := viewSwitchPopulated(t)
-	_ = sess
+	_, vm := viewSwitchPopulated(t)
 	switcher := func() {
 		Container(Attrs(Viewport), func() {
 			vm.viewSwitch()
@@ -143,4 +143,24 @@ func TestMouseCursorShape_AppChrome(t *testing.T) {
 	t.Log("sidebar items and view-switch segments pick the pointing hand")
 }
 
-var probeBuf string
+// TestMouseCursorShape_DLSSPill: the pill the request names directly — the
+// DLSS pill's arrow segment is a clickable component, so it picks the
+// pointing hand in the real card view.
+func TestMouseCursorShape_DLSSPill(t *testing.T) {
+	sess, _, _ := dlssGUIFakes(t, nil)
+	row := scanOneRow(t, sess)
+	m := newModel(Config{Session: sess})
+	headlessFrames(t, 400, 800)
+	view := cardView(m, row)
+	keyFrame(KeyCodeNone, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	if m.dlssArrowRect.Size[0] == 0 {
+		t.Fatal("no DLSS arrow rect")
+	}
+	pt := Vec2{m.dlssArrowRect.Origin[0] + m.dlssArrowRect.Size[0]/2, m.dlssArrowRect.Origin[1] + m.dlssArrowRect.Size[1]/2}
+	if got := hoverShape(view, pt); got != CursorShapePointer {
+		t.Errorf("DLSS pill arrow: cursor shape %d, want pointer", got)
+	}
+	t.Log("DLSS pill arrow picks the pointing hand")
+}
+

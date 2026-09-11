@@ -2866,6 +2866,17 @@ opens the restore menu of local backup sets.
   dropdown, card, grid, settings, and focus tests pass unchanged in
   behavior (rhythm updates only where v0.6.10's press→release semantics
   require them).
+- Review-round fixes (two-axis review, baseline `2cf6b17`): the v0.14
+  reapplication had spliced `ImageFill` into the middle of
+  `RestrictedSize`'s doc comment — the upstream comment reassembled and
+  `ImageFill` moved after `RestrictedSize`, with the reapply note warning
+  about the insertion point; `dropdownOpenKeys` renamed to
+  `dropdownMenuKeys` with a consistent `spaceToggle` return (all three
+  call sites read `spaceClose`); `snap.Label()` hoisted per row; the
+  vendored hand-fallback rationale comment de-agent-styled;
+  `dropdownArrow`'s comment no longer claims the sort trigger (its arrow
+  is the button's icon attr); a direct cursor test hovers the DLSS pill's
+  arrow in the real card view; the unused `cid` seam field dropped.
 - Docs: architecture.md shared-dropdown + cursor section, DLSS section
   pointer to it; vendor-patches.md v0.17 entry + v0.6.10 reapplication
   notes.
