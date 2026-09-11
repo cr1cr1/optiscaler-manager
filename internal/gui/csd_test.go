@@ -69,7 +69,7 @@ func TestVendorCSDPatchPresent(t *testing.T) {
 	}
 	// v0.17 (mouse cursor shape) spans four vendored files; every one must
 	// carry the marker so a `go mod vendor` refresh fails loudly.
-	for _, f := range []string{"shirei.go", "attrs.go", "waylandbackend/waylandcursor_linux.go", "waylandbackend/waylandbackend_linux.go"} {
+	for _, f := range []string{"shirei.go", "attrs.go", "waylandbackend/waylandcursor_linux.go", "waylandbackend/waylandbackend_linux.go", "waylandbackend/waylandinput_linux.go"} {
 		pf, err := os.ReadFile(filepath.Join(root, "vendor", "go.hasen.dev", "shirei", f))
 		if err != nil {
 			t.Fatalf("read vendored %s: %v", f, err)

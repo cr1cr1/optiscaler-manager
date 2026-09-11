@@ -274,9 +274,11 @@ func attachThemedCursor(serial uint32, img *wlcursor.ImageBuffer, cs int) bool {
 }
 
 // PATCHED by optiscaler-manager (v0.17): cursor shape application tracking —
-// the pointer serial and shape last applied, so applyPointerCursor only
-// talks to the compositor when either changes.
+// the ENTER serial (the only serial set_shape/set_cursor accept; button and
+// leave events must not feed it) and the shape last applied, so
+// applyPointerCursor only talks to the compositor when either changes.
 var (
+	cursorEnterSerial  uint32
 	cursorShapeSerial  uint32
 	cursorShapeApplied int
 )
@@ -289,12 +291,12 @@ func applyPointerCursor() {
 		return
 	}
 	shape := shirei.MouseCursorShape
-	if cursorShapeApplied == shape && pointerSerial == cursorShapeSerial {
+	if cursorShapeApplied == shape && cursorEnterSerial == cursorShapeSerial {
 		return
 	}
-	cursorShapeSerial = pointerSerial
+	cursorShapeSerial = cursorEnterSerial
 	cursorShapeApplied = shape
-	applyCursor(pointerSerial)
+	applyCursor(cursorEnterSerial)
 }
 
 // applyCursor sets the cursor for this enter serial: compositor-drawn

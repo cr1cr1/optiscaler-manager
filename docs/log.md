@@ -2880,3 +2880,31 @@ opens the restore menu of local backup sets.
 - Docs: architecture.md shared-dropdown + cursor section, DLSS section
   pointer to it; vendor-patches.md v0.17 entry + v0.6.10 reapplication
   notes.
+
+## 2026-09-12 — v0.14j: hand cursor scoped to real click affordances; survives clicks
+
+- User report on v0.14i: the hand cursor was intermittently enabled
+  globally and disappeared after displaying a menu.
+- Root cause one — scope: the hover rule counted any `Focusable` chain
+  node as clickable, and every grid card is focusable, so the whole card
+  surface (most of the window) was a hand zone; combined with hover
+  detection reading the previous frame's hoverables, the hand flickered
+  in and out around layout changes (menus opening/closing). The rule now
+  requires the explicit `PointerHand` attr — buttons (the
+  `focusableButtonExt`/`focusableToggle` wrappers), the pill controls
+  (version trigger, DLSS update/arrow segments), the sort trigger, the
+  view switch and its segments, sidebar items, dropdown rows — while
+  card bodies, static badges, and text fields keep the arrow.
+- Root cause two — dead cursor after clicks: the wayland applier sent
+  `set_shape`/`set_cursor` with the generic `pointerSerial`, which button
+  and leave events overwrite; the protocols accept only the last
+  `wl_pointer.enter` serial, so the compositor silently ignored every
+  cursor update after the first click (exactly "after displaying one
+  menu, it disappears"). The applier now tracks a dedicated
+  `cursorEnterSerial`, recorded by `HandlePointerEnter`.
+- Tests: the hover-rule unit test pins that focusability alone keeps the
+  arrow (card proxy); the button, DLSS pill, sidebar, and segment tests
+  pin the wired affordances.
+- Docs: architecture.md cursor paragraph rewritten; vendor-patches.md
+  v0.17 files list gains `waylandinput_linux.go` and documents the enter
+  serial rule; guard test covers the new file.

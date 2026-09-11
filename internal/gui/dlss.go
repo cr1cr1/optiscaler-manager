@@ -90,7 +90,7 @@ func (m *model) dlssControl(e *ui.GameRow, label string) {
 	}
 	enterPick := false
 	Container(Attrs(Row, Gap(1), Corners(radiusS), BackgroundVec(toneColor(ui.ToneGreen))), func() {
-		Container(Attrs(Focusable, Row, CrossMid, Pad2(3, 3), Corners(radiusS)), func() {
+		Container(Attrs(Focusable, PointerHand, Row, CrossMid, Pad2(3, 3), Corners(radiusS)), func() {
 			FocusOnClick()
 			m.dlssUpdateID = CurrentId()
 			m.dlssUpdateRect = GetScreenRectOf(CurrentId())
@@ -108,7 +108,7 @@ func (m *model) dlssControl(e *ui.GameRow, label string) {
 				m.dispatchUpdateDLSS(e.InstallDir)
 			}
 		})
-		Container(Attrs(Focusable, Pad2(3, 5), Corners(radiusS)), func() {
+		Container(Attrs(Focusable, PointerHand, Pad2(3, 5), Corners(radiusS)), func() {
 			FocusOnClick()
 			m.dlssArrowID = CurrentId()
 			m.dlssArrowRect = GetScreenRectOf(CurrentId())

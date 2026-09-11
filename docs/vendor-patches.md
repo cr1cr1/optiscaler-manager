@@ -301,9 +301,10 @@ reset block at the end of `ResetInputSession`.
   `MouseCursorShape` var, the hover-chain rule in `RunFrameFn`, the
   `TextEntry`/`PointerHand` attrs on `AttrSet`), `attrs.go` (the two
   setters), `waylandbackend/waylandcursor_linux.go` (shape-aware
-  `applyCursor` + themed hand loading + `applyPointerCursor` tracking),
-  `waylandbackend/waylandbackend_linux.go` (the post-frame hook before the
-  unchanged-frame early return).
+  `applyCursor` + themed hand loading + the enter-serial tracking in
+  `applyPointerCursor`), `waylandbackend/waylandinput_linux.go` (the enter
+  handler records `cursorEnterSerial`), `waylandbackend/waylandbackend_linux.go`
+  (the post-frame hook before the unchanged-frame early return).
 - **Marker**: `// PATCHED by optiscaler-manager (v0.17)` in all four files.
 - **Guard**: `internal/gui/csd_test.go` (checks all four markers) and
   `internal/gui/cursor_test.go` (behavior: the picked shape per hover
@@ -313,10 +314,22 @@ reset block at the end of `ResetInputSession`.
 no cursor-shape concept. The patch adds `CursorShapeDefault` (1) and
 `CursorShapePointer` (4) — the `wp_cursor_shape_device_v1.shape` values —
 plus an exported `MouseCursorShape` var that `RunFrameFn`'s hover-detection
-block picks from the hover chain, innermost first: a `TextEntry` container
-keeps the arrow (the caret signals editability); the first `Focusable` or
-`PointerHand` container asks for the pointing hand; empty space stays the
-arrow.
+block picks from the hover chain, innermost first: an explicit
+`PointerHand` container asks for the pointing hand; a `TextEntry` keeps
+the arrow (the caret signals editability, and it wins over a
+`PointerHand` ancestor); everything else — including focusable
+containers, whose whole surface is not a click affordance (grid cards,
+tab stops) — stays the arrow. The hand is strictly opt-in: when the rule
+also counted `Focusable`, every focusable grid card turned its entire
+surface into a hand zone and the cursor read as enabled globally.
+
+The wayland side tracks the **enter serial** separately
+(`cursorEnterSerial`, recorded by `HandlePointerEnter`):
+`wp_pointer.set_cursor` / `wp_cursor_shape.set_shape` accept only the
+serial of the last `wl_pointer.enter` — feeding them the generic
+`pointerSerial` (which button and leave events overwrite) makes the
+compositor silently ignore every update after the first click, freezing
+the cursor until the next enter.
 
 The wayland backend applies the picked shape after every `RunFrameFn` —
 before the unchanged-frame early return, so hover moves change the cursor
@@ -340,8 +353,9 @@ has no per-frame cursor hook for them. The app opts in with
 `AttrSet` fields after `Focusable`; the setters after `Focusable` in
 `attrs.go`; `shapePointer`/`handCursorNames`, the shape-keyed
 `themedImage`/`themedTried` maps, the shape-aware `themedCursorImage`,
-`applyPointerCursor` and the shape-aware `applyCursor` in
-`waylandcursor_linux.go` (plus the `shirei` import); the post-frame
-`applyPointerCursor()` call in `drawFrame` before the early return.
-`TestVendorCSDPatchPresent` and the cursor tests fail while any part is
-missing.
+the `cursorEnterSerial` tracking, `applyPointerCursor` and the
+shape-aware `applyCursor` in `waylandcursor_linux.go` (plus the `shirei`
+import); the `cursorEnterSerial` assignment in `HandlePointerEnter`
+(`waylandinput_linux.go`); the post-frame `applyPointerCursor()` call in
+`drawFrame` before the early return. `TestVendorCSDPatchPresent` and the
+cursor tests fail while any part is missing.

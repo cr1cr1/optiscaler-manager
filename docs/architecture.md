@@ -379,19 +379,24 @@ picker via `m.openDropdownDir`, the DLSS menu via `m.openDLSSDir` with a
 per-card-instance `Use` state that clears itself when another card owns
 the field.
 
-Hovering any clickable component shows the pointing hand: shirei carries
-a small cursor-shape patch (vendor patch v0.17, see docs/vendor-patches.md)
-whose hover-chain rule picks the shape every frame — a text entry keeps
-the default arrow (the caret signals editability), the first clickable
-node (`Focusable` or an explicit `PointerHand`) asks for the pointing
-hand. The app sets `TextEntry` on the themed inputs and `PointerHand` on
-the click affordances that are not focusable (sidebar items, view-switch
-segments, dropdown rows); buttons, cards, pills' controls, and dropdown
-triggers get the hand via `Focusable`. The wayland backend applies the
-picked shape after every frame — before the unchanged-frame early return,
-so hover moves work without a repaint — via the compositor's
-wp_cursor_shape protocol, falling back to the theme's hand cursor, then
-the drawn arrow. X11 and Win32 keep their static cursors.
+Hovering a click affordance — a button or a pressable pill — shows the
+pointing hand, and nothing else does: shirei carries a small cursor-shape
+patch (vendor patch v0.17, see docs/vendor-patches.md) whose hover-chain
+rule picks the shape every frame from an explicit `PointerHand` attr (a
+`TextEntry` keeps the arrow even under a `PointerHand` ancestor).
+Focusability deliberately does NOT imply the hand — grid cards and other
+focusable containers keep the arrow over their body — and the wayland
+side applies shapes with the tracked pointer-enter serial, since button
+or leave serials make the compositor silently ignore cursor updates.
+The app sets `PointerHand` on the buttons (the `focusableButtonExt`/
+`focusableToggle` wrappers), the pill controls (version trigger, DLSS
+update/arrow segments), the sort trigger, the view switch and its
+segments, sidebar items, and dropdown rows; themed inputs set
+`TextEntry`. The wayland backend applies the picked shape after every
+frame — before the unchanged-frame early return, so hover moves work
+without a repaint — via the compositor's wp_cursor_shape protocol,
+falling back to the theme's hand cursor, then the drawn arrow. X11 and
+Win32 keep their static cursors.
 
 ## Game-dir classification and container scan roots (v0.7)
 

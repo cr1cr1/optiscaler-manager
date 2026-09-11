@@ -28,7 +28,7 @@ func focusableButton(icon widgets.IconGlyph, label string) bool {
 // focused.
 func focusableButtonExt(label string, attrs widgets.ButtonAttrs) bool {
 	var activated bool
-	Container(Attrs(Corners(6)), func() {
+	Container(Attrs(PointerHand, Corners(6)), func() {
 		// The face (the tab stop) holds focus; the ring paints on its
 		// enclosing wrapper. Attrs must change BEFORE children (shirei
 		// panics otherwise), so the check reads the face id recorded on the
@@ -74,7 +74,7 @@ func spinnerGlyph() {
 // it must not be focusable (double stop) and must not consume keys (double
 // flip).
 func focusableToggle(on *bool, label string) {
-	Container(Attrs(Row, CrossMid, Gap(sp8), Corners(6)), func() {
+	Container(Attrs(PointerHand, Row, CrossMid, Gap(sp8), Corners(6)), func() {
 		widgets.ToggleSwitchExt(on, widgets.ToggleSwitchAttrs{})
 		Label(label, FontSize(13), TextColorVec(txtMain))
 	})
@@ -448,7 +448,7 @@ func (m *model) viewSwitch() {
 	// sortFocusRing discipline: the seams describe the frame being built.
 	m.viewSwitchID = nil
 	m.viewSwitchFocusRing = false
-	Container(Attrs(Focusable, Row, Corners(radiusM), Clip, BorderWidth(1), BorderColorVec(border)), func() {
+	Container(Attrs(Focusable, PointerHand, Row, Corners(radiusM), Clip, BorderWidth(1), BorderColorVec(border)), func() {
 		FocusOnClick()
 		m.viewSwitchID = CurrentId()
 		if HasFocus() {
@@ -658,7 +658,7 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 	// Trigger: badgePill geometry (Pad2(3, 6), FontSize 11) so the pill row
 	// height — and with it cardContentH — is untouched.
 	enterPick := false
-	Container(Attrs(Focusable, Row, CrossMid, Gap(sp4), Pad2(3, 6), Corners(radiusS), BackgroundVec(toneColor(tone))), func() {
+	Container(Attrs(Focusable, PointerHand, Row, CrossMid, Gap(sp4), Pad2(3, 6), Corners(radiusS), BackgroundVec(toneColor(tone))), func() {
 		FocusOnClick()
 		m.ddTriggerID = CurrentId()
 		if m.versionDDRects == nil {
@@ -829,7 +829,7 @@ func (m *model) sortDropdown() {
 	}
 	enterPick := false
 	activated := false
-	Container(Attrs(Corners(6)), func() {
+	Container(Attrs(PointerHand, Corners(6)), func() {
 		// The face (ButtonExt's container) is the focus owner from the
 		// previous frame. Attrs must change BEFORE children (shirei panics
 		// otherwise), so both the ring and the nav-key consumption read the

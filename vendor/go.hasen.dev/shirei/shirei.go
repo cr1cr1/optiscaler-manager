@@ -271,11 +271,13 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 		ui.directHovered = nil
 		g.ResetSlice(&ui.hoverList)
 		// PATCHED by optiscaler-manager (v0.17): pick the mouse cursor shape
-		// from the hover chain, innermost first: a text entry keeps the
-		// default arrow (the caret already signals editability); the first
-		// clickable node (Focusable or an explicit PointerHand) asks for the
-		// pointing hand; everything else stays the default arrow. The
-		// backends apply the shape after the frame.
+		// from the hover chain, innermost first: an explicit PointerHand
+		// asks for the pointing hand; a TextEntry keeps the default arrow
+		// (the caret already signals editability, and it wins over a
+		// PointerHand ancestor); everything else — including focusable
+		// containers, whose whole surface is not a click affordance (grid
+		// cards, tab stops) — stays the default arrow. The backends apply
+		// the shape after the frame.
 		MouseCursorShape = CursorShapeDefault
 		cursorDecided := false
 		for _, hoverable := range slices.Backward(ui.hoverables) {
@@ -289,7 +291,7 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 					if !cursorDecided {
 						if c.TextEntry {
 							cursorDecided = true
-						} else if c.Focusable || c.PointerHand {
+						} else if c.PointerHand {
 							MouseCursorShape = CursorShapePointer
 							cursorDecided = true
 						}
@@ -759,8 +761,8 @@ type AttrSet struct {
 	Focusable       bool // items that can receive focus via clicking or tab-cycling
 	// PATCHED by optiscaler-manager (v0.17): mouse cursor intent. TextEntry
 	// keeps the default arrow over a text-editing container; PointerHand
-	// requests the pointing hand over a click affordance that has no
-	// Focusable of its own.
+	// requests the pointing hand over a click affordance — the ONLY cursor
+	// hand trigger (focusability does not imply one).
 	TextEntry bool
 	PointerHand bool
 	FocusTrap       bool // this container wants to be a focus trap (only for modals)

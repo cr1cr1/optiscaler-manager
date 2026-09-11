@@ -23,9 +23,10 @@ func hoverShape(view FrameFn, pt Vec2) int {
 	return MouseCursorShape
 }
 
-// TestMouseCursorShape_HoverPicksShape: the hover-chain rule — clickable
-// containers get the pointing hand, text entries and empty space keep the
-// default arrow, and a text entry wins over focusable ancestors.
+// TestMouseCursorShape_HoverPicksShape: the hover-chain rule — only an
+// explicit PointerHand picks the pointing hand (focusability alone does
+// not: grid cards are focusable but their whole surface is not a click
+// affordance); text entries and empty space keep the default arrow.
 func TestMouseCursorShape_HoverPicksShape(t *testing.T) {
 	headlessFrames(t, 500, 300)
 	var clickable, entry, hand Rect
@@ -58,7 +59,9 @@ func TestMouseCursorShape_HoverPicksShape(t *testing.T) {
 		pt   Vec2
 		want int
 	}{
-		{"focusable container", center(clickable), CursorShapePointer},
+		// A focusable container (a grid card, a tab stop) is not a click
+		// affordance: without an explicit PointerHand it keeps the arrow.
+		{"focusable container", center(clickable), CursorShapeDefault},
 		{"text entry", center(entry), CursorShapeDefault},
 		{"pointer-hand container", center(hand), CursorShapePointer},
 		{"empty space", Vec2{470, 280}, CursorShapeDefault},
