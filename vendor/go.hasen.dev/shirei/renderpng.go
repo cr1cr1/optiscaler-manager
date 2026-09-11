@@ -35,31 +35,6 @@ func ResetInputSession() {
 	ui.lastClickTime = time.Time{}
 	g.Reset(&ui.lastClickPoint)
 	ui.clickStreak = 0
-
-	// PATCHED by optiscaler-manager (v0.16): reset the identity tree + build
-	// buffers so back-to-back headless runs (tests, RenderToImage) don't leak
-	// widget state — virtual-list scroll/height caches, Use hooks, pending
-	// commands — across runs. Host is preserved (the caller sets
-	// WindowSize/Scale after this). All ResetInputSession callers are headless;
-	// live backends never call it. Reapply after `go mod vendor`
-	// (see docs/vendor-patches.md).
-	ui.identRoot = newNode(nil, 0, nil)
-	ui.currentIdent = ui.identRoot
-	ui.current = nil
-	ui.surfaces = ui.surfaces[:0]
-	ui.surfaceHash = 0
-	ui.SurfaceCount = 0
-	ui.hoverables = nil
-	ui.focusables = nil
-	ui.hoverList = nil
-	ui.directHovered = nil
-	ui.frameFocusTrap = nil
-	ui.buildingFocusTrap = nil
-	ui.popups = ui.popups[:0]
-	ui.popupZ = 0
-	ui.pendingCommands = make(map[_CommandKey]pendingCommand)
-	ui.lastSweepFrame = 0
-	ui.identDupCount = 0
 }
 
 // HeadlessRender (Host.HeadlessRender) is true only while RenderToImage is
@@ -118,7 +93,7 @@ func RenderToImage(width, height int, fn FrameFn) *image.RGBA {
 	devW := int(Roundf32(float32(width) * HeadlessScale))
 	devH := int(Roundf32(float32(height) * HeadlessScale))
 	var rend SoftRenderer
-	fb := rend.Render(out.Surfaces, devW, devH, HeadlessScale)
+	fb := rend.Render(out.Surfaces, out.GlyphRuns, devW, devH, HeadlessScale)
 	return fb.ToRGBA()
 }
 

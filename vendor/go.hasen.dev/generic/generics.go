@@ -5,6 +5,7 @@ as well as "generic" utility functions (the other meaning of generic).
 package generic
 
 import (
+	"bytes"
 	"slices"
 	"testing"
 )
@@ -201,14 +202,19 @@ func IsZero[T comparable](v T) bool {
 	return v == zero
 }
 
-func IsZeroBytes[T any](v T) bool {
-	buf := UnsafeRawBytes(&v)
-	for _, b := range buf {
-		if b != 0 {
+var zeroBytes [512]byte
+
+// IsZeroBytes reports whether every byte of *v's in-memory representation is
+// zero. Compares in chunks via bytes.Equal (vectorized memequal).
+func IsZeroBytes[T any](v *T) bool {
+	buf := UnsafeRawBytes(v)
+	for len(buf) > len(zeroBytes) {
+		if !bytes.Equal(buf[:len(zeroBytes)], zeroBytes[:]) {
 			return false
 		}
+		buf = buf[len(zeroBytes):]
 	}
-	return true
+	return bytes.Equal(buf, zeroBytes[:len(buf)])
 }
 
 func TryAndLog[T any](value T, err error) T {

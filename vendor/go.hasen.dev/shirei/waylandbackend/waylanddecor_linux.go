@@ -5,6 +5,7 @@ package waylandbackend
 import (
 	zxdg "go.hasen.dev/shirei/internal/wayland/xdg"
 
+	g "go.hasen.dev/generic"
 	. "go.hasen.dev/shirei"
 	"go.hasen.dev/shirei/widgets"
 )
@@ -26,12 +27,9 @@ import (
 
 const titlebarHeight = 34
 
-// csdEnabled gates the client-side titlebar/resize. Disabled at the user's
-// request: the OS window manager keeps its default decorations (SSD where the
-// compositor provides them, none where it does not).
-//
-// PATCHED by optiscaler-manager (v0.8): CSD disabled — reapply after `go mod vendor` (see docs/vendor-patches.md)
-var csdEnabled = false
+// csdEnabled gates the client-side titlebar/resize. Always on for now; once
+// xdg-decoration negotiation lands this turns off when the compositor draws SSD.
+var csdEnabled = true
 
 // wrapFrame is the backend's own chrome wrapper (core knows nothing of
 // decorations): the root spans the full surface (WindowSize as set per
@@ -41,8 +39,12 @@ var csdEnabled = false
 // future CSD/fullscreen toggle) would drop it. Host.WindowSize is narrowed
 // to the content area during the app build, then restored to the surface so
 // a settle pass still sizes the root correctly (see jsbackend.wrapFrame).
-// drawFrame sets Host.WindowSize back to content after RunFrameFn. Popups
-// drain content-scoped so they layer under the titlebar.
+// drawFrame sets Host.WindowSize back to content after RunFrameFn.
+//
+// Popups drain at the root (core PopupsHost after this returns), not inside
+// the content viewport. Menu Float coords are root-absolute
+// (GetResolvedRectOf); parenting them under content, which is already
+// origin-y = titlebarHeight, dropped every panel by that height.
 func wrapFrame(appFn FrameFn) FrameFn {
 	return func() {
 		full := GetHost().WindowSize
@@ -52,7 +54,6 @@ func wrapFrame(appFn FrameFn) FrameFn {
 		}
 		ContainerWithKey("app-content", Attrs(Viewport), func() {
 			appFn()
-			PopupsHost()
 		})
 		GetHost().WindowSize = full
 	}
@@ -63,13 +64,13 @@ func wrapFrame(appFn FrameFn) FrameFn {
 // app's content transparently — the app does nothing. Runs only while CSD is
 // active.
 func drawTitlebar() {
-	Container(Attrs(Row, Expand, FixHeight(titlebarHeight), Background(230, 25, 11, 1),
-		Grad(0, 0, -4, 0), CrossAlign(AlignMiddle), Pad2(0, 8), Gap(8)), func() {
+	Container(Attrs(Row, Expand, FixHeight(titlebarHeight), Background(0, 0, 88, 1),
+		Grad(0, 0, -5, 0), CrossAlign(AlignMiddle), Pad2(0, 8), Gap(8)), func() {
 		startDrag := IsClicked() // mouse pressed somewhere on the bar this frame
-		Label(winTitle, FontSize(14), TextColor(220, 15, 92, 1))
+		Label(winTitle, FontSize(14), TextColor(0, 0, 25, 1))
 		widgets.Filler(1)
 		if closeButton() {
-			quit = true
+			g.ExitWithCleanup(0)
 		} else if startDrag {
 			startMove()
 		}
@@ -86,7 +87,7 @@ func closeButton() bool {
 		if IsClicked() {
 			clicked = true
 		}
-		Label("×", FontSize(20), TextColor(220, 15, 92, 1))
+		Label("×", FontSize(20), TextColor(0, 0, 25, 1))
 	})
 	return clicked
 }

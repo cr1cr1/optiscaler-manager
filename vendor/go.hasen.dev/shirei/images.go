@@ -112,7 +112,17 @@ func freeImage(id ImageId) {
 	res.imageLastUsed[id] = 0
 	res.freeImageIds = append(res.freeImageIds, id)
 	dropScaledForImage(id)
+	if imageFreed != nil {
+		imageFreed(id)
+	}
 }
+
+// imageFreed is called when a registry slot is released (GPU texture drop).
+var imageFreed func(ImageId)
+
+// SetImageFreedFunc registers a hook for ImageId reuse. The compositor uses it
+// to drop the GPU texture for that id.
+func SetImageFreedFunc(fn func(ImageId)) { imageFreed = fn }
 
 // maybeSweepImages frees registry entries not touched within
 // contentCachePruneAfterFrames. Called after the final RunFrameFn pass.
@@ -377,19 +387,6 @@ func Image(fpath string, maxSize Vec2) {
 	}
 	size := Vec2{f32(img.Config.Width), f32(img.Config.Height)}
 	size = RestrictedSize(size, maxSize)
-	Container(AttrSet{MaxSize: size, MinSize: size, Clip: true}, func() {
-		ui.current.imageId = GetImageId(fpath)
-	})
-}
-
-// ImageFill draws an image stretched to exactly fill the given size,
-// ignoring aspect ratio. PATCHED by optiscaler-manager (v0.14): for grid
-// cover thumbnails where a gap is worse than minor distortion. Reapply
-// after `go mod vendor` (see docs/vendor-patches.md).
-func ImageFill(fpath string, size Vec2) {
-	if LoadImage(fpath) == nil {
-		return
-	}
 	Container(AttrSet{MaxSize: size, MinSize: size, Clip: true}, func() {
 		ui.current.imageId = GetImageId(fpath)
 	})

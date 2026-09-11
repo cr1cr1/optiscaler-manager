@@ -1,13 +1,14 @@
 // Package win32backend is a direct-Windows backend for shirei. The Win32 API
-// provides the window, message loop, and input; all rasterization is done by
-// shirei's core software renderer into a top-down 32bpp DIB section that GDI
-// blits to the window (BitBlt).
+// provides the window, message loop, and input. Rasterization is D3D11 into
+// a GDI-compatible DXGI texture (BitBlt via GetDC) when GPU init succeeds,
+// else the software renderer into a top-down 32bpp DIB. Present is always
+// GDI BitBlt. SHIREI_GPU=0 forces software.
 //
 // Content-hash skip: when SurfacesHash and client size match the last presented
 // frame, render+present are skipped (same idea as cocoabackend/androidbackend).
 //
-// Instrumentation: SHIREI_PERF=1 prints fps + produce/render/present; optional
-// SHIREI_PERF_LOG=<path> appends the same lines to a file.
+// Instrumentation: SHIREI_PERF=1 prints fps + produce/render/present (µs);
+// optional SHIREI_PERF_LOG=<path> appends the same lines.
 //
 // Pure Go (no cgo): Win32 entry points via syscall, cross-compiles with
 // GOOS=windows. Half of the GOOS-selected go.hasen.dev/shirei/app wrapper.
@@ -38,6 +39,7 @@ var (
 	winTitle string
 	winW     int
 	winH     int
+	winQuiet bool
 	frameFn  shirei.FrameFn
 
 	hwnd      syscall.Handle
@@ -71,47 +73,6 @@ var (
 	wndProcCB = syscall.NewCallback(wndProc)
 )
 
-// PATCHED by optiscaler-manager (v0.11): client-side key repeat — reapply after `go mod vendor` (see docs/vendor-patches.md). WM_KEYDOWN auto-repeat is supposed to arrive natively, but on some setups (RDP, VMs, FilterKeys) it doesn't; armRepeat captures every press and pumpRepeat (from wmTimer) synthesizes repeats. Native repeats re-arm every time and push repeatNext forward by repeatDelay, so pumpRepeat is a no-op when native repeat works.
-var (
-	repeatWparam   uintptr
-	repeatLparam   uintptr
-	repeatArmed    bool
-	repeatDelay    = defaultRepeatDelay
-	repeatInterval = defaultRepeatInterval
-	repeatNext     time.Time
-)
-
-// defaultRepeatDelay/defaultRepeatInterval: 300 ms to first repeat, then 20 Hz (matches the spec). PATCHED (v0.11).
-const (
-	defaultRepeatDelay    = 300 * time.Millisecond
-	defaultRepeatInterval = 50 * time.Millisecond
-)
-
-// armRepeat captures the wparam/lparam of every key press so pumpRepeat can re-fire it. PATCHED (v0.11).
-func armRepeat(wparam, lparam uintptr) {
-	repeatWparam = wparam
-	repeatLparam = lparam
-	repeatArmed = true
-	repeatNext = time.Now().Add(repeatDelay)
-}
-
-// cancelRepeat stops pumpRepeat from synthesizing further presses. PATCHED (v0.11).
-func cancelRepeat() { repeatArmed = false }
-
-// pumpRepeat synthesizes one WM_KEYDOWN if a held key's repeat is due. Called from wmTimer; cheap when no key is armed. PATCHED (v0.11).
-func pumpRepeat() {
-	if !repeatArmed || repeatInterval <= 0 {
-		return
-	}
-	now := time.Now()
-	if now.Before(repeatNext) {
-		return
-	}
-	onKey(repeatWparam, repeatLparam, true)
-	repeatNext = now.Add(repeatInterval)
-	noteInput()
-}
-
 // SetupWindow records the window parameters. The window is created in Run, on
 // the UI thread.
 func SetupWindow(title string, width, height int) {
@@ -120,10 +81,17 @@ func SetupWindow(title string, width, height int) {
 	winH = height
 }
 
+// SetupQuiet maps the window without making it the foreground or giving it
+// keyboard focus. Call before Run.
+func SetupQuiet() {
+	winQuiet = true
+}
+
 // Run opens the window and runs the Win32 message loop. It must be called
 // from the program's main goroutine (the message loop and window must share
-// one OS thread) and does not return until the window closes. System fonts
-// are initialized by shirei on the first frame (RunFrameFn), not here.
+// one OS thread) and does not return: WM_QUIT ends with generic.ExitWithCleanup
+// so AddExitCleanup handlers run. System fonts are initialized by shirei on
+// the first frame (RunFrameFn), not here.
 func Run(fn shirei.FrameFn) {
 	runtime.LockOSThread()
 
@@ -134,7 +102,9 @@ func Run(fn shirei.FrameFn) {
 
 	enableDPIAwareness()
 	createWindow()
+	tryInitGPU()
 	messageLoop()
+	g.ExitWithCleanup(0)
 }
 
 // enableDPIAwareness opts into per-monitor DPI scaling so GetClientRect and
@@ -185,18 +155,22 @@ func createWindow() {
 	}
 	wWidth := int(r.Right - r.Left)
 	wHeight := int(r.Bottom - r.Top)
-	if perfEnabled {
+	if shirei.PerfEnabled() {
 		fmt.Printf("[win32] creation dpi %d -> client %dx%d px\n", dpi, uintptr(winW)*dpi/96, uintptr(winH)*dpi/96)
 	}
 
 	x, y := uintptr(cwUseDefault), uintptr(cwUseDefault)
 
 	title, _ := syscall.UTF16PtrFromString(winTitle)
+	style := uintptr(wsOverlappedWindow | wsVisible)
+	if winQuiet {
+		style = uintptr(wsOverlappedWindow)
+	}
 	h, _, err := procCreateWindowExW.Call(
 		0,
 		uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(title)),
-		wsOverlappedWindow|wsVisible,
+		style,
 		x, y,
 		uintptr(wWidth), uintptr(wHeight),
 		0, 0, uintptr(hinstance), 0,
@@ -206,16 +180,20 @@ func createWindow() {
 	}
 	hwnd = syscall.Handle(h)
 
-	procShowWindow.Call(uintptr(hwnd), swShow)
-	procUpdateWindow.Call(uintptr(hwnd))
-
-	// Pull the new window to the front and give it keyboard focus. When launched
-	// from a terminal another app owns the foreground, so ShowWindow alone leaves
-	// us unfocused; SetForegroundWindow asks the window manager to activate us
-	// (under CrossOver this maps to winemac.drv bringing the app forward).
-	procBringWindowToTop.Call(uintptr(hwnd))
-	procSetForegroundWindow.Call(uintptr(hwnd))
-	procSetFocus.Call(uintptr(hwnd))
+	if winQuiet {
+		procShowWindow.Call(uintptr(hwnd), swShowNoActivate)
+		procUpdateWindow.Call(uintptr(hwnd))
+	} else {
+		procShowWindow.Call(uintptr(hwnd), swShow)
+		procUpdateWindow.Call(uintptr(hwnd))
+		// Pull the new window to the front and give it keyboard focus. When launched
+		// from a terminal another app owns the foreground, so ShowWindow alone leaves
+		// us unfocused; SetForegroundWindow asks the window manager to activate us
+		// (under CrossOver this maps to winemac.drv bringing the app forward).
+		procBringWindowToTop.Call(uintptr(hwnd))
+		procSetForegroundWindow.Call(uintptr(hwnd))
+		procSetFocus.Call(uintptr(hwnd))
+	}
 
 	applyWindowIcon()
 }
@@ -266,7 +244,6 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		return 0
 	case wmKillfocus:
 		clearComposition()
-		cancelRepeat() // PATCHED (v0.11): focus lost — stop repeating
 		noteInput()
 		return 0
 
@@ -366,7 +343,6 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		return r
 
 	case wmTimer:
-		pumpRepeat() // PATCHED (v0.11): synthesize a due key repeat before any redraw decision
 		// wantsFrame covers in-frame animation; FrameRequested covers
 		// background RequestNextFrame when the last frame settled to idle
 		// (matches cocoa's shireiFrameRequested check on the display link).
@@ -377,6 +353,7 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		return 0
 
 	case wmDestroy:
+		releaseGPU()
 		releaseDIB()
 		if memDC != 0 {
 			procDeleteDC.Call(uintptr(memDC))
@@ -428,15 +405,16 @@ func onPaint() {
 		return
 	}
 
-	// Expose / repaint without new content: re-BitBlt the last DIB.
+	// Expose / repaint without new content: re-BitBlt the last surface.
 	if haveFrame {
+		if gpuOK && blitLastGPU(hdc, cw, ch) {
+			return
+		}
 		if !ensureDIB(cw, ch) {
 			return
 		}
-		t0 := time.Now()
 		procBitBlt.Call(hdc, 0, 0, uintptr(cw), uintptr(ch),
 			uintptr(memDC), 0, 0, srccopy)
-		perfRecordPresent(time.Since(t0))
 	}
 }
 
@@ -449,9 +427,7 @@ func produceFrame(cw, ch int) (out shirei.FrameOutputData, skipped bool) {
 
 	flushPendingText()
 
-	t0 := time.Now()
 	out = shirei.RunFrameFn(frameFn)
-	perfRecordProduce(time.Since(t0))
 	updateImeCandidateWindow()
 
 	if out.Copy != "" {
@@ -473,7 +449,7 @@ func produceFrame(cw, ch int) (out shirei.FrameOutputData, skipped bool) {
 	startTimer()
 
 	if havePresented && out.SurfacesHash == lastPresentedHash && cw == presentW && ch == presentH {
-		perfRecordPresentSkip()
+		shirei.EmitFrameMetrics()
 		return out, true
 	}
 	return out, false
@@ -485,14 +461,20 @@ func renderAndPresent(hdc uintptr, cw, ch int, out shirei.FrameOutputData) {
 	if scale <= 0 {
 		scale = 1
 	}
+	if gpuOK && renderGPU(hdc, cw, ch, scale, out) {
+		lastPresentedHash = out.SurfacesHash
+		presentW, presentH = cw, ch
+		havePresented = true
+		t := &shirei.ActiveUI().FrameTimings
+		t.Painted = true
+		t.PaintEnd = time.Now()
+		shirei.EmitFrameMetrics()
+		return
+	}
 	if !ensureDIB(cw, ch) {
 		return
 	}
-	t0 := time.Now()
-	softRenderer.RenderInto(dibBuf, dibW*4, cw, ch, scale, out.Surfaces)
-	perfRecordRender(time.Since(t0))
-
-	t1 := time.Now()
+	softRenderer.RenderInto(dibBuf, dibW*4, cw, ch, scale, out.Surfaces, out.GlyphRuns)
 	if hdc != 0 {
 		procBitBlt.Call(hdc, 0, 0, uintptr(cw), uintptr(ch),
 			uintptr(memDC), 0, 0, srccopy)
@@ -505,11 +487,13 @@ func renderAndPresent(hdc uintptr, cw, ch int, out shirei.FrameOutputData) {
 			procReleaseDC.Call(uintptr(hwnd), wdc)
 		}
 	}
-	perfRecordPresent(time.Since(t1))
-
 	lastPresentedHash = out.SurfacesHash
 	presentW, presentH = cw, ch
 	havePresented = true
+	t := &shirei.ActiveUI().FrameTimings
+	t.Painted = true
+	t.PaintEnd = time.Now()
+	shirei.EmitFrameMetrics()
 }
 
 // produceAndRender is used by IME interruption frames (no WM_PAINT DC).
@@ -687,10 +671,8 @@ func onKey(wparam, lparam uintptr, down bool) {
 	if down {
 		shirei.GetFrameInput().Key = code
 		g.SliceAddUniq(&shirei.GetInputState().DownKeys, code)
-		armRepeat(wparam, lparam) // PATCHED (v0.11)
 	} else {
 		g.SliceRemove(&shirei.GetInputState().DownKeys, code)
-		cancelRepeat() // PATCHED (v0.11)
 	}
 }
 
