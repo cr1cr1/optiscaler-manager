@@ -32,7 +32,8 @@ import (
 var ErrRateLimited = errors.New("gh: github API rate limited")
 
 const (
-	// cooldown is the client-side cooldown after any API attempt. Inside
+	// cooldown is the client-side back-off window started by an ANSWERED
+	// API call (success or rate limit; never a transport failure). Inside
 	// the window the cache is served as-is and never auto-refreshes.
 	cooldown = 15 * time.Minute
 
@@ -185,8 +186,12 @@ func (c *Client) releases(ctx context.Context) ([]Release, bool, error) {
 	return releases, false, nil
 }
 
-// fetch performs the API request, records the attempt in the cooldown
-// file, and persists a successful response to releases.json.
+// fetch performs the API request and persists a successful response to
+// releases.json. The cooldown starts only when the API actually answered:
+// a rate-limited response (back off) or a success (serve the just-written
+// cache for the window). A transport failure, a non-200, or a decode
+// failure records nothing — the next resolve retries the live API instead
+// of being locked out under a misleading rate-limit error (scope H4).
 func (c *Client) fetch(ctx context.Context) ([]Release, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+releasesPath, nil)
 	if err != nil {
@@ -195,14 +200,15 @@ func (c *Client) fetch(ctx context.Context) ([]Release, error) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 
 	resp, err := c.http.Do(req)
-	// Every API attempt starts the cooldown, success or failure.
-	_ = c.writeCooldown(c.now())
 	if err != nil {
 		return nil, fmt.Errorf("gh: releases request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if isRateLimited(resp) {
+		// The API said no: start the back-off window, then serve the
+		// (possibly stale) cache for its duration.
+		_ = c.writeCooldown(c.now())
 		return nil, fmt.Errorf("%w (HTTP %d)", ErrRateLimited, resp.StatusCode)
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -216,6 +222,10 @@ func (c *Client) fetch(ctx context.Context) ([]Release, error) {
 	if err := c.writeCache(releases); err != nil {
 		return nil, err
 	}
+	// Success starts the cooldown too, so later resolves (this or another
+	// process) serve the just-written cache instead of re-fetching. Written
+	// after the cache so a crash can never leave cooldown-without-cache.
+	_ = c.writeCooldown(c.now())
 	// Mark the live fetch: a later resolve served from the cache during the
 	// cooldown window is provably fresh, not the stale data the GUI's
 	// stale-cache consent prompt guards against. Called under mu (releases).

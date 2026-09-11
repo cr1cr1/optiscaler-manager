@@ -214,6 +214,133 @@ func TestRateLimitCooldownServesCachedReleases(t *testing.T) {
 	})
 }
 
+// TestCooldownStartsOnlyOnRateLimitOrSuccess pins the cooldown contract:
+// only an answered API call starts the 15-minute back-off. A transport or
+// HTTP-500 failure must NOT — otherwise one network blip locks every
+// resolve out of the network for a cooldown window and, with no cache,
+// misreports the lockout as ErrRateLimited (docs/scope.md H4).
+func TestCooldownStartsOnlyOnRateLimitOrSuccess(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("transient HTTP 500 does not start the cooldown", func(t *testing.T) {
+		var hits atomic.Int64
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if hits.Add(1) == 1 {
+				http.Error(w, "boom", http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write([]byte(testReleasesJSON))
+		}))
+		defer srv.Close()
+
+		c := newTestClient(t, srv)
+		if _, _, err := c.Resolve(ctx, "latest"); err == nil {
+			t.Fatal("first Resolve (HTTP 500) expected error, got nil")
+		}
+		if _, err := os.Stat(filepath.Join(c.cacheDir, cooldownFile)); !os.IsNotExist(err) {
+			t.Fatalf("cooldown must not start on a non-rate-limit failure (stat err: %v)", err)
+		}
+
+		got, fromCache, err := c.Resolve(ctx, "latest")
+		if err != nil {
+			t.Fatalf("second Resolve must retry the live API, got error: %v", err)
+		}
+		if fromCache {
+			t.Error("second Resolve must be a fresh fetch, not fromCache")
+		}
+		if got.Version != "0.9.4" {
+			t.Errorf("Version = %q, want 0.9.4", got.Version)
+		}
+		if n := hits.Load(); n != 2 {
+			t.Errorf("server hits = %d, want 2 (the retry must reach the network)", n)
+		}
+
+		// Success still starts the cooldown: a third resolve serves the cache.
+		if _, fromCache, err := c.Resolve(ctx, "latest"); err != nil || !fromCache {
+			t.Errorf("third Resolve: err=%v fromCache=%v, want nil,true (cooldown after success)", err, fromCache)
+		}
+		if n := hits.Load(); n != 2 {
+			t.Errorf("server hits after third resolve = %d, want 2 (cooldown must not touch network)", n)
+		}
+	})
+
+	t.Run("rate-limited response still starts the cooldown", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.WriteHeader(http.StatusForbidden)
+		}))
+		defer srv.Close()
+
+		c := newTestClient(t, srv)
+		if _, _, err := c.Resolve(ctx, "latest"); !errors.Is(err, ErrRateLimited) {
+			t.Fatalf("Resolve on 403/remaining-0: err = %v, want ErrRateLimited", err)
+		}
+		if _, err := os.Stat(filepath.Join(c.cacheDir, cooldownFile)); err != nil {
+			t.Fatalf("cooldown must start on a rate-limited response: %v", err)
+		}
+		t.Log("rate-limited fetch starts the back-off window; transient failures do not")
+	})
+}
+
+// TestFailedFetchRecordsNoCooldown pins the remaining H4 contract legs:
+// a decode failure and a transport failure record nothing, and a failed
+// cache write must not start the cooldown — the success path writes the
+// cache BEFORE the cooldown so a crash can never leave cooldown-without-cache.
+func TestFailedFetchRecordsNoCooldown(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("decode failure records nothing", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("not json"))
+		}))
+		defer srv.Close()
+
+		c := newTestClient(t, srv)
+		if _, _, err := c.Resolve(ctx, "latest"); err == nil {
+			t.Fatal("Resolve on a malformed body expected error, got nil")
+		}
+		if _, err := os.Stat(filepath.Join(c.cacheDir, cooldownFile)); !os.IsNotExist(err) {
+			t.Fatalf("decode failure must not start the cooldown (stat err: %v)", err)
+		}
+	})
+
+	t.Run("transport failure records nothing", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		srv.Close() // dead endpoint: the API never answers
+
+		c := New(srv.Client(), t.TempDir())
+		c.baseURL = srv.URL
+		if _, _, err := c.Resolve(ctx, "latest"); err == nil {
+			t.Fatal("Resolve on a dead endpoint expected error, got nil")
+		}
+		if _, err := os.Stat(filepath.Join(c.cacheDir, cooldownFile)); !os.IsNotExist(err) {
+			t.Fatalf("transport failure must not start the cooldown (stat err: %v)", err)
+		}
+	})
+
+	t.Run("cache-write failure records nothing (cache before cooldown)", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(testReleasesJSON))
+		}))
+		defer srv.Close()
+
+		// A directory at the releases-cache path makes writeCache fail.
+		cacheDir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(cacheDir, releasesCacheFile), 0o755); err != nil {
+			t.Fatalf("seed releases-cache directory: %v", err)
+		}
+		c := New(srv.Client(), cacheDir)
+		c.baseURL = srv.URL
+
+		if _, _, err := c.Resolve(ctx, "latest"); err == nil {
+			t.Fatal("Resolve with a failing cache write expected error, got nil")
+		}
+		if _, err := os.Stat(filepath.Join(cacheDir, cooldownFile)); !os.IsNotExist(err) {
+			t.Fatalf("a failed cache write must not start the cooldown (stat err: %v)", err)
+		}
+	})
+}
+
 func TestRequestedVsResolvedRecordedSeparately(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(testReleasesJSON))

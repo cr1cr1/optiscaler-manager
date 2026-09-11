@@ -3006,3 +3006,25 @@ opens the restore menu of local backup sets.
   left behind by GOCACHE overrides during test runs). Added to
   `.gitignore` next to `/tmp/` so `git status` stays clean. No code
   change; no doc surface beyond this entry.
+
+## 2026-09-11 — fix: gh cooldown starts only on answered API calls (H4)
+
+- `gh.Client.fetch` wrote `cooldown.json` immediately after the HTTP
+  attempt, before classifying the failure. One network blip (or a 500,
+  or a decode error) therefore locked every resolve out of the live API
+  for 15 minutes and — with no cached releases — misreported the
+  lockout as `ErrRateLimited` (scope v0.15 deferred, H4).
+- Fix: the cooldown now starts only when the API actually answered — a
+  rate-limited response (back off, serve the possibly-stale cache
+  meanwhile) or a success (serve the just-written cache for the window;
+  the write moved AFTER `writeCache` so a crash can never leave
+  cooldown-without-cache). Transport failures, non-200s, and decode
+  failures record nothing: the next resolve retries live.
+- `TestCooldownStartsOnlyOnRateLimitOrSuccess`: a 500 does not write
+  the cooldown file and the retry reaches the network (2 hits), while a
+  403/remaining-0 still starts it.
+- `TestFailedFetchRecordsNoCooldown`: a malformed body, a dead endpoint
+  (transport error), and a failing `writeCache` (releases-cache path
+  seeded as a directory) each record nothing — pinning the decode leg
+  and the cache-before-cooldown crash-safety order. Full `go test
+  ./...` green.

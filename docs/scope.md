@@ -593,6 +593,15 @@ decisions the per-version sections above do not cover.
 
 - TUI `Latest` option (the TUI cycles the concrete `Sessions.Versions`
   list; the user's spec is dropdown-centric).
-- gh cooldown semantics: a FAILED fetch still writes the cooldown file,
-  so a transient network failure poises 15 minutes of retries behind a
-  misleading `ErrRateLimited` (H4, noted, not yet fixed).
+
+## v0.16 scope (answered-only cooldown)
+
+- **gh cooldown starts only on an answered API call** (H4): a transport
+  failure, a non-200 response, or a decode failure no longer writes
+  `cooldown.json`, so a transient network blip no longer locks every
+  resolve out of the network for 15 minutes behind a misleading
+  `ErrRateLimited`. A rate-limited response still starts the back-off
+  window (serve the possibly-stale cache meanwhile), and a successful
+  fetch still starts it (later resolves — this or another process —
+  serve the just-written cache); the success write happens after
+  `releases.json` so a crash can never leave cooldown-without-cache.
