@@ -273,7 +273,6 @@ func (m *model) actionList() {
 			m.listFocusPending = false
 			FocusImmediateOn(m.listID)
 		}
-		CycleFocusOnTab()
 		FocusOnClick()
 		// HasFocus only reports the container currently being built — capture
 		// it here, at the wrapper (see the themedInput comment).
@@ -503,7 +502,6 @@ func (m *model) detailPanel() {
 func (m *model) panelCloseButton() bool {
 	activated := false
 	Container(Attrs(Focusable, Corners(6)), func() {
-		CycleFocusOnTab()
 		FocusOnClick()
 		m.panelFirstID = CurrentId()
 		if HasFocus() {
@@ -588,11 +586,11 @@ func (m *model) confirmModal() {
 func (m *model) auditTable() {
 	Table("audit", 26,
 		[]TableColumn[ui.GameRow]{
-			{Label: "Name", Render: func(r ui.GameRow) { txt(r.Title) },
+			{Label: "Name", Cell: func(r ui.GameRow) { txt(r.Title) },
 				Less: func(a, b ui.GameRow) bool { return a.Title < b.Title }},
-			{Label: "AppID", Width: 90, Render: func(r ui.GameRow) { txt(r.AppID) }},
-			{Label: "Status", Width: 110, Render: func(r ui.GameRow) { txt(statusLabel(&r)) }},
-			{Label: "Path", Render: func(r ui.GameRow) { muted(r.InstallDir) }},
+			{Label: "AppID", Width: 90, Cell: func(r ui.GameRow) { txt(r.AppID) }},
+			{Label: "Status", Width: 110, Cell: func(r ui.GameRow) { txt(statusLabel(&r)) }},
+			{Label: "Path", Cell: func(r ui.GameRow) { muted(r.InstallDir) }},
 		},
 		m.visibleRows(),
 		func(r ui.GameRow) any { return r.InstallDir },

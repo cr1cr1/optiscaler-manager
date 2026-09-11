@@ -141,13 +141,14 @@ func Run(fn shirei.FrameFn) {
 	const framePoll = 16 * time.Millisecond
 	wlDebug("wl backend build: 2026-07-13-idle-frame-wake (timeout dispatch)")
 	for {
-		err := wlclient.DisplayDispatchTimeout(disp, framePoll)
-		if err != nil && err != wl.ErrContextRunTimeout && err != wl.ErrContextRunProxyNil {
+		// PATCHED by optiscaler-manager (v0.10): cap the dispatch wait so a pending key repeat wakes the loop in time (see pumpRepeat in waylandkeyboard_linux.go).
+		if err := wlclient.DisplayDispatchTimeout(disp, repeatTimeout(framePoll)); err != nil && err != wl.ErrContextRunTimeout && err != wl.ErrContextRunProxyNil {
 			// Always to stderr: exiting the GUI loop is fatal for the app, and
 			// after a protocol error this is the only trace of what happened.
 			fmt.Fprintf(os.Stderr, "waylandbackend: display dispatch failed: %v\n", err)
 			break
 		}
+		pumpRepeat() // PATCHED (v0.10): synthesize the next held-key press if due
 		// Background goroutines set the RequestNextFrame flag; pick it up here
 		// the same way cocoa's tick checks shireiFrameRequested().
 		if shirei.FrameRequested() {

@@ -26,7 +26,8 @@ func TestGUIEmptyStateHasCTA(t *testing.T) {
 	}
 	keyFrame(KeyCodeNone, 0, view) // build + register focusables
 	keyFrame(KeyTab, 0, view)      // focus the first CTA
-	keyFrame(KeyEnter, 0, view)    // activate it
+	keyFrame(KeyEnter, 0, view)    // arm it
+	keyFrame(KeyCodeNone, 0, view) // release fires it (v0.6.10 press->release)
 
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {

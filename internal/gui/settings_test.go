@@ -62,7 +62,8 @@ func TestGUIRemoveDirectoryViaSettings(t *testing.T) {
 	}
 	keyFrame(KeyCodeNone, 0, view) // build + register focusables
 	keyFrame(KeyTab, 0, view)      // focus first row's remove button
-	keyFrame(KeyEnter, 0, view)    // activate it
+	keyFrame(KeyEnter, 0, view)    // arm it
+	keyFrame(KeyCodeNone, 0, view) // release fires it (v0.6.10 press->release)
 
 	got := sess.Settings().ExtraDirs
 	if slices.Contains(got, "/games/alpha") {
@@ -116,10 +117,10 @@ func TestGUISettingsShowsOnlineLookupsToggle(t *testing.T) {
 	}
 
 	headlessFrames(t, 1100, 700)
-	keyFrame(KeyCodeNone, 0, m.rootView) // open frame: registers focusables
-	keyFrame(KeyTab, 0, m.rootView)      // version field
+	keyFrame(KeyCodeNone, 0, m.rootView) // open frame: the trap auto-focuses the version field (v0.6.10)
 	keyFrame(KeyTab, 0, m.rootView)      // online-lookups toggle
-	keyFrame(KeyEnter, 0, m.rootView)    // flip off
+	keyFrame(KeyEnter, 0, m.rootView)    // arm the flip
+	keyFrame(KeyCodeNone, 0, m.rootView) // release flips (v0.6.10 press->release)
 
 	if sess.Settings().OnlineLookups {
 		t.Error("OnlineLookups still true after Tab+Enter on the toggle, want flipped to false")
@@ -132,9 +133,11 @@ func TestGUISettingsShowsOnlineLookupsToggle(t *testing.T) {
 
 // TestGUISettingsThemedInputs: the settings modal fields are the themed dark
 // inputs (the searchInput pattern, not shirei's light TextInputExt): they
-// join the Tab focus cycle without stealing focus on open, edit their model
-// buffers via FrameInput text/backspace, clear on Esc without closing the
-// modal, and applySettings still persists the edited template.
+// join the Tab focus cycle, receive the trap's auto-focus on open (v0.6.10
+// focusTrapFirstStop: the first stop — the version field — is focused when
+// the modal mounts), edit their model buffers via FrameInput text/backspace,
+// clear on Esc without closing the modal, and applySettings still persists
+// the edited template.
 //
 // Tab cycle in the settings modal (top-to-bottom, must match this list):
 //
@@ -156,15 +159,14 @@ func TestGUISettingsThemedInputs(t *testing.T) {
 	version0 := m.versionBuf
 	template0 := m.templateBuf
 
-	typeFrame("", KeyCodeNone)  // open frame: registers focusables
-	typeFrame("x", KeyCodeNone) // no auto-focus: stray typing edits nothing
-	if m.versionBuf != version0 || m.templateBuf != template0 {
-		t.Fatalf("settings modal stole focus on open: version %q template %q", m.versionBuf, m.templateBuf)
+	typeFrame("", KeyCodeNone)  // open frame: registers focusables, trap mounts
+	typeFrame("x", KeyCodeNone) // typing lands in the auto-focused version field
+	if m.versionBuf != version0+"x" {
+		t.Fatalf("version buffer %q after open-focus typing, want %q (v0.6.10 trap auto-focus)", m.versionBuf, version0+"x")
 	}
 
-	typeFrame("", KeyTab) // first focusable in the modal trap = version field
-	typeFrame("-test", KeyCodeNone)
-	wantV := version0 + "-test"
+	typeFrame("-test", KeyCodeNone) // still focused: append editing
+	wantV := version0 + "x-test"
 	if m.versionBuf != wantV {
 		t.Fatalf("version buffer %q after typing, want %q (themed append editing)", m.versionBuf, wantV)
 	}
@@ -256,11 +258,12 @@ func TestGUISettingsUmuToggleFlipsViaKeyboard(t *testing.T) {
 	m.openSettings()
 
 	headlessFrames(t, 1100, 700)
-	keyFrame(KeyCodeNone, 0, m.rootView)
-	for i := 0; i < 8; i++ {
+	keyFrame(KeyCodeNone, 0, m.rootView) // open frame: trap auto-focuses the version field (v0.6.10)
+	for i := 0; i < 7; i++ {             // one Tab less: version already focused on open
 		keyFrame(KeyTab, 0, m.rootView)
 	}
-	keyFrame(KeyEnter, 0, m.rootView)
+	keyFrame(KeyEnter, 0, m.rootView)    // arm the flip
+	keyFrame(KeyCodeNone, 0, m.rootView) // release flips (v0.6.10 press->release)
 
 	if !sess.Settings().UmuEnabled {
 		t.Error("UmuEnabled still false after 8 Tabs + Enter, want flipped to true")

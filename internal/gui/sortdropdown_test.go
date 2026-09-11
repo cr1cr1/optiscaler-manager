@@ -535,8 +535,9 @@ func TestSortDropdown_ClickOutsideDismisses(t *testing.T) {
 }
 
 // TestSortDropdown_DisabledWhenEmpty: with an empty library the trigger
-// still renders (greyed out, mirroring the old Disabled attr) but neither
-// click nor Enter/Space opens the dropdown.
+// still renders (greyed out, mirroring the old Disabled attr) but is inert:
+// the v0.6.10 disabled face is kept out of the tab ring (no keyboard path
+// opens the dropdown) and clicks do not complete.
 func TestSortDropdown_DisabledWhenEmpty(t *testing.T) {
 	sess, _ := guiFakes(t) // no scan: empty library
 	m := newModel(Config{Session: sess})
@@ -561,16 +562,14 @@ func TestSortDropdown_DisabledWhenEmpty(t *testing.T) {
 		t.Errorf("click on the disabled trigger opened the dropdown (items %d, want 0)", len(m.sortMenuItems))
 	}
 
-	focusSortTrigger(t, m, m.rootView)
-	keyFrame(KeyEnter, 0, m.rootView)
-	keyFrame(KeyCodeNone, 0, m.rootView)
-	if len(m.sortMenuItems) != 0 {
-		t.Errorf("Enter on the disabled trigger opened the dropdown (items %d, want 0)", len(m.sortMenuItems))
-	}
-	keyFrame(KeySpace, 0, m.rootView)
-	keyFrame(KeyCodeNone, 0, m.rootView)
-	if len(m.sortMenuItems) != 0 {
-		t.Errorf("Space on the disabled trigger opened the dropdown (items %d, want 0)", len(m.sortMenuItems))
+	// A disabled ButtonExt face drops out of the tab ring entirely, so Tab
+	// must never land on the trigger — that IS the keyboard-inert guarantee.
+	for i := 0; i < 6; i++ {
+		keyFrame(KeyTab, 0, m.rootView)
+		keyFrame(KeyCodeNone, 0, m.rootView)
+		if IdHasFocus(m.sortTriggerID) {
+			t.Fatalf("disabled sort trigger took focus via Tab (slot %d); the ring must skip it", i+1)
+		}
 	}
 	if got := sess.Snapshot().Sort; got != ui.SortDefault {
 		t.Errorf("disabled trigger changed the sort to %v, want unchanged", got)

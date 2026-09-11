@@ -12,6 +12,8 @@ import (
 // optiscaler-manager patch markers (CSD disabled, scroll speedup, Wayland
 // Shift+Tab, Wayland client-side key repeat, Win32 client-side key repeat),
 // so a `go mod vendor` refresh that silently drops them fails loudly here.
+// Patches v0.12 and v0.15 were superseded by shirei v0.6.10 upstream and are
+// no longer reapplied (see docs/vendor-patches.md).
 func TestVendorCSDPatchPresent(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
@@ -86,11 +88,16 @@ func TestVendorCSDPatchPresent(t *testing.T) {
 	if !strings.Contains(string(b), "pumpRepeat()") || !strings.Contains(string(b), "repeatTimeout(framePoll)") {
 		t.Error("vendored waylandbackend_linux.go lacks the v0.10 key-repeat wiring (pumpRepeat / repeatTimeout); reapply it (docs/vendor-patches.md)")
 	}
-	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.12)") {
-		t.Error("vendored waylandbackend_linux.go lacks the v0.12 resize-redraw patch (dirty=true in HandleToplevelConfigure); reapply it (docs/vendor-patches.md)")
+	// v0.12 (resize-redraw) and v0.15 (skip-unchanged-frames) were local
+	// patches that shirei v0.6.10 implements upstream (HandleSurfaceConfigure
+	// sets dirty=true; drawFrame early-returns on an unchanged SurfacesHash).
+	// The markers are gone on purpose; these checks now guard the upstream
+	// mechanisms so an accidental downgrade fails loudly.
+	if !strings.Contains(string(b), "ackSerial, hasAck = ev.Serial, true") || !strings.Contains(string(b), "dirty = true") {
+		t.Error("vendored waylandbackend_linux.go lost the upstream resize-redraw (HandleSurfaceConfigure dirty=true); the v0.12 behavior regressed")
 	}
-	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.15)") || !strings.Contains(string(b), "haveFrame") {
-		t.Error("vendored waylandbackend_linux.go lacks the v0.15 skip-unchanged-frames patch (haveFrame); reapply it (docs/vendor-patches.md)")
+	if !strings.Contains(string(b), "lastPresentedHash") {
+		t.Error("vendored waylandbackend_linux.go lost the upstream skip-unchanged-frames (SurfacesHash early-return); the v0.15 behavior regressed")
 	}
 
 	win32 := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "win32backend", "win32backend_windows.go")

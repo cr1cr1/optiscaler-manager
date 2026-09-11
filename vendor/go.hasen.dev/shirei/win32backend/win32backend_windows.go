@@ -198,6 +198,47 @@ func createWindow() {
 	applyWindowIcon()
 }
 
+// PATCHED by optiscaler-manager (v0.11): client-side key repeat — reapply after `go mod vendor` (see docs/vendor-patches.md). WM_KEYDOWN auto-repeat is supposed to arrive natively, but on some setups (RDP, VMs, FilterKeys) it doesn't; armRepeat captures every press and pumpRepeat (from wmTimer) synthesizes repeats. Native repeats re-arm every time and push repeatNext forward by repeatDelay, so pumpRepeat is a no-op when native repeat works.
+var (
+	repeatWparam   uintptr
+	repeatLparam   uintptr
+	repeatArmed    bool
+	repeatDelay    = defaultRepeatDelay
+	repeatInterval = defaultRepeatInterval
+	repeatNext     time.Time
+)
+
+// defaultRepeatDelay/defaultRepeatInterval: 300 ms to first repeat, then 20 Hz (matches the spec). PATCHED (v0.11).
+const (
+	defaultRepeatDelay    = 300 * time.Millisecond
+	defaultRepeatInterval = 50 * time.Millisecond
+)
+
+// armRepeat captures the wparam/lparam of every key press so pumpRepeat can re-fire it. PATCHED (v0.11).
+func armRepeat(wparam, lparam uintptr) {
+	repeatWparam = wparam
+	repeatLparam = lparam
+	repeatArmed = true
+	repeatNext = time.Now().Add(repeatDelay)
+}
+
+// cancelRepeat stops pumpRepeat from synthesizing further presses. PATCHED (v0.11).
+func cancelRepeat() { repeatArmed = false }
+
+// pumpRepeat synthesizes one WM_KEYDOWN if a held key's repeat is due. Called from wmTimer; cheap when no key is armed. PATCHED (v0.11).
+func pumpRepeat() {
+	if !repeatArmed || repeatInterval <= 0 {
+		return
+	}
+	now := time.Now()
+	if now.Before(repeatNext) {
+		return
+	}
+	onKey(repeatWparam, repeatLparam, true)
+	repeatNext = now.Add(repeatInterval)
+	noteInput()
+}
+
 func messageLoop() {
 	var msg win32Msg
 	for {
@@ -244,6 +285,7 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		return 0
 	case wmKillfocus:
 		clearComposition()
+		cancelRepeat() // PATCHED (v0.11): focus lost — stop repeating
 		noteInput()
 		return 0
 
@@ -343,6 +385,7 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		return r
 
 	case wmTimer:
+		pumpRepeat() // PATCHED (v0.11): synthesize a due key repeat before any redraw decision
 		// wantsFrame covers in-frame animation; FrameRequested covers
 		// background RequestNextFrame when the last frame settled to idle
 		// (matches cocoa's shireiFrameRequested check on the display link).
@@ -671,8 +714,10 @@ func onKey(wparam, lparam uintptr, down bool) {
 	if down {
 		shirei.GetFrameInput().Key = code
 		g.SliceAddUniq(&shirei.GetInputState().DownKeys, code)
+		armRepeat(wparam, lparam) // PATCHED (v0.11)
 	} else {
 		g.SliceRemove(&shirei.GetInputState().DownKeys, code)
+		cancelRepeat() // PATCHED (v0.11)
 	}
 }
 

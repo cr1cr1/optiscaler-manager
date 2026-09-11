@@ -82,7 +82,6 @@ func (m *model) dlssControl(e *ui.GameRow, label string) {
 	Container(Attrs(Row, Gap(1), Corners(radiusS), BackgroundVec(toneColor(ui.ToneGreen))), func() {
 		Container(Attrs(Focusable, Row, CrossMid, Pad2(3, 3), Corners(radiusS)), func() {
 			FocusOnClick()
-			CycleFocusOnTab()
 			m.dlssUpdateID = CurrentId()
 			m.dlssUpdateRect = GetScreenRectOf(CurrentId())
 			activated := false
@@ -101,7 +100,6 @@ func (m *model) dlssControl(e *ui.GameRow, label string) {
 		})
 		Container(Attrs(Focusable, Pad2(3, 5), Corners(radiusS)), func() {
 			FocusOnClick()
-			CycleFocusOnTab()
 			m.dlssArrowID = CurrentId()
 			m.dlssArrowRect = GetScreenRectOf(CurrentId())
 			activated := false
@@ -158,7 +156,6 @@ func (m *model) dlssRestoreMenu(e *ui.GameRow) {
 				label := snap.Label()
 				Container(Attrs(Focusable, Row, Expand, Pad2(sp4, sp8), Corners(2)), func() {
 					FocusOnClick()
-					CycleFocusOnTab()
 					activated := false
 					if HasFocus() {
 						ModAttrs(func(a *AttrSet) {

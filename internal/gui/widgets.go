@@ -13,35 +13,35 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/version"
 )
 
-// focusableButton renders widgets.Button inside a Focusable wrapper so the
-// global Tab / Shift-Tab focus cycle reaches it (shirei's Button itself is
-// not focusable). Enter or Space while focused activates the button, and the
-// key is consumed so no later widget in the frame can double-fire.
+// focusableButton renders widgets.ButtonExt: since shirei v0.6.10 the
+// button face itself joins the tab ring, takes focus on click, and
+// activates on Space/Enter (armed on press, Clicked on release — cancelled
+// if focus moves first). The wrapper stays only for geometry and the focus
+// ring; activating it twice (wrapper + face) would double-fire.
 func focusableButton(icon widgets.IconGlyph, label string) bool {
 	return focusableButtonExt(label, widgets.ButtonAttrs{Icon: icon})
 }
 
 // focusableButtonExt is focusableButton with full ButtonAttrs control
-// (disabled state, accent, sizing). Clicking the wrapper grabs keyboard
-// focus; clicking elsewhere while focused blurs it (FocusOnClick).
+// (disabled state, accent, sizing). The returned bool is the completed
+// click: pointer release while hovered, or Space/Enter release while
+// focused.
 func focusableButtonExt(label string, attrs widgets.ButtonAttrs) bool {
 	var activated bool
-	Container(Attrs(Focusable, Corners(6)), func() {
-		CycleFocusOnTab()
-		FocusOnClick()
-		if HasFocus() {
+	Container(Attrs(Corners(6)), func() {
+		// The face (the tab stop) holds focus; the ring paints on its
+		// enclosing wrapper. Attrs must change BEFORE children (shirei
+		// panics otherwise), so the check reads the face id recorded on the
+		// previous frame through the per-node hook slot.
+		prev := Use[ContainerId]("focusable-button-face")
+		if *prev != nil && IdHasFocus(*prev) {
 			ModAttrs(func(a *AttrSet) {
 				a.BorderWidth = 2
 				a.BorderColor = focusBorder
 			})
-			if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
-				GetFrameInput().Key = KeyCodeNone
-				activated = true
-			}
 		}
-		if widgets.ButtonExt(label, attrs, widgets.DefaultButtonLook()) {
-			activated = true
-		}
+		activated = widgets.ButtonExt(label, attrs, widgets.DefaultButtonLook())
+		*prev = GetLastId()
 	})
 	return activated
 }
@@ -67,25 +67,14 @@ func spinnerGlyph() {
 	RequestNextFrame()
 }
 
-// focusableToggle renders widgets.ToggleSwitchExt inside a Focusable row so
-// the Tab cycle reaches it (the switch itself is not focusable): Enter or
-// Space while focused flips the bound value, and the key is consumed. Mouse
-// clicks flip via the switch itself and grab keyboard focus on the row;
-// clicking elsewhere while focused blurs it (FocusOnClick).
+// focusableToggle renders widgets.ToggleSwitchExt with a label. Since
+// shirei v0.6.10 the switch itself joins the tab ring, takes focus on
+// click, flips on completed pointer clicks AND on Space/Enter (press→
+// release), and paints its own focus ring — the wrapper is layout only, so
+// it must not be focusable (double stop) and must not consume keys (double
+// flip).
 func focusableToggle(on *bool, label string) {
-	Container(Attrs(Focusable, Row, CrossMid, Gap(sp8), Corners(6)), func() {
-		CycleFocusOnTab()
-		FocusOnClick()
-		if HasFocus() {
-			ModAttrs(func(a *AttrSet) {
-				a.BorderWidth = 2
-				a.BorderColor = focusBorder
-			})
-			if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
-				GetFrameInput().Key = KeyCodeNone
-				*on = !*on
-			}
-		}
+	Container(Attrs(Row, CrossMid, Gap(sp8), Corners(6)), func() {
 		widgets.ToggleSwitchExt(on, widgets.ToggleSwitchAttrs{})
 		Label(label, FontSize(13), TextColorVec(txtMain))
 	})
@@ -397,7 +386,6 @@ func themedInputState(buf *string, hint string, icon widgets.IconGlyph, st *edit
 				return &editState{cursor: len([]rune(*buf)), anchor: -1, blink: time.Now(), phase: true}
 			})
 		}
-		CycleFocusOnTab()
 		FocusOnClick()
 		editMouse(buf, st)
 		// HasFocus() only reports the container currently being built —
@@ -459,7 +447,6 @@ func (m *model) viewSwitch() {
 	m.viewSwitchID = nil
 	m.viewSwitchFocusRing = false
 	Container(Attrs(Focusable, Row, Corners(radiusM), Clip, BorderWidth(1), BorderColorVec(border)), func() {
-		CycleFocusOnTab()
 		FocusOnClick()
 		m.viewSwitchID = CurrentId()
 		if HasFocus() {
@@ -678,7 +665,6 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 	// height — and with it cardContentH — is untouched.
 	enterPick := false
 	Container(Attrs(Focusable, Row, CrossMid, Gap(sp4), Pad2(3, 6), Corners(radiusS), BackgroundVec(toneColor(tone))), func() {
-		CycleFocusOnTab()
 		FocusOnClick()
 		m.ddTriggerID = CurrentId()
 		if m.versionDDRects == nil {
@@ -861,13 +847,15 @@ type sortMenuItem struct {
 
 // sortDropdown replaces the toolbar's upstream MenuButtonExt sort control —
 // unfocusable, keyboard-unreachable, and theme-locked to a light popup via
-// widgets._menuBG — with a local focusable trigger and a dark popup, modeled
+// widgets._menuBG — with a local trigger and a dark popup, modeled
 // line-for-line on versionDropdown.
 //
-// The trigger keeps the old button's exact look by wrapping widgets.ButtonExt
-// in a Focusable container (the focusableButtonExt pattern): Tab reaches it,
-// clicking focuses it, Enter/Space (consumed) toggles the popup, and the
-// library-empty Disabled attr still greys it out and blocks activation.
+// Since shirei v0.6.10 the widgets.ButtonExt face is itself the tab stop,
+// focus owner, and click source (pointer release, or Space/Enter press→
+// release), so the wrapper is geometry + focus ring only. With the popup
+// open the app owns menu navigation; those keys are consumed BEFORE the
+// face renders — left alone, the face would arm Enter/Space and toggle the
+// popup closed on their release.
 //
 // The popup renders through Popup (root scope) with the dark panel tokens and
 // floats below the trigger via dropdownPos. The items are the two sort modes
@@ -887,50 +875,50 @@ func (m *model) sortDropdown() {
 	}
 	// Per-frame seam reset, mirroring gameCard's ddTriggerID/ddFocusRing
 	// discipline: the seams describe the frame being built, so a closed
-	// dropdown exposes no items.
+	// dropdown exposes no items. lastTriggerID keeps the face id from LAST
+	// frame for the pre-consume focus check below.
+	lastTriggerID := m.sortTriggerID
 	m.sortTriggerID = nil
 	m.sortFocusRing = false
 	if !st.open {
 		m.sortMenuItems = nil
 	}
 	enterPick := false
-	Container(Attrs(Focusable, Corners(6)), func() {
-		CycleFocusOnTab()
-		FocusOnClick()
-		m.sortTriggerID = CurrentId()
-		st.btnID = CurrentId()
-		activated := false
-		if HasFocus() {
+	activated := false
+	Container(Attrs(Corners(6)), func() {
+		// The face (ButtonExt's container) is the focus owner from the
+		// previous frame. Attrs must change BEFORE children (shirei panics
+		// otherwise), so both the ring and the nav-key consumption read the
+		// face's focus state here, before ButtonExt renders.
+		faceFocused := lastTriggerID != nil && IdHasFocus(lastTriggerID)
+		if faceFocused {
 			m.sortFocusRing = true
 			ModAttrs(func(a *AttrSet) {
 				a.BorderWidth = 2
 				a.BorderColor = focusBorder
 			})
-			if st.open {
-				// With the popup open the trigger owns menu navigation:
-				// Up/Down move the highlight (wrapping), Enter activates the
-				// highlighted row below, Space still toggles closed. All
-				// consumed so no frame-end fallback can also see them.
-				switch GetFrameInput().Key {
-				case KeyDown, KeyUp:
-					if n := len(m.sortMenuItems); n > 0 {
-						if st.hl < 0 {
-							st.hl = 0
-						} else if GetFrameInput().Key == KeyDown {
-							st.hl = (st.hl + 1) % n
-						} else {
-							st.hl = (st.hl - 1 + n) % n
-						}
-						GetFrameInput().Key = KeyCodeNone
+		}
+		if st.open && faceFocused {
+			// With the popup open the trigger owns menu navigation:
+			// Up/Down move the highlight (wrapping), Enter activates the
+			// highlighted row below, Space still toggles closed. All
+			// consumed so the face cannot also see them.
+			switch GetFrameInput().Key {
+			case KeyDown, KeyUp:
+				if n := len(m.sortMenuItems); n > 0 {
+					if st.hl < 0 {
+						st.hl = 0
+					} else if GetFrameInput().Key == KeyDown {
+						st.hl = (st.hl + 1) % n
+					} else {
+						st.hl = (st.hl - 1 + n) % n
 					}
-				case KeyEnter:
 					GetFrameInput().Key = KeyCodeNone
-					enterPick = true
-				case KeySpace:
-					GetFrameInput().Key = KeyCodeNone
-					activated = !disabled
 				}
-			} else if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
+			case KeyEnter:
+				GetFrameInput().Key = KeyCodeNone
+				enterPick = true
+			case KeySpace:
 				GetFrameInput().Key = KeyCodeNone
 				activated = !disabled
 			}
@@ -938,6 +926,10 @@ func (m *model) sortDropdown() {
 		if widgets.ButtonExt("Sort: "+sortLabel(m.state.Sort), widgets.ButtonAttrs{Icon: widgets.TypArrowSortedDown, Disabled: disabled}, widgets.DefaultButtonLook()) {
 			activated = true
 		}
+		// The face is the nav-key seam, the popup anchor, and the ring's
+		// state source for the next frame.
+		m.sortTriggerID = GetLastId()
+		st.btnID = m.sortTriggerID
 		if activated {
 			st.open = !st.open
 			if st.open {

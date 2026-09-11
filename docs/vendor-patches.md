@@ -8,9 +8,22 @@ Local patches applied on top of vendored dependencies (`vendor/`). Every
 patch carries a marker comment so it can be found and reapplied, and is
 guarded by a test so a silent revert (e.g. after `go mod vendor`) fails CI.
 
-All patches below were reapplied verbatim onto shirei v0.6.7 (2026-08-28);
-the "v0.6.6's …" descriptions remain accurate because v0.6.7 did not
-change the patched regions.
+Patches were reapplied verbatim onto shirei v0.6.7 (2026-08-28) and
+reapplied again onto shirei v0.6.10 (2026-09-11, after the `go mod vendor`
+in the dependency upgrade wiped them). The v0.6.10 reapplication spliced
+each hunk at its new location and adapted two hunks to upstream changes:
+v0.12 and v0.15 are **superseded** (v0.6.10 implements both natively) and
+are no longer reapplied. Two other adaptations: the Wayland key-repeat
+loop wiring moved into v0.6.10's restructured dispatch loop (same
+`repeatTimeout(framePoll)` / `pumpRepeat()` calls), and the keyboard patch
+file is the old patched source with v0.6.10's `WindowFocused`
+enter/leave bodies substituted in; the Win32 repeat patch moved its
+`armRepeat`/`cancelRepeat` hooks into v0.6.10's `onKey` and `pumpRepeat`
+into the `wmTimer` case. The upgrade also removed shirei's opt-in
+`CycleFocusOnTab` (Tab cycling became automatic in the frame loop) and
+made `widgets.ButtonExt`/`ToggleSwitchExt` faces self-focusing with
+press→release key activation, which `internal/gui` adapted to (see
+`internal/gui/widgets.go`).
 
 ## shirei: dark Wayland CSD titlebar (v0.5)
 
@@ -184,27 +197,19 @@ header marker comment), the three helper functions
 `wmTimer` pump — each with the trailing marker comment);
 `TestVendorCSDPatchPresent` fails while any marker is missing.
 
-## shirei: Wayland resize redraw (v0.12)
+## shirei: Wayland resize redraw (v0.12) — SUPERSEDED
 
-- **File**: `vendor/go.hasen.dev/shirei/waylandbackend/waylandbackend_linux.go` (one line in `HandleToplevelConfigure`).
-- **Marker**: `// PATCHED by optiscaler-manager (v0.12)` (trailing on the `dirty = true` line).
-- **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent` checks for the v0.12 marker in `waylandbackend_linux.go`).
+**Status.** No longer reapplied: shirei v0.6.10 fixes this natively —
+`HandleSurfaceConfigure` sets `dirty = true` whenever a resize is acked
+("an interactive resize holds a pointer grab, so no input event sets
+`dirty`"). The guard test now asserts the upstream mechanism instead of the
+old marker, so an accidental shirei downgrade fails loudly. History below
+is kept for the record.
 
 **What.** shirei v0.6.6's `HandleToplevelConfigure` updated the window's
 logical size on resize but never set `dirty = true`, so the Wayland main
 loop's `if dirty && frameCb == nil { drawFrame() }` never fired — the app
 didn't repaint on resize until the next unrelated input event arrived.
-
-**Why.** Resize felt broken on Wayland: the window changed size but the
-content stayed stale, then snapped forward on the next mouse motion.
-
-**Scope.** Wayland only. X11 (`ConfigureNotify → dirty`, `x11input.go:70`)
-and Win32 (`wmSize → noteInput`, `win32backend_windows.go:225`) already
-flag dirty on resize.
-
-**Reapplying after `go mod vendor`.** Re-add `dirty = true` with the
-trailing marker comment inside the `HandleToplevelConfigure` size-change
-block; `TestVendorCSDPatchPresent` fails while the marker is missing.
 
 ## shirei: disable layout animations (v0.13)
 
@@ -252,28 +257,20 @@ a gap is worse than minor distortion (imperceptible for near-2:3 art).
 (`dwl, dhl = s.Rect.Size[0], s.Rect.Size[1]`) and re-add `ImageFill` in
 `images.go`; the guard fails while either is missing.
 
-## shirei: Wayland skip-unchanged-frames (v0.15)
+## shirei: Wayland skip-unchanged-frames (v0.15) — SUPERSEDED
 
-- **File**: `vendor/go.hasen.dev/shirei/waylandbackend/waylandbackend_linux.go` (`haveFrame` var + early-return in `drawFrame` + `haveFrame = true` after commit).
-- **Marker**: `// PATCHED by optiscaler-manager (v0.15)`.
-- **Guard**: `internal/gui/csd_test.go` (checks for the v0.15 marker / `haveFrame` in `waylandbackend_linux.go`).
+**Status.** No longer reapplied: shirei v0.6.10 implements the same
+early-return natively in `drawFrame` (`out.SurfacesHash == lastPresentedHash`
+plus size equality and no pending ack). The guard test asserts the upstream
+mechanism. History below is kept for the record.
 
 **What.** The Wayland backend always rasterized + `Attach` + `Damage` +
 `Commit`-ted every frame, even when nothing changed. v0.6.6 made
 `FrameHasChanges` hash-based (precise "did the rendered content change"),
-but the backend never consulted it. The patch skips the expensive paint
-when `!out.FrameHasChanges && haveFrame` — `RunFrameFn` still runs (input,
-app state, hover, clipboard/IME outputs are processed); only the software
-raster + compositor recomposite is skipped. Idle / scroll-hover frames drop
-from the full raster cost to ~1 ms.
-
-**Scope.** Wayland only. v0.6.6's Win32 and Cocoa backends already have a
-native content-hash present skip (`lastPresentedHash` / `havePresented`);
-this brings Wayland to parity.
-
-**Reapplying after `go mod vendor`.** Re-add the `haveFrame` var, the
-early-return after the post-frame output handling (before `softRenderer.RenderInto`),
-and `haveFrame = true` after `surface.Commit`/`b.busy = true`.
+but the backend never consulted it. The patch skipped the expensive paint
+when `!out.FrameHasChanges && haveFrame` — `RunFrameFn` still ran (input,
+app state, hover, clipboard/IME outputs were processed); only the software
+raster + compositor recomposite was skipped.
 
 ## shirei: headless identity-tree reset (v0.16)
 

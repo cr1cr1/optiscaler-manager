@@ -217,7 +217,6 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 		if m.cardFocusPending == e.InstallDir && HasFocus() {
 			m.cardFocusPending = ""
 		}
-		CycleFocusOnTab()
 		FocusOnClick()
 		FocusOnClick()
 		// Cursor follows focus: Tabbing onto a card moves the keyboard
