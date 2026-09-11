@@ -270,6 +270,14 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 		// detect hovers based on last frame artifacts
 		ui.directHovered = nil
 		g.ResetSlice(&ui.hoverList)
+		// PATCHED by optiscaler-manager (v0.17): pick the mouse cursor shape
+		// from the hover chain, innermost first: a text entry keeps the
+		// default arrow (the caret already signals editability); the first
+		// clickable node (Focusable or an explicit PointerHand) asks for the
+		// pointing hand; everything else stays the default arrow. The
+		// backends apply the shape after the frame.
+		MouseCursorShape = CursorShapeDefault
+		cursorDecided := false
 		for _, hoverable := range slices.Backward(ui.hoverables) {
 			if RectContainsPoint(hoverable.Rect, ui.Host.Input.MousePoint) {
 				c := hoverable.Container
@@ -277,6 +285,14 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 				for c != nil {
 					if !c.ClickThrough {
 						g.Append(&ui.hoverList, c.node)
+					}
+					if !cursorDecided {
+						if c.TextEntry {
+							cursorDecided = true
+						} else if c.Focusable || c.PointerHand {
+							MouseCursorShape = CursorShapePointer
+							cursorDecided = true
+						}
 					}
 					c = c.parent
 				}
@@ -741,6 +757,12 @@ type AttrSet struct {
 	// inside a ClickThrough overlay.
 	clickThroughSet bool
 	Focusable       bool // items that can receive focus via clicking or tab-cycling
+	// PATCHED by optiscaler-manager (v0.17): mouse cursor intent. TextEntry
+	// keeps the default arrow over a text-editing container; PointerHand
+	// requests the pointing hand over a click affordance that has no
+	// Focusable of its own.
+	TextEntry bool
+	PointerHand bool
 	FocusTrap       bool // this container wants to be a focus trap (only for modals)
 	// TabAfter, when set, orders this container's focusable subtree immediately
 	// after that id in the tab ring. Source-order collect still runs; a post-pass
@@ -2271,6 +2293,22 @@ func isChildNode(target *identNode) bool {
 func HasFocusWithin() bool {
 	return isChildNode(ui.focused)
 }
+
+// PATCHED by optiscaler-manager (v0.17): mouse cursor shape selection.
+// Values mirror wp_cursor_shape_device_v1.shape (default=1, pointer=4 — the
+// pointing hand); the wayland backend maps them straight through. The X11
+// and Win32 backends keep their static cursors for now (documented in
+// docs/vendor-patches.md).
+const (
+	CursorShapeDefault = 1 // arrow
+	CursorShapePointer = 4 // pointing hand
+)
+
+// MouseCursorShape is the cursor shape the last finished frame wants under
+// the pointer, picked by the hover-chain rule in RunFrameFn. Backends read
+// it after every frame; it resets to the default whenever nothing clickable
+// is hovered.
+var MouseCursorShape = CursorShapeDefault
 
 // IdIsHovered reports whether the pointer is over the container with the given
 // handle (anywhere in its hover stack, not necessarily on top).

@@ -379,7 +379,9 @@ func themedInput(buf *string, hint string, icon widgets.IconGlyph, sizing ...Att
 // themedInputState is themedInput with a caller-owned edit state (tests
 // drive the same editing flow and assert on st directly).
 func themedInputState(buf *string, hint string, icon widgets.IconGlyph, st *editState, sizing ...AttrsFn) {
-	box := Attrs(Focusable, Row, CrossMid, Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(2, sp12), Clip)
+	// TextEntry keeps the default arrow cursor over the field (v0.17
+	// hover-chain rule): the caret, not a hand, signals editability.
+	box := Attrs(Focusable, TextEntry, Row, CrossMid, Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(2, sp12), Clip)
 	Container(AttrsWith(box, sizing...), func() {
 		if st == nil {
 			st = UseWithInit("edit:"+hint, func() *editState {
@@ -472,7 +474,7 @@ func (m *model) viewSegment(icon widgets.IconGlyph, label string, mode ui.ViewMo
 	if selected {
 		fg = txtMain
 	}
-	Container(Attrs(Row, CrossMid, Gap(sp4), Pad2(sp4, sp8)), func() {
+	Container(Attrs(PointerHand, Row, CrossMid, Gap(sp4), Pad2(sp4, sp8)), func() {
 		if mode == ui.ViewList {
 			m.listSegRect = GetScreenRectOf(CurrentId())
 		}

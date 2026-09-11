@@ -292,3 +292,54 @@ true per-run isolation while preserving `Host` (the caller sets `WindowSize`).
 
 **Reapplying after `go mod vendor`.** Re-add the identity-tree + build-buffer
 reset block at the end of `ResetInputSession`.
+
+## shirei: mouse cursor shape (v0.17)
+
+- **Files**: `vendor/go.hasen.dev/shirei/shirei.go` (cursor constants,
+  `MouseCursorShape` var, the hover-chain rule in `RunFrameFn`, the
+  `TextEntry`/`PointerHand` attrs on `AttrSet`), `attrs.go` (the two
+  setters), `waylandbackend/waylandcursor_linux.go` (shape-aware
+  `applyCursor` + themed hand loading + `applyPointerCursor` tracking),
+  `waylandbackend/waylandbackend_linux.go` (the post-frame hook before the
+  unchanged-frame early return).
+- **Marker**: `// PATCHED by optiscaler-manager (v0.17)` in all four files.
+- **Guard**: `internal/gui/csd_test.go` (checks all four markers) and
+  `internal/gui/cursor_test.go` (behavior: the picked shape per hover
+  target).
+
+**What.** Every clickable surface showed the same arrow cursor: shirei had
+no cursor-shape concept. The patch adds `CursorShapeDefault` (1) and
+`CursorShapePointer` (4) — the `wp_cursor_shape_device_v1.shape` values —
+plus an exported `MouseCursorShape` var that `RunFrameFn`'s hover-detection
+block picks from the hover chain, innermost first: a `TextEntry` container
+keeps the arrow (the caret signals editability); the first `Focusable` or
+`PointerHand` container asks for the pointing hand; empty space stays the
+arrow.
+
+The wayland backend applies the picked shape after every `RunFrameFn` —
+before the unchanged-frame early return, so hover moves change the cursor
+without a repaint — tracking `(pointerSerial, shape)` and re-issuing only
+on change. Tier mapping: wp_cursor_shape gets the protocol shape directly
+(`pointer` = 4); the themed-xcursor tier loads the theme's hand
+(`hand2`, `hand`, `pointing_hand`, `pointer`, in order, then the theme's
+default); the drawn-bitmap fallback tier keeps the arrow (theme-less
+systems only — a hand bitmap is not worth it).
+
+**Scope.** Wayland only. X11 and Win32 keep their static cursors; shirei
+has no per-frame cursor hook for them. The app opts in with
+`PointerHand` where a click affordance has no `Focusable` of its own
+(sidebar items, view-switch segments, dropdown rows); focusable containers
+(buttons, cards, dropdown triggers, DLSS controls) get the hand via
+`Focusable`; text inputs set `TextEntry`.
+
+**Reapplying after `go mod vendor`.** Re-add: the const/var block before
+`IdIsHovered`; the cursor rule inside the hover-chain walk (after the
+`ui.hoverList` append, guarded by a `cursorDecided` bool); the two
+`AttrSet` fields after `Focusable`; the setters after `Focusable` in
+`attrs.go`; `shapePointer`/`handCursorNames`, the shape-keyed
+`themedImage`/`themedTried` maps, the shape-aware `themedCursorImage`,
+`applyPointerCursor` and the shape-aware `applyCursor` in
+`waylandcursor_linux.go` (plus the `shirei` import); the post-frame
+`applyPointerCursor()` call in `drawFrame` before the early return.
+`TestVendorCSDPatchPresent` and the cursor tests fail while any part is
+missing.

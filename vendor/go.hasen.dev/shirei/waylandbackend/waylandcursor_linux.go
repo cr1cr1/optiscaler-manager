@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 
+	"go.hasen.dev/shirei"
 	"go.hasen.dev/shirei/internal/wayland/cursorshape"
 	wos "go.hasen.dev/shirei/internal/wayland/os"
 	"go.hasen.dev/shirei/internal/wayland/wl"
@@ -159,24 +160,37 @@ func buildCursor(cs int) {
 
 var cursorShapeDisabled = os.Getenv("SHIREI_WL_NO_CURSOR_SHAPE") != ""
 
-// themed-cursor cache, per integer scale. The Theme is retained because the
-// image buffers live in its shm pool (and os.File would close the fd when
-// collected); tried marks scales that failed so we don't retry every enter.
+// PATCHED by optiscaler-manager (v0.17): the pointing-hand shape of
+// wp_cursor_shape_device_v1.shape (the vendored cursorshape package only
+// exports the default).
+const shapePointer = 4
+
+// handCursorNames are the xcursor names themes use for the pointing hand,
+// in preference order (hand2 is the modern standard).
+var handCursorNames = []string{"hand2", "hand", "pointing_hand", "pointer"}
+
+// themed-cursor cache. The Theme is retained because the image buffers live
+// in its shm pool (and os.File would close the fd when collected). PATCHED
+// by optiscaler-manager (v0.17): image and tried state are keyed by
+// [scale, shape] so hovering a click affordance swaps to the hand buffer;
+// the theme itself stays per scale.
 var (
 	themedTheme = map[int]*wlcursor.Theme{}
-	themedImage = map[int]*wlcursor.ImageBuffer{}
-	themedTried = map[int]bool{}
+	themedImage = map[[2]int]*wlcursor.ImageBuffer{}
+	themedTried = map[[2]int]bool{}
 )
 
-// themedCursorImage loads (once per scale) the user's themed arrow via the
-// vendored xcursor loader: XCURSOR_THEME (or "default", which resolves
-// through index.theme Inherits chains), XCURSOR_SIZE (or 24) times the
-// output scale.
-func themedCursorImage(cs int) *wlcursor.ImageBuffer {
-	if themedTried[cs] {
-		return themedImage[cs]
+// themedCursorImage loads (once per scale and shape) the user's themed
+// cursor via the vendored xcursor loader: XCURSOR_THEME (or "default",
+// which resolves through index.theme Inherits chains), XCURSOR_SIZE (or 24)
+// times the output scale. The arrow shape loads LeftPtr as before; the
+// pointing hand tries handCursorNames, falling back to the theme's default.
+func themedCursorImage(cs int, shape int) *wlcursor.ImageBuffer {
+	key := [2]int{cs, shape}
+	if themedTried[key] {
+		return themedImage[key]
 	}
-	themedTried[cs] = true
+	themedTried[key] = true
 
 	name := os.Getenv("XCURSOR_THEME")
 	if name == "" {
@@ -188,30 +202,53 @@ func themedCursorImage(cs int) *wlcursor.ImageBuffer {
 	}
 	size := uint32(base * cs)
 
-	theme, err := wlcursor.LoadThemeFromName(name, size, shm)
-	if err != nil {
-		wlDebug("themed cursor: theme pool failed: %v", err)
-		return nil
+	if themedTheme[cs] == nil {
+		theme, err := wlcursor.LoadThemeFromName(name, size, shm)
+		if err != nil {
+			wlDebug("themed cursor: theme pool failed: %v", err)
+			return nil
+		}
+		themedTheme[cs] = theme
 	}
-	cur, err := theme.GetCursor(wlcursor.LeftPtr)
+	theme := themedTheme[cs]
+	var cur *wlcursor.Cursor
+	var err error
+	if shape == shirei.CursorShapePointer {
+		for _, hand := range handCursorNames {
+			if cur, err = theme.GetCursor(hand); err == nil {
+				break
+			}
+		}
+	} else {
+		cur, err = theme.GetCursor(wlcursor.LeftPtr)
+	}
 	if err != nil {
 		cur, err = theme.GetCursor("default")
 	}
 	if err != nil {
-		wlDebug("themed cursor: no arrow in theme %q: %v", name, err)
+		wlDebug("themed cursor: no %s in theme %q: %v", cursorName(shape), name, err)
 		theme.Destroy()
+		themedTheme[cs] = nil
 		return nil
 	}
 	img := cur.GetCursorImage(0)
 	if img == nil {
 		theme.Destroy()
+		themedTheme[cs] = nil
 		return nil
 	}
-	themedTheme[cs] = theme
-	themedImage[cs] = img
+	themedImage[key] = img
 	wlDebug("themed cursor: %q size=%d -> %dx%d hotspot=(%d,%d)",
 		name, size, img.GetWidth(), img.GetHeight(), img.GetHotspotX(), img.GetHotspotY())
 	return img
+}
+
+// cursorName describes a shape for debug logs.
+func cursorName(shape int) string {
+	if shape == shirei.CursorShapePointer {
+		return "hand"
+	}
+	return "arrow"
 }
 
 // attachThemedCursor points the cursor surface at the themed buffer and
@@ -236,17 +273,48 @@ func attachThemedCursor(serial uint32, img *wlcursor.ImageBuffer, cs int) bool {
 	return true
 }
 
-// applyCursor sets the cursor for this enter serial: compositor-drawn shape,
-// else themed xcursor, else the drawn arrow (built lazily, rebuilt on scale
-// changes).
+// PATCHED by optiscaler-manager (v0.17): cursor shape application tracking —
+// the pointer serial and shape last applied, so applyPointerCursor only
+// talks to the compositor when either changes.
+var (
+	cursorShapeSerial  uint32
+	cursorShapeApplied int
+)
+
+// applyPointerCursor applies the frame's requested cursor shape; called
+// after every RunFrameFn, before drawFrame's unchanged-frame early return,
+// so hover changes update the cursor without a repaint.
+func applyPointerCursor() {
+	if pointer == nil {
+		return
+	}
+	shape := shirei.MouseCursorShape
+	if cursorShapeApplied == shape && pointerSerial == cursorShapeSerial {
+		return
+	}
+	cursorShapeSerial = pointerSerial
+	cursorShapeApplied = shape
+	applyCursor(pointerSerial)
+}
+
+// applyCursor sets the cursor for this enter serial: compositor-drawn
+// shape, else themed xcursor, else the drawn arrow (built lazily, rebuilt
+// on scale changes). PATCHED by optiscaler-manager (v0.17): the finished
+// frame's shape (shirei.MouseCursorShape) maps to the compositor shape or
+// the themed hand; the drawn-bitmap tier stays the arrow for every shape.
 func applyCursor(serial uint32) {
 	if pointer == nil {
 		return
 	}
+	shape := shirei.MouseCursorShape
 	if !cursorShapeDisabled {
 		ensureCursorShapeDevice()
 		if cursorShapeDev != nil {
-			cursorShapeDev.SetShape(serial, cursorshape.ShapeDefault)
+			if shape == shirei.CursorShapePointer {
+				cursorShapeDev.SetShape(serial, shapePointer)
+			} else {
+				cursorShapeDev.SetShape(serial, cursorshape.ShapeDefault)
+			}
 			return
 		}
 	}
@@ -254,9 +322,11 @@ func applyCursor(serial uint32) {
 	if cs < 1 {
 		cs = 1
 	}
-	if img := themedCursorImage(cs); img != nil && attachThemedCursor(serial, img, cs) {
+	if img := themedCursorImage(cs, shape); img != nil && attachThemedCursor(serial, img, cs) {
 		return
 	}
+	// ponytail: drawing a hand bitmap for the theme-less fallback tier is
+	// not worth it; such systems keep the arrow everywhere.
 	if !cursorReady || cursorScale != cs {
 		buildCursor(cs)
 	}

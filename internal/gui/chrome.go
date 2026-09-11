@@ -68,7 +68,7 @@ func (m *model) sidebarItem(icon IconGlyph, label string, active bool, action fu
 	if active {
 		fg = accentHov
 	}
-	Container(Attrs(Center, Expand, Gap(2), Pad2(sp4, 2), Corners(radiusS)), func() {
+	Container(Attrs(PointerHand, Center, Expand, Gap(2), Pad2(sp4, 2), Corners(radiusS)), func() {
 		m.sidebarRects = append(m.sidebarRects, GetScreenRectOf(CurrentId()))
 		if !active && IsHovered() {
 			ModAttrs(BackgroundVec(bgRaised))

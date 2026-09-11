@@ -470,6 +470,11 @@ func drawFrame() {
 		openURL(out.OpenURL)
 	}
 
+	// PATCHED by optiscaler-manager (v0.17): apply the cursor shape the
+	// frame picked BEFORE the unchanged-frame early return, so hover moves
+	// change the cursor without a repaint.
+	applyPointerCursor()
+
 	if havePresented && out.SurfacesHash == lastPresentedHash && curW == presentW && curH == presentH && !hasAck {
 		shirei.EmitFrameMetrics()
 		wantsFrame = out.NextFrameRequested

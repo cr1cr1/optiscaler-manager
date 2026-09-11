@@ -67,6 +67,17 @@ func TestVendorCSDPatchPresent(t *testing.T) {
 	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.16)") {
 		t.Error("vendored renderpng.go lacks the v0.16 identity-reset patch (test isolation); reapply it (docs/vendor-patches.md)")
 	}
+	// v0.17 (mouse cursor shape) spans four vendored files; every one must
+	// carry the marker so a `go mod vendor` refresh fails loudly.
+	for _, f := range []string{"shirei.go", "attrs.go", "waylandbackend/waylandcursor_linux.go", "waylandbackend/waylandbackend_linux.go"} {
+		pf, err := os.ReadFile(filepath.Join(root, "vendor", "go.hasen.dev", "shirei", f))
+		if err != nil {
+			t.Fatalf("read vendored %s: %v", f, err)
+		}
+		if !strings.Contains(string(pf), "PATCHED by optiscaler-manager (v0.17)") {
+			t.Errorf("vendored %s lacks the v0.17 mouse-cursor-shape patch; reapply it (docs/vendor-patches.md)", f)
+		}
+	}
 
 	kbd := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "waylandbackend", "waylandkeyboard_linux.go")
 	b, err = os.ReadFile(kbd)
