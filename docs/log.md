@@ -2943,3 +2943,59 @@ opens the restore menu of local backup sets.
   hitches are shirei-internal (build-phase only); if they matter enough
   to hunt further, the next lever is an execution trace around a hitch
   frame upstream, not app-side changes.
+
+## 2026-09-11 — v0.15: startup latest pre-warm; named `Latest` option in the version dropdown
+
+- User report (bug): "`latest` was supposed to be fetched once at program
+  start, but it is not, and is not present in the optiscaler dropdown
+  menu as an option. There are only old/cached versions." Spec restated:
+  at startup, optiscaler and NVIDIA DLSS versions are checked and
+  `latest` downloaded into the cache dir; then a dropdown pick installs
+  the latest optiscaler and the DLSS pill press installs the latest
+  DLLs.
+- Root cause (verified on the user's machine): startup fetching WORKED
+  (`releases.json` refreshed same day, matches the live GitHub API);
+  v0.9.4 is the newest OptiScaler release (2026-07-18, first
+  non-prerelease of 26 releases; the `nightly` tag carries zero assets);
+  the bundle was already cached; settings were `default_version:"latest"`,
+  `online_lookups:true`. The real gap was the old DELIBERATE design: the
+  literal "latest" was never offered in the menu (only the concrete tag
+  — on a latest-installed game the menu is exactly one row,
+  indistinguishable from "old/cached"), and startup downloaded nothing
+  (v0.14 scope: "nothing downloads without a press").
+- Fix, per the user's confirmed design fork: (1) a NAMED `Latest (tag)`
+  row at the top of the version dropdown — picking it installs the
+  latest, re-resolved at pick time if the memo is stale; concrete cached
+  versions stay listed below it. (2) Startup pre-downloads of BOTH the
+  latest OptiScaler bundle (~55 MB) and the latest DLSS three-DLL set
+  into the cache dir; skipped when already cached.
+- Implementation: `startupPreload` (new `internal/ui/latest.go`)
+  resolves `latest` once at `Start` (both boot paths), memoizes the tag
+  (`LatestKnown`), and downloads the bundle when missing; `CheckDLSS`'s
+  tags goroutine now pre-downloads the published set via the new
+  `dlss.Client.Preload` (zero network when cached); the GUI dropdown
+  composes `versionMenuRows` — the latest row absorbs the semver-equal
+  concrete entry or prepends, guards its tick/no-op with the concrete
+  tag, and dispatches the literal `latest`, which `doSwitchVersion`
+  re-resolves at entry.
+- Bug surfaced by the new concurrency: a startup scan and the preload
+  resolve at the same instant — without a lock both passed the gh
+  cooldown check (double API fetch) and raced the `downloadURLs` map.
+  `gh.Client` is now mutex-guarded (`TestResolveConcurrent`: 4
+  goroutines, exactly 1 fetch).
+- Second bug surfaced: the preload's live fetch writes the cooldown
+  BEFORE the scan's cache-served resolve runs, so the session's own
+  "recently resolved" freshness flag was false and the next install
+  raised the stale-cache consent prompt for data fetched moments
+  earlier. `gh.CacheFresh` (live fetch in this process within the
+  cooldown window) now backs `defaultRecentlyResolved`; the stale-cache
+  gate re-pinned to a cache a PREVIOUS process left behind
+  (`seedOldProcessReleaseCache`), with `TestFreshCacheNoConsent` pinning
+  the one-click flow the old test had accidentally covered.
+- Tests: `TestStartPreloadsLatestBundleIntoCache`,
+  `TestCheckDLSSStartupPreloadsLatestSet` (rewritten from the
+  no-download assertion) + skip-when-cached, `TestSwitchVersionLatest`
+  resolve/no-op pair, gui `TestVersionDropdownMenuOffersLatest` /
+  `…AbsorbedSingleTick` / `…DispatchesLatest`, gh `TestResolveConcurrent`.
+  Full `go test ./...` and the race detector pass; docs updated
+  (architecture startup pre-warm section, scope v0.15, this log).

@@ -20,12 +20,16 @@ import (
 // Start boots the library: a warm games cache hydrates the rows
 // synchronously (status reconciled from store manifests — no PE parsing, no
 // reclassification) and no scan runs; a missing or unusable cache falls
-// through to Scan. Safe to call once at frontend boot. The DLSS
-// availability check runs here too: the cached half is local, the online
-// half is async (one tags call, no runtime bytes) like the warm-boot
-// default-version resolve.
+// through to Scan. Safe to call once at frontend boot. The startup version
+// checks run here too, both async so Start never blocks on the network:
+// the DLSS availability check (cached half local, online half one tags
+// call that also PRE-DOWNLOADS the latest published set) and the OptiScaler
+// latest pre-warm (startupPreload: resolve the latest tag + download its
+// bundle into the cache when missing), like the warm-boot default-version
+// resolve.
 func (s *Session) Start(ctx context.Context) {
 	s.CheckDLSS(ctx)
+	go s.startupPreload(ctx)
 	rows := loadGamesCache(s.deps.SettingsRoot, s.deps.GOOS)
 	if len(rows) == 0 {
 		s.Scan(ctx)

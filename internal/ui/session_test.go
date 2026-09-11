@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,12 +22,13 @@ import (
 // testEnv wires a Session against fakes: httptest GitHub + CDN, temp store,
 // temp Steam root with one game.
 type testEnv struct {
-	sess      *Session
-	steamRoot string
-	gameRoot  string
-	bin       string
-	srv       *httptest.Server
-	opened    []string
+	sess       *Session
+	steamRoot  string
+	gameRoot   string
+	bin        string
+	srv        *httptest.Server
+	opened     []string
+	bundleHits int64 // atomic: /bundle (bundle download) requests served
 }
 
 func newTestEnv(t *testing.T) *testEnv {
@@ -38,6 +40,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		fmt.Fprintf(w, `[{"tag_name":"v0.9.4-test","prerelease":false,"assets":[{"name":"Optiscaler_test.7z","browser_download_url":%q,"size":100}]}]`, e.srv.URL+"/bundle")
 	})
 	mux.HandleFunc("/bundle", func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&e.bundleHits, 1)
 		http.ServeFile(w, r, filepath.Join("..", "installer", "testdata", "bundle.7z"))
 	})
 	mux.HandleFunc("/cdn/", func(w http.ResponseWriter, r *http.Request) {
@@ -184,18 +187,50 @@ func TestEACConfirmBlocksInstall(t *testing.T) {
 	t.Log("EAC gate: blocked, declined, consented")
 }
 
+// seedOldProcessReleaseCache simulates the release cache a PREVIOUS
+// process left behind: releases.json plus a cooldown stamp fresh enough to
+// serve from the cache, and the bundle itself. This process has never
+// fetched live, so from the session's view the cache is genuinely stale —
+// the gate's real premise.
+func seedOldProcessReleaseCache(t *testing.T, e *testEnv) {
+	t.Helper()
+	cacheDir := e.sess.deps.CacheDir
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	releases := fmt.Sprintf(
+		`[{"tag_name":"v0.9.4-test","prerelease":false,"assets":[{"name":"Optiscaler_test.7z","browser_download_url":%q,"size":100}]}]`,
+		e.srv.URL+"/bundle")
+	if err := os.WriteFile(filepath.Join(cacheDir, "releases.json"), []byte(releases), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cooldown := fmt.Sprintf(`{"last_attempt":%q}`, time.Now().Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(cacheDir, "cooldown.json"), []byte(cooldown), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := os.ReadFile(filepath.Join("..", "installer", "testdata", "bundle.7z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(cacheDir, "optiscaler", "v0.9.4-test")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Optiscaler_test.7z"), bundle, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStaleCacheRequiresConsent(t *testing.T) {
 	e := newTestEnv(t)
 	e.sess.Scan(context.Background())
 	waitEvent(t, e.sess, EvScanDone)
 
-	// First install primes the release cache and starts the gh cooldown.
-	e.sess.QuickInstall(e.gameRoot)
-	waitEvent(t, e.sess, EvOpDone)
-	e.sess.QuickInstall(e.gameRoot) // uninstall again
-	waitEvent(t, e.sess, EvOpDone)
+	// A release cache written by an OLDER process (no live fetch in this
+	// one): an install inside the cooldown must ask before using it —
+	// this is the gate's genuine premise.
+	seedOldProcessReleaseCache(t, e)
 
-	// Second install inside the cooldown must ask before using stale cache.
 	e.sess.QuickInstall(e.gameRoot)
 	waitEvent(t, e.sess, EvConfirm)
 	if st := e.sess.Snapshot(); st.Confirm == nil || st.Confirm.Kind != ConfirmCachedRelease {
@@ -207,6 +242,50 @@ func TestStaleCacheRequiresConsent(t *testing.T) {
 		t.Fatal("install did not proceed after cache consent")
 	}
 	t.Log("stale cache gate: asked, consented")
+}
+
+// TestFreshCacheNoConsent: a live fetch in THIS process makes the release
+// cache provably fresh for the rest of the cooldown window — a later
+// install served from it must NOT raise the stale-cache prompt (the
+// prompt's "stale" premise does not hold for data fetched moments
+// earlier). This is the one-click scan-then-install flow, and it covers
+// the concurrent startup case where the preload's live fetch writes the
+// cooldown before the scan's cache-served resolve runs.
+func TestFreshCacheNoConsent(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+
+	// First install fetches the release list live (no cache yet) and
+	// installs — no gate.
+	e.sess.QuickInstall(e.gameRoot)
+	waitEvent(t, e.sess, EvOpDone)
+	e.sess.QuickInstall(e.gameRoot) // uninstall again
+	waitEvent(t, e.sess, EvOpDone)
+
+	// Second install inside the cooldown: the cache was written by the
+	// first install's LIVE fetch in this process — provably fresh, so it
+	// installs straight through.
+	e.sess.QuickInstall(e.gameRoot)
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case ev := <-e.sess.Events():
+			if ev.Kind == EvConfirm {
+				t.Fatalf("fresh-cache install raised a confirmation; the stale premise does not hold")
+			}
+			if ev.Kind == EvOpDone {
+				goto settled
+			}
+		case <-deadline:
+			t.Fatal("install never settled")
+		}
+	}
+settled:
+	if _, err := os.Stat(filepath.Join(e.bin, "dxgi.dll")); err != nil {
+		t.Fatal("install did not proceed without consent on the fresh cache")
+	}
+	t.Log("fresh cache served without the stale-cache prompt")
 }
 
 func TestToastLifecycle(t *testing.T) {

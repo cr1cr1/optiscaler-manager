@@ -280,12 +280,36 @@ On startup (when online lookups are enabled) the session makes ONE call —
 GitHub's tags API for NVIDIA/DLSS (`/repos/NVIDIA/DLSS/tags?per_page=10`;
 newest-first is not a documented GitHub contract, so the greatest VERSION
 among the fetched tags wins, each carrying its commit SHA) — and stores
-the published version and commit; no DLL bytes are downloaded, and a
-failure stays silent (the status line just keeps its em-dashes). The TUI
+the published version and commit, then PRE-DOWNLOADS that latest
+published set into the download cache when it is not already cached
+(v0.15: the startup check fetches `latest`; zero network when the commit
+sits complete in the cache) so the pill serves the latest offline-ready;
+a failure stays silent (the status line just keeps its em-dashes). The TUI
 detail view shows `DLSS published: <v> · cached: <v>`, and the GUI's
 update marker uses the published half — or the cached half when the
 online one is unknown (offline mode, failed lookup): the cache's version
 then marks the pill too, so a newer cached set is never invisible.
+
+## Startup latest pre-warm (v0.15)
+
+At program startup (online lookups on) the session ALSO checks the
+OptiScaler side: `startupPreload` (internal/ui/latest.go) resolves
+`latest` to a concrete tag once, memoizes it (`LatestKnown`), and
+downloads the tag's bundle into the download cache when it is not
+already cached. The GUI version dropdown renders the memoized tag as a
+first-class **Latest (tag)** option — it absorbs the concrete entry when
+that entry IS the latest (one row, one tick) or prepends when absent —
+and picking it dispatches the literal `latest`, which `SwitchVersion`
+re-resolves at pick time before the chain starts (the same-version no-op
+guard, the EAC consent pin, and the install leg all see the concrete
+tag). Both pre-warms (this one and the DLSS one above) are async and
+failure-silent: an offline boot simply leaves the menu at the concrete
+cached versions and the next press resolves online as before. The gh
+client is concurrency-safe (a scan and a preload can Resolve at the same
+instant), and a release cache written by a LIVE fetch in this process is
+provably fresh (`gh.CacheFresh`) — installs served from it skip the
+stale-cache consent prompt, whose "stale" premise does not hold for data
+fetched moments earlier.
 
 On a user press the update is cache-first: `dlss.Update` takes a commit
 hint — the startup check's tag commit, or the newest cached commit when

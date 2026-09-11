@@ -60,7 +60,11 @@ Each installed game manages its own OptiScaler version: the version selector
 (a dropdown on the card and detail panel in the GUI, the `v` key in the TUI)
 offers the versions already downloaded in the bundle cache plus the default
 version from preferences, and switching installs the chosen version while
-keeping the game's existing `OptiScaler.ini` tweaks.
+keeping the game's existing `OptiScaler.ini` tweaks. On startup the app
+resolves the newest release once and the dropdown offers it as a named
+`Latest (tag)` row — picking it installs the latest, re-resolved at pick
+time — with the concrete cached versions listed below it (absorbed into one
+row when the installed version already is the latest).
 
 The DLSS version label is also a control (GUI only): pressing it updates the
 game's NVIDIA runtime — all three DLLs (`nvngx_dlss.dll`, `nvngx_dlssd.dll`,
@@ -70,8 +74,12 @@ components a game did not ship. A DLL whose version resource does not
 parse still shows a pressable bare `DLSS` pill. On startup (online
 lookups enabled) the app makes one GitHub tags call to learn the
 published version — it is shown in the TUI detail view and marks the
-update label when your set is older; no DLL bytes are fetched then.
-Pressing the label is cache-first: if the published commit is already in
+update label when your set is older — and pre-downloads that latest
+published set into the download cache when it is not already cached, so
+a press is cache-first from the first moment. The startup check also
+pre-downloads the latest OptiScaler bundle into the cache (the `Latest`
+dropdown row above). Pressing the label is cache-first: if the published
+commit is already in
 the download cache it installs from there, otherwise the commit is
 resolved and fetched. Pressing when the game already holds the target
 set (or a newer one) is a graceful no-op — it reports the installed
@@ -105,8 +113,9 @@ cover art are cached in `~/.cache/optiscaler-manager`.
 The toolbar scans, adds games, filters, sorts, and switches between grid and
 list views, with a progress bar tracking scan phases. Cards fire their buttons
 directly; clicking a card body opens the detail panel. An installed game's
-version pill is a dropdown: pick any cached bundle version (or the preference
-default, shown resolved) to switch to it, keeping your `OptiScaler.ini`.
+version pill is a dropdown: pick the `Latest (tag)` row (the newest release,
+resolved at startup and re-resolved at pick time) or any cached bundle
+version to switch to it, keeping your `OptiScaler.ini`.
 Arrow keys move the
 selection, Enter opens the detail panel, Esc closes it. The Settings window
 holds the default OptiScaler version, the card size, the scan-directory list,

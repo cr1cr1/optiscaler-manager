@@ -14,7 +14,9 @@ import (
 )
 
 // SwitchVersion starts a per-game switch to a chosen OptiScaler version:
-// the version-parameterized sibling of Upgrade. The game's existing
+// the version-parameterized sibling of Upgrade. version may be the literal
+// "latest" (the dropdown's Latest option), which re-resolves to the newest
+// release at pick time before the chain starts. The game's existing
 // OptiScaler.ini is captured first and written back after the install leg
 // succeeds — the installer would otherwise replace it with the curated
 // defaults (applyCuratedINI), and keeping the user's tuning is the whole
@@ -41,6 +43,23 @@ func (s *Session) SwitchVersion(gameDir, version string) {
 func (s *Session) doSwitchVersion(gameDir, version string, eacConsented bool) {
 	if version == "" {
 		return
+	}
+	if version == "latest" {
+		// The dropdown's "Latest" option dispatches the literal: re-resolve
+		// the newest release at pick time (the startup memo may be stale)
+		// and proceed with the CONCRETE tag — the same-version no-op guard,
+		// the EAC consent pin, and the install leg all see a real tag.
+		resolve := s.resolveVersion
+		if resolve == nil {
+			resolve = s.ghResolveVersion
+		}
+		tag, _, err := resolve(context.Background(), "latest")
+		if err != nil || tag == "" {
+			log.Warn().Err(err).Msg("version switch: cannot resolve the latest release")
+			s.toast("cannot resolve the latest OptiScaler version", true)
+			return
+		}
+		version = tag
 	}
 	row := s.findRow(gameDir)
 	if row == nil || row.OptiScalerVersion == version {

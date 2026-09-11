@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
@@ -75,7 +76,17 @@ type Client struct {
 
 	// downloadURLs maps asset name → URL from the last fetch or cache
 	// load. domain.ResolvedAsset deliberately carries no URL; Download
-	// resolves it here.
+	// resolves it here. mu guards the map AND the releases() sequence that
+	// refills it: a startup scan and the startup preload can Resolve at the
+	// same instant, and without the lock both would pass the cooldown check
+	// (or read the map mid-index) and fetch the release list twice.
+	mu sync.Mutex
+
+	// lastFetchAt is the wall time of the last successful LIVE fetch by
+	// THIS process (zero until one happens). A resolve served from the
+	// cache during the cooldown window is still provably fresh while this
+	// is recent — CacheFresh.
+	lastFetchAt  time.Time
 	downloadURLs map[string]string
 }
 
@@ -147,8 +158,14 @@ func (c *Client) Resolve(ctx context.Context, requested string) (resolved domain
 	}, fromCache, nil
 }
 
-// releases returns the release list, honoring the cooldown and cache.
+// releases returns the release list, honoring the cooldown and cache. The
+// whole sequence runs under mu so concurrent Resolves (a startup scan and
+// the startup preload firing at once) share one fetch instead of racing
+// the cooldown check, the cache write, and the download-URL index.
 func (c *Client) releases(ctx context.Context) ([]Release, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.inCooldown() {
 		if cached, err := c.readCache(); err == nil {
 			return cached, true, nil
@@ -199,7 +216,23 @@ func (c *Client) fetch(ctx context.Context) ([]Release, error) {
 	if err := c.writeCache(releases); err != nil {
 		return nil, err
 	}
+	// Mark the live fetch: a later resolve served from the cache during the
+	// cooldown window is provably fresh, not the stale data the GUI's
+	// stale-cache consent prompt guards against. Called under mu (releases).
+	c.lastFetchAt = c.now()
 	return releases, nil
+}
+
+// CacheFresh reports whether the release cache is provably fresh: this
+// process fetched the release list live within the cooldown window, so
+// anything served from the cache since (a concurrent or later resolve) is
+// at most one cooldown old — NOT the stale cache the GUI consent prompt
+// exists to guard. A cache written by an OLDER process (or only ever by a
+// failed fetch) is not fresh, even inside the cooldown window.
+func (c *Client) CacheFresh() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return !c.lastFetchAt.IsZero() && c.now().Sub(c.lastFetchAt) < cooldown
 }
 
 // isRateLimited reports HTTP 429, or HTTP 403 with the rate-limit budget
@@ -250,7 +283,9 @@ func selectAsset(rel Release) (Asset, error) {
 // while streaming. The write is atomic: temp file + rename. The download
 // URL is resolved from the last fetch/cache load keyed by AssetName.
 func (c *Client) Download(ctx context.Context, asset domain.ResolvedAsset, destDir string) (path string, sha256Hex string, err error) {
+	c.mu.Lock()
 	url, ok := c.downloadURLs[asset.AssetName]
+	c.mu.Unlock()
 	if !ok {
 		return "", "", fmt.Errorf("gh: no download URL known for asset %q (resolve first)", asset.AssetName)
 	}

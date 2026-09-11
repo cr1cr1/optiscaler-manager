@@ -37,10 +37,12 @@ func (s *Session) doUpdateDLSS(gameDir string) {
 
 // CheckDLSS is the startup availability check, called once at boot (and by
 // tests directly): the cached half is a local PE read of the download
-// cache, the online half one small tags-API call that fetches NO runtime
-// bytes — it resolves the published version and the commit it points at
-// for the update hint. Failures degrade silently: the state stays zero and
-// the update flow still works by resolving online at press time.
+// cache, the online half one small tags-API call that resolves the
+// published version and the commit it points at for the update hint — and
+// pre-downloads that latest published set into the cache when it is not
+// already cached (user spec: startup fetches `latest`; zero network when
+// cached). Failures degrade silently: the state stays zero and the update
+// flow still works by resolving online at press time.
 func (s *Session) CheckDLSS(ctx context.Context) {
 	s.mu.Lock()
 	cached, commit := dlss.CachedVersion(s.deps.CacheDir)
@@ -62,6 +64,14 @@ func (s *Session) CheckDLSS(ctx context.Context) {
 		s.st.DLSSLatest = lat
 		s.mu.Unlock()
 		s.emit(Event{Kind: EvDLSSStatus, Text: lat.Version})
+		// User spec: startup also pre-downloads the latest published set
+		// into the cache (zero network when the commit is already cached)
+		// so the DLSS pill serves the latest offline-ready.
+		if lat.Commit != "" {
+			if err := s.deps.DLSS.Preload(ctx, s.deps.CacheDir, lat.Commit); err != nil {
+				log.Warn().Err(err).Msg("dlss: startup latest preload failed")
+			}
+		}
 	}()
 }
 

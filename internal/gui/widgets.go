@@ -606,12 +606,52 @@ func launchable(e *ui.GameRow) bool {
 // trigger's arrow-key navigation.
 // versionDDItem is the dropdown's observability seam: one entry per
 // rendered popup row (version, current-tick, screen rect for click tests,
-// keyboard highlight).
+// keyboard highlight). label is the rendered row text as the user reads
+// it (== version for concrete version rows) — the seam tests assert on
+// what the menu actually offers.
 type versionDDItem struct {
 	version string
+	label   string
 	ticked  bool
 	rect    Rect
 	hl      bool
+}
+
+// versionMenuRow is one rendered version-dropdown row: dispatch is the
+// value handed to the session on pick (the literal "latest" for the Latest
+// row, which the switch re-resolves at pick time), guard is the concrete
+// tag the tick and the same-version no-op compare against (the Latest row
+// guards with the startup-resolved tag, so picking it while already at the
+// latest stays a no-op), and label is the text the user reads.
+type versionMenuRow struct {
+	dispatch string
+	guard    string
+	label    string
+}
+
+// versionMenuRows composes the dropdown's rows: Session.Versions(dir) with
+// the startup-resolved latest rendered as a first-class "Latest (…)"
+// option. The option ABSORBS the concrete entry when that entry IS the
+// latest (one row, one tick, no duplicate) or PREPENDS when the latest is
+// absent from the list (it is the maximum, so it sorts first). No known
+// latest (offline boot) = the plain concrete list.
+func versionMenuRows(m *model, dir string) []versionMenuRow {
+	versions := m.sess.Versions(dir)
+	latest := m.sess.LatestKnown()
+	rows := make([]versionMenuRow, 0, len(versions)+1)
+	absorbed := false
+	for _, v := range versions {
+		if latest != "" && !absorbed && version.Compare(v, latest) == 0 {
+			rows = append(rows, versionMenuRow{dispatch: "latest", guard: latest, label: "Latest (" + latest + ")"})
+			absorbed = true
+			continue
+		}
+		rows = append(rows, versionMenuRow{dispatch: v, guard: v, label: v})
+	}
+	if latest != "" && !absorbed {
+		rows = append([]versionMenuRow{{dispatch: "latest", guard: latest, label: "Latest (" + latest + ")"}}, rows...)
+	}
+	return rows
 }
 
 // versionDropdown replaces the static OptiScaler version pill with a
@@ -715,13 +755,13 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 		dropdownPopup(st, 0, 360, func(mouseMoved bool) {
 			// Computed here, never on closed frames: Versions walks the
 			// bundle cache (see the I/O note above).
-			versions := m.sess.Versions(dir)
+			rows := versionMenuRows(m, dir)
 			if st.hl < 0 {
 				// Open-time init: the highlight starts on the ticked
 				// (current version) row, 0 when nothing is ticked.
 				st.hl = 0
-				for i, v := range versions {
-					if version.Compare(v, current) == 0 {
+				for i, r := range rows {
+					if version.Compare(r.guard, current) == 0 {
 						st.hl = i
 						break
 					}
@@ -729,9 +769,9 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 			}
 			m.versionDDItems = m.versionDDItems[:0]
 			m.versionDDItemsFor = dir
-			for i, v := range versions {
-				v := v
-				ticked := version.Compare(v, current) == 0
+			for i, r := range rows {
+				r := r
+				ticked := version.Compare(r.guard, current) == 0
 				dropdownRow(st, i, enterPick, mouseMoved,
 					func(hl bool) {
 						// Fixed-width tick column keeps version labels aligned.
@@ -740,14 +780,17 @@ func (m *model) versionDropdown(e *ui.GameRow, label string, tone ui.Tone) {
 							tick = "✓"
 						}
 						Label(tick, FontSize(12), TextColorVec(txtMain))
-						Label(v, FontSize(12), TextColorVec(txtMain))
-						m.versionDDItems = append(m.versionDDItems, versionDDItem{version: v, ticked: ticked, rect: GetScreenRectOf(CurrentId()), hl: hl})
+						Label(r.label, FontSize(12), TextColorVec(txtMain))
+						m.versionDDItems = append(m.versionDDItems, versionDDItem{version: r.dispatch, label: r.label, ticked: ticked, rect: GetScreenRectOf(CurrentId()), hl: hl})
 					},
 					func(keyboard bool) {
 						// Re-picking the current version is a deliberate
 						// no-op (S13): the widget does not even dispatch.
-						if version.Compare(v, current) != 0 {
-							m.dispatchSwitchVersion(dir, v)
+						// The guard is the row's CONCRETE key (the
+						// resolved tag for the Latest row), never its
+						// dispatch literal.
+						if version.Compare(r.guard, current) != 0 {
+							m.dispatchSwitchVersion(dir, r.dispatch)
 						}
 						m.openDropdownDir = ""
 						if keyboard {

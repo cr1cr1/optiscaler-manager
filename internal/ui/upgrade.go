@@ -124,13 +124,20 @@ func (s *Session) ghResolveVersion(ctx context.Context, requested string) (strin
 }
 
 // defaultRecentlyResolved reports whether the release cache is provably
-// fresh because THIS session fetched it live within the gh cooldown
-// window. Installs may then serve fromCache without the stale-cache
-// consent prompt — the prompt's "stale" premise does not hold.
+// fresh because a live fetch happened within the gh cooldown window —
+// either this session's own resolve or a concurrent one (the startup
+// preload resolves "latest" at the same instant the scan or warm boot
+// does, and its live fetch makes the cache the scan's cache-served
+// resolve reads). Installs may then serve fromCache without the stale-
+// cache consent prompt — the prompt's "stale" premise does not hold.
 func (s *Session) defaultRecentlyResolved() bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.resolvedDefaultFresh &&
+	own := s.resolvedDefaultFresh &&
 		!s.resolvedDefaultAt.IsZero() &&
 		s.now().Sub(s.resolvedDefaultAt) < resolvedDefaultFreshWindow
+	s.mu.Unlock()
+	if own {
+		return true
+	}
+	return s.deps.GH != nil && s.deps.GH.CacheFresh()
 }

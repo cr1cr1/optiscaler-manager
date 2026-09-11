@@ -3,11 +3,14 @@ package gh
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -277,4 +280,42 @@ func TestDownloadComputesSHA256(t *testing.T) {
 		t.Errorf("sha256 hex length = %d, want 64", len(sha))
 	}
 	t.Logf("downloaded %s (%d bytes) sha256=%s", path, len(got), sha)
+}
+
+// TestResolveConcurrent: concurrent Resolves against one client must not
+// race the shared download-URL map or the cache/cooldown files. A startup
+// scan and the startup preload can both call Resolve in the same window;
+// both callers must get a result, and the release list must be fetched
+// exactly once (the losers are served from the winner's cache).
+func TestResolveConcurrent(t *testing.T) {
+	var fetches atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetches.Add(1)
+		_, _ = fmt.Fprintf(w, `[{"tag_name":"v1.0.0","prerelease":false,"assets":[{"name":"Optiscaler_1.0.0.7z","browser_download_url":"http://unused/bundle","size":1}]}]`)
+	}))
+	defer srv.Close()
+
+	c := New(srv.Client(), t.TempDir())
+	c.baseURL = srv.URL
+
+	const n = 4
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := range errs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _, errs[i] = c.Resolve(context.Background(), "latest")
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent resolve %d failed: %v", i, err)
+		}
+	}
+	if got := fetches.Load(); got != 1 {
+		t.Errorf("release list fetched %d times, want 1 (concurrent callers share one fetch)", got)
+	}
+	t.Log("concurrent Resolves raced nothing and fetched once")
 }

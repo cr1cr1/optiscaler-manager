@@ -402,6 +402,19 @@ func (c *Client) ensureCache(ctx context.Context, cacheRoot, commit string) (str
 	return dir, nil
 }
 
+// Preload is the exported ensureCache for the startup pre-warm: it makes
+// the download cache hold the commit's complete three-file set, fetching
+// only the missing or hash-failed members (zero network when the set is
+// already complete). The session's startup check uses it to keep the
+// latest published set offline-ready for the DLSS pill.
+func (c *Client) Preload(ctx context.Context, cacheRoot, commit string) error {
+	if commit == "" {
+		return fmt.Errorf("dlss: no commit to preload")
+	}
+	_, err := c.ensureCache(ctx, cacheRoot, commit)
+	return err
+}
+
 // cacheRecord pins the expected SHA-256 of every member of one cached
 // commit.
 type cacheRecord struct {

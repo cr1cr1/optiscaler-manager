@@ -501,9 +501,12 @@ decisions the per-version sections above do not cover.
 
 ## v0.14 scope (NVIDIA DLSS runtime updater)
 
-- **On-demand, on-user-action only**: the DLSS version pill (GUI card
-  and detail panel) doubles as the update control; nothing downloads
-  without a press, and no NVIDIA bytes ship with this app.
+- **On-demand installs, startup pre-warm**: the DLSS version pill (GUI
+  card and detail panel) doubles as the update control; nothing is
+  INSTALLED into a game without a press, and no NVIDIA bytes ship with
+  this app. The startup check pre-downloads the latest published set
+  into the download cache (v0.15), so a press is cache-first from the
+  first moment.
 - **Three-file transaction**: `nvngx_dlss.dll`, `nvngx_dlssd.dll`,
   `nvngx_dlssg.dll` update together; the complete existing set is
   required (no injection of components a game never shipped).
@@ -512,7 +515,9 @@ decisions the per-version sections above do not cover.
   `lib/Windows_x86_64/rel/<name>` at that exact commit. No mutable-URL
   fetches, no release/version picker. The published version is learned
   from ONE tags-API call on startup (greatest version among the fetched
-  tags → version + commit; no DLL bytes) and a press is cache-first: the
+  tags → version + commit) and that latest set is pre-downloaded into
+  the cache at startup (v0.15, zero network when already cached); a
+  press is cache-first: the
   known commit — the published tag's, or the download cache's newest when
   the online half is unknown — is used only while it is complete in the
   download cache, else `main` re-resolves. Warm-boot caches from older
@@ -551,3 +556,43 @@ decisions the per-version sections above do not cover.
   picker, scheduled checks, bulk update,
   snapshot pruning (the newest-first menu plus ~115 MB per snapshot
   stays acceptable; revisit when a user accumulates dozens).
+
+## v0.15 scope (startup latest pre-warm + named Latest option)
+
+- **Startup checks both runtimes and pre-downloads `latest`** (user
+  spec: "at program startup, optiscaler and nvidia DLSS dlls versions
+  are checked, and `latest` downloaded in the cache directory"):
+  `Session.Start` now runs `startupPreload` — resolve OptiScaler
+  `latest` once, memoize its tag, download its bundle into
+  `<cacheDir>/optiscaler/<tag>/` when not already cached — alongside
+  `CheckDLSS`, whose tags goroutine now ALSO pre-downloads the latest
+  published three-DLL set via `dlss.Client.Preload` (one tags call,
+  zero network when the commit is already cached). Both are async and
+  failure-silent; an offline boot just leaves the concrete cached
+  versions and the next press resolves online as before.
+- **Named `Latest (tag)` option in the version dropdown**: the memoized
+  startup tag is rendered as a first-class row — it ABSORBS the
+  concrete entry when that entry IS the latest (one row, one tick, so
+  a latest-installed game shows a single `Latest (…)` row that reads
+  as latest, not an indistinguishable cached version) or PREPENDS when
+  absent (latest is the maximum, so it sorts first). Picking it
+  dispatches the literal `latest`; `SwitchVersion` re-resolves it to a
+  concrete tag at pick time (fresh resolve, not the possibly-stale
+  memo) before the chain starts, so the same-version no-op guard, the
+  EAC consent pin, and the install leg all see a real tag. Offline
+  boot (no known latest) renders the plain concrete list.
+- **Concurrency + freshness hardening**: `gh.Client` is mutex-guarded
+  (a startup scan and the preload can `Resolve` at the same instant);
+  a release cache written by a LIVE fetch in this process is
+  provably fresh (`gh.CacheFresh`), so an install served from it skips
+  the stale-cache consent prompt — whose "stale" premise does not hold
+  for data fetched moments earlier. The stale-cache gate still asks for
+  a cache a PREVIOUS process left behind.
+
+## v0.15 deferred
+
+- TUI `Latest` option (the TUI cycles the concrete `Sessions.Versions`
+  list; the user's spec is dropdown-centric).
+- gh cooldown semantics: a FAILED fetch still writes the cooldown file,
+  so a transient network failure poises 15 minutes of retries behind a
+  misleading `ErrRateLimited` (H4, noted, not yet fixed).

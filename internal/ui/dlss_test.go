@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/pever"
@@ -22,7 +23,7 @@ import (
 type dlssEnv struct {
 	*testEnv
 	dlssRoot string
-	raws     atomic.Int64 // runtime-byte hits; the startup check must log none
+	raws     atomic.Int64 // runtime-byte hits (the startup preload fetches the latest set once, on miss)
 	refuse   atomic.Bool  // set to make every NVIDIA endpoint return 500
 }
 
@@ -204,10 +205,13 @@ func dlssCacheFiles(maj, min uint16) map[string][]byte {
 	return files
 }
 
-// TestCheckDLSSStartupStatus: the startup check fills the published version
-// and commit from one small tags call and the local cache's newest version,
-// and never downloads runtime bytes.
-func TestCheckDLSSStartupStatus(t *testing.T) {
+// TestCheckDLSSStartupPreloadsLatestSet (user spec): the startup check
+// fills the published version and commit from one small tags call, and —
+// when the latest published set is not already cached — PRE-DOWNLOADS it
+// into the download cache (three runtime files, no more) so the DLSS pill
+// serves the latest offline-ready. The cached half still reports the
+// NEWEST complete set in the local cache.
+func TestCheckDLSSStartupPreloadsLatestSet(t *testing.T) {
 	e := newDLSSEnv(t, true)
 	e.sess.SetOnlineLookups(true) // the fixture defaults it off; the check is an online lookup
 	seedDLSSCache(t, e.sess.deps.CacheDir, strings.Repeat("a", 40), 310, 6)
@@ -224,8 +228,45 @@ func TestCheckDLSSStartupStatus(t *testing.T) {
 	if st.DLSSCachedCommit != strings.Repeat("a", 40) {
 		t.Errorf("DLSSCachedCommit = %q, want the a-padded commit", st.DLSSCachedCommit)
 	}
+	// The startup preload fetched exactly the three runtime files of the
+	// latest published set into its commit dir. The preload runs AFTER the
+	// DLSSStatus poke (same goroutine), so wait for it to settle.
+	latestDir := filepath.Join(e.sess.deps.CacheDir, "dlss", strings.Repeat("e", 40))
+	waitSettled := func() bool {
+		for _, name := range dlss.Files {
+			if _, err := os.Stat(filepath.Join(latestDir, name)); err != nil {
+				return false
+			}
+		}
+		return true
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for !waitSettled() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !waitSettled() {
+		t.Fatalf("startup preload did not cache the latest set in %q (raws=%d)", latestDir, e.raws.Load())
+	}
+	if raws := e.raws.Load(); raws != 3 {
+		t.Errorf("startup preload fetched %d runtime files, want 3 (the complete latest set)", raws)
+	}
+}
+
+// TestCheckDLSSStartupPreloadSkippedWhenCached: with the latest published
+// set already complete in the download cache the startup preload fetches
+// ZERO runtime bytes (the pre-download is a fill-missing, not a refetch).
+func TestCheckDLSSStartupPreloadSkippedWhenCached(t *testing.T) {
+	e := newDLSSEnv(t, true)
+	e.sess.SetOnlineLookups(true)
+	seedDLSSCache(t, e.sess.deps.CacheDir, strings.Repeat("e", 40), 310, 9) // the latest commit, already cached
+
+	e.sess.CheckDLSS(context.Background())
+	waitEvent(t, e.sess, EvDLSSStatus)
+	if st := e.sess.Snapshot(); st.DLSSLatest.Commit != strings.Repeat("e", 40) {
+		t.Fatalf("DLSSLatest = %+v, want the e-padded commit", st.DLSSLatest)
+	}
 	if raws := e.raws.Load(); raws != 0 {
-		t.Errorf("startup check downloaded runtime bytes %d times", raws)
+		t.Errorf("startup preload re-fetched %d runtime files for an already-cached latest set", raws)
 	}
 }
 

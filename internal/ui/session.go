@@ -230,6 +230,11 @@ type Session struct {
 	resolvedDefaultVersion string
 	resolvedDefaultFresh   bool
 	resolvedDefaultAt      time.Time
+
+	// latestTag is the startup latest-check's resolved tag (see
+	// latest.go): the version dropdown renders it as the "Latest" option.
+	// "" when unknown (offline boot, resolution failed, no check ran).
+	latestTag string
 }
 
 // NewSession starts a session. The library is empty until Scan is called.

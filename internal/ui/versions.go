@@ -22,6 +22,11 @@ import (
 // concrete preference needs no resolution and is contributed verbatim,
 // cached or not, online or not.
 //
+// GUI NOTE: this list is CONCRETE tags only. The dropdown's named
+// "Latest (…)" option (v0.15) is composed by the gui layer from
+// LatestKnown() — the startup-resolved tag — on top of this list, and is
+// never an entry here.
+//
 // Composition notes for callers:
 //   - Dedupe is SEMANTIC: entries colliding under version.Compare == 0
 //     (e.g. a bare PE-probe "0.9.4" and a cached tag "v0.9.4") collapse to
