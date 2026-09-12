@@ -302,7 +302,14 @@ that entry IS the latest (one row, one tick) or prepends when absent —
 and picking it dispatches the literal `latest`, which `SwitchVersion`
 re-resolves at pick time before the chain starts (the same-version no-op
 guard, the EAC consent pin, and the install leg all see the concrete
-tag). Both pre-warms (this one and the DLSS one above) are async and
+tag). The TUI (v0.16) mirrors that on the `v` version cycle with the
+same composition rule: the entry semver-equal to the known latest tag is
+replaced by a single `Latest (tag)` row in place (prepended when the
+list carries no such entry), Enter dispatches `latest` (resolved at pick
+time), and confirming an absorbed row — the current version — stays the
+S13 no-op. Without a known latest (offline boot)
+both frontends behave exactly as before. Both pre-warms (this one and the
+DLSS one above) are async and
 failure-silent: an offline boot simply leaves the menu at the concrete
 cached versions and the next press resolves online as before. The gh
 client is concurrency-safe (a scan and a preload can Resolve at the same

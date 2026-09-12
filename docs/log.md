@@ -3028,3 +3028,41 @@ opens the restore menu of local backup sets.
   seeded as a directory) each record nothing — pinning the decode leg
   and the cache-before-cooldown crash-safety order. Full `go test
   ./...` green.
+
+## 2026-09-11 — v0.16: TUI version cycle offers a named Latest option
+
+- The GUI got the `Latest (tag)` row in v0.15; the TUI `v` version cycle
+  still listed only concrete tags (the documented v0.15 deferral).
+- Fix (internal/tui/model.go, presentation-only): with the same
+  composition rule as the GUI's `versionMenuRows`, the cycle entry
+  semver-equal to `Session.LatestKnown()` is replaced by a single
+  `Latest (tag)` row in place (prepended when the list carries no such
+  entry, never duplicated); Enter dispatches the literal `latest` and
+  the session core resolves at pick time (the v0.15 `doSwitchVersion`
+  branch — no new core logic). Confirming an absorbed row — the current
+  version — stays the S13 no-op. Without a known latest the cycle
+  behaves exactly as before. The first draft keyed absorption on
+  installed==latest and kept a duplicate concrete row; the two-axis
+  review caught the parity divergence and the tests were re-pinned to
+  the membership rule before commit.
+- Tests (`internal/tui/latest_test.go`, written red first): a Latest
+  pick on a game at v0.10.0-test resolves and installs v0.9.4-test
+  end-to-end with the exact two-row cycle shape [current, Latest (tag)];
+  the absorbed case wraps to exactly one `Latest (v0.9.4-test)` row at
+  the absorbed position and confirming it dispatches nothing; a
+  single-version game at the latest stays a staging no-op; a concrete
+  wrap-to-current confirm dispatches nothing (the S13 branch the
+  absorbed re-pin had orphaned); and with the fake release payload
+  flipped AFTER staging (cooldown marker dropped so the resolve goes
+  live), confirming the Latest row installs the newer head while the
+  startup memo stays put — pinning pick-time re-resolution through the
+  TUI path. The S13 wrap test's label assertion was re-pinned to the
+  absorbed row (same no-op semantics). Known presentation limit: the
+  games-table version cell truncates at its 15-column width, so a long
+  latest tag clips there; the detail line renders the full label
+  (uniform with long concrete tags).
+- Docs: scope.md v0.15 deferred emptied (bullet pulled into v0.16),
+  architecture.md pre-warm section names the TUI cycle with the
+  membership rule, README version selector paragraph covers both
+  frontends, versions.go's seam comment names both layers. Full
+  `go test ./...` green.

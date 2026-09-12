@@ -1142,19 +1142,21 @@ func TestTUIVersionCycleEscDispatchesNothing(t *testing.T) {
 // TestTUIVersionCycleWrapToCurrentDispatchesNothing (S13): cycling wraps
 // around the Versions list; landing back on the CURRENT version and
 // confirming dispatches nothing — the model itself suppresses the no-op,
-// not just the session core.
+// not just the session core. When the installed version IS the known
+// latest, the wrapped row is the absorbed Latest row (same version, GUI
+// label), still a no-op.
 func TestTUIVersionCycleWrapToCurrentDispatchesNothing(t *testing.T) {
 	e, installed := pinnedSwitchEnv(t)
 	drainEvents(e.sess)
 
 	m := New(e.sess, "test")
 	m = pressRunes(m, "v") // stages v0.10.0-test
-	m = pressRunes(m, "v") // wraps to the current version
+	m = pressRunes(m, "v") // wraps to the current version = the absorbed Latest row
 	if m.cycle == nil {
 		t.Fatal("staging vanished after two 'v' presses")
 	}
-	if got := m.cycle.items[m.cycle.idx].Label; got != installed {
-		t.Fatalf("wrapped candidate = %q, want the current %q", got, installed)
+	if cand := m.cycle.items[m.cycle.idx]; cand.ID != "latest" || cand.Label != "Latest ("+installed+")" {
+		t.Fatalf("wrapped candidate = {%q %q}, want the absorbed Latest row for %q", cand.ID, cand.Label, installed)
 	}
 
 	m = press(m, tea.KeyMsg{Type: tea.KeyEnter})

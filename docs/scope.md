@@ -591,10 +591,10 @@ decisions the per-version sections above do not cover.
 
 ## v0.15 deferred
 
-- TUI `Latest` option (the TUI cycles the concrete `Sessions.Versions`
-  list; the user's spec is dropdown-centric).
+(v0.16 pulled the TUI `Latest` option in; nothing remains deferred from
+v0.15.)
 
-## v0.16 scope (answered-only cooldown)
+## v0.16 scope (answered-only cooldown; TUI Latest option)
 
 - **gh cooldown starts only on an answered API call** (H4): a transport
   failure, a non-200 response, or a decode failure no longer writes
@@ -605,3 +605,13 @@ decisions the per-version sections above do not cover.
   fetch still starts it (later resolves — this or another process —
   serve the just-written cache); the success write happens after
   `releases.json` so a crash can never leave cooldown-without-cache.
+- **TUI `Latest` option** (the v0.15 deferral, pulled in): when the
+  startup memo knows the latest tag, the `v` version cycle replaces the
+  list entry semver-equal to it with a single `Latest (tag)` row — in
+  place, prepended when absent (GUI parity) — and Enter dispatches the
+  literal `latest`, which the session core re-resolves at pick time.
+  Confirming an absorbed row — the current version — stays the S13
+  no-op; without a known latest the cycle is unchanged. The games-table
+  version cell truncates to its 15-column width, so a long latest tag
+  clips there ("→ Latest (v0.9…"); the detail line renders the full
+  label.

@@ -22,10 +22,10 @@ import (
 // concrete preference needs no resolution and is contributed verbatim,
 // cached or not, online or not.
 //
-// GUI NOTE: this list is CONCRETE tags only. The dropdown's named
-// "Latest (…)" option (v0.15) is composed by the gui layer from
-// LatestKnown() — the startup-resolved tag — on top of this list, and is
-// never an entry here.
+// GUI/TUI NOTE: this list is CONCRETE tags only. The named "Latest (…)"
+// option (v0.15 GUI dropdown, v0.16 TUI `v` cycle) is composed by the
+// frontend layers from LatestKnown() — the startup-resolved tag — on top
+// of this list, and is never an entry here.
 //
 // Composition notes for callers:
 //   - Dedupe is SEMANTIC: entries colliding under version.Compare == 0

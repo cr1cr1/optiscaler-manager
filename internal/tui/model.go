@@ -16,6 +16,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/termopen"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
+	"github.com/cr1cr1/optiscaler-manager/internal/version"
 )
 
 // screen identifies the active top-level screen (tab bar order).
@@ -75,38 +76,63 @@ type stagedItem struct {
 // candidate, and — for version switches — the version the row had at
 // staging time (so confirming the unchanged version is suppressed here,
 // not just in the core). restore selects the dispatch and the advance key
-// ('p' for restores, 'v' for versions).
+// ('p' for restores, 'v' for versions). latestIsCur records that the
+// Latest row absorbed the current version (staging-time fact), so its
+// confirm is suppressed like the S13 wrap no-op.
 type stagedCycle struct {
-	dir     string
-	items   []stagedItem
-	idx     int
-	cur     string
-	restore bool
+	dir         string
+	items       []stagedItem
+	idx         int
+	cur         string
+	latestIsCur bool
+	restore     bool
 }
 
 // stageCycle starts version staging on dir's row: the first 'v' snapshots
 // Session.Versions(dir) (filesystem+memo reads, so it runs on the keypress
 // only — never per frame) and immediately advances to the first candidate
-// after the installed version. Never-installed rows and rows with fewer
-// than two selectable versions are a no-op.
+// after the installed version. When the known-latest tag is set, the entry
+// semver-equal to it is REPLACED by a single "Latest (tag)" row in place
+// (never duplicated, GUI versionMenuRows parity); when the list carries no
+// such entry the Latest row is prepended. The Latest row dispatches the
+// literal "latest", which the session core resolves at pick time. Cycle
+// order and the landing rule are unchanged when no latest is known.
+// Never-installed rows and cycles with fewer than two selectable entries
+// are a no-op.
 func (m *Model) stageCycle(dir string) {
 	row := findRow(m.sess.Snapshot().Rows, dir)
 	if row == nil || !switchable(*row) {
 		return
 	}
 	list := m.sess.Versions(dir)
-	if len(list) < 2 {
-		return
-	}
-	items := make([]stagedItem, len(list))
-	idx := -1 // not found: the advance below lands on the newest entry
-	for i, v := range list {
-		items[i] = stagedItem{ID: v, Label: v}
+	latest := m.sess.LatestKnown()
+	items := make([]stagedItem, 0, len(list)+1)
+	idx := -1 // not found: the advance below lands on the first entry
+	latestSeen := false
+	for _, v := range list {
+		if latest != "" && !latestSeen && version.Compare(v, latest) == 0 {
+			// ponytail: ID is the literal the session core resolves at pick
+			// time (doSwitchVersion's "latest" branch), mirroring the GUI row.
+			latestSeen = true
+			items = append(items, stagedItem{ID: "latest", Label: "Latest (" + latest + ")"})
+		} else {
+			items = append(items, stagedItem{ID: v, Label: v})
+		}
 		if v == row.OptiScalerVersion {
-			idx = i
+			idx = len(items) - 1
 		}
 	}
-	m.cycle = &stagedCycle{dir: dir, items: items, idx: idx, cur: row.OptiScalerVersion}
+	if latest != "" && !latestSeen {
+		items = append([]stagedItem{{ID: "latest", Label: "Latest (" + latest + ")"}}, items...)
+		if idx >= 0 {
+			idx++ // the prepend shifts every concrete position
+		}
+	}
+	if len(items) < 2 {
+		return
+	}
+	m.cycle = &stagedCycle{dir: dir, items: items, idx: idx, cur: row.OptiScalerVersion,
+		latestIsCur: latest != "" && version.Compare(latest, row.OptiScalerVersion) == 0}
 	m.advanceCycle()
 }
 
@@ -152,9 +178,11 @@ func (m *Model) advanceCycle() {
 
 // confirmCycle dispatches the staged pick. Version switches dispatch only
 // when the candidate differs from the version at staging time (wrapping
-// back to the current version, S13, dispatches nothing); a restore pick
-// always dispatches — the user named an exact snapshot, and the session
-// confirm gate protects the write anyway.
+// back to the current version, S13, dispatches nothing; a Latest row that
+// absorbed the current version is that same no-op); a restore pick always
+// dispatches — the user named an exact snapshot, and the session confirm
+// gate protects the write anyway. A non-absorbed Latest row dispatches the
+// literal "latest", which the session core resolves at pick time.
 func (m *Model) confirmCycle() {
 	c := m.cycle
 	m.cycle = nil
@@ -164,6 +192,9 @@ func (m *Model) confirmCycle() {
 	cand := c.items[c.idx]
 	if c.restore {
 		m.sess.RestoreDLSS(c.dir, cand.ID)
+		return
+	}
+	if cand.ID == "latest" && c.latestIsCur {
 		return
 	}
 	if cand.ID != c.cur {

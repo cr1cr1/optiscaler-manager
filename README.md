@@ -61,10 +61,11 @@ Each installed game manages its own OptiScaler version: the version selector
 offers the versions already downloaded in the bundle cache plus the default
 version from preferences, and switching installs the chosen version while
 keeping the game's existing `OptiScaler.ini` tweaks. On startup the app
-resolves the newest release once and the dropdown offers it as a named
-`Latest (tag)` row — picking it installs the latest, re-resolved at pick
-time — with the concrete cached versions listed below it (absorbed into one
-row when the installed version already is the latest).
+resolves the newest release once and the selector offers it as a named
+`Latest (tag)` row — the first dropdown row (GUI), in the TUI `v` cycle
+— picking it installs the latest, re-resolved at pick time. The concrete
+cached versions are listed alongside it and never duplicated: wherever
+the list already carries the latest tag, one absorbed row replaces it.
 
 The DLSS version label is also a control (GUI only): pressing it updates the
 game's NVIDIA runtime — all three DLLs (`nvngx_dlss.dll`, `nvngx_dlssd.dll`,
