@@ -59,8 +59,9 @@ func TestTUIVersionCycleLatestInstallsResolvedTag(t *testing.T) {
 	if cand.Label != "Latest (v0.9.4-test)" {
 		t.Errorf("staged Latest label = %q, want %q", cand.Label, "Latest (v0.9.4-test)")
 	}
-	// The games-table cell renders the staged candidate (truncated to its
-	// 15-column width — the uniform policy for long version strings).
+	// The games-table cell renders the staged candidate; the Latest row
+	// ships the designed short label (see latest_cell_test.go), concrete
+	// tags keep the uniform 15-column truncation.
 	if frame := m.View(); !strings.Contains(frame, "→ Latest") {
 		t.Errorf("staged-cycle frame does not render the Latest candidate:\n%s", frame)
 	}
@@ -109,6 +110,9 @@ func TestTUIVersionCycleLatestAbsorbed(t *testing.T) {
 	}
 	if m.cycle.items[1].ID != "latest" {
 		t.Errorf("absorbed Latest row at index 1 = %+v, want the in-place row", m.cycle.items[1])
+	}
+	if frame := m.View(); !strings.Contains(frame, "→ Latest") || strings.Contains(frame, "→ Latest (v0") {
+		t.Errorf("absorbed case must render the short cell label, frame:\n%s", frame)
 	}
 	t.Logf("absorbed staged-cycle frame:\n%s", m.View())
 

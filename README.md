@@ -66,6 +66,9 @@ resolves the newest release once and the selector offers it as a named
 — picking it installs the latest, re-resolved at pick time. The concrete
 cached versions are listed alongside it and never duplicated: wherever
 the list already carries the latest tag, one absorbed row replaces it.
+While a Latest row is staged, the TUI games cell shows a short `→ Latest` (the detail
+line carries the full tag; a mid-tag cut like `→ Latest (v0.9…` would
+read as version v0.9).
 
 The DLSS version label is also a control (GUI only): pressing it updates the
 game's NVIDIA runtime — all three DLLs (`nvngx_dlss.dll`, `nvngx_dlssd.dll`,

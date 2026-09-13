@@ -611,7 +611,7 @@ v0.15.)
   place, prepended when absent (GUI parity) — and Enter dispatches the
   literal `latest`, which the session core re-resolves at pick time.
   Confirming an absorbed row — the current version — stays the S13
-  no-op; without a known latest the cycle is unchanged. The games-table
-  version cell truncates to its 15-column width, so a long latest tag
-  clips there ("→ Latest (v0.9…"); the detail line renders the full
-  label.
+  no-op; without a known latest the cycle is unchanged. While staging,
+  the games cell shows a short `→ Latest` (a mid-tag cut like
+  `→ Latest (v0.9…` would read as version v0.9); the detail line renders
+  the full label.

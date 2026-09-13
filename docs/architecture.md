@@ -307,7 +307,10 @@ same composition rule: the entry semver-equal to the known latest tag is
 replaced by a single `Latest (tag)` row in place (prepended when the
 list carries no such entry), Enter dispatches `latest` (resolved at pick
 time), and confirming an absorbed row — the current version — stays the
-S13 no-op. Without a known latest (offline boot)
+S13 no-op. The games-table version cell shows a short `→ Latest` while a
+Latest row is staged — the full label would cut mid-name at the cell
+width and read as version v0.9; the detail line keeps `Latest (tag)`.
+Without a known latest (offline boot)
 both frontends behave exactly as before. Both pre-warms (this one and the
 DLSS one above) are async and
 failure-silent: an offline boot simply leaves the menu at the concrete

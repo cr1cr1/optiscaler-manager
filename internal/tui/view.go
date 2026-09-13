@@ -339,7 +339,15 @@ func (m Model) gameRowLine(r ui.GameRow, tw, w int, selected bool) string {
 		// Staged switch: the candidate replaces the version cell. The
 		// plain text is truncated BEFORE styling (same rule as
 		// badgesCell) so no SGR sequence is ever split or left unclosed.
-		cand := trunc("→ "+m.cycle.items[m.cycle.idx].Label, colVersion)
+		item := m.cycle.items[m.cycle.idx]
+		// ponytail: the cell keeps the short "→ Latest" (ceiling: the
+		// table never names the tag; widen colVersion or add a
+		// stagedItem.Short field if it must).
+		label := item.Label
+		if item.ID == "latest" {
+			label = "Latest"
+		}
+		cand := trunc("→ "+label, colVersion)
 		versionCell = lipgloss.NewStyle().Width(colVersion).Render(styleBusy.Render(cand))
 	}
 	status := string(r.Status)

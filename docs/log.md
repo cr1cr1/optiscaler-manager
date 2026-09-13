@@ -3066,3 +3066,20 @@ opens the restore menu of local backup sets.
   membership rule, README version selector paragraph covers both
   frontends, versions.go's seam comment names both layers. Full
   `go test ./...` green.
+
+## 2026-09-11 — v0.16: TUI staged Latest cell shows a short `→ Latest`
+
+- The staged candidate replaces the games-table version cell, capped at
+  15 columns; `Latest (v0.9.4-test)` cut to `→ Latest (v0.9…`, which
+  reads as version v0.9 — misleading precisely for the row whose whole
+  point is naming the real latest tag (the earlier entry documented this
+  as an accepted caveat; it is now designed away instead).
+- Fix (internal/tui/view.go): the cell shows the informative prefix
+  `→ Latest` for a Latest row — the cut stays the uniform policy long
+  concrete tags get, so the column is not widened for a label that only
+  shows during staging; the detail screen's action line keeps the full
+  `Latest (tag)` (it is not width-capped).
+- Test (`internal/tui/latest_cell_test.go`, red first): while staging the
+  Latest row the games frame contains `→ Latest` and no `→ Latest (v0`
+  mid-tag fragment; the detail frame contains the full label. Full
+  `go test ./...` green.
