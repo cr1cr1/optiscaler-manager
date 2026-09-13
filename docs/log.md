@@ -1,6 +1,7 @@
 # Log
 
-Append-only milestone and task log. Newest at the bottom.
+Append-only milestone and task log. Newest at the bottom. Dates are
+session dates; the verifiable timestamps are the commits.
 
 ## 2026-07-19 — M0: hygiene / vendor / docs
 
@@ -3095,4 +3096,21 @@ opens the restore menu of local backup sets.
   assertion: after the 403, the retry is answered by the cooldown with
   the server seeing exactly 1 hit. Red-proven: with the rate-limit
   `writeCooldown` removed the new assertion fails with `hits = 2`.
+  Full `go test ./...` green.
+
+## 2026-09-11 — v0.16: review follow-ups (naming sweep + behavior pins)
+
+- Review response to the LastAttempt rename: the `cooldownState` fields
+  in jsoncache and pcgw renamed to `LastLimited` (tag `last_attempt`
+  unchanged — the on-disk formats stay), each with the key comment that
+  states the mismatch. One ambiguous name no longer carries two
+  meanings — `LastAnswered` (gh, writes on success too) vs `LastLimited`
+  (429/5xx-only writers).
+- `TestFailedFetchRecordsNoCooldown`: the three `os.Stat` plumbing pins
+  became behavior assertions (decode: retry succeeds with 2 hits;
+  transport: repoint at a live endpoint and the retry succeeds;
+  cache-write: retry re-fails with 2 hits), and the redundant stat in
+  the 500 subtest is deleted. Red-proven with a write-on-every-attempt
+  sabotage: all four failure subtests fail, the 403 subtest stays green.
+- docs/log.md header now states the dates are session dates.
   Full `go test ./...` green.

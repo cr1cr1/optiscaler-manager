@@ -237,9 +237,6 @@ func TestCooldownStartsOnlyOnRateLimitOrSuccess(t *testing.T) {
 		if _, _, err := c.Resolve(ctx, "latest"); err == nil {
 			t.Fatal("first Resolve (HTTP 500) expected error, got nil")
 		}
-		if _, err := os.Stat(filepath.Join(c.cacheDir, cooldownFile)); !os.IsNotExist(err) {
-			t.Fatalf("cooldown must not start on a non-rate-limit failure (stat err: %v)", err)
-		}
 
 		got, fromCache, err := c.Resolve(ctx, "latest")
 		if err != nil {
@@ -297,8 +294,13 @@ func TestFailedFetchRecordsNoCooldown(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("decode failure records nothing", func(t *testing.T) {
+		var hits atomic.Int64
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = w.Write([]byte("not json"))
+			if hits.Add(1) == 1 {
+				_, _ = w.Write([]byte("not json"))
+				return
+			}
+			_, _ = w.Write([]byte(testReleasesJSON))
 		}))
 		defer srv.Close()
 
@@ -306,27 +308,50 @@ func TestFailedFetchRecordsNoCooldown(t *testing.T) {
 		if _, _, err := c.Resolve(ctx, "latest"); err == nil {
 			t.Fatal("Resolve on a malformed body expected error, got nil")
 		}
-		if _, err := os.Stat(filepath.Join(c.cacheDir, cooldownFile)); !os.IsNotExist(err) {
-			t.Fatalf("decode failure must not start the cooldown (stat err: %v)", err)
+		// The failure recorded nothing: the retry reaches the live API
+		// and succeeds — a started cooldown would answer it with no hit.
+		got, fromCache, err := c.Resolve(ctx, "latest")
+		if err != nil {
+			t.Fatalf("second Resolve must retry the live API, got error: %v", err)
+		}
+		if fromCache {
+			t.Error("second Resolve must be a fresh fetch, not fromCache")
+		}
+		if got.Version != "0.9.4" {
+			t.Errorf("Version = %q, want 0.9.4", got.Version)
+		}
+		if n := hits.Load(); n != 2 {
+			t.Errorf("server hits = %d, want 2 (the decode failure must not start the cooldown)", n)
 		}
 	})
 
 	t.Run("transport failure records nothing", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-		srv.Close() // dead endpoint: the API never answers
+		live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(testReleasesJSON))
+		}))
+		defer live.Close()
 
-		c := New(srv.Client(), t.TempDir())
-		c.baseURL = srv.URL
+		dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		deadURL := dead.URL
+		dead.Close() // dead endpoint: the API never answers
+
+		c := New(live.Client(), t.TempDir())
+		c.baseURL = deadURL
 		if _, _, err := c.Resolve(ctx, "latest"); err == nil {
 			t.Fatal("Resolve on a dead endpoint expected error, got nil")
 		}
-		if _, err := os.Stat(filepath.Join(c.cacheDir, cooldownFile)); !os.IsNotExist(err) {
-			t.Fatalf("transport failure must not start the cooldown (stat err: %v)", err)
+		// The failure recorded nothing: repointed at the live API, the
+		// retry succeeds — a started cooldown would answer it instead.
+		c.baseURL = live.URL
+		if _, fromCache, err := c.Resolve(ctx, "latest"); err != nil || fromCache {
+			t.Fatalf("second Resolve after repoint: err=%v fromCache=%v, want nil,false", err, fromCache)
 		}
 	})
 
 	t.Run("cache-write failure records nothing (cache before cooldown)", func(t *testing.T) {
+		var hits atomic.Int64
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits.Add(1)
 			_, _ = w.Write([]byte(testReleasesJSON))
 		}))
 		defer srv.Close()
@@ -342,8 +367,14 @@ func TestFailedFetchRecordsNoCooldown(t *testing.T) {
 		if _, _, err := c.Resolve(ctx, "latest"); err == nil {
 			t.Fatal("Resolve with a failing cache write expected error, got nil")
 		}
-		if _, err := os.Stat(filepath.Join(cacheDir, cooldownFile)); !os.IsNotExist(err) {
-			t.Fatalf("a failed cache write must not start the cooldown (stat err: %v)", err)
+		// The failed write recorded nothing: the retry reaches the live
+		// API again (and fails the write again) — a started cooldown
+		// would answer it with no hit.
+		if _, _, err := c.Resolve(ctx, "latest"); err == nil {
+			t.Fatal("second Resolve must fail again (writeCache still broken), got nil")
+		}
+		if n := hits.Load(); n != 2 {
+			t.Errorf("server hits = %d, want 2 (the cache-write failure must not start the cooldown)", n)
 		}
 	})
 }

@@ -192,7 +192,9 @@ func (c *Client) pace(ctx context.Context) {
 }
 
 type cooldownState struct {
-	LastAttempt time.Time `json:"last_attempt"`
+	// LastLimited persists under the historical key "last_attempt" —
+	// the on-disk format stays (429/5xx responses only).
+	LastLimited time.Time `json:"last_attempt"`
 }
 
 func (c *Client) inCooldown() bool {
@@ -204,14 +206,14 @@ func (c *Client) inCooldown() bool {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return false
 	}
-	return c.now().Sub(state.LastAttempt) < cooldown
+	return c.now().Sub(state.LastLimited) < cooldown
 }
 
 func (c *Client) writeCooldown(t time.Time) error {
 	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
 		return err
 	}
-	data, err := json.Marshal(cooldownState{LastAttempt: t})
+	data, err := json.Marshal(cooldownState{LastLimited: t})
 	if err != nil {
 		return err
 	}

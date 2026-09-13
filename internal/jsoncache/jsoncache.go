@@ -40,7 +40,10 @@ func Write[T any](path string, v T) error {
 // cooldownState is the persisted cooldown file, recording the last 429/5xx
 // response time.
 type cooldownState struct {
-	LastAttempt time.Time `json:"last_attempt"`
+	// LastLimited persists under the historical key "last_attempt" —
+	// the on-disk format stays (the old key name overstates: only a
+	// limited or server-error response writes it).
+	LastLimited time.Time `json:"last_attempt"`
 }
 
 // InCooldown reports whether the last recorded 429/5xx is inside the
@@ -50,10 +53,10 @@ func InCooldown(path string, now time.Time, window time.Duration) bool {
 	if !ok {
 		return false
 	}
-	return now.Sub(state.LastAttempt) < window
+	return now.Sub(state.LastLimited) < window
 }
 
 // WriteCooldown records a rate-limit/server-error response time.
 func WriteCooldown(path string, t time.Time) error {
-	return Write(path, cooldownState{LastAttempt: t})
+	return Write(path, cooldownState{LastLimited: t})
 }
