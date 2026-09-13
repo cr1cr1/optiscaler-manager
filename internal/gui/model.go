@@ -131,7 +131,6 @@ func Run(ctx context.Context, cfg Config) error {
 	return nil
 }
 
-
 // boot kicks off the session's cache-first startup: a warm games cache shows
 // rows instantly; a cold cache falls through to a full scan inside Start.
 func (m *model) boot(ctx context.Context) {

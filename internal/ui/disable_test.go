@@ -146,4 +146,3 @@ func TestScanMapsDisabledToRow(t *testing.T) {
 	}
 	t.Logf("scan mapped disabled hook: status %q", row.Status)
 }
-

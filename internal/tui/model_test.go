@@ -134,8 +134,8 @@ func seedGamesCache(t *testing.T, root string, rows []ui.GameRow) {
 	data, err := json.Marshal(struct {
 		Version int          `json:"version"`
 		Rows    []ui.GameRow `json:"rows"`
-	// Version must track ui's cacheSchemaVersion (6 since v0.14g's DLSS row
-	// fields) or Session.Start rejects the cache and scans instead.
+		// Version must track ui's cacheSchemaVersion (6 since v0.14g's DLSS row
+		// fields) or Session.Start rejects the cache and scans instead.
 	}{Version: 6, Rows: rows})
 	if err != nil {
 		t.Fatal(err)

@@ -140,4 +140,3 @@ func TestAddDirectoryEnrichesManualGame(t *testing.T) {
 	}
 	t.Logf("manual add enriched: %q (%s), cover %s", row.Title, row.SteamAppID, row.CoverPath)
 }
-

@@ -3187,3 +3187,17 @@ opens the restore menu of local backup sets.
   `docs/index.md` lists the directory in the document map. The OKF
   frontmatter gate scans only `docs/` top-level files, so the gate is
   untouched; the new files carry frontmatter anyway.
+
+## 2026-09-13 — Issue 2: fix pre-existing gofmt drift
+
+- `gofmt -w internal/` on the eight files listed in
+  `docs/issues/002`: cursor_test.go and model.go (gui),
+  pickdir_windows.go (pickdir), model_test.go (tui), coverfallback_test.go,
+  disable_test.go, rows.go (ui), runners_linux_test.go (umu). The diff is
+  whitespace only (+12/−16): trailing blank lines, one comment inside a
+  composite literal that gofmt wants indented with its literal, two
+  struct field blocks and one const block re-aligned.
+- Gates after the fix: `gofmt -l` clean on `internal/`, `cmd/`, and
+  root; `go vet ./...` clean; full uncached `go test ./...` (29
+  packages) ok; golangci-lint 0 issues. No test was added: the change
+  is not behavioral, and `gofmt -l` is the check.

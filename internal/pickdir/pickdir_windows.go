@@ -51,9 +51,9 @@ const (
 
 	sigdnFilesysPath uintptr = 0x80058000
 
-	hresultOK      uintptr = 0
-	hresultCancel          = uintptr(0x800704C7)
-	rpcEChangedMode        = uintptr(0x80010106)
+	hresultOK       uintptr = 0
+	hresultCancel           = uintptr(0x800704C7)
+	rpcEChangedMode         = uintptr(0x80010106)
 )
 
 // iFileDialogVtbl is the IFileDialog vtable. Methods are accessed by

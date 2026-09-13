@@ -122,7 +122,7 @@ func TestParseRunnerVersion(t *testing.T) {
 		{"GE-Proton9-3", "9.3"},
 		{"GE-Proton9-20", "9.20"},
 		{"UMU-Proton-10.0-1", "10.0.1"},
-		{"UMU-Proton-10.0-rc1", "10.0"},  // rc stripped, "1" after rc not picked up
+		{"UMU-Proton-10.0-rc1", "10.0"}, // rc stripped, "1" after rc not picked up
 		{"proton-9.0-beta", "9.0"},      // beta stripped, no trailing num
 		{"soda-9.0-2", "9.0.2"},
 		{"wine-ge-8.26", "8.26"},

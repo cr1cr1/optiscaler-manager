@@ -166,4 +166,3 @@ func TestMouseCursorShape_DLSSPill(t *testing.T) {
 	}
 	t.Log("DLSS pill arrow picks the pointing hand")
 }
-

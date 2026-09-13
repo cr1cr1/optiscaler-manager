@@ -44,12 +44,12 @@ type GameRow struct {
 	// Disabled reports the install's injection hook renamed to
 	// <name>.disabled: OptiScaler is present but the game will not load
 	// it. The Disable/Enable toggle flips it.
-	Disabled bool
-	CoverPath    string
-	ModTime      time.Time
-	SteamAppID   string // resolved via Steam search or copied from a numeric AppID; "" when unknown
-	TitleSource  string // which identification rule produced Title (domain.TitleSource); "" for store rows/legacy
-	ProtonTier   string // ProtonDB tier (platinum/gold/silver/bronze/borked); "" when unknown
+	Disabled    bool
+	CoverPath   string
+	ModTime     time.Time
+	SteamAppID  string // resolved via Steam search or copied from a numeric AppID; "" when unknown
+	TitleSource string // which identification rule produced Title (domain.TitleSource); "" for store rows/legacy
+	ProtonTier  string // ProtonDB tier (platinum/gold/silver/bronze/borked); "" when unknown
 
 	Store             domain.Store // raw storefront (launch needs it)
 	AppName           string       // Epic launch AppName; "" elsewhere
