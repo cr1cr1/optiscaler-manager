@@ -29,6 +29,7 @@ version-info identity with adopt/refuse/restore semantics; multi-store
 | `safety.md` | explanation | Install invariants, manifest, rollback model, cancellation + launch safety |
 | `plan.md` | reference | Milestone sequence, waves, verification gates |
 | `vendor-patches.md` | reference | Local patches on vendored deps (shirei Wayland CSD), reapply procedure |
+| `issues/` | directory | Change issues (the what): `issues-conventions.md`, `TEMPLATE.md`, numbered one-file-per-issue records |
 
 ## Conventions (from AGENTS.md)
 
@@ -36,5 +37,8 @@ version-info identity with adopt/refuse/restore semantics; multi-store
 - Verify with `go test ./...` only. Never `go run .`, never build the binary.
 - `zerolog` in production code, `t.Log` in tests.
 - Docs (README, docs/, log.md) updated before a task is considered done.
+- Issues: every change comes with an issue in `docs/issues/` (see
+  `docs/issues/issues-conventions.md`); numbers are never reused, done
+  issues are never deleted.
 - Commit after each completed, fully-tested task.
 - Ponytail minimalism: stdlib → platform → existing dep → one-liner → minimal code.

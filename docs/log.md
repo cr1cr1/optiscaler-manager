@@ -3173,3 +3173,17 @@ opens the restore menu of local backup sets.
   cmd+ui, golangci-lint 0 issues. Standards-axis review addressed
   (all four majors fixed, minors taken); spec-axis review run before
   commit.
+
+## 2026-09-13 — Adopt the docs/issues/ convention
+
+- `docs/issues/` now exists: `issues-conventions.md` (one file per
+  issue, `NNN-kebab-title.md`, numbers never reused, done issues never
+  deleted, every change comes with an issue), `TEMPLATE.md` (frontmatter
+  + What and why / Acceptance / Outcome), issue 1 (this adoption,
+  closed), and issue 2 (open: pre-existing gofmt drift in eight
+  internal/ files, found during the v0.16 reviews and left untouched
+  there to keep the diffs minimal).
+- The repository AGENTS.md gained the issue-tracking section and
+  `docs/index.md` lists the directory in the document map. The OKF
+  frontmatter gate scans only `docs/` top-level files, so the gate is
+  untouched; the new files carry frontmatter anyway.

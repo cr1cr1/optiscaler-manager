@@ -15,6 +15,15 @@ On top of the global rules:
 When in doubt, prefer deletion, simplicity, and the documented project conventions
 in `docs/`.
 
+## Issue tracking
+
+`docs/issues/` records the *what* of every change (features, bugs,
+tasks, chores); `docs/scope.md` and `docs/architecture.md` record the
+*why*. Follow `docs/issues/issues-conventions.md` and start new issues
+from `docs/issues/TEMPLATE.md`. Numbers are never reused; done issues
+are never deleted. Any change to the codebase comes with an issue, even
+a trivial one.
+
 ## Guidelines
 
   - DO NOT build the binary, run with `go run .`, or use `go test -run` to skip tests. Always run `go test ./...` to verify all tests pass. You can use `go vet` to check the code.
