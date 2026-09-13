@@ -2,7 +2,7 @@
 title: Fix pre-existing gofmt drift in untouched files
 description: Eight files fail gofmt -l; all predate the v0.16 work.
 issue: 2
-status: closed
+status: done
 ---
 
 # 2 — Fix pre-existing gofmt drift in untouched files
@@ -29,4 +29,4 @@ lines, re-indented a misaligned comment inside a composite literal,
 re-aligned two struct field blocks and one const block, and dropped
 double blank lines. Gates after the fix: `gofmt -l` clean on `internal/`,
 `cmd/`, and root, `go vet ./...` clean, full uncached `go test ./...`
-(29 packages) ok, golangci-lint 0 issues.
+(29 packages) ok, golangci-lint 0 issues. Committed as efbf4d0.

@@ -22,5 +22,5 @@ repository had no such directory, so the rule had nothing to point at.
 
 ## Outcome
 
-Adopted with this issue's own commit. Issue 2 records the open
+Adopted with this issue's own commit (d67cca3). Issue 2 records the open
 pre-existing gofmt drift found during the v0.16 work.

@@ -50,5 +50,5 @@ the game dir (matching `opRefused` and the launch emitter), which makes the
 TUI's failure-event refresh leg live instead of dead. Red-proofs witnessed
 by sabotage for the DLSS-ready gate, the settle re-sync, and the list
 window; the selection-bounds, no-op-before-consent, and detail-entry-cache
-pins are characterization tests. Committed with the docs as one change;
-the closing commit hash is recorded in the issue close-out.
+pins are characterization tests. Committed with the docs as one change
+(4d195cc).
