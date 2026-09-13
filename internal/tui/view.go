@@ -100,6 +100,8 @@ func (m Model) View() string {
 	var body string
 	if snap.Confirm != nil {
 		body = lipgloss.Place(w, contentH, lipgloss.Center, lipgloss.Center, confirmBox(snap.Confirm))
+	} else if m.restore != nil {
+		body = lipgloss.Place(w, contentH, lipgloss.Center, lipgloss.Center, restoreBox(m.restore))
 	} else {
 		switch m.screen {
 		case screenDetail:
@@ -232,6 +234,34 @@ func confirmBox(c *ui.Confirmation) string {
 		"\n" + "(other keys are disabled until answered)")
 }
 
+// restoreWindowRows caps the rendered backup list so a long history cannot
+// overflow the centered modal; the window slides with the selection.
+const restoreWindowRows = 8
+
+// restoreBox renders the open restore-backup picker as a centered modal:
+// one row per backup (windowed around the selection), the highlighted
+// entry inverted; esc closes the modal without any action.
+func restoreBox(p *restorePick) string {
+	var b strings.Builder
+	b.WriteString("Restore NVIDIA DLSS backup\n")
+	rows := p.items
+	start := 0
+	if len(rows) > restoreWindowRows {
+		start = max(min(p.sel-restoreWindowRows/2, len(rows)-restoreWindowRows), 0)
+		rows = rows[start : start+restoreWindowRows]
+	}
+	for i, item := range rows {
+		if start+i == p.sel {
+			b.WriteString(styleSelected.Render(item.Label))
+		} else {
+			b.WriteString(item.Label)
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\n" + styleMuted.Render("up/down select · enter restore · esc close"))
+	return styleModal.Render(b.String())
+}
+
 // gamesView renders the games table: a fixed column header above a viewport
 // that keeps the cursor row visible at any terminal height.
 func (m Model) gamesView(snap ui.State, w, contentH int) string {
@@ -335,7 +365,7 @@ func (m Model) gameRowLine(r ui.GameRow, tw, w int, selected bool) string {
 		version = "—"
 	}
 	versionCell := cell(version, colVersion)
-	if m.cycle != nil && !m.cycle.restore && m.cycle.dir == r.InstallDir {
+	if m.cycle != nil && m.cycle.dir == r.InstallDir {
 		// Staged switch: the candidate replaces the version cell. The
 		// plain text is truncated BEFORE styling (same rule as
 		// badgesCell) so no SGR sequence is ever split or left unclosed.
@@ -439,9 +469,7 @@ func (m Model) detailView(w, contentH int) string {
 		b.WriteString(styleTitle.Render(row.Title) + "\n")
 		fmt.Fprintf(&b, "%s · AppID %s\n", row.Platform, row.AppID)
 		fmt.Fprintf(&b, "Path: %s\n", row.InstallDir)
-		if m.cycle != nil && m.cycle.restore && m.cycle.dir == row.InstallDir {
-			fmt.Fprintf(&b, "DLSS: restore %s (enter confirm · esc cancel)\n", m.cycle.items[m.cycle.idx].Label)
-		} else if m.cycle != nil && m.cycle.dir == row.InstallDir {
+		if m.cycle != nil && m.cycle.dir == row.InstallDir {
 			fmt.Fprintf(&b, "OptiScaler: %s → %s (enter confirm · esc cancel)\n", version, m.cycle.items[m.cycle.idx].Label)
 		} else {
 			fmt.Fprintf(&b, "OptiScaler: %s\n", version)
@@ -480,6 +508,8 @@ func (m Model) detailView(w, contentH int) string {
 		if !hasDLSS(*row) {
 			dlssUpdate = styleDimmedAction.Render(dlssUpdate + " (needs the NVIDIA DLL set)")
 			dlssRestore = styleDimmedAction.Render(dlssRestore + " (needs the NVIDIA DLL set)")
+		} else if len(m.backups) == 0 {
+			dlssRestore = styleDimmedAction.Render(dlssRestore + " (no backups)")
 		}
 		b.WriteString(dlssUpdate + "\n")
 		b.WriteString(dlssRestore + "\n")

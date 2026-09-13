@@ -412,11 +412,13 @@ func (s *Session) opDone(what, gameDir string) {
 	s.emit(Event{Kind: EvOpDone, Text: what, GameDir: gameDir})
 }
 
-func (s *Session) opFailed(err error) {
+func (s *Session) opFailed(err error, gameDir string) {
 	s.setBusy("")
 	s.setStatus("Failed: " + err.Error())
 	s.toast("Failed: "+err.Error(), true)
-	s.emit(Event{Kind: EvOpFailed, Text: err.Error()})
+	// GameDir lets frontends refresh the affected game (a failed update or
+	// restore may still have created its pre-op backup).
+	s.emit(Event{Kind: EvOpFailed, Text: err.Error(), GameDir: gameDir})
 }
 
 // opRefused settles an op the store rejected as not manager-installed: busy

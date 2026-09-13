@@ -151,6 +151,9 @@ func TestUpdateDLSSMissingDLLRefused(t *testing.T) {
 	if !strings.Contains(ev.Text, "missing") {
 		t.Errorf("failure text %q, want a missing-DLL refusal", ev.Text)
 	}
+	if ev.GameDir != row.InstallDir {
+		t.Errorf("failure event GameDir %q, want %q (frontends key refreshes on it)", ev.GameDir, row.InstallDir)
+	}
 	if got := dlssDLLVersion(t, e, dlss.Files[0]); got != "3.7.20.0" {
 		t.Errorf("%s mutated by refused update: %q", dlss.Files[0], got)
 	}

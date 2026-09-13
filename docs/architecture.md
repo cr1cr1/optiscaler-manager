@@ -391,10 +391,14 @@ is the only downgrade path (no version picker, no update checks — the
 action always fetches the current HEAD commit). The GUI confirm gate
 reuses the session's `ConfirmDLSSRestore` kind; declining runs nothing.
 The TUI mirrors the control: `u` on the games screen or detail screen
-dispatches the update, and `p` on the detail screen stages a restore pick
-that cycles the snapshots (enter confirm, esc cancel, same row-modal
-pattern as the version cycle) before the same session confirmation gate.
-The CLI exposes these ops as one-shot commands — see
+dispatches the update, and `p` on the detail screen opens a modal listing
+the game's backups (newest first) — j/k or up/down moves the highlight, enter
+dispatches the highlighted snapshot, esc closes without action, and any
+other key is swallowed while the modal is open. The list is cached on
+detail entry and refreshed when a settled op for that game flows through
+the event pump — an open picker re-syncs with the refresh, and failure events carry the game dir like the other settled kinds; a game without backups renders the restore entry dimmed.
+The same session confirmation gate follows the pick. The CLI exposes these
+ops as one-shot commands — see
 [CLI surfaces (v0.16)](#cli-surfaces-v016).
 
 Licensing: the NVIDIA/DLSS repository is distributed under NVIDIA's RTX

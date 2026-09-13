@@ -147,7 +147,7 @@ func (s *Session) runDLSSOp(gameDir, started string, run func(ctx context.Contex
 		// informational success naming the version, not a failure.
 		s.opDone(fmt.Sprintf("NVIDIA DLSS already at %s", already.Version), gameDir)
 	case err != nil:
-		s.opFailed(err)
+		s.opFailed(err, gameDir)
 	default:
 		s.refreshComponentVersions(gameDir)
 		s.opDone(done, gameDir)

@@ -156,7 +156,7 @@ build in Settings, or leave it blank to auto-detect from Steam
 | `/` | Filter, live as you type (`esc` clears) |
 | `s` | Toggle sort (default / name) |
 | `R` | Rescan the library |
-| Detail: `i` `v` `u` `p` `l` `c` `r` `o` `d` | Install / switch version / update the NVIDIA DLSS set / restore a DLSS backup (cycle, `enter` confirm, then `y`) / launch / cancel / rollback / open OptiScaler.ini / disable-enable the OptiScaler hook |
+| Detail: `i` `v` `u` `p` `l` `c` `r` `o` `d` | Install / switch version / update the NVIDIA DLSS set / restore a DLSS backup (`p` opens the backup list, `enter` picks, then `y` confirm) / launch / cancel / rollback / open OptiScaler.ini / disable-enable the OptiScaler hook |
 | Settings: `e` `t` `a` `d` `x` `o` `u` `p` | Edit version / edit launch template / add dir / remove dir (`y`/`n`) / clear bundle cache / toggle online game info / toggle umu-launcher / edit umu Proton path |
 | Confirm modal | `y` proceed, `n` cancel |
 

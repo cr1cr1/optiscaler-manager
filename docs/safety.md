@@ -204,8 +204,8 @@ The DLSS control replaces three game files (`nvngx_dlss.dll`,
   rollback, and version switches never touch the NVIDIA runtime or its
   backups; the restore menu is the only way a snapshot comes back.
 - **Both frontends confirm before restoring.** The GUI's menu pick and
-  the TUI's staged restore pick (`p`, enter to confirm) both raise the
-  same session `ConfirmDLSSRestore` prompt; declining runs nothing.
+  the TUI's restore modal (`p`, enter to pick, then confirm) both raise
+  the same session `ConfirmDLSSRestore` prompt; declining runs nothing.
 - **Licensing note.** The NVIDIA/DLSS repository ships under NVIDIA's
   RTX SDK license, which is not an open-source license and restricts
   redistribution. This manager bundles no NVIDIA bytes: it downloads

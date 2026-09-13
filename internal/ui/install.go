@@ -60,7 +60,7 @@ func (s *Session) runRollback(gameDir string) {
 		return
 	}
 	if err != nil {
-		s.opFailed(err)
+		s.opFailed(err, gameDir)
 		return
 	}
 	// Rollback restores whatever the adopt-time backup held — possibly a
@@ -182,7 +182,7 @@ func (s *Session) runInstallVersion(gameDir, version string, eacOK, cachedOK boo
 		return errInstallPaused
 	}
 	if err != nil {
-		s.opFailed(err)
+		s.opFailed(err, gameDir)
 		return err
 	}
 	s.setRowInstalled(gameDir, m.Resolved.Version)
@@ -228,7 +228,7 @@ func (s *Session) runUninstall(gameDir string) error {
 		return err
 	}
 	if err != nil {
-		s.opFailed(err)
+		s.opFailed(err, gameDir)
 		return err
 	}
 	// Uninstall restores whatever the adopt-time backup held — possibly a

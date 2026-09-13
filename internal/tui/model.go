@@ -62,30 +62,39 @@ type Model struct {
 	spin         spinner.Model
 	confirmRmDir string // directory pending inline remove confirmation
 	cycle        *stagedCycle
+	backups      []stagedItem // detail dir's DLSS backups (menu + modal)
+	restore      *restorePick // open restore-backup modal
+}
+
+// restorePick is the open restore-backup modal: the detail dir, its cached
+// backup list, and the highlighted entry.
+type restorePick struct {
+	dir   string
+	items []stagedItem
+	sel   int
 }
 
 // stagedItem is one pickable entry: ID selects the target (an OptiScaler
-// version tag, or a DLSS snapshot id), Label is what the stage line renders.
+// version tag, or a DLSS snapshot id); Label is what the stage line or the
+// picker row renders.
 type stagedItem struct {
 	ID    string
 	Label string
 }
 
-// stagedCycle is a staged per-game pick: the session-provided candidates
-// snapshotted at the staging keypress, the index of the currently shown
-// candidate, and — for version switches — the version the row had at
-// staging time (so confirming the unchanged version is suppressed here,
-// not just in the core). restore selects the dispatch and the advance key
-// ('p' for restores, 'v' for versions). latestIsCur records that the
-// Latest row absorbed the current version (staging-time fact), so its
-// confirm is suppressed like the S13 wrap no-op.
+// stagedCycle is a staged version-switch pick: the session-provided
+// candidates snapshotted at the staging keypress, the index of the
+// currently shown candidate, and the version the row had at staging time
+// (so confirming the unchanged version is suppressed here, not just in the
+// core). latestIsCur records that the Latest row absorbed the current
+// version (staging-time fact), so its confirm is suppressed like the S13
+// wrap no-op.
 type stagedCycle struct {
 	dir         string
 	items       []stagedItem
 	idx         int
 	cur         string
 	latestIsCur bool
-	restore     bool
 }
 
 // stageCycle starts version staging on dir's row: the first 'v' snapshots
@@ -136,26 +145,26 @@ func (m *Model) stageCycle(dir string) {
 	m.advanceCycle()
 }
 
-// stageRestore stages a DLSS snapshot restore pick: the first 'p' snapshots
-// Session.DLSSSnapshots(dir) (newest first, one disk read on the keypress)
-// and lands on the first entry. Rows without the NVIDIA DLL set and games
-// with no snapshots are a no-op; restoring always confirm-gates through the
-// session afterwards.
-func (m *Model) stageRestore(dir string) {
-	row := findRow(m.sess.Snapshot().Rows, dir)
-	if row == nil || !hasDLSS(*row) {
-		return
-	}
+// refreshBackups caches dir's DLSS backup list for the detail menu and the
+// restore modal: one disk read on detail entry and whenever a settled op
+// event for the dir flows through Update (updates and restores both add a
+// backup) — never per frame.
+func (m *Model) refreshBackups(dir string) {
 	snaps := m.sess.DLSSSnapshots(dir)
-	if len(snaps) == 0 {
-		return
-	}
 	items := make([]stagedItem, len(snaps))
 	for i, s := range snaps {
 		items[i] = stagedItem{ID: s.ID, Label: s.Label()}
 	}
-	m.cycle = &stagedCycle{dir: dir, items: items, idx: -1, restore: true}
-	m.advanceCycle()
+	m.backups = items
+}
+
+// settledOp reports whether kind ends an op that ran for a game dir.
+func settledOp(k ui.EventKind) bool {
+	switch k {
+	case ui.EvOpDone, ui.EvOpFailed, ui.EvOpCancelled, ui.EvOpSettled:
+		return true
+	}
+	return false
 }
 
 // advanceCycle moves the staged candidate to the next entry, wrapping
@@ -165,23 +174,17 @@ func (m *Model) advanceCycle() {
 	if c == nil {
 		return
 	}
-	eligible := switchable
-	if c.restore {
-		eligible = hasDLSS
-	}
-	if row := findRow(m.sess.Snapshot().Rows, c.dir); row == nil || !eligible(*row) {
+	if row := findRow(m.sess.Snapshot().Rows, c.dir); row == nil || !switchable(*row) {
 		m.cycle = nil
 		return
 	}
 	c.idx = (c.idx + 1) % len(c.items)
 }
 
-// confirmCycle dispatches the staged pick. Version switches dispatch only
-// when the candidate differs from the version at staging time (wrapping
-// back to the current version, S13, dispatches nothing; a Latest row that
-// absorbed the current version is that same no-op); a restore pick always
-// dispatches — the user named an exact snapshot, and the session confirm
-// gate protects the write anyway. A non-absorbed Latest row dispatches the
+// confirmCycle dispatches the staged version pick only when the candidate
+// differs from the version at staging time (wrapping back to the current
+// version, S13, dispatches nothing; a Latest row that absorbed the current
+// version is that same no-op). A non-absorbed Latest row dispatches the
 // literal "latest", which the session core resolves at pick time.
 func (m *Model) confirmCycle() {
 	c := m.cycle
@@ -190,10 +193,6 @@ func (m *Model) confirmCycle() {
 		return
 	}
 	cand := c.items[c.idx]
-	if c.restore {
-		m.sess.RestoreDLSS(c.dir, cand.ID)
-		return
-	}
 	if cand.ID == "latest" && c.latestIsCur {
 		return
 	}
@@ -207,6 +206,13 @@ func (m *Model) confirmCycle() {
 // "DLSS" pill (version-stripped DLLs) is ready; a DLSS-FG-only game is not.
 func hasDLSS(r ui.GameRow) bool {
 	return r.DLSSReady
+}
+
+// canRestore is the single gate for opening the restore picker: the row is
+// DLSS-ready and at least one cached backup exists — the same condition
+// under which the detail menu renders the action enabled.
+func (m *Model) canRestore(row ui.GameRow) bool {
+	return hasDLSS(row) && len(m.backups) > 0
 }
 
 // findRow returns the snapshot row for dir, or nil.
@@ -266,7 +272,22 @@ func waitEvent(events <-chan ui.Event) tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case eventMsg:
-		_ = msg // the event is only a poke; View re-reads the snapshot
+		// The event is only a poke; View re-reads the snapshot. A settled
+		// op for the detail game also refreshes the cached backup list,
+		// since updates and restores both add a backup — and re-syncs an
+		// open picker, which may have been raised from the pre-op cache.
+		if ev := ui.Event(msg); ev.GameDir == m.detailDir && settledOp(ev.Kind) {
+			m.refreshBackups(m.detailDir)
+			if m.restore != nil {
+				m.restore.items = m.backups
+				switch {
+				case len(m.restore.items) == 0:
+					m.restore = nil
+				case m.restore.sel >= len(m.restore.items):
+					m.restore.sel = len(m.restore.items) - 1
+				}
+			}
+		}
 		m.clamp()
 		return m, waitEvent(m.sess.Events())
 	case tea.WindowSizeMsg:
@@ -349,19 +370,37 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	// A staged version switch or DLSS restore pick is row-modal: the
-	// advance key ('v' versions, 'p' restores) moves the candidate, Enter
-	// confirms (version switches dispatch only when the candidate differs
-	// from the staged-from version), Esc cancels. Any other key drops the
-	// stage and falls through to its normal binding, so cursor moves,
-	// screen switches, and rescans can never carry a stale stage along.
-	if m.cycle != nil {
-		advance := "v"
-		if m.cycle.restore {
-			advance = "p"
-		}
+	// The restore-backup picker is modal: only its navigation keys are
+	// accepted until it is closed, so no staged pick, screen switch, or
+	// quit can fire underneath it.
+	if m.restore != nil {
 		switch msg.String() {
-		case advance:
+		case "j", "down":
+			if m.restore.sel < len(m.restore.items)-1 {
+				m.restore.sel++
+			}
+		case "k", "up":
+			if m.restore.sel > 0 {
+				m.restore.sel--
+			}
+		case "enter":
+			pick := m.restore
+			m.restore = nil
+			m.sess.RestoreDLSS(pick.dir, pick.items[pick.sel].ID)
+		case "esc":
+			m.restore = nil
+		}
+		return m, nil
+	}
+
+	// A staged version switch is row-modal: 'v' moves the candidate, Enter
+	// confirms (dispatching only when the candidate differs from the
+	// staged-from version), Esc cancels. Any other key drops the stage and
+	// falls through to its normal binding, so cursor moves, screen
+	// switches, and rescans can never carry a stale stage along.
+	if m.cycle != nil {
+		switch msg.String() {
+		case "v":
 			m.advanceCycle()
 			return m, nil
 		case "enter":
@@ -421,6 +460,7 @@ func (m Model) gamesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sess.RefreshInstallState(dir)
 			m.detailDir = dir
 			m.screen = screenDetail
+			m.refreshBackups(dir)
 		}
 	case "i":
 		if dir := selectedDir(rows, m.cursor); dir != "" {
@@ -478,7 +518,12 @@ func (m Model) detailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "u":
 		m.sess.UpdateDLSS(dir)
 	case "p":
-		m.stageRestore(dir)
+		// Restore opens the backup picker from the cache filled on detail
+		// entry and settle events; anything the menu renders dimmed —
+		// not DLSS-ready, or no backups — is a no-op.
+		if row := m.detailRow(); row != nil && m.canRestore(*row) {
+			m.restore = &restorePick{dir: dir, items: m.backups, sel: 0}
+		}
 	case "o":
 		if row := m.detailRow(); row != nil && row.CanOpenINI() {
 			return m, openINIEditor(m.sess, dir)

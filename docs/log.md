@@ -3201,3 +3201,41 @@ opens the restore menu of local backup sets.
   root; `go vet ./...` clean; full uncached `go test ./...` (29
   packages) ok; golangci-lint 0 issues. No test was added: the change
   is not behavioral, and `gofmt -l` is the check.
+
+## 2026-09-13 — Issue 3: TUI restore opens a backup-picker modal
+
+- `p` on the detail screen no longer stages a one-candidate restore
+  cycle; it opens a centered bubbletea modal listing the game's DLSS
+  backups (newest first, `restoreBox` over the existing `styleModal`
+  chrome — `bubbles/list` is not vendored, the list is ~15 hand-rolled
+  lines). j/k or up/down move the highlight, enter dispatches the
+  highlighted snapshot into the session `ConfirmDLSSRestore` gate, esc
+  closes without any action, and every other key is swallowed while the
+  modal is open.
+- When the game has no backups the restore menu entry renders dimmed
+  (`(no backups)`, same `styleDimmedAction` pattern as the other disabled
+  actions) and `p` is a no-op. The list is cached on detail entry and
+  refreshed when a settled op event for the detail game flows through
+  `Update` (updates and restores both add a backup) — never per frame.
+- The restore half of the staged-cycle machinery is deleted:
+  `stagedCycle.restore`, the `p`-advance branch, the restore branch of
+  `confirmCycle`/`advanceCycle`, the staged line in the detail view. The
+  modal machinery outweighs it: production TUI nets +75 lines
+  (model +45, view +30), tests +300 across `internal/tui` and
+  `internal/ui`.
+- Two-axis review (standards and spec: 0 blockers, 0 majors each) folded
+  in before commit: `ui.Session.opFailed` tags `EvOpFailed` with the game
+  dir (matches `opRefused` and the launch emitter; makes the TUI
+  failure-refresh leg live), `p` shares the menu's dim gate
+  (`canRestore`: DLSS-ready plus at least one cached backup), an open
+  picker re-syncs on settled events, `restoreBox` windows the list to
+  eight rows around the selection, and the `stagedItem` comment covers
+  the picker rows.
+- Tests (TDD, red witnessed first; sabotage pins for the DLSS-ready
+  gate, the settle re-sync, and the list window):
+  `TestTUIDetailRestoreDLSSPick` (plus no-op-before-consent),
+  `TestTUIRestorePickNavigation` (plus no-wrap bounds),
+  `TestTUIRestorePickModalKeys`, `TestTUIDetailRestoreDimmedWithoutBackups`,
+  `TestTUIRestorePickGatedOnDLSSReady`,
+  `TestTUIRestorePickPopulatesOnDetailEntry`,
+  `TestTUIRestorePickResyncsOnSettle`, `TestRestoreBoxWindowsLongLists`.
