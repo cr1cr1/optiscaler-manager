@@ -12,7 +12,9 @@ import (
 // answered API attempt time; a rate-limited response or a success starts
 // the cooldown, a transport failure does not (scope H4).
 type cooldownState struct {
-	LastAttempt time.Time `json:"last_attempt"`
+	// LastAnswered persists under the historical key "last_attempt" —
+	// cooldown.json is read across processes, so the on-disk format stays.
+	LastAnswered time.Time `json:"last_attempt"`
 }
 
 // inCooldown reports whether the last answered API call is inside the
@@ -26,7 +28,7 @@ func (c *Client) inCooldown() bool {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return false
 	}
-	return c.now().Sub(state.LastAttempt) < cooldown
+	return c.now().Sub(state.LastAnswered) < cooldown
 }
 
 // writeCooldown records the time of the last answered API call (success
@@ -35,7 +37,7 @@ func (c *Client) writeCooldown(t time.Time) error {
 	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
 		return err
 	}
-	data, err := json.Marshal(cooldownState{LastAttempt: t})
+	data, err := json.Marshal(cooldownState{LastAnswered: t})
 	if err != nil {
 		return err
 	}

@@ -265,7 +265,9 @@ func TestCooldownStartsOnlyOnRateLimitOrSuccess(t *testing.T) {
 	})
 
 	t.Run("rate-limited response still starts the cooldown", func(t *testing.T) {
+		var hits atomic.Int64
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits.Add(1)
 			w.Header().Set("X-RateLimit-Remaining", "0")
 			w.WriteHeader(http.StatusForbidden)
 		}))
@@ -275,10 +277,15 @@ func TestCooldownStartsOnlyOnRateLimitOrSuccess(t *testing.T) {
 		if _, _, err := c.Resolve(ctx, "latest"); !errors.Is(err, ErrRateLimited) {
 			t.Fatalf("Resolve on 403/remaining-0: err = %v, want ErrRateLimited", err)
 		}
-		if _, err := os.Stat(filepath.Join(c.cacheDir, cooldownFile)); err != nil {
-			t.Fatalf("cooldown must start on a rate-limited response: %v", err)
+		// The cooldown STARTED: the retry is answered by the cooldown
+		// itself (still ErrRateLimited, no cache) without a network hit.
+		if _, _, err := c.Resolve(ctx, "latest"); !errors.Is(err, ErrRateLimited) {
+			t.Errorf("second Resolve inside cooldown: err = %v, want ErrRateLimited", err)
 		}
-		t.Log("rate-limited fetch starts the back-off window; transient failures do not")
+		if n := hits.Load(); n != 1 {
+			t.Errorf("server hits = %d, want 1 (the cooldown must answer the retry, not the network)", n)
+		}
+		t.Log("rate-limited fetch starts the back-off window; the retry never reaches the network")
 	})
 }
 

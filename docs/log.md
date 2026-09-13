@@ -3083,3 +3083,16 @@ opens the restore menu of local backup sets.
   Latest row the games frame contains `→ Latest` and no `→ Latest (v0`
   mid-tag fragment; the detail frame contains the full label. Full
   `go test ./...` green.
+
+## 2026-09-11 — v0.16: H4 cosmetic follow-ups (naming + behavior pin)
+
+- Renamed the Go field `cooldownState.LastAttempt` to `LastAnswered` to
+  match the answered-only semantics H4 introduced; the on-disk JSON key
+  stays `last_attempt` (cooldown.json is read across processes). The
+  struct comment already pinned the semantics; the name now agrees.
+- `TestCooldownStartsOnlyOnRateLimitOrSuccess/rate-limited response`
+  swapped its `os.Stat(cooldownFile)` plumbing pin for a behavior
+  assertion: after the 403, the retry is answered by the cooldown with
+  the server seeing exactly 1 hit. Red-proven: with the rate-limit
+  `writeCooldown` removed the new assertion fails with `hits = 2`.
+  Full `go test ./...` green.
