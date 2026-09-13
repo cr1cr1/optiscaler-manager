@@ -2,6 +2,7 @@
 package optiscalermanager
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
@@ -44,13 +45,18 @@ type RootFlags struct {
 type CLI struct {
 	RootFlags `kong:"embed"`
 
-	Version   VersionCmd   `cmd:"" help:"Show version information"`
-	Scan      ScanCmd      `cmd:"" help:"List installed Steam games with detected upscalers"`
-	Install   InstallCmd   `cmd:"" help:"Install OptiScaler into a game directory"`
-	Uninstall UninstallCmd `cmd:"" help:"Reverse a committed install"`
-	Rollback  RollbackCmd  `cmd:"" help:"Restore a game after an interrupted or failed install"`
-	Gui       GUICmd       `cmd:"" default:"withargs" help:"Launch the graphical interface (default)"`
-	Tui       TUICmd       `cmd:"" help:"Launch the terminal user interface"`
+	Version     VersionCmd     `cmd:"" help:"Show version information"`
+	Scan        ScanCmd        `cmd:"" help:"List installed Steam games with detected upscalers"`
+	Install     InstallCmd     `cmd:"" help:"Install OptiScaler into a game directory"`
+	Uninstall   UninstallCmd   `cmd:"" help:"Reverse a committed install"`
+	Rollback    RollbackCmd    `cmd:"" help:"Restore a game after an interrupted or failed install"`
+	Switch      SwitchCmd      `cmd:"" help:"Switch a game's OptiScaler version ('latest' re-resolves at pick time)"`
+	DlssUpdate  DLSSUpdateCmd  `cmd:"" help:"Update a game's NVIDIA DLSS runtime set"`
+	DlssRestore DLSSRestoreCmd `cmd:"" help:"Restore a backed-up NVIDIA DLSS set (default: newest)"`
+	Launch      LaunchCmd      `cmd:"" help:"Request a game launch (fire-and-forget)"`
+	Hook        HookCmd        `cmd:"" help:"Enable or disable a game's OptiScaler hook (--enable | --disable)"`
+	Gui         GUICmd         `cmd:"" default:"withargs" help:"Launch the graphical interface (default)"`
+	Tui         TUICmd         `cmd:"" help:"Launch the terminal user interface"`
 
 	args []string // original args, used to detect --help before side effects
 }
@@ -143,6 +149,12 @@ func Run(version string, args []string) error {
 	}
 
 	if err := kctx.Run(deps); err != nil {
+		// A command's own ExitError (its code was chosen deliberately)
+		// must not be re-wrapped to 1.
+		var ee *ExitError
+		if errors.As(err, &ee) {
+			return ee
+		}
 		return &ExitError{Code: 1, Err: err}
 	}
 	return nil

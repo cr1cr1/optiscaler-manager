@@ -615,3 +615,36 @@ v0.15.)
   the games cell shows a short `→ Latest` (a mid-tag cut like
   `→ Latest (v0.9…` would read as version v0.9); the detail line renders
   the full label.
+
+## v0.16 scope (CLI surfaces)
+
+The post-v0.1 features existed only behind the GUI/TUI; v0.16 exposes
+them as one-shot commands over the same session core:
+
+- `switch <dir> [--version <tag|latest>]` — switch a game's OptiScaler
+  version; an empty `--version` means the configured default, `latest`
+  re-resolves at pick time (the v0.15 seam), and switching to the
+  installed version reports "already at" without running an op.
+- `dlss-update <dir>` — update the game's NVIDIA DLSS runtime set
+  (cache-first, never adds a missing DLL).
+- `dlss-restore <dir> [--snapshot <id>]` — restore a backed-up set;
+  the empty id means the newest snapshot. Runs behind the restore
+  consent gate.
+- `launch <dir>` — fire-and-forget launch request (reports "requested",
+  never "launched").
+- `hook <dir> --enable|--disable` — park/un-park the installed hook
+  (exactly one state required; the rename is atomic and synchronous).
+
+Behavior: each command boots the shared `ui.Session`, waits for the
+games list to settle, dispatches, and blocks on a CLI event waiter
+until the op's terminal event (`EvOpSettled` for the compound version
+switch, done/failed/cancelled for single-leg ops). Consent gates are
+answered on the terminal (y/n); a non-interactive stdin declines and
+the command exits 1 — consent is never bypassed and there is no
+`--yes` flag. `--timeout` (default 10m) bounds every wait (the
+synchronous `hook` toggle has none). Exit codes: 0 success, 1 runtime
+failure, 2 usage.
+
+Explicitly settled in v0.16: version tracking stays stable-only (the
+OptiScaler-nightly repository's prerelease builds are not tracked), and
+settings commands / a `--json` scripting mode stay deferred.

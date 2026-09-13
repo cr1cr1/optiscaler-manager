@@ -33,11 +33,11 @@ func TestStartPreloadsLatestBundleIntoCache(t *testing.T) {
 	// Warm games cache: one committed row at the latest tag (the user's
 	// Witcher 3 row shape), so Start takes the warm-boot path, not a scan.
 	saveGamesCache(root, []GameRow{{
-		Title:              "Game One",
-		InstallDir:         e.gameRoot,
-		InjectionDir:       e.bin,
-		Platform:           domain.StoreSteam.String(),
-		Store:              domain.StoreSteam,
+		Title:             "Game One",
+		InstallDir:        e.gameRoot,
+		InjectionDir:      e.bin,
+		Platform:          domain.StoreSteam.String(),
+		Store:             domain.StoreSteam,
 		Status:            domain.StatusCommitted,
 		OptiScalerVersion: "v0.9.4-test",
 	}})
@@ -72,11 +72,11 @@ func TestStartPreloadSkippedWhenBundleCached(t *testing.T) {
 	e.sess.deps.Settings = settings.Defaults()
 
 	saveGamesCache(root, []GameRow{{
-		Title:              "Game One",
-		InstallDir:         e.gameRoot,
-		InjectionDir:       e.bin,
-		Platform:           domain.StoreSteam.String(),
-		Store:              domain.StoreSteam,
+		Title:             "Game One",
+		InstallDir:        e.gameRoot,
+		InjectionDir:      e.bin,
+		Platform:          domain.StoreSteam.String(),
+		Store:             domain.StoreSteam,
 		Status:            domain.StatusCommitted,
 		OptiScalerVersion: "v0.9.4-test",
 	}})
@@ -139,8 +139,10 @@ func TestSwitchVersionLatestResolvesAtPickTime(t *testing.T) {
 }
 
 // TestSwitchVersionLatestSameVersionNoOp: switching to "latest" when the
-// game is ALREADY at the latest is a silent no-op — the resolved tag
-// equals the installed version, so no uninstall churn, no events.
+// game is ALREADY at the latest runs no op — the resolved tag equals the
+// installed version, so no uninstall churn, no mid-chain events. The only
+// event is the single EvOpSettled "already at" report the CLI's one-shot
+// waiter needs (the frontends only poke on events).
 func TestSwitchVersionLatestSameVersionNoOp(t *testing.T) {
 	e := newUpgradeEnv(t, "latest")
 	installAt(t, e) // default "latest" installs v0.10.0-test
@@ -148,12 +150,15 @@ func TestSwitchVersionLatestSameVersionNoOp(t *testing.T) {
 	e.sess.SwitchVersion(e.gameRoot, "latest")
 	select {
 	case ev := <-e.sess.Events():
-		t.Fatalf("latest switch on the latest fired an event: %v", ev)
+		if ev.Kind != EvOpSettled || ev.Text != "already at v0.10.0-test" {
+			t.Fatalf("latest switch on the latest fired %v %q, want one EvOpSettled \"already at v0.10.0-test\"", ev.Kind, ev.Text)
+		}
 	case <-time.After(500 * time.Millisecond):
+		t.Fatal("latest no-op switch never settled (a CLI waiter would hang)")
 	}
 	row := theRow(t, e.sess)
 	if row.Status != domain.StatusCommitted || row.OptiScalerVersion != "v0.10.0-test" {
 		t.Errorf("row after the latest no-op = %+v, want committed at v0.10.0-test", row)
 	}
-	t.Log("switching to the latest while already at the latest was a no-op")
+	t.Log("switching to the latest while already at the latest was a reported no-op")
 }

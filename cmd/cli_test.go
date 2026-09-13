@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/covers"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
@@ -44,13 +45,24 @@ func testDeps(t *testing.T, ghClient *gh.Client) (*Deps, *bytes.Buffer) {
 	t.Helper()
 	out := &bytes.Buffer{}
 	root := t.TempDir()
+	// Session-backed command tests must be OFFLINE: online lookups off
+	// skips the scan's enrichment and the startup DLSS pre-download; the
+	// covers client points at a dead port (a cover miss is tolerated).
+	prefs := settings.Defaults()
+	prefs.OnlineLookups = false
+	if err := settings.Save(root, prefs); err != nil {
+		t.Fatalf("save fixture settings: %v", err)
+	}
 	d := &Deps{
 		Out:      out,
 		ErrOut:   out,
 		Store:    store.New(root),
+		DataRoot: root,
 		CacheDir: filepath.Join(root, "cache"),
 		GH:       ghClient,
-		Version:  "test",
+		Covers: covers.NewWithBase(nil, filepath.Join(root, "covers"),
+			"http://127.0.0.1:1/cdn/%s", "http://127.0.0.1:1/search/"),
+		Version: "test",
 	}
 	return d, out
 }

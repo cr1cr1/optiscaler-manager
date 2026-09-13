@@ -243,8 +243,10 @@ func TestSwitchINIRestoreFailureKeepsInstall(t *testing.T) {
 }
 
 // TestSwitchSameVersionIsNoOp (S13): switching to the ALREADY installed
-// version dispatches nothing — no uninstall, no install, no op events, no
-// resolution, and the ini stays byte-identical.
+// version dispatches no op — no uninstall, no install, no resolution, and
+// the ini stays byte-identical. The only event is the single EvOpSettled
+// "already at" report the CLI's one-shot waiter needs (the frontends only
+// poke on events, so for them the no-op stays invisible).
 func TestSwitchSameVersionIsNoOp(t *testing.T) {
 	e := newUpgradeEnv(t, "v0.9.4-test")
 	installAt(t, e)
@@ -259,7 +261,8 @@ func TestSwitchSameVersionIsNoOp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Drain events still in flight from the install, then stay silent.
+	// Drain events still in flight from the install, then expect the one
+	// settle report and nothing else.
 	for {
 		select {
 		case <-e.sess.Events():
@@ -273,8 +276,19 @@ drained:
 
 	select {
 	case ev := <-e.sess.Events():
-		t.Fatalf("same-version switch dispatched %v %q, want total silence", ev.Kind, ev.Text)
+		if ev.Kind != EvOpSettled || ev.Text != "already at "+installed {
+			t.Fatalf("same-version switch dispatched %v %q, want one EvOpSettled %q", ev.Kind, ev.Text, "already at "+installed)
+		}
+		if ev.GameDir != e.gameRoot {
+			t.Errorf("settled event GameDir = %q, want the game root", ev.GameDir)
+		}
 	case <-time.After(300 * time.Millisecond):
+		t.Fatal("same-version switch never settled (a CLI waiter would hang)")
+	}
+	select {
+	case ev := <-e.sess.Events():
+		t.Fatalf("extra event after the settle: %v %q", ev.Kind, ev.Text)
+	case <-time.After(100 * time.Millisecond):
 	}
 	if got := e.resolves.Load(); got != resolvesBefore {
 		t.Errorf("resolves = %d, want %d (no resolution for a no-op switch)", got, resolvesBefore)

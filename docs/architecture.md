@@ -20,11 +20,20 @@ cmd/
   root.go version.go        existing shell (RootFlags; version subcommand)
   gui.go                    GuiCmd `cmd:"" default:"withargs"`; --audit-grid
   tui.go                    TuiCmd; second frontend on the same session
-  session.go                newSession: shared session construction (gui + tui)
+  session.go                newSession: shared session construction (gui,
+                            tui, and the five one-shot ops commands)
   scan.go                   headless game listing (store + versions columns)
   install.go                headless install/uninstall/rollback <path>
-  deps.go                   shared Deps wiring + interrupted-manifest
-                            startup warning (gated off gui/tui/version)
+  opwait.go                 one-shot CLI helpers: waitForOp(Kinds) event
+                            waiter, answerGate consent prompt, awaitRow
+                            boot settle, opTimeout
+  switch.go                 SwitchCmd: version switch incl. `latest`
+  dlss.go                   DLSSUpdateCmd + DLSSRestoreCmd (default newest)
+  launch.go                 LaunchCmd: fire-and-forget launch request
+  hook.go                   HookCmd: --enable|--disable (synchronous)
+  deps.go                   shared Deps wiring (GH/DLSS/Launcher/Covers
+                            test seams) + interrupted-manifest startup
+                            warning (gated off gui/tui/version)
 internal/
   domain/     Game (Store enum, AppName, ExePath, CompatPrefix), Release,
               Component, Kind, Manifest, entries; Status
@@ -385,12 +394,77 @@ The TUI mirrors the control: `u` on the games screen or detail screen
 dispatches the update, and `p` on the detail screen stages a restore pick
 that cycles the snapshots (enter confirm, esc cancel, same row-modal
 pattern as the version cycle) before the same session confirmation gate.
-CLI surfaces remain deferred.
+The CLI exposes these ops as one-shot commands — see
+[CLI surfaces (v0.16)](#cli-surfaces-v016).
 
 Licensing: the NVIDIA/DLSS repository is distributed under NVIDIA's RTX
 SDK license (not an open-source license). This manager ships no NVIDIA
 bytes; it downloads them on explicit user action from NVIDIA's official
 repository and stores restore copies locally. See docs/safety.md.
+
+## CLI surfaces (v0.16)
+
+The post-v0.1 features lived only behind the GUI/TUI; v0.16 adds five
+one-shot kong commands in `cmd/` that run the SAME session core
+(`newSession(d)` → `ui.NewSession` — identical wiring to the GUI/TUI
+boot): `switch` (version switching incl. the literal `latest`,
+re-resolved at pick time by the core's v0.15 seam; empty means the
+configured default), `dlss-update`, `dlss-restore` (snapshot id
+optional; default newest), `launch` (fire-and-forget request), and
+`hook --enable|--disable`.
+
+Each command boots a session (`sess.Start`), waits for the games list to
+settle (`awaitRow`: a warm games cache is already there when Start
+returns; a cold boot scans asynchronously and `awaitRow` waits for
+`EvScanDone`/`EvScanFailed` before reporting an unknown dir), dispatches
+the op, and blocks in `waitForOp` — the CLI's replacement for the
+frontends' event loops, which drain `Session.Events()` (buffered, cap
+64). The waiter ignores events for other game dirs, answers consent
+gates inline, and returns on the op's terminal event.
+
+Two terminal-event contracts make the one-shot wait deterministic:
+
+- Single-leg ops (install, DLSS update/restore, launch) settle with
+  exactly one `EvOpDone`/`EvOpFailed`/`EvOpCancelled`.
+- The version-switch CHAIN (pre-flight → uninstall leg → install leg →
+  ini write-back, plus rollback on failure) emits its sub-legs'
+  `EvOpDone`/`EvOpFailed` mid-flight; its ONE terminal event is the new
+  `EvOpSettled` with the outcome text ("switched to <tag>", "already at
+  <tag>", "switch cancelled", "switch failed: …", "cannot resolve the
+  latest OptiScaler version", "unknown game dir", "game is not
+  installed; nothing to switch").
+  `SwitchCmd` waits via `waitForOpKinds(…, EvOpSettled)` — sub-leg
+  events are ignored — and maps the settle text to output/exit code.
+  The frontends are unaffected: the GUI discards events (it re-reads
+  the snapshot) and the TUI treats every event as a render poke.
+
+Consent gates (`EvConfirm`) are answered on the terminal: `answerGate`
+prints the pending message to the command's error writer and reads y/n.
+A non-TTY stdin (checked with
+`charmbracelet/x/term.IsTerminal`, already vendored via bubbletea)
+DECLINES — the refused op never starts (the gates pause before the op
+registers) and the command exits 1 with the reason. There is no `--yes`
+flag anywhere: the CLI never bypasses the consent model.
+
+`--timeout` (default 10m, single source in `opTimeout`) bounds every
+wait; the `hook` command is the exception (its core rename is
+synchronous — no waiter, no flag). Exit codes: 0 success, 1 runtime
+failure (`cmd.ExitError`), 2 usage (kong parse — including the hook
+command's missing state flag, enforced by kong's `required`+`xor` — or
+a command's own deliberate `ExitError`, which `Run` passes through
+unwrapped). The
+`hook` toggle is the exception to the waiter: the core's rename is
+atomic and synchronous, so the command compares the row's `Disabled`
+before/after — already in the wanted state is a no-op report, a failed
+rename exits 1.
+
+Testability: `cmd.Deps` gained the same seams the GUI/TUI tests use —
+`DLSS`, `Launcher`, and `Covers` (nil → built in `newSession`, like the
+existing `GH`) and `SteamRoot` ("" → auto-detect, the GUI/TUI behavior;
+session tests MUST pin it to the fixture root so a scan never touches the
+real machine's libraries). The session-backed command tests also run
+offline (`OnlineLookups: false` saved into the fixture settings; the
+covers client points at a dead port — a cover miss is tolerated).
 
 ## Shared dropdown menus and pointer cursor (v0.14i)
 

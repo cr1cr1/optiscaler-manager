@@ -8,8 +8,11 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/covers"
+	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
+	"github.com/cr1cr1/optiscaler-manager/internal/launch"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 )
 
@@ -24,6 +27,17 @@ type Deps struct {
 	CacheDir string
 	GH       *gh.Client
 	Version  string
+	// DLSS, Launcher, and Covers are the same test seams GH is: nil
+	// (production) lets newSession build the default clients; tests
+	// inject fakes (or dead-URL clients, since a cover miss is tolerated).
+	DLSS     *dlss.Client
+	Launcher *launch.Launcher
+	Covers   *covers.Covers
+	// SteamRoot pins the Steam root for session-backed commands ("" =
+	// auto-detect all libraries, the GUI/TUI behavior; the Scan command
+	// already carries the same flag). Tests MUST pin it to the fixture
+	// root so a scan never touches the real machine's libraries.
+	SteamRoot string
 }
 
 // newDeps builds production dependencies. OM_DATA_DIR overrides the store

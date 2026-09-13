@@ -25,14 +25,31 @@ func (s *Session) SwitchVersion(gameDir, version string) {
 	go s.doSwitchVersion(gameDir, version, false)
 }
 
-// doSwitchVersion mirrors doUpgrade's proven chain — committed rows chain
+// doSwitchVersion wraps the switch chain with the compound op's single
+// terminal event: whatever the chain's outcome, EvOpSettled fires exactly
+// once at the very end with the outcome text (an empty chain return — a
+// paused consent gate — settles nothing; the gate's continuation runs the
+// wrapper again and settles there).
+func (s *Session) doSwitchVersion(gameDir, version string, eacConsented bool) {
+	if settled := s.doSwitchVersionChain(gameDir, version, eacConsented); settled != "" {
+		s.emit(Event{Kind: EvOpSettled, Text: settled, GameDir: gameDir})
+	}
+}
+
+// doSwitchVersionChain is the switch chain proper; it returns the settle
+// text for the wrapper's EvOpSettled ("" when the chain paused at a
+// consent gate or was mis-dispatched).
+//
+// The chain mirrors doUpgrade's proven shape — committed rows chain
 // uninstall-then-install (rollback on failure-after-uninstall), external
 // rows adopt-install directly — with two differences: the install leg
 // targets the CHOSEN tag instead of the resolved default, and the captured
 // ini is restored on success. Unknown games, rows without a switchable
 // install, and a switch to the ALREADY installed version are silent no-ops
-// (the version picker raced a state change or re-selected the current
-// entry): nothing is dispatched, no events fire.
+// for the frontends (the version picker raced a state change or
+// re-selected the current entry): nothing is dispatched, no mid-chain
+// events fire — the settle text still reports the no-op so the CLI's
+// one-shot waiter ends deterministically.
 //
 // eacConsented is true only when the chain resumes from an answered
 // ConfirmVersionSwitch prompt: the EAC gate is pre-flighted BEFORE any
@@ -40,9 +57,9 @@ func (s *Session) SwitchVersion(gameDir, version string) {
 // pause mid-chain used to strand the game uninstalled with the ini already
 // deleted — pure data loss on decline, and a curated-defaults install on
 // accept. With the pre-flight, decline means zero operation ran.
-func (s *Session) doSwitchVersion(gameDir, version string, eacConsented bool) {
+func (s *Session) doSwitchVersionChain(gameDir, version string, eacConsented bool) string {
 	if version == "" {
-		return
+		return ""
 	}
 	if version == "latest" {
 		// The dropdown's "Latest" option dispatches the literal: re-resolve
@@ -57,16 +74,19 @@ func (s *Session) doSwitchVersion(gameDir, version string, eacConsented bool) {
 		if err != nil || tag == "" {
 			log.Warn().Err(err).Msg("version switch: cannot resolve the latest release")
 			s.toast("cannot resolve the latest OptiScaler version", true)
-			return
+			return "cannot resolve the latest OptiScaler version"
 		}
 		version = tag
 	}
 	row := s.findRow(gameDir)
-	if row == nil || row.OptiScalerVersion == version {
-		return
+	if row == nil {
+		return "unknown game dir"
+	}
+	if row.OptiScalerVersion == version {
+		return "already at " + version
 	}
 	if row.Status != domain.StatusExternal && row.Status != domain.StatusCommitted {
-		return
+		return "game is not installed; nothing to switch"
 	}
 	log.Info().Str("gameDir", gameDir).
 		Str("from", row.OptiScalerVersion).Str("to", version).
@@ -78,7 +98,7 @@ func (s *Session) doSwitchVersion(gameDir, version string, eacConsented bool) {
 			Message: eacWarning(row.Title),
 			Version: version,
 		})
-		return
+		return "" // paused at the gate; the answered resume settles
 	}
 	ini, err := s.captureINIDurable(gameDir, row.InjectionDir)
 	if err != nil {
@@ -88,19 +108,20 @@ func (s *Session) doSwitchVersion(gameDir, version string, eacConsented bool) {
 		log.Warn().Err(err).Str("gameDir", gameDir).
 			Msg("version switch: OptiScaler.ini crash backup failed; aborting before any destructive step")
 		s.toast("Version switch aborted: could not back up your OptiScaler.ini", true)
-		return
+		return "switch failed: could not back up your OptiScaler.ini"
 	}
 	if row.Status == domain.StatusExternal {
 		// Adopt path (mirrors doUpgrade): the install backs the external
 		// files up SHA-verified first — nothing is uninstalled, and a
 		// failed adopt keeps the usual failed-manifest + manual-rollback
 		// semantics.
-		if err := s.runInstallVersion(gameDir, version, eacConsented, true); err == nil {
-			if s.restoreINI(gameDir, ini) == nil {
-				ini.discardBackup()
-			}
+		if err := s.runInstallVersion(gameDir, version, eacConsented, true); err != nil {
+			return "switch failed: " + err.Error()
 		}
-		return
+		if s.restoreINI(gameDir, ini) == nil {
+			ini.discardBackup()
+		}
+		return "switched to " + version
 	}
 	// A user-edited OptiScaler.ini makes the uninstaller REFUSE (foreign
 	// modifications are never deleted) — and a customized ini is exactly
@@ -126,7 +147,7 @@ func (s *Session) doSwitchVersion(gameDir, version string, eacConsented bool) {
 				ini.discardBackup()
 			}
 		}
-		return // the uninstall error was already surfaced (incl. errOpBusy)
+		return "switch failed: " + err.Error() // the uninstall error was already surfaced
 	}
 	if s.upgradeGapHook != nil {
 		s.upgradeGapHook(gameDir)
@@ -140,14 +161,20 @@ func (s *Session) doSwitchVersion(gameDir, version string, eacConsented bool) {
 		if s.restoreINI(gameDir, ini) == nil {
 			ini.discardBackup()
 		}
+		return "switched to " + version
 	case errors.Is(err, errInstallPaused):
-		// Unreachable with the EAC pre-flight and cachedOK=true; kept as a
-		// graceful no-op — the crash backup on disk still holds the ini.
+		// Unreachable with the EAC pre-flight and cachedOK=true (the
+		// staged install gate's AnswerConfirm continuation runs
+		// doInstallVersion directly, outside this chain — no ini
+		// write-back, no settle from there). Settle with a failure text
+		// so a CLI waiter can never wait out its timeout on this branch.
+		return "switch failed: consent gate resumed outside the switch chain"
 	case errors.Is(err, context.Canceled):
 		// The installer's cancel path rolled its partial install back
 		// atomically, but the OLD build was already uninstalled: the game
 		// is clean, so the captured ini goes back as an orphan.
 		s.writeBackOrphanINI(gameDir, ini)
+		return "switch cancelled"
 	default:
 		// Same contract as doUpgrade: install failed AFTER the old build
 		// was removed — including errOpBusy — so run the
@@ -159,6 +186,7 @@ func (s *Session) doSwitchVersion(gameDir, version string, eacConsented bool) {
 		// The rollback leaves the game CLEAN: write the captured ini back
 		// as an orphan — it is the only copy of the user's tuning.
 		s.writeBackOrphanINI(gameDir, ini)
+		return "switch failed: install failed; rolled back"
 	}
 }
 

@@ -31,10 +31,10 @@
 **Interfaces:**
 - Produces: `Deps.DLSS dlss.Client` (interface type used by `ui.Deps.DLSS` — check its exact type in `internal/ui/session.go` Deps), `Deps.Launcher launch.Launcher`; `newSession` prefers them when non-nil.
 
-- [ ] **Step 1: Inspect the exact types** — `ui.Deps.DLSS` and `ui.Deps.UmuLauncher` field types in `internal/ui/session.go:130-165`; `cmd/deps.go` Deps fields.
-- [ ] **Step 2: Add the two fields** to `Deps` with doc comments naming the pattern ("nil → built in newSession, like GH").
-- [ ] **Step 3: Wire newSession** — `dlssClient := d.DLSS; if dlssClient == nil { dlssClient = dlss.New(httpClient) }` (same shape for the launcher vs `newUmuLauncher(prefs)`).
-- [ ] **Step 4: `GOCACHE=$PWD/tmp/gocache go vet ./cmd/`** — expect clean.
+- [x] **Step 1: Inspect the exact types** — `ui.Deps.DLSS` and `ui.Deps.UmuLauncher` field types in `internal/ui/session.go:130-165`; `cmd/deps.go` Deps fields.
+- [x] **Step 2: Add the two fields** to `Deps` with doc comments naming the pattern ("nil → built in newSession, like GH").
+- [x] **Step 3: Wire newSession** — `dlssClient := d.DLSS; if dlssClient == nil { dlssClient = dlss.New(httpClient) }` (same shape for the launcher vs `newUmuLauncher(prefs)`).
+- [x] **Step 4: `GOCACHE=$PWD/tmp/gocache go vet ./cmd/`** — expect clean.
 
 ### Task 2: op waiter + consent prompt (`cmd/opwait.go`)
 
@@ -46,7 +46,7 @@
 - Consumes: `ui.Session.Events() <-chan ui.Event`, `Event{Kind, Text, GameDir}`, `EvOpDone/EvOpFailed/EvOpCancelled/EvConfirm`, `Session.Snapshot().Confirm *Confirmation{Kind, GameDir, Message}`, `Session.AnswerConfirm(bool)`, `Session.QuickInstall(string)`, `Session.Start(context.Context)`, `Session.Snapshot().Rows []ui.GameRow`.
 - Produces: `waitForOp(sess *ui.Session, dir string, timeout time.Duration) (ui.Event, error)` — terminal op event for `dir` (ignores other dirs' events), or error on timeout/channel-close; answers confirm gates inline.
 
-- [ ] **Step 1: Write the failing tests** (`cmd/opwait_test.go`):
+- [x] **Step 1: Write the failing tests** (`cmd/opwait_test.go`):
 
 ```go
 // TestWaitForOpReturnsDone drives a real QuickInstall through a session
@@ -130,8 +130,8 @@ func TestWaitForOpNonInteractiveDeclinesConsent(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run red** — `GOCACHE=$PWD/tmp/gocache go test -count=1 ./cmd/` → FAIL: `waitForOp` undefined (both tests).
-- [ ] **Step 3: Implement** (`cmd/opwait.go`):
+- [x] **Step 2: Run red** — `GOCACHE=$PWD/tmp/gocache go test -count=1 ./cmd/` → FAIL: `waitForOp` undefined (both tests).
+- [x] **Step 3: Implement** (`cmd/opwait.go`):
 
 ```go
 package optiscalermanager
@@ -200,8 +200,8 @@ func promptConfirm(sess *ui.Session) {
 }
 ```
 
-- [ ] **Step 4: Run green** — both tests pass; no other cmd test breaks.
-- [ ] **Step 5: Refactor check** — no duplication with internal packages (the waiter is cmd-owned by design: the GUI/TUI have their own loops).
+- [x] **Step 4: Run green** — both tests pass; no other cmd test breaks.
+- [x] **Step 5: Refactor check** — no duplication with internal packages (the waiter is cmd-owned by design: the GUI/TUI have their own loops).
 
 ### Task 3: `switch` command (version switching incl. `latest`)
 
@@ -213,7 +213,7 @@ func promptConfirm(sess *ui.Session) {
 - Consumes: `waitForOp`, `newSession`, `Session.SwitchVersion(gameDir, version)` (async; literal `"latest"` resolves at pick time — v0.15 seam, no new core logic), `Session.Settings().DefaultVersion`, `Session.Snapshot().Rows` (row `OptiScalerVersion`), `ui.ErrRateLimited` (via `errors.Is` on the terminal event? no — op failures surface as `EvOpFailed`).
 - Produces: `SwitchCmd{Path string; Version string; Timeout time.Duration}` with `Run(d *Deps) error` printing `switched <title> → <tag>` and returning `&ExitError{Code: 1, Err: …}` on failure.
 
-- [ ] **Step 1: Failing tests** (`cmd/switch_test.go`):
+- [x] **Step 1: Failing tests** (`cmd/switch_test.go`):
 
 ```go
 // TestSwitchCommandResolvesLatest: install the fixture, then switch with
@@ -257,8 +257,8 @@ func TestSwitchCommandSameVersionNoOp(t *testing.T) { … same fixture …
 
 Helpers `pollForCommitted(t, sess, dir)` and `rowOf(t, sess, dir)` live in `cmd/opwait_test.go` (cmd-package helpers, mirror the tui/ui poll pattern).
 
-- [ ] **Step 2: Run red** — `SwitchCmd` undefined.
-- [ ] **Step 3: Implement** (`cmd/switch.go`):
+- [x] **Step 2: Run red** — `SwitchCmd` undefined.
+- [x] **Step 3: Implement** (`cmd/switch.go`):
 
 ```go
 package optiscalermanager
@@ -313,8 +313,8 @@ func (c *SwitchCmd) runWith(sess *ui.Session, d *Deps) error {
 
 Notes: `rowOfSession(sess, dir)` (cmd helper, `opwait_test.go` or a small `cmd/session_helpers.go` — put it next to `newSession` in `cmd/session.go` so production and tests share it) returns the row or an error if the dir is unknown; `cmdContext()` returns `context.Background()` (defined once in `cmd/session.go`). Empty-row/unknown-dir handling: `rowOfSession` error → `ExitError{1}` before dispatch. EvOpCancelled → exit 1 with ev.Text.
 
-- [ ] **Step 4: Green** — both switch tests pass.
-- [ ] **Step 5: Gate** — `go vet ./cmd/`.
+- [x] **Step 4: Green** — both switch tests pass.
+- [x] **Step 5: Gate** — `go vet ./cmd/`.
 
 ### Task 4: `dlss-update` and `dlss-restore` commands
 
@@ -326,11 +326,11 @@ Notes: `rowOfSession(sess, dir)` (cmd helper, `opwait_test.go` or a small `cmd/s
 - Consumes: `Session.UpdateDLSS(gameDir)` (async), `Session.DLSSSnapshots(gameDir) []dlss.Snapshot` (sync, newest first; fields `ID string`, `Label() string`), `Session.RestoreDLSS(gameDir, snapshotID)` (async), the Task-1 `Deps.DLSS` seam, `waitForOp`.
 - Produces: `DLSSUpdateCmd{Path string; Timeout}`, `DLSSRestoreCmd{Path string; Snapshot string; Timeout}`.
 
-- [ ] **Step 1: Failing tests** (`cmd/dlss_test.go`) — mirror `internal/tui/dlss_test.go`'s fixture approach for the NVIDIA fake: that helper builds a dlss client against an httptest server (read `internal/tui/dlss_test.go:27-76` `dlssEnv` for the exact fake endpoints and DLL writes; replicate the fixture in cmd with `writeCmdTestFile`, constructing the dlss client the same way and passing it via the new `Deps.DLSS` seam). Tests:
+- [x] **Step 1: Failing tests** (`cmd/dlss_test.go`) — mirror `internal/tui/dlss_test.go`'s fixture approach for the NVIDIA fake: that helper builds a dlss client against an httptest server (read `internal/tui/dlss_test.go:27-76` `dlssEnv` for the exact fake endpoints and DLL writes; replicate the fixture in cmd with `writeCmdTestFile`, constructing the dlss client the same way and passing it via the new `Deps.DLSS` seam). Tests:
   - `TestDLSSUpdateCommandUpdatesRuntime`: seeded three-DLL game with old versions → `DLSSUpdateCmd.Run` → waiter done → the three DLLs at the fake's published version; output line `updated NVIDIA DLSS runtime` + version.
   - `TestDLSSRestoreCommandRestoresSnapshot`: seed a snapshot via the dlss client update flow (as the tui test does), then `DLSSRestoreCmd{Snapshot: "<id>"}` → done → DLLs back at the snapshot's version; `Snapshot: ""` → newest snapshot restored.
-- [ ] **Step 2: Run red** — both command types undefined.
-- [ ] **Step 3: Implement** (`cmd/dlss.go`) — same body shape as `SwitchCmd.runWith`:
+- [x] **Step 2: Run red** — both command types undefined.
+- [x] **Step 3: Implement** (`cmd/dlss.go`) — same body shape as `SwitchCmd.runWith`:
 
 ```go
 // DLSSUpdateCmd updates the game's NVIDIA runtime through the session core.
@@ -369,8 +369,8 @@ type DLSSRestoreCmd struct {
 
 `DLSSRestoreCmd.runWith`: resolve the id — empty → `sess.DLSSSnapshots(c.Path)[0].ID` (error `ExitError{1, "no DLSS snapshots for <path>"}` when the list is empty); then `sess.RestoreDLSS`, wait, print `ev.Text`. Restore runs through the session's `ConfirmDLSSRestore` gate — the waiter's prompt handles it (non-interactive tests decline; the happy-path restore test must simulate consent: drive `sess.AnswerConfirm(true)` from a goroutine after staging — see `internal/ui/dlss_test.go` for how the ui tests consent; the cmd test uses the same pattern with the waiter running in a goroutine: `go func() { sess.Start…; sess.RestoreDLSS… }()` then loop `waitForOp` with the accept goroutine, or set the fake stdin to a pipe that yields "y\n" by swapping `os.Stdin` via a test-only seam — prefer the explicit `promptConfirm` seam: make `promptConfirm` a package var `promptConfirmFn = promptConfirm` so tests inject an acceptor. That is ONE seam, documented, replacing stdin fiddling).
 
-- [ ] **Step 4: Green** — both dlss command tests pass.
-- [ ] **Step 5: Gate** — `go vet ./cmd/`.
+- [x] **Step 4: Green** — both dlss command tests pass.
+- [x] **Step 5: Gate** — `go vet ./cmd/`.
 
 ### Task 5: `launch` and `hook` commands
 
@@ -382,13 +382,13 @@ type DLSSRestoreCmd struct {
 - Consumes: `Session.Launch(gameDir)` (async; done/failed events carry GameDir), Task-1 `Deps.Launcher` seam, `Session.ToggleDisabled(gameDir)` (SYNCHRONOUS rename — no waiter), `Session.Snapshot().Rows` `Disabled` field.
 - Produces: `LaunchCmd{Path string}`, `HookCmd{Path string; Enable bool; Disable bool}` (exactly one of Enable/Disable required — kong `xor`).
 
-- [ ] **Step 1: Failing tests**:
+- [x] **Step 1: Failing tests**:
   - `TestLaunchCommandRunsRunner`: inject a capturing launcher via `Deps.Launcher` (pattern: `internal/tui/model_test.go` `launchCapture`) → `LaunchCmd.Run` → done event → argv contains `steam://rungameid/100`; output `launch requested: Game One`.
   - `TestHookCommandTogglesDisabled`: committed row → `HookCmd{Enable:false|Disable:true}` via xor fields → row `Disabled` true → output `disabled OptiScaler hook for Game One`; second run `Enable:true` → false → output `enabled …`.
-- [ ] **Step 2: Run red.**
-- [ ] **Step 3: Implement** — `LaunchCmd`: session + `sess.Launch(c.Path)` + `waitForOp` + print `ev.Text` (failed → exit 1). `HookCmd`: session + validate exactly one of Enable/Disable (kong `xor:"hookstate"` on both fields) + `sess.ToggleDisabled(c.Path)` + read the row + print; NO waiter (sync op), no `--timeout`.
+- [x] **Step 2: Run red.**
+- [x] **Step 3: Implement** — `LaunchCmd`: session + `sess.Launch(c.Path)` + `waitForOp` + print `ev.Text` (failed → exit 1). `HookCmd`: session + validate exactly one of Enable/Disable (kong `xor:"hookstate"` on both fields) + `sess.ToggleDisabled(c.Path)` + read the row + print; NO waiter (sync op), no `--timeout`.
 
-- [ ] **Step 4: Green** — both tests pass.
+- [x] **Step 4: Green** — both tests pass.
 
 ### Task 6: docs, gates, review, commit
 
@@ -396,10 +396,10 @@ type DLSSRestoreCmd struct {
 - Modify: `docs/scope.md` (new `## v0.16 scope (CLI surfaces)` section: the five commands, consent model, exit codes, timeout default; note stable-only stays / nightly dropped), `docs/architecture.md` (new `## CLI surfaces (v0.16)` section after the shared-dropdown section: session-backed one-shot ops, the waiter, consent on stdin, no --yes), `README.md` (Commands list: the five new commands with one-line descriptions), `docs/log.md` (append entry), `docs/index.md` (mention CLI ops in the intro if it lists surfaces).
 - No repo file outside cmd/ + docs/ changes.
 
-- [ ] **Step 1: Write the doc edits** (OKF section style, ISO date headings, prose matching implemented behavior — every claim traceable to a command).
-- [ ] **Step 2: Full gates** — vet, uncached full suite (`29/29` expected plus new cmd tests), race `./cmd/ ./internal/ui/`, lint `0 issues.`
-- [ ] **Step 3: Two-axis /code-review** (Standards + Spec subagents on the working diff); address findings.
-- [ ] **Step 4: Commit** — `feat: add one-shot CLI commands for switch, dlss, launch, and hook ops`; body lists the commands, the waiter + consent model, the two Deps seams, and the red-proofed tests. Include the plan doc `docs/superpowers/plans/2026-09-13-cli-surfaces.md` in the commit.
+- [x] **Step 1: Write the doc edits** (OKF section style, ISO date headings, prose matching implemented behavior — every claim traceable to a command).
+- [x] **Step 2: Full gates** — vet, uncached full suite (`29/29` expected plus new cmd tests), race `./cmd/ ./internal/ui/`, lint `0 issues.`
+- [x] **Step 3: Two-axis /code-review** (Standards + Spec subagents on the working diff); address findings.
+- [x] **Step 4: Commit** — `feat: add one-shot CLI commands for switch, dlss, launch, and hook ops`; body lists the commands, the waiter + consent model, the two Deps seams, and the red-proofed tests. Include the plan doc `docs/superpowers/plans/2026-09-13-cli-surfaces.md` in the commit.
 
 ## Self-Review
 

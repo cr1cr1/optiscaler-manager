@@ -170,8 +170,20 @@ optiscaler-manager scan             # list installed games + upscalers/versions
 optiscaler-manager install <path>   # install OptiScaler into a game directory
 optiscaler-manager uninstall <path> # SHA-verified removal
 optiscaler-manager rollback <path>  # restore after an interrupted/failed install
+optiscaler-manager switch <path> [--version <tag|latest>] # switch version (default: preferences default)
+optiscaler-manager dlss-update <path>   # update the NVIDIA DLSS runtime set
+optiscaler-manager dlss-restore <path> [--snapshot <id>] # restore a DLSS backup (default: newest)
+optiscaler-manager launch <path>        # fire-and-forget launch request
+optiscaler-manager hook <path> --enable|--disable # park/un-park the hook DLL
 optiscaler-manager version
 ```
+
+The session-backed ops (`switch`, `dlss-update`, `dlss-restore`,
+`launch`, `hook`) run the same core as the GUI/TUI and honor the same
+consent model: gates prompt `y/n` on the terminal, and a non-interactive
+stdin declines — there is no `--yes` flag. `--timeout` (default 10m)
+bounds every wait (the synchronous `hook` toggle has none); failures
+exit 1, usage errors exit 2.
 
 ### Environment variables
 

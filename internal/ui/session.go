@@ -51,6 +51,14 @@ const (
 	// check settled (State.DLSSLatest/DLSSCached changed). The event is
 	// only a poke; renderers re-read the snapshot.
 	EvDLSSStatus
+	// EvOpSettled is the ONE terminal event of a compound op (the version
+	// switch chain: pre-flight, uninstall leg, install leg, ini
+	// write-back). The chain's sub-legs emit their own EvOpDone/Failed
+	// events mid-flight — a waiter must not mistake those for the end.
+	// Single-leg ops never emit it; their done/failed/cancelled events
+	// are terminal. The frontends only poke on events, so the kind is
+	// invisible to them; the CLI one-shot waiter keys on it.
+	EvOpSettled
 )
 
 // Scan progress phases, in pipeline order. "covers" includes the manual

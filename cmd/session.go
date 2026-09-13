@@ -1,6 +1,7 @@
 package optiscalermanager
 
 import (
+	"context"
 	"net/http"
 	"path/filepath"
 	"time"
@@ -16,6 +17,22 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
+// cmdContext is the one-shot command context: no deadline of its own — the
+// per-command --timeout bounds the wait, the op context bounds the work.
+func cmdContext() context.Context { return context.Background() }
+
+// rowOfSession returns the snapshot row for dir (found=false when the dir
+// is unknown to the session).
+func rowOfSession(sess *ui.Session, dir string) (ui.GameRow, bool) {
+	rows := sess.Snapshot().Rows
+	for i := range rows {
+		if rows[i].InstallDir == dir {
+			return rows[i], true
+		}
+	}
+	return ui.GameRow{}, false
+}
+
 // newSession builds the interactive session both interactive frontends
 // (GUI, TUI) share from command deps.
 func newSession(d *Deps) *ui.Session {
@@ -27,22 +44,32 @@ func newSession(d *Deps) *ui.Session {
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	steamClient, protonClient := onlineClients(d.CacheDir, d.Version)
 	pcgwClient := pcgw.New(httpClient, filepath.Join(d.CacheDir, "pcgw"), d.Version)
-	coverClient := covers.New(httpClient, filepath.Join(d.CacheDir, "covers"))
-	coverClient.PCGW = pcgwClient
-	coverClient.UserAgent = "optiscaler-manager/" + d.Version + " (https://github.com/cr1cr1/optiscaler-manager)"
-	return ui.NewSession(ui.Deps{
+	dlssClient := d.DLSS
+	if dlssClient == nil {
+		dlssClient = dlss.New(httpClient)
+	}
+	coverClient := d.Covers
+	if coverClient == nil {
+		coverClient = covers.New(httpClient, filepath.Join(d.CacheDir, "covers"))
+		coverClient.PCGW = pcgwClient
+		coverClient.UserAgent = "optiscaler-manager/" + d.Version + " (https://github.com/cr1cr1/optiscaler-manager)"
+	}
+	sess := ui.NewSession(ui.Deps{
 		Store:        d.Store,
 		GH:           d.GH,
-		DLSS:         dlss.New(httpClient),
+		DLSS:         dlssClient,
 		Covers:       coverClient,
 		CacheDir:     d.CacheDir,
 		Settings:     prefs,
 		SettingsRoot: d.DataRoot,
+		SteamRoot:    d.SteamRoot,
 		Steam:        steamClient,
 		ProtonDB:     protonClient,
 		PCGW:         pcgwClient,
+		Launcher:     d.Launcher, // nil selects the platform default
 		UmuLauncher:  newUmuLauncher(prefs),
 	})
+	return sess
 }
 
 // onlineClients builds the Steam/ProtonDB lookup clients that feed the

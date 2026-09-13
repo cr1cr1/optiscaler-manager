@@ -3114,3 +3114,62 @@ opens the restore menu of local backup sets.
   sabotage: all four failure subtests fail, the 403 subtest stays green.
 - docs/log.md header now states the dates are session dates.
   Full `go test ./...` green.
+
+## 2026-09-13 — v0.16: CLI surfaces (switch, dlss, launch, hook)
+
+- Five one-shot commands over the shared session core (the long-deferred
+  scope): `switch <dir> [--version <tag|latest>]`, `dlss-update <dir>`,
+  `dlss-restore <dir> [--snapshot <id>]` (default newest), `launch
+  <dir>`, and `hook <dir> --enable|--disable`. Each boots the same
+  `ui.Session` the GUI/TUI use, waits for the games list to settle
+  (`awaitRow`: warm cache is synchronous, cold boot awaits the scan),
+  dispatches, and blocks on a CLI event waiter. `--timeout` (default
+  10m) bounds every wait; exit codes 0/1/2.
+- Consent gates are answered on the terminal (y/n); a non-TTY stdin
+  declines via `charmbracelet/x/term.IsTerminal` (already vendored) and
+  the command exits 1 — a refused op never started (gates pause before
+  the op registers), so consent is never bypassed and no `--yes` flag
+  exists.
+- Core contract addition: the version-switch chain settles with exactly
+  one `EvOpSettled` ("switched to <tag>", "already at <tag>", "switch
+  cancelled", "switch failed: …", "cannot resolve …"); its sub-legs'
+  done/failed events are mid-flight only. The GUI discards events and
+  the TUI treats them as render pokes, so the frontends are unaffected;
+  the same-version no-op now reports instead of dispatching nothing.
+- Testability seams in `cmd.Deps`: `DLSS`, `Launcher`, `Covers` (nil →
+  built in `newSession`, like `GH`), and `SteamRoot` ("" → auto-detect;
+  session tests pin the fixture root so a scan never touches the real
+  machine — caught the hard way when an unpinned test scanned the real
+  libraries). The session-backed tests run OFFLINE: `testDeps` saves
+  settings with `OnlineLookups: false` (skips enrichment and the startup
+  DLSS pre-download) and points the covers client at a dead port (a
+  cover miss is tolerated); the fixtures' own fakes (GitHub, NVIDIA)
+  serve the rest.
+- Tests (red-first, all witnessed red): waiter done/declined/accepted
+  paths end-to-end through a real install; switch concrete-tag +
+  pick-time `latest` resolution + both no-op kinds (the latest no-op
+  red-proved the mid-chain `EvOpDone` race: the waiter used to return
+  on the uninstall leg's done event and read a stale row); DLSS
+  update/restore incl. default-newest and non-interactive decline;
+  launch argv via the injected runner; hook round-trip and
+  redundant-state no-op. Failure paths pinned after the standards
+  review: unresolvable `latest` (empty releases list) settles and exits
+  1, failed DLSS update and failed launch exit 1 with the reason,
+  unknown snapshot id fails fast (the session only toasts — dispatching
+  an unknown id would hang the one-shot CLI), hook on an uninstalled
+  game fails instead of a false "already enabled", and `hook` with
+  neither state flag is a kong parse error (exit 2) — verified through
+  the real CLI entry point after `Run` learned to pass a command's own
+  `ExitError` through unwrapped. The new pins were red-proved by
+  sabotage: resuming the accepted version-switch gate through the chain
+  instead of the wrapper times the waiter out (no settle), a
+  non-canonicalized path misses the rows' canonical install dirs
+  (symlinked library paths break), and skipping the warm-cache rescan
+  dead-ends a one-shot command whose games cache predates the game. Fixture facts learned: `nvngx_dlss.dll`
+  is never a hook candidate (the toggle parks `dxgi.dll`), and backup
+  snapshots dedupe by content (a second update of the same pair adds no
+  new snapshot — the restore's own current-backup is the newest then).
+- Full gates green: vet, uncached `go test ./...` (29 packages), race on
+  cmd+ui, golangci-lint 0 issues. Standards-axis review addressed
+  (all four majors fixed, minors taken); spec-axis review run before
+  commit.
