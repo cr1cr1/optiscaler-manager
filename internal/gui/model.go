@@ -40,6 +40,8 @@ type model struct {
 	settingsTab         settingsTab                 // settings-modal active tab, reset to General on open
 	settingsTabRects    map[settingsTab]Rect        // screen rects of the settings tab buttons (click test seam)
 	settingsTabIDs      map[settingsTab]ContainerId // container ids of the settings tab buttons (focus test seam)
+	settingsContentRect Rect                        // screen rect of the settings tab content area (height test seam)
+	settingsContentMinH float32                     // tallest tab content height seen this open; keeps the modal height stable
 	versionBuf          string
 	templateBuf         string
 	onlineBuf           bool                          // settings-modal online-lookups toggle buffer, primed on open

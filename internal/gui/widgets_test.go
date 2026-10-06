@@ -776,6 +776,35 @@ func TestEditMouseDoubleClickSelectsWord(t *testing.T) {
 	}
 }
 
+// The field's box keeps identical WIDTH across hint (unfocused, empty) and
+// focused-empty states: the hint disappearing on focus must not shrink the
+// field back to its minimum (the add-fork glob input visibly jumped).
+func TestEditFieldWidthStableAcrossHintAndFocus(t *testing.T) {
+	buf := ""
+	st := &editState{cursor: 0, anchor: -1, blink: time.Now(), phase: true}
+	var id ContainerId
+	view := func() {
+		Container(Attrs(Viewport, Pad(8)), func() {
+			themedInputState(&buf, "asset glob, e.g. OptiScaler*.zip", NoIcon, st, MinSize(180, fieldH), MaxSizeVec(Vec2{220, fieldH}))
+			id = GetLastId()
+		})
+	}
+	headlessFrames(t, 460, 60)
+	RunFrameFn(view)
+	RunFrameFn(view) // rect recorded from the previous frame pass
+	hintW := st.boxRect.Size[0]
+	if hintW == 0 {
+		t.Fatal("box rect not recorded")
+	}
+	FocusImmediateOn(id)
+	RunFrameFn(view)
+	RunFrameFn(view)
+	focusedW := st.boxRect.Size[0]
+	if hintW != focusedW {
+		t.Errorf("input box width = %v unfocused (hint) vs %v focused (empty), want identical — the hint must stay when the field is empty", hintW, focusedW)
+	}
+}
+
 // The text row keeps identical geometry across hint, focused-caret, and
 // text states: the caret must not change the row height (click-jitter).
 func TestEditFieldRowGeometryStable(t *testing.T) {

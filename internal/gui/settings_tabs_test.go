@@ -91,6 +91,31 @@ func TestGUISettingsGeneralTabHidesOptiscalerFields(t *testing.T) {
 	}
 }
 
+// TestGUISettingsModalKeepsHeightAcrossTabs: the modal must not resize
+// when switching tabs — the content area holds the tallest height seen
+// while the modal is open.
+func TestGUISettingsModalKeepsHeightAcrossTabs(t *testing.T) {
+	sess, _ := guiFakesWithDirs(t, "/games/alpha", "/games/beta")
+	m := newModel(Config{Session: sess})
+	m.openSettings()
+
+	headlessFrames(t, 1100, 700)
+	keyFrame(KeyCodeNone, 0, m.rootView) // build
+	keyFrame(KeyCodeNone, 0, m.rootView) // settle: measurement converges
+	hGeneral := m.settingsContentRect.Size[1]
+	if hGeneral == 0 {
+		t.Fatal("settings content height not measured on the General tab")
+	}
+
+	keyFrame(KeyTab, 0, m.rootView)      // Optiscaler tab
+	keyFrame(KeyEnter, 0, m.rootView)    // switch
+	keyFrame(KeyCodeNone, 0, m.rootView) // settle
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if got := m.settingsContentRect.Size[1]; got != hGeneral {
+		t.Errorf("settings content height = %v on the Optiscaler tab, want %v (modal must keep its height across tabs)", got, hGeneral)
+	}
+}
+
 // TestGUISettingsTabSwitchViaMouse: clicking the Optiscaler tab switches
 // the modal to it AND moves keyboard focus to it (the focus ring is the
 // selection read-out; a click that leaves the ring on General looks like

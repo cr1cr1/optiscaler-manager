@@ -3322,3 +3322,18 @@ opens the restore menu of local backup sets.
   `TestGUISettingsAddForkActivates` red first. README GUI settings
   paragraph updated for the two tabs. `go test ./...` green,
   `go vet`/`gofmt` clean.
+
+## 2026-10-07 — issue 8: settings modal stable size
+
+- The settings modal no longer resizes on tab switch: the tab-content
+  wrapper holds `MinHeight(tallest seen this open)` (reset on open), so
+  the shorter Optiscaler tab keeps the General tab's height and the
+  footer stays put.
+- `themedInput` no longer hides the placeholder hint when an empty field
+  gains focus — the hint disappearing had collapsed the add-fork glob
+  input from 210px to its 180px minimum. The focused-empty caret is
+  dropped by design; the focus border is the affordance.
+- TDD: measurement seams first (`settingsContentRect`, `boxRect`),
+  behavioral reds witnessed (height 303.5 vs 417.3; width 209.9 vs 180),
+  then the fixes. Tab funcs flattened into the measuring wrapper.
+  `go test ./...` green, `go vet`/`gofmt` clean.

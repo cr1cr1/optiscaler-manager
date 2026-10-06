@@ -111,6 +111,7 @@ type editState struct {
 	phase    bool
 	dragging bool
 	textRect Rect // screen rect of the text area, recorded each frame
+	boxRect  Rect // screen rect of the field box, recorded each frame (width-stability seam)
 }
 
 // selRange normalizes anchor/cursor into (lo, hi, hasSelection).
@@ -383,6 +384,10 @@ func themedInputState(buf *string, hint string, icon widgets.IconGlyph, st *edit
 	// hover-chain rule): the caret, not a hand, signals editability.
 	box := Attrs(Focusable, TextEntry, Row, CrossMid, Corners(radiusM), BackgroundVec(bgRaised), BorderWidth(1), BorderColorVec(border), Pad2(2, sp12), Clip)
 	Container(AttrsWith(box, sizing...), func() {
+		st0 := st
+		if st0 != nil {
+			st0.boxRect = GetScreenRectOf(CurrentId())
+		}
 		if st == nil {
 			st = UseWithInit("edit:"+hint, func() *editState {
 				return &editState{cursor: len([]rune(*buf)), anchor: -1, blink: time.Now(), phase: true}
@@ -424,9 +429,10 @@ func themedInputState(buf *string, hint string, icon widgets.IconGlyph, st *edit
 					Label(string(r[:st.cursor]), FontSize(13), TextColorVec(txtMain))
 					caretBar(st, focused)
 					Label(string(r[st.cursor:]), FontSize(13), TextColorVec(txtMain))
-				case focused:
-					caretBar(st, focused)
 				default:
+					// Empty: the hint stays even when focused (the focus border
+					// is the affordance) so the field never resizes when the
+					// hint would disappear; the caret appears once text exists.
 					Label(hint, FontSize(13), TextColorVec(txtMuted))
 				}
 			})

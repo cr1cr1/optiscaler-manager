@@ -92,6 +92,7 @@ func (m *model) openSettings() {
 		m.umuProtonBuf = s.UmuProtonPath
 	}
 	m.settingsTab = settingsTabGeneral
+	m.settingsContentMinH = 0 // re-measure the tallest tab on each open
 	m.settingsOpen = true
 }
 
@@ -114,11 +115,19 @@ func (m *model) settingsModal() {
 		Container(Attrs(Expand, Gap(sp16), BackgroundVec(bgPanel)), func() {
 			Label("Settings", FontSize(18), TextColorVec(txtMain), FontWeight(WeightBold))
 			m.settingsTabBar()
-			if m.settingsTab == settingsTabOptiscaler {
-				m.settingsOptiscalerTab()
-			} else {
-				m.settingsGeneralTab()
-			}
+			// The content wrapper never shrinks below the tallest tab seen
+			// this open: switching tabs must not resize the modal.
+			Container(Attrs(Expand, Gap(sp16), MinHeight(m.settingsContentMinH)), func() {
+				if m.settingsTab == settingsTabOptiscaler {
+					m.settingsOptiscalerTab()
+				} else {
+					m.settingsGeneralTab()
+				}
+				m.settingsContentRect = GetScreenRectOf(CurrentId())
+				if h := m.settingsContentRect.Size[1]; h > m.settingsContentMinH {
+					m.settingsContentMinH = h
+				}
+			})
 
 			if m.sess != nil && focusableButton(SymIRight, "Apply") {
 				m.applySettings()
@@ -191,73 +200,71 @@ func (m *model) settingsTabButton(tab settingsTab, label string) {
 }
 
 // settingsGeneralTab: library view, scan directories, launch template, and
-// the umu-launcher section.
+// the umu-launcher section. Renders into the modal's content wrapper (which
+// provides the inter-section gap).
 func (m *model) settingsGeneralTab() {
-	Container(Attrs(Expand, Gap(sp16)), func() {
-		Container(Attrs(Expand, Gap(sp4)), func() {
-			sectionTitle("Library")
-			if m.sess != nil {
-				focusableToggle(&m.onlineBuf, "Online game info (Steam/ProtonDB)")
-				if m.onlineBuf != m.sess.Settings().OnlineLookups {
-					m.sess.SetOnlineLookups(m.onlineBuf)
-				}
-				m.cardSizeSelector()
+	Container(Attrs(Expand, Gap(sp4)), func() {
+		sectionTitle("Library")
+		if m.sess != nil {
+			focusableToggle(&m.onlineBuf, "Online game info (Steam/ProtonDB)")
+			if m.onlineBuf != m.sess.Settings().OnlineLookups {
+				m.sess.SetOnlineLookups(m.onlineBuf)
 			}
-		})
+			m.cardSizeSelector()
+		}
+	})
 
-		Container(Attrs(Expand, Gap(sp4)), func() {
-			sectionTitle("Scan Directories")
-			m.settingsDirsSection()
-		})
+	Container(Attrs(Expand, Gap(sp4)), func() {
+		sectionTitle("Scan Directories")
+		m.settingsDirsSection()
+	})
 
-		Container(Attrs(Expand, Gap(sp4)), func() {
-			sectionTitle("Launch Template")
-			muted("Command template for manually added games; {exe} and {args} are substituted")
-			themedInput(&m.templateBuf, `"{exe}" {args}`, NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
-		})
+	Container(Attrs(Expand, Gap(sp4)), func() {
+		sectionTitle("Launch Template")
+		muted("Command template for manually added games; {exe} and {args} are substituted")
+		themedInput(&m.templateBuf, `"{exe}" {args}`, NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+	})
 
-		Container(Attrs(Expand, Gap(sp4)), func() {
-			sectionTitle("umu-launcher (Linux: Windows games via Proton)")
-			if m.sess != nil {
-				focusableToggle(&m.umuEnabledBuf, "Launch Windows binaries via umu-launcher")
-				if m.umuEnabledBuf != m.sess.Settings().UmuEnabled {
-					m.sess.SetUmuEnabled(m.umuEnabledBuf)
-				}
-				muted("Proton path (blank = auto-detect from Steam / Bottles / umu)")
-				themedInput(&m.umuProtonBuf, "", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
-				if m.umuProtonBuf != m.sess.Settings().UmuProtonPath {
-					m.sess.SetUmuProtonPath(m.umuProtonBuf)
-				}
+	Container(Attrs(Expand, Gap(sp4)), func() {
+		sectionTitle("umu-launcher (Linux: Windows games via Proton)")
+		if m.sess != nil {
+			focusableToggle(&m.umuEnabledBuf, "Launch Windows binaries via umu-launcher")
+			if m.umuEnabledBuf != m.sess.Settings().UmuEnabled {
+				m.sess.SetUmuEnabled(m.umuEnabledBuf)
 			}
-		})
+			muted("Proton path (blank = auto-detect from Steam / Bottles / umu)")
+			themedInput(&m.umuProtonBuf, "", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+			if m.umuProtonBuf != m.sess.Settings().UmuProtonPath {
+				m.sess.SetUmuProtonPath(m.umuProtonBuf)
+			}
+		}
 	})
 }
 
 // settingsOptiscalerTab: everything OptiScaler-specific — the default
-// version, the distribution sources (forks), and the bundle cache.
+// version, the distribution sources (forks), and the bundle cache. Renders
+// into the modal's content wrapper (which provides the inter-section gap).
 func (m *model) settingsOptiscalerTab() {
-	Container(Attrs(Expand, Gap(sp16)), func() {
-		Container(Attrs(Expand, Gap(sp4)), func() {
-			sectionTitle("Version")
-			muted("Default OptiScaler version (tag or 'latest')")
-			themedInput(&m.versionBuf, "latest", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
-		})
-
-		Container(Attrs(Expand, Gap(sp4)), func() {
-			sectionTitle("Sources")
-			muted("Distribution fork installs download from (owner/repo + asset glob)")
-			m.settingsForksSection()
-		})
-
-		if m.sess != nil {
-			Container(Attrs(Expand, Gap(sp4)), func() {
-				sectionTitle("Cache")
-				if focusableButton(SymIRight, "Clear OptiScaler cache") {
-					m.sess.ClearBundleCache()
-				}
-			})
-		}
+	Container(Attrs(Expand, Gap(sp4)), func() {
+		sectionTitle("Version")
+		muted("Default OptiScaler version (tag or 'latest')")
+		themedInput(&m.versionBuf, "latest", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
 	})
+
+	Container(Attrs(Expand, Gap(sp4)), func() {
+		sectionTitle("Sources")
+		muted("Distribution fork installs download from (owner/repo + asset glob)")
+		m.settingsForksSection()
+	})
+
+	if m.sess != nil {
+		Container(Attrs(Expand, Gap(sp4)), func() {
+			sectionTitle("Cache")
+			if focusableButton(SymIRight, "Clear OptiScaler cache") {
+				m.sess.ClearBundleCache()
+			}
+		})
+	}
 }
 
 // settingsDirsSection lists the session's extra scan directories with a
