@@ -372,6 +372,7 @@ func (s *Session) toRow(ctx context.Context, e app.LibraryEntry) GameRow {
 		ExePath:           e.Game.ExePath,
 		CompatPrefix:      e.Game.CompatPrefix,
 		OptiScalerVersion: e.OptiScalerVersion,
+		Fork:              e.Fork,
 		Status:            e.Status,
 		Actionable:        actionableStatus(e.Status),
 		Disabled:          e.Disabled,

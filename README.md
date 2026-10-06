@@ -32,6 +32,10 @@ uninstalls cleanly when you're done. Available for **Linux and Windows** (amd64)
 - Open a game's `OptiScaler.ini` for editing right from the app
 - Settings for default OptiScaler version, scan directories, launch template,
   online lookups, and card size
+- Selectable OptiScaler distribution: install from upstream or a fork —
+  [DLSSNR-PreSR-Multipass](https://github.com/jlrouzies-fr/OptiScaler-DLSSNR-PreSR-Multipass)
+  is bundled as the first alternative, and you can add your own
+  (owner/repo + asset glob) or remove them in Settings
 - Works offline: everything degrades gracefully with no network, and online
   lookups can be turned off entirely
 
@@ -123,7 +127,9 @@ version to switch to it, keeping your `OptiScaler.ini`.
 Arrow keys move the
 selection, Enter opens the detail panel, Esc closes it. The Settings window
 holds the default OptiScaler version, the card size, the scan-directory list,
-the launch template, the online game-info toggle, and the clear-cache action.
+the launch template, the online game-info toggle, the OptiScaler sources
+(pick the active distribution fork, add or remove your own), and the
+clear-cache action.
 Installed games get a Disable/Enable button in the detail panel: it parks
 the injection hook by renaming it — `.disabled`, or the backup name you
 chose if you renamed it by hand — instead of removing it, so the game
@@ -157,7 +163,7 @@ build in Settings, or leave it blank to auto-detect from Steam
 | `s` | Toggle sort (default / name) |
 | `R` | Rescan the library |
 | Detail: `i` `v` `u` `p` `l` `c` `r` `o` `d` | Install / switch version / update the NVIDIA DLSS set / restore a DLSS backup (`p` opens the backup list, `enter` picks, then `y` confirm) / launch / cancel / rollback / open OptiScaler.ini / disable-enable the OptiScaler hook |
-| Settings: `e` `t` `a` `d` `x` `o` `u` `p` | Edit version / edit launch template / add dir / remove dir (`y`/`n`) / clear bundle cache / toggle online game info / toggle umu-launcher / edit umu Proton path |
+| Settings: `tab` `enter` `e` `t` `a` `d` `x` `o` `u` `p` | Switch sources/dirs list / use fork / edit version / edit launch template / add dir or fork / remove dir or fork (`y`/`n`) / clear bundle cache / toggle online game info / toggle umu-launcher / edit umu Proton path |
 | Confirm modal | `y` proceed, `n` cancel |
 
 ### Command line

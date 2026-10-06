@@ -17,9 +17,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -38,16 +38,16 @@ const (
 	cooldown = 15 * time.Minute
 
 	defaultBaseURL = "https://api.github.com"
-	releasesPath   = "/repos/optiscaler/OptiScaler/releases?per_page=30"
 
 	releasesCacheFile = "releases.json"
 	cooldownFile      = "cooldown.json"
 
-	// Asset glob: prefix + suffix, case-sensitive, matching how upstream
-	// publishes. Never an exact filename — names embed a date and a _MM
-	// marker (docs/scope.md).
-	assetPrefix = "Optiscaler_"
-	assetSuffix = ".7z"
+	// Upstream distribution source: the repository every legacy client
+	// talks to, and the glob matching its bundle assets. The glob is a
+	// path.Match pattern, never an exact filename — names embed a date
+	// and a _MM marker (docs/scope.md). Fork clients override both.
+	defaultSlug         = "optiscaler/OptiScaler"
+	defaultAssetPattern = "Optiscaler_*.7z"
 )
 
 // Release mirrors the GitHub API release JSON fields actually used.
@@ -72,6 +72,11 @@ type Client struct {
 	// baseURL is unexported so tests can point at httptest servers.
 	baseURL string
 
+	// slug is the owner/repo release source; assetPattern is the
+	// path.Match glob selectAsset applies. Both default to upstream.
+	slug         string
+	assetPattern string
+
 	// now is a clock hook for tests (cooldown expiry).
 	now func() time.Time
 
@@ -91,15 +96,31 @@ type Client struct {
 	downloadURLs map[string]string
 }
 
-// New returns a Client. A nil httpClient uses http.DefaultClient.
+// New returns a Client for the upstream OptiScaler repository. A nil
+// httpClient uses http.DefaultClient.
 func New(httpClient *http.Client, cacheDir string) *Client {
+	return NewFork(httpClient, cacheDir, "", "")
+}
+
+// NewFork is New pointed at an arbitrary fork: slug is the owner/repo
+// release source and assetPattern the path.Match glob for its bundle
+// asset. Empty values fall back to upstream.
+func NewFork(httpClient *http.Client, cacheDir, slug, assetPattern string) *Client {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
+	}
+	if slug == "" {
+		slug = defaultSlug
+	}
+	if assetPattern == "" {
+		assetPattern = defaultAssetPattern
 	}
 	return &Client{
 		http:         httpClient,
 		cacheDir:     cacheDir,
 		baseURL:      defaultBaseURL,
+		slug:         slug,
+		assetPattern: assetPattern,
 		now:          time.Now,
 		downloadURLs: make(map[string]string),
 	}
@@ -108,9 +129,19 @@ func New(httpClient *http.Client, cacheDir string) *Client {
 // NewWithBaseURL is New with an explicit API base URL, for tests and
 // OM_GH_BASE_URL-style overrides.
 func NewWithBaseURL(httpClient *http.Client, cacheDir, baseURL string) *Client {
-	c := New(httpClient, cacheDir)
+	return NewForkWithBaseURL(httpClient, cacheDir, baseURL, "", "")
+}
+
+// NewForkWithBaseURL is NewFork with an explicit API base URL.
+func NewForkWithBaseURL(httpClient *http.Client, cacheDir, baseURL, slug, assetPattern string) *Client {
+	c := NewFork(httpClient, cacheDir, slug, assetPattern)
 	c.baseURL = baseURL
 	return c
+}
+
+// releasesURL is the release-list endpoint for the client's repository.
+func (c *Client) releasesURL() string {
+	return c.baseURL + "/repos/" + c.slug + "/releases?per_page=30"
 }
 
 // Resolve maps a requested version to a concrete release asset.
@@ -119,10 +150,11 @@ func NewWithBaseURL(httpClient *http.Client, cacheDir, baseURL string) *Client {
 // an exact tag match. Unknown values fail loud with an error naming the
 // requested value.
 //
-// Asset selection is a glob-style match `Optiscaler_*.7z` (prefix +
-// suffix, case-sensitive, as upstream publishes). Multiple matches pick
-// the lexicographically first; the chosen name is reported in
-// ResolvedAsset.AssetName for the caller to log. Zero matches is an error.
+// Asset selection is the client's path.Match glob (case-sensitive, as the
+// distribution publishes — upstream "Optiscaler_*.7z", forks their own).
+// Multiple matches pick the lexicographically first; the chosen name is
+// reported in ResolvedAsset.AssetName for the caller to log. Zero matches
+// is an error.
 //
 // ResolvedAsset.SHA256 is left empty: the GitHub API provides no digest;
 // it is filled at download time (see Download).
@@ -147,7 +179,7 @@ func (c *Client) Resolve(ctx context.Context, requested string) (resolved domain
 		return domain.ResolvedAsset{}, fromCache, err
 	}
 
-	asset, err := selectAsset(rel)
+	asset, err := c.selectAsset(rel)
 	if err != nil {
 		return domain.ResolvedAsset{}, fromCache, err
 	}
@@ -193,7 +225,7 @@ func (c *Client) releases(ctx context.Context) ([]Release, bool, error) {
 // failure records nothing — the next resolve retries the live API instead
 // of being locked out under a misleading rate-limit error (scope H4).
 func (c *Client) fetch(ctx context.Context) ([]Release, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+releasesPath, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.releasesURL(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -273,17 +305,17 @@ func selectRelease(releases []Release, requested string) (Release, error) {
 	return Release{}, fmt.Errorf("gh: requested version %q not found in releases", requested)
 }
 
-// selectAsset applies the Optiscaler_*.7z glob. Multiple matches pick the
-// lexicographically first.
-func selectAsset(rel Release) (Asset, error) {
+// selectAsset applies the client's asset glob (path.Match semantics,
+// case-sensitive). Multiple matches pick the lexicographically first.
+func (c *Client) selectAsset(rel Release) (Asset, error) {
 	var matches []Asset
 	for _, a := range rel.Assets {
-		if strings.HasPrefix(a.Name, assetPrefix) && strings.HasSuffix(a.Name, assetSuffix) {
+		if ok, err := path.Match(c.assetPattern, a.Name); err == nil && ok {
 			matches = append(matches, a)
 		}
 	}
 	if len(matches) == 0 {
-		return Asset{}, fmt.Errorf("gh: release %q has no asset matching %s*%s", rel.TagName, assetPrefix, assetSuffix)
+		return Asset{}, fmt.Errorf("gh: release %q has no asset matching %s", rel.TagName, c.assetPattern)
 	}
 	sort.Slice(matches, func(i, j int) bool { return matches[i].Name < matches[j].Name })
 	return matches[0], nil

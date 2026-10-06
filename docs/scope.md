@@ -20,12 +20,32 @@ here are closed; reopen only with new evidence.
 - OptiScaler ≥ 0.9 ships **one `.7z` asset** bundling fakenvapi, NukemFG
   (dlssg-to-fsr3), and FFX/XeSS SDK DLLs. There is no component registry, no
   beta channel, no version mix-and-match in v0.1.
-- Release asset resolved by **glob `Optiscaler_*.7z`**, never exact filename
-  (names embed a date and a `_MM` marker).
+- Release asset resolved by **glob**, never exact filename (names embed a
+  date and a `_MM` marker). The glob is per distribution fork: upstream
+  uses `Optiscaler_*.7z`; forks define their own (see the fork section
+  below).
 - After extraction, a **required-file set is validated**; mismatch fails loudly.
 - The separate upstream downloads the reference C# client uses are stale:
   Nukem9/dlssg-to-fsr3 ≥ 0.130 has no GitHub assets (moved to Nexus Mods);
   OptiPatcher is a raw `.asi` and out of scope.
+
+## Distribution forks
+
+- The OptiScaler source is **selectable** (Settings, GUI and TUI): a list
+  of forks — GitHub `owner/repo` slug + release-asset glob — with one
+  active entry driving every install, switch, and "latest" resolution.
+  Built-ins: upstream `optiscaler/OptiScaler` (`Optiscaler_*.7z`,
+  undeletable) and `jlrouzies-fr/OptiScaler-DLSSNR-PreSR-Multipass`
+  (`OptiScaler-NR-*.zip`); users add/delete their own.
+- The choice is **global**, never per-game. Each install records the fork
+  slug in its manifest; legacy manifests read as upstream.
+- Everything on disk namespaces per fork
+  (`<cache>/optiscaler/<fork-key>/`: release cache, cooldown, bundle
+  dirs), so same-named tags from different distributions can never
+  collide; the pre-fork flat cache migrates into the upstream namespace
+  on startup.
+- `.zip` bundles extract through the same sanitized pipeline as `.7z`
+  (archive format dispatches on the matched asset's extension).
 
 ## Install
 

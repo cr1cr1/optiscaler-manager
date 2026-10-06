@@ -20,60 +20,69 @@ func writeFile(t *testing.T, path string) {
 
 func TestCachedVersions(t *testing.T) {
 	tests := []struct {
-		name  string
-		setup func(t *testing.T, cacheDir string) (dir string)
-		want  []string
+		name    string
+		pattern string
+		setup   func(t *testing.T, bundleDir string)
+		want    []string
 	}{
 		{
-			name: "missing cache dir returns nil",
-			setup: func(t *testing.T, cacheDir string) string {
-				return filepath.Join(cacheDir, "does-not-exist")
-			},
-			want: nil,
+			name:    "missing bundle dir returns nil",
+			pattern: "Optiscaler_*.7z",
+			setup:   func(t *testing.T, bundleDir string) {},
+			want:    nil,
 		},
 		{
-			name: "empty optiscaler dir returns nil",
-			setup: func(t *testing.T, cacheDir string) string {
-				if err := os.MkdirAll(filepath.Join(cacheDir, "optiscaler"), 0o755); err != nil {
+			name:    "empty bundle dir returns nil",
+			pattern: "Optiscaler_*.7z",
+			setup: func(t *testing.T, bundleDir string) {
+				if err := os.MkdirAll(bundleDir, 0o755); err != nil {
 					t.Fatal(err)
 				}
-				return cacheDir
 			},
 			want: nil,
 		},
 		{
-			name: "version dir with valid bundle is included verbatim",
-			setup: func(t *testing.T, cacheDir string) string {
-				writeFile(t, filepath.Join(cacheDir, "optiscaler", "v0.9.4",
+			name:    "version dir with valid bundle is included verbatim",
+			pattern: "Optiscaler_*.7z",
+			setup: func(t *testing.T, bundleDir string) {
+				writeFile(t, filepath.Join(bundleDir, "v0.9.4",
 					"Optiscaler_0.9.4-final.20260718._MM.7z"))
-				return cacheDir
 			},
 			want: []string{"v0.9.4"},
 		},
 		{
-			name: "version dir with only non-matching files is excluded",
-			setup: func(t *testing.T, cacheDir string) string {
-				writeFile(t, filepath.Join(cacheDir, "optiscaler", "v0.9.4", ".download-123"))
-				writeFile(t, filepath.Join(cacheDir, "optiscaler", "v0.9.4", "notes.txt"))
-				return cacheDir
+			name:    "fork zip bundle matches the fork pattern",
+			pattern: "OptiScaler-NR-*.zip",
+			setup: func(t *testing.T, bundleDir string) {
+				writeFile(t, filepath.Join(bundleDir, "v0.8.92", "OptiScaler-NR-v0.8.92.zip"))
+				writeFile(t, filepath.Join(bundleDir, "v0.8.92", "OptiScaler-NR-v0.8.92-SHA256SUMS.txt"))
+			},
+			want: []string{"v0.8.92"},
+		},
+		{
+			name:    "version dir with only non-matching files is excluded",
+			pattern: "Optiscaler_*.7z",
+			setup: func(t *testing.T, bundleDir string) {
+				writeFile(t, filepath.Join(bundleDir, "v0.9.4", ".download-123"))
+				writeFile(t, filepath.Join(bundleDir, "v0.9.4", "notes.txt"))
 			},
 			want: nil,
 		},
 		{
-			name: "regular file named like a version is excluded",
-			setup: func(t *testing.T, cacheDir string) string {
-				writeFile(t, filepath.Join(cacheDir, "optiscaler", "v0.9.4"))
-				return cacheDir
+			name:    "regular file named like a version is excluded",
+			pattern: "Optiscaler_*.7z",
+			setup: func(t *testing.T, bundleDir string) {
+				writeFile(t, filepath.Join(bundleDir, "v0.9.4"))
 			},
 			want: nil,
 		},
 		{
-			name: "multiple versions sorted newest first (numeric, not lexicographic)",
-			setup: func(t *testing.T, cacheDir string) string {
-				writeFile(t, filepath.Join(cacheDir, "optiscaler", "v0.9.4", "Optiscaler_a.7z"))
-				writeFile(t, filepath.Join(cacheDir, "optiscaler", "v0.10.0", "Optiscaler_b.7z"))
-				writeFile(t, filepath.Join(cacheDir, "optiscaler", "v0.9.10", "Optiscaler_c.7z"))
-				return cacheDir
+			name:    "multiple versions sorted newest first (numeric, not lexicographic)",
+			pattern: "Optiscaler_*.7z",
+			setup: func(t *testing.T, bundleDir string) {
+				writeFile(t, filepath.Join(bundleDir, "v0.9.4", "Optiscaler_a.7z"))
+				writeFile(t, filepath.Join(bundleDir, "v0.10.0", "Optiscaler_b.7z"))
+				writeFile(t, filepath.Join(bundleDir, "v0.9.10", "Optiscaler_c.7z"))
 			},
 			want: []string{"v0.10.0", "v0.9.10", "v0.9.4"},
 		},
@@ -81,12 +90,12 @@ func TestCachedVersions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cacheDir := t.TempDir()
-			dir := tt.setup(t, cacheDir)
-			got := CachedVersions(dir)
-			t.Logf("CachedVersions(%q) = %v", dir, got)
+			bundleDir := filepath.Join(t.TempDir(), "bundle")
+			tt.setup(t, bundleDir)
+			got := CachedVersions(bundleDir, tt.pattern)
+			t.Logf("CachedVersions(%q, %q) = %v", bundleDir, tt.pattern, got)
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("CachedVersions(%q) = %v, want %v", dir, got, tt.want)
+				t.Errorf("CachedVersions(%q, %q) = %v, want %v", bundleDir, tt.pattern, got, tt.want)
 			}
 		})
 	}

@@ -1,13 +1,16 @@
-// Package archive extracts OptiScaler bundle archives (.7z) with hostile-input
-// defenses. Third-party archives are untrusted: entry names are sanitized
-// before any write, and extraction is capped against decompression bombs.
+// Package archive extracts OptiScaler bundle archives (.7z upstream, .zip
+// for forks that publish zips) with hostile-input defenses. Third-party
+// archives are untrusted: entry names are sanitized before any write, and
+// extraction is capped against decompression bombs.
 package archive
 
 import (
+	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	pathpkg "path"
 	"path/filepath"
@@ -24,19 +27,57 @@ const (
 	maxEntries   = 100_000       // entry-count cap
 )
 
+// archiveEntry is one member of an opened archive, format-agnostic.
+type archiveEntry struct {
+	name string
+	info fs.FileInfo
+	open func() (io.ReadCloser, error)
+}
+
+// openEntries opens the archive at path, dispatching on its extension
+// (.7z → sevenzip, .zip → stdlib zip), and returns its entries plus a
+// close func. Unknown extensions are an error — the format is never
+// sniffed, so a mislabeled download fails loud.
+func openEntries(path string) ([]archiveEntry, func(), error) {
+	switch ext := strings.ToLower(filepath.Ext(path)); ext {
+	case ".7z":
+		zr, err := sevenzip.OpenReader(path)
+		if err != nil {
+			return nil, nil, fmt.Errorf("open archive %s: %w", path, err)
+		}
+		entries := make([]archiveEntry, 0, len(zr.File))
+		for _, f := range zr.File {
+			entries = append(entries, archiveEntry{name: f.Name, info: f.FileInfo(), open: f.Open})
+		}
+		return entries, func() { _ = zr.Close() }, nil
+	case ".zip":
+		zr, err := zip.OpenReader(path)
+		if err != nil {
+			return nil, nil, fmt.Errorf("open archive %s: %w", path, err)
+		}
+		entries := make([]archiveEntry, 0, len(zr.File))
+		for _, f := range zr.File {
+			entries = append(entries, archiveEntry{name: f.Name, info: f.FileInfo(), open: f.Open})
+		}
+		return entries, func() { _ = zr.Close() }, nil
+	default:
+		return nil, nil, fmt.Errorf("archive %s: unsupported format %q (want .7z or .zip)", path, ext)
+	}
+}
+
 // List returns the entry names of the archive at path, in archive order.
 // Names are returned as stored (slash-separated), unsanitized; callers use
 // List for pre-validation only.
 func List(path string) ([]string, error) {
-	zr, err := sevenzip.OpenReader(path)
+	entries, closeFn, err := openEntries(path)
 	if err != nil {
-		return nil, fmt.Errorf("open archive %s: %w", path, err)
+		return nil, err
 	}
-	defer func() { _ = zr.Close() }()
+	defer closeFn()
 
-	names := make([]string, 0, len(zr.File))
-	for _, f := range zr.File {
-		names = append(names, f.Name)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.name)
 	}
 	return names, nil
 }
@@ -46,14 +87,14 @@ func List(path string) ([]string, error) {
 // oversized) abort the extraction with an error naming the offending entry;
 // nothing outside dstDir is ever written.
 func ExtractTo(archivePath, dstDir string) error {
-	zr, err := sevenzip.OpenReader(archivePath)
+	entries, closeFn, err := openEntries(archivePath)
 	if err != nil {
-		return fmt.Errorf("open archive %s: %w", archivePath, err)
+		return err
 	}
-	defer func() { _ = zr.Close() }()
+	defer closeFn()
 
-	if len(zr.File) > maxEntries {
-		return fmt.Errorf("archive %s: %d entries exceeds cap %d", archivePath, len(zr.File), maxEntries)
+	if len(entries) > maxEntries {
+		return fmt.Errorf("archive %s: %d entries exceeds cap %d", archivePath, len(entries), maxEntries)
 	}
 
 	if err := os.MkdirAll(dstDir, 0o755); err != nil {
@@ -62,33 +103,33 @@ func ExtractTo(archivePath, dstDir string) error {
 
 	seen := map[string]string{} // case-folded rel path → original name
 	var total int64
-	for _, f := range zr.File {
-		rel, err := SanitizeName(f.Name)
+	for _, e := range entries {
+		rel, err := SanitizeName(e.name)
 		if err != nil {
 			return fmt.Errorf("archive %s: %w", archivePath, err)
 		}
 		if prev, dup := seen[strings.ToLower(rel)]; dup {
-			return fmt.Errorf("archive %s: duplicate entry %q conflicts with %q", archivePath, f.Name, prev)
+			return fmt.Errorf("archive %s: duplicate entry %q conflicts with %q", archivePath, e.name, prev)
 		}
-		seen[strings.ToLower(rel)] = f.Name
+		seen[strings.ToLower(rel)] = e.name
 
-		if f.FileInfo().IsDir() {
+		if e.info.IsDir() {
 			if err := os.MkdirAll(filepath.Join(dstDir, rel), 0o755); err != nil {
 				return fmt.Errorf("create dir %s: %w", rel, err)
 			}
 			continue
 		}
-		if mode := f.FileInfo().Mode(); !mode.IsRegular() {
-			return fmt.Errorf("archive %s: entry %q is not a regular file (mode %s)", archivePath, f.Name, mode)
+		if mode := e.info.Mode(); !mode.IsRegular() {
+			return fmt.Errorf("archive %s: entry %q is not a regular file (mode %s)", archivePath, e.name, mode)
 		}
-		if f.FileInfo().Size() > maxFileSize {
-			return fmt.Errorf("archive %s: entry %q exceeds per-file cap", archivePath, f.Name)
+		if e.info.Size() > maxFileSize {
+			return fmt.Errorf("archive %s: entry %q exceeds per-file cap", archivePath, e.name)
 		}
-		total += f.FileInfo().Size()
+		total += e.info.Size()
 		if total > maxTotalSize {
 			return fmt.Errorf("archive %s: total size exceeds cap", archivePath)
 		}
-		if err := extractOne(f, filepath.Join(dstDir, rel)); err != nil {
+		if err := extractOne(e, filepath.Join(dstDir, rel)); err != nil {
 			return err
 		}
 	}
@@ -128,10 +169,10 @@ func SanitizeName(name string) (string, error) {
 
 // extractOne streams one regular-file entry to disk through a SHA-256 hasher
 // (the hash is logged by callers via HashEntry; here we only stream).
-func extractOne(f *sevenzip.File, dest string) error {
-	rc, err := f.Open()
+func extractOne(e archiveEntry, dest string) error {
+	rc, err := e.open()
 	if err != nil {
-		return fmt.Errorf("open entry %q: %w", f.Name, err)
+		return fmt.Errorf("open entry %q: %w", e.name, err)
 	}
 	defer func() { _ = rc.Close() }()
 
@@ -144,7 +185,7 @@ func extractOne(f *sevenzip.File, dest string) error {
 	}
 	if _, err := io.Copy(out, rc); err != nil {
 		_ = out.Close()
-		return fmt.Errorf("extract %q: %w", f.Name, err)
+		return fmt.Errorf("extract %q: %w", e.name, err)
 	}
 	if err := out.Close(); err != nil {
 		return fmt.Errorf("close %s: %w", dest, err)
@@ -156,17 +197,17 @@ func extractOne(f *sevenzip.File, dest string) error {
 // digest and size. Used by the spike test to prove the decompression path
 // (including BCJ2-filtered DLLs) end to end.
 func HashEntry(path, entryName string) (digest string, size int64, err error) {
-	zr, err := sevenzip.OpenReader(path)
+	entries, closeFn, err := openEntries(path)
 	if err != nil {
-		return "", 0, fmt.Errorf("open archive %s: %w", path, err)
+		return "", 0, err
 	}
-	defer func() { _ = zr.Close() }()
+	defer closeFn()
 
-	for _, f := range zr.File {
-		if f.Name != entryName {
+	for _, e := range entries {
+		if e.name != entryName {
 			continue
 		}
-		rc, err := f.Open()
+		rc, err := e.open()
 		if err != nil {
 			return "", 0, fmt.Errorf("open entry %q: %w", entryName, err)
 		}
@@ -184,19 +225,18 @@ func HashEntry(path, entryName string) (digest string, size int64, err error) {
 // EntryNames is a small helper for tests and validation: base names of all
 // regular-file entries, lower-cased.
 func EntryNames(path string) ([]string, error) {
-	zr, err := sevenzip.OpenReader(path)
+	entries, closeFn, err := openEntries(path)
 	if err != nil {
-		return nil, fmt.Errorf("open archive %s: %w", path, err)
+		return nil, err
 	}
-	defer func() { _ = zr.Close() }()
+	defer closeFn()
 
 	var out []string
-	for _, f := range zr.File {
-		info := f.FileInfo()
-		if info.IsDir() || !info.Mode().IsRegular() {
+	for _, e := range entries {
+		if e.info.IsDir() || !e.info.Mode().IsRegular() {
 			continue
 		}
-		out = append(out, strings.ToLower(pathpkg.Base(f.Name)))
+		out = append(out, strings.ToLower(pathpkg.Base(e.name)))
 	}
 	return out, nil
 }

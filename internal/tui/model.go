@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/termopen"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 	"github.com/cr1cr1/optiscaler-manager/internal/version"
@@ -40,6 +41,18 @@ const (
 	inputEditVersion
 	inputEditTemplate
 	inputEditUmuProton
+	inputAddForkSlug
+	inputAddForkPattern
+)
+
+// settingsFocus names the settings-screen list j/k/a/d act on: the scan
+// directories (default, legacy behavior) or the OptiScaler sources list
+// (tab toggles).
+type settingsFocus int
+
+const (
+	settingsFocusDirs settingsFocus = iota
+	settingsFocusForks
 )
 
 // Model is the bubbletea model bound to one ui.Session: one flat model with
@@ -48,22 +61,26 @@ type Model struct {
 	sess    *ui.Session
 	version string // build version, rendered on the About screen
 
-	screen       screen
-	cursor       int // games row cursor
-	dirCursor    int // settings directory cursor
-	detailDir    string
-	width        int
-	height       int
-	gamesVP      viewport.Model
-	detailVP     viewport.Model
-	settingsVP   viewport.Model
-	input        textinput.Model
-	mode         inputMode
-	spin         spinner.Model
-	confirmRmDir string // directory pending inline remove confirmation
-	cycle        *stagedCycle
-	backups      []stagedItem // detail dir's DLSS backups (menu + modal)
-	restore      *restorePick // open restore-backup modal
+	screen          screen
+	cursor          int // games row cursor
+	dirCursor       int // settings directory cursor
+	forkCursor      int // settings OptiScaler-source cursor
+	settingsFocus   settingsFocus
+	detailDir       string
+	width           int
+	height          int
+	gamesVP         viewport.Model
+	detailVP        viewport.Model
+	settingsVP      viewport.Model
+	input           textinput.Model
+	mode            inputMode
+	spin            spinner.Model
+	confirmRmDir    string // directory pending inline remove confirmation
+	confirmRmFork   string // fork slug pending inline remove confirmation
+	pendingForkSlug string // slug carried from the add-fork slug input to the pattern input
+	cycle           *stagedCycle
+	backups         []stagedItem // detail dir's DLSS backups (menu + modal)
+	restore         *restorePick // open restore-backup modal
 }
 
 // restorePick is the open restore-backup modal: the detail dir, its cached
@@ -320,6 +337,11 @@ func (m *Model) clamp() {
 	} else if m.dirCursor >= n {
 		m.dirCursor = n - 1
 	}
+	if n := len(m.sess.Settings().Forks); n == 0 {
+		m.forkCursor = 0
+	} else if m.forkCursor >= n {
+		m.forkCursor = n - 1
+	}
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -348,6 +370,18 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmRmDir = ""
 		case "n", "N", "esc":
 			m.confirmRmDir = ""
+		}
+		return m, nil
+	}
+
+	// As is the settings remove-fork confirmation.
+	if m.confirmRmFork != "" {
+		switch msg.String() {
+		case "y", "Y":
+			_ = m.sess.RemoveFork(m.confirmRmFork)
+			m.confirmRmFork = ""
+		case "n", "N", "esc":
+			m.confirmRmFork = ""
 		}
 		return m, nil
 	}
@@ -562,23 +596,57 @@ func openINIEditor(sess *ui.Session, dir string) tea.Cmd {
 
 func (m Model) settingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	dirs := m.sess.Settings().ExtraDirs
+	forks := m.sess.Settings().Forks
+	forkList := m.settingsFocus == settingsFocusForks
 	switch msg.String() {
+	case "tab":
+		if forkList {
+			m.settingsFocus = settingsFocusDirs
+		} else {
+			m.settingsFocus = settingsFocusForks
+		}
 	case "j", "down":
-		if m.dirCursor < len(dirs)-1 {
+		if forkList {
+			if m.forkCursor < len(forks)-1 {
+				m.forkCursor++
+			}
+		} else if m.dirCursor < len(dirs)-1 {
 			m.dirCursor++
 		}
 	case "k", "up":
-		if m.dirCursor > 0 {
+		if forkList {
+			if m.forkCursor > 0 {
+				m.forkCursor--
+			}
+		} else if m.dirCursor > 0 {
 			m.dirCursor--
+		}
+	case "enter":
+		if forkList && m.forkCursor < len(forks) {
+			_ = m.sess.SetActiveFork(forks[m.forkCursor].Slug)
 		}
 	case "e":
 		m.openInput(inputEditVersion, "default version: ", m.sess.Settings().DefaultVersion)
 	case "t":
 		m.openInput(inputEditTemplate, "launch template: ", m.sess.Settings().LaunchTemplate)
 	case "a":
-		m.openInput(inputAddDir, "add dir: ", "")
+		if forkList {
+			m.openInput(inputAddForkSlug, "fork slug: ", "")
+		} else {
+			m.openInput(inputAddDir, "add dir: ", "")
+		}
 	case "d":
-		if m.dirCursor < len(dirs) {
+		if forkList {
+			if m.forkCursor < len(forks) {
+				slug := forks[m.forkCursor].Slug
+				if slug == settings.DefaultForkSlug {
+					// The session refusal toasts why; no inline confirm.
+					_ = m.sess.RemoveFork(slug)
+				} else {
+					m.confirmRmFork = slug
+				}
+			}
+		} else if m.dirCursor < len(dirs) {
 			m.confirmRmDir = dirs[m.dirCursor]
 		}
 	case "o":
@@ -617,12 +685,19 @@ func (m *Model) cancelInput() {
 		m.sess.SetQuery("")
 	}
 	m.mode = inputNone
+	m.pendingForkSlug = ""
 	m.input.SetValue("")
 	m.input.Blur()
 }
 
 func (m *Model) commitInput() tea.Cmd {
 	v := strings.TrimSpace(m.input.Value())
+	// The add-fork flow is a two-input chain: slug, then asset glob.
+	if m.mode == inputAddForkSlug && v != "" {
+		m.pendingForkSlug = v
+		m.openInput(inputAddForkPattern, "asset glob: ", "")
+		return nil
+	}
 	var cmd tea.Cmd
 	switch m.mode {
 	case inputFilter:
@@ -642,6 +717,12 @@ func (m *Model) commitInput() tea.Cmd {
 		m.sess.SetLaunchTemplate(v)
 	case inputEditUmuProton:
 		m.sess.SetUmuProtonPath(v)
+	case inputAddForkPattern:
+		if v != "" && m.pendingForkSlug != "" {
+			// AddFork validates and toasts the reason on refusal.
+			_ = m.sess.AddFork(settings.Fork{Slug: m.pendingForkSlug, AssetPattern: v})
+		}
+		m.pendingForkSlug = ""
 	}
 	m.mode = inputNone
 	m.input.SetValue("")

@@ -449,6 +449,8 @@ func (m Model) detailView(w, contentH int) string {
 		version := row.OptiScalerVersion
 		if version == "" {
 			version = "not installed"
+		} else if l := row.ForkLabel(); l != "" {
+			version += " · " + l
 		}
 		components := strings.Join(row.Components, ", ")
 		if components == "" {
@@ -567,6 +569,26 @@ func (m Model) settingsView(w, contentH int) string {
 		protonPath = styleMuted.Render("auto")
 	}
 	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("umu Proton path:"), trunc(protonPath, w-20))
+
+	b.WriteString("\n" + styleHeader.Render("OptiScaler sources"))
+	b.WriteString("\n" + styleMuted.Render("  tab: switch list · enter: use · a: add · d: remove") + "\n")
+	forkList := m.settingsFocus == settingsFocusForks
+	for i, f := range s.Forks {
+		name := "  " + f.Slug
+		if f.Slug == s.ActiveFork {
+			name = "● " + f.Slug
+		}
+		line := name + "  " + styleMuted.Render(f.AssetPattern)
+		if forkList && i == m.forkCursor {
+			line = styleSelected.Render(lipgloss.NewStyle().Width(w).Render("> "+trunc(name, w-4))) +
+				"  " + styleMuted.Render(f.AssetPattern)
+		}
+		b.WriteString(line + "\n")
+	}
+	if m.confirmRmFork != "" {
+		b.WriteString(styleWarn.Render(fmt.Sprintf("remove fork %s? [y/n] (other keys are disabled until answered)", m.confirmRmFork)) + "\n")
+	}
+
 	b.WriteString("\n" + styleHeader.Render("Scan directories"))
 	header := b.String()
 
@@ -576,7 +598,7 @@ func (m Model) settingsView(w, contentH int) string {
 	}
 	for i, d := range s.ExtraDirs {
 		line := "  " + trunc(d, w-4)
-		if i == m.dirCursor {
+		if !forkList && i == m.dirCursor {
 			line = styleSelected.Render(lipgloss.NewStyle().Width(w).Render("> " + trunc(d, w-4)))
 		}
 		lines = append(lines, line)
@@ -604,7 +626,7 @@ func helpView() string {
 		"Games     j/k move · enter detail · i install/uninstall · v switch version · u update NVIDIA DLSS · l launch · c cancel",
 		"          / filter · R rescan · s sort",
 		"Detail    i install · v switch version · u update NVIDIA DLSS · p restore DLSS backup · l launch · c cancel · r rollback · o open INI · d disable/enable · esc back",
-		"Settings  e edit version · t edit template · a add dir · d remove dir",
+		"Settings  e edit version · t edit template · tab sources/dirs · a add dir/fork · d remove dir/fork · enter use fork",
 		"          o toggle online game info · u toggle umu-launcher · p edit umu Proton path · x clear bundle cache",
 		"Confirm   y proceed · n cancel",
 	}, "\n")

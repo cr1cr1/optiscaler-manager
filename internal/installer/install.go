@@ -33,9 +33,13 @@ var copyFileFn = copyFile
 type Request struct {
 	GameRoot         string // canonical game root
 	InstallDir       string // injection target, must be inside GameRoot
-	ArchivePath      string // downloaded bundle .7z
+	ArchivePath      string // downloaded bundle (.7z or .zip)
 	RequestedVersion string // as asked ("latest" or tag)
 	Resolved         domain.ResolvedAsset
+	// Fork is the owner/repo slug of the distribution the bundle came
+	// from; recorded on the manifest verbatim (the app layer normalizes
+	// an empty value to the upstream slug).
+	Fork string
 }
 
 // filePlan maps one archive member to its destination relative to InstallDir.
@@ -128,6 +132,7 @@ func Install(ctx context.Context, st *store.Store, req Request) (*domain.Manifes
 		InstallDir:       installDir,
 		RequestedVersion: req.RequestedVersion,
 		Resolved:         resolved,
+		Fork:             req.Fork,
 		CreatedAt:        time.Now().UTC(),
 	}
 	// Manifest lands before the first destructive write (safety invariant 2).

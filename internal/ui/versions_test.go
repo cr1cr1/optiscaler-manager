@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/version"
 )
 
@@ -12,7 +13,7 @@ import (
 // app.CachedVersions looks: <cacheDir>/optiscaler/<tag>/Optiscaler_*.7z.
 func writeCachedBundle(t *testing.T, cacheDir, tag string) {
 	t.Helper()
-	dir := filepath.Join(cacheDir, "optiscaler", tag)
+	dir := filepath.Join(settings.BundleCacheDir(cacheDir, ""), tag)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", dir, err)
 	}
@@ -131,7 +132,7 @@ func TestVersionsIncludesMixedFormatsVerbatim(t *testing.T) {
 	e := newUpgradeEnvLookups(t, "v0.9.4-test", false)
 	writeCachedBundle(t, e.sess.deps.CacheDir, "v0.9.4-test")
 	scanAndWait(t, e.sess)
-	e.sess.setRowInstalled(e.gameRoot, "0.7.9") // bare PE-probe style
+	e.sess.setRowInstalled(e.gameRoot, "0.7.9", "") // bare PE-probe style
 
 	got := e.sess.Versions(e.gameRoot)
 	t.Logf("Versions = %v", got)
@@ -155,7 +156,7 @@ func TestVersionsDedupeSemanticPrefersInstalled(t *testing.T) {
 	e := newUpgradeEnvLookups(t, "v0.8.0", false)
 	writeCachedBundle(t, e.sess.deps.CacheDir, "v0.9.4")
 	scanAndWait(t, e.sess)
-	e.sess.setRowInstalled(e.gameRoot, "0.9.4") // bare PE-probe style
+	e.sess.setRowInstalled(e.gameRoot, "0.9.4", "") // bare PE-probe style
 
 	got := e.sess.Versions(e.gameRoot)
 	t.Logf("Versions = %v", got)
@@ -176,7 +177,7 @@ func TestVersionsDedupeSemanticPrefersInstalledVForm(t *testing.T) {
 	e := newUpgradeEnvLookups(t, "v0.8.0", false)
 	writeCachedBundle(t, e.sess.deps.CacheDir, "0.9.4") // bare-named cache dir
 	scanAndWait(t, e.sess)
-	e.sess.setRowInstalled(e.gameRoot, "v0.9.4")
+	e.sess.setRowInstalled(e.gameRoot, "v0.9.4", "")
 
 	got := e.sess.Versions(e.gameRoot)
 	t.Logf("Versions = %v", got)
@@ -197,7 +198,7 @@ func TestVersionsDedupeKeepsPrereleaseDistinct(t *testing.T) {
 	e := newUpgradeEnvLookups(t, "v0.8.0", false)
 	writeCachedBundle(t, e.sess.deps.CacheDir, "v0.9.4-test")
 	scanAndWait(t, e.sess)
-	e.sess.setRowInstalled(e.gameRoot, "0.9.4")
+	e.sess.setRowInstalled(e.gameRoot, "0.9.4", "")
 
 	got := e.sess.Versions(e.gameRoot)
 	t.Logf("Versions = %v", got)

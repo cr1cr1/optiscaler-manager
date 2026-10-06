@@ -26,6 +26,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
 	"github.com/cr1cr1/optiscaler-manager/internal/installer"
 	"github.com/cr1cr1/optiscaler-manager/internal/pever"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 )
 
@@ -127,7 +128,11 @@ type LibraryEntry struct {
 	InjectionDir string // resolved install dir (where injection + ini live)
 	ModTime      time.Time
 
-	OptiScalerVersion string            // "" when not installed or unknown
+	OptiScalerVersion string // "" when not installed or unknown
+	// Fork is the owner/repo slug of the distribution the install came
+	// from (manifest fact; "" for legacy/external installs, which read
+	// as upstream).
+	Fork              string
 	ComponentVersions map[string]string // "dlss"/"fsr"/"xess" → marketing name
 	// DLSSVersion is the raw PE version of the game's nvngx_dlss.dll (""
 	// unreadable/absent) — the applied version the DLSS
@@ -299,6 +304,9 @@ func enrichVersions(e *LibraryEntry, m *domain.Manifest) {
 		if e.OptiScalerVersion == "" && m != nil {
 			e.OptiScalerVersion = m.Resolved.Version
 		}
+		if m != nil {
+			e.Fork = m.Fork
+		}
 	}
 	if e.InjectionDir == "" {
 		var labels map[string]string
@@ -390,6 +398,11 @@ type InstallOpts struct {
 	AllowCached bool   // accept stale cached release info under rate limiting
 	EACOverride bool   // install despite anti-cheat detection
 	Requested   string // release tag to install; "latest" when empty
+	// ForkSlug is the owner/repo distribution source; empty resolves to
+	// the upstream fork. It selects the cache namespace (same-named tags
+	// from different distributions can never collide) and is recorded on
+	// the manifest.
+	ForkSlug string
 }
 
 // Install runs resolve → download → transactional install for a game root.
@@ -423,7 +436,11 @@ func Install(ctx context.Context, st *store.Store, client *gh.Client, cacheDir, 
 		return nil, ErrStaleCache
 	}
 
-	bundleDir := filepath.Join(cacheDir, "optiscaler", resolved.Version)
+	forkSlug := opts.ForkSlug
+	if forkSlug == "" {
+		forkSlug = settings.DefaultForkSlug
+	}
+	bundleDir := filepath.Join(settings.BundleCacheDir(cacheDir, forkSlug), resolved.Version)
 	bundlePath := filepath.Join(bundleDir, resolved.AssetName)
 	digest, err := fileSHA256(bundlePath)
 	if err != nil {
@@ -445,6 +462,7 @@ func Install(ctx context.Context, st *store.Store, client *gh.Client, cacheDir, 
 		ArchivePath:      bundlePath,
 		RequestedVersion: requested,
 		Resolved:         resolved,
+		Fork:             forkSlug,
 	})
 }
 

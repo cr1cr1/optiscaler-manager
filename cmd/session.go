@@ -57,6 +57,7 @@ func newSession(d *Deps) *ui.Session {
 	sess := ui.NewSession(ui.Deps{
 		Store:        d.Store,
 		GH:           d.GH,
+		NewGH:        d.NewGH,
 		DLSS:         dlssClient,
 		Covers:       coverClient,
 		CacheDir:     d.CacheDir,

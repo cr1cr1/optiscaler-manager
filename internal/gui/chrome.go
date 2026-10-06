@@ -143,6 +143,12 @@ func (m *model) settingsModal() {
 				}
 			})
 
+			Container(Attrs(Expand, Gap(sp4)), func() {
+				sectionTitle("OptiScaler Sources")
+				muted("Distribution fork installs download from (owner/repo + asset glob)")
+				m.settingsForksSection()
+			})
+
 			if m.sess != nil {
 				Container(Attrs(Row, Gap(sp8)), func() {
 					if focusableButton(SymIRight, "Apply") {
@@ -162,6 +168,60 @@ func (m *model) settingsModal() {
 
 // settingsDirsSection lists the session's extra scan directories with a
 // per-row remove button and the add-directory picker entry point.
+
+// settingsForksSection lists the known OptiScaler distribution forks: the
+// active one is marked, a row's "Use" button selects it through the
+// session, custom forks get a Remove button (upstream never does), and two
+// inputs plus an Add button register new forks.
+func (m *model) settingsForksSection() {
+	if m.sess == nil {
+		return
+	}
+	s := m.sess.Settings()
+	for _, f := range s.Forks {
+		fork := f
+		active := fork.Slug == s.ActiveFork
+		Container(Attrs(Row, Expand, CrossMid, Gap(sp8), Pad2(2, sp4), Corners(radiusS), BackgroundVec(bgCard), Clip), func() {
+			label := fork.Slug
+			if active {
+				label = "● " + label
+			}
+			Label(label, TextColorVec(txtMain), FontSize(12))
+			Filler(1)
+			muted(fork.AssetPattern)
+			if active {
+				muted("in use")
+			} else if focusableButton(SymIRight, "Use") {
+				_ = m.sess.SetActiveFork(fork.Slug)
+			}
+			if fork.Slug != settings.DefaultForkSlug && focusableButton(TypCancel, "Remove") {
+				m.removeFork(fork.Slug)
+			}
+		})
+	}
+	themedInput(&m.forkSlugBuf, "owner/repo", NoIcon, MinSize(200, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+	themedInput(&m.forkPatternBuf, "asset glob, e.g. OptiScaler*.zip", NoIcon, MinSize(200, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+	if focusableButton(SymIPlus, "Add fork") {
+		m.addForkFromBuffers()
+	}
+}
+
+// addForkFromBuffers registers the fork described by the add inputs. A
+// successful add clears the buffers; a refusal keeps them for editing (the
+// session toasts the reason).
+func (m *model) addForkFromBuffers() {
+	fork := settings.Fork{Slug: m.forkSlugBuf, AssetPattern: m.forkPatternBuf}
+	if err := m.sess.AddFork(fork); err != nil {
+		return
+	}
+	m.forkSlugBuf = ""
+	m.forkPatternBuf = ""
+}
+
+// removeFork deletes a custom fork through the session (refusals toast).
+func (m *model) removeFork(slug string) {
+	_ = m.sess.RemoveFork(slug)
+}
 
 // cardSizeSelector renders the Small/Medium/Large card-size segmented control.
 func (m *model) cardSizeSelector() {

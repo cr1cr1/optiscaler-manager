@@ -164,8 +164,9 @@ func (s *Session) runInstallVersion(gameDir, version string, eacOK, cachedOK boo
 	if requested == "" {
 		requested = s.Settings().DefaultVersion
 	}
-	m, err := app.Install(ctx, s.deps.Store, s.deps.GH, s.deps.CacheDir, gameDir,
-		app.InstallOpts{AllowCached: cachedOK || s.defaultRecentlyResolved(), EACOverride: eacOK, Requested: requested})
+	m, err := app.Install(ctx, s.deps.Store, s.ghClient(), s.deps.CacheDir, gameDir,
+		app.InstallOpts{AllowCached: cachedOK || s.defaultRecentlyResolved(), EACOverride: eacOK, Requested: requested,
+			ForkSlug: s.Settings().Active().Slug})
 	s.finishOp(gameDir)
 	if errors.Is(err, context.Canceled) {
 		s.opCancelled(gameDir, pre)
@@ -185,7 +186,7 @@ func (s *Session) runInstallVersion(gameDir, version string, eacOK, cachedOK boo
 		s.opFailed(err, gameDir)
 		return err
 	}
-	s.setRowInstalled(gameDir, m.Resolved.Version)
+	s.setRowInstalled(gameDir, m.Resolved.Version, m.Fork)
 	s.opDone("Installed "+gameTitle(row, gameDir), gameDir)
 	return nil
 }

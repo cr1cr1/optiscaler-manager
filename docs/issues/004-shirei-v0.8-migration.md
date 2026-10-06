@@ -52,4 +52,4 @@ deltas).
   `ImageViewAt` still emits `ImageScale: true` surfaces, so the v0.14
   stretch patch remains necessary for gap-free cover art.
 - Full suite green (including the headless GUI widget tests and the
-  vendor guard) on the final tree; commit hash recorded in docs/log.md.
+  vendor guard) on the final tree (a60ea76).

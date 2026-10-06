@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 )
@@ -118,9 +120,100 @@ func (s *Session) SetUmuProtonPath(path string) {
 	}, msg, "")
 }
 
-// ClearBundleCache deletes all cached OptiScaler bundles. The deletion runs
-// in the background (large caches can take a while); a toast reports the
-// outcome.
+// SetActiveFork selects the OptiScaler distribution source installs and
+// switches download from (persisted). The GitHub client is rebuilt
+// through the NewGH factory, and the fork-scoped memos (startup latest
+// tag, resolved default version) are cleared so nothing resolved from the
+// previous distribution leaks into the new one. An unknown slug is
+// refused with an error and a warn toast.
+func (s *Session) SetActiveFork(slug string) error {
+	s.mu.Lock()
+	var fork settings.Fork
+	found := false
+	for _, f := range s.deps.Settings.Forks {
+		if f.Slug == slug {
+			fork, found = f, true
+			break
+		}
+	}
+	if !found {
+		s.mu.Unlock()
+		s.toast("unknown OptiScaler fork: "+slug, true)
+		return fmt.Errorf("ui: unknown fork %q", slug)
+	}
+	if s.deps.Settings.ActiveFork == slug {
+		s.mu.Unlock()
+		return nil
+	}
+	s.deps.Settings.ActiveFork = slug
+	snap := s.deps.Settings
+	s.swapGHLocked(fork)
+	s.mu.Unlock()
+
+	return s.persistSettings(snap, "OptiScaler source: "+slug)
+}
+
+// AddFork appends a validated distribution source (persisted); validation
+// failures and duplicates surface as an error plus a warn toast.
+func (s *Session) AddFork(f settings.Fork) error {
+	s.mu.Lock()
+	err := s.deps.Settings.AddFork(f)
+	snap := s.deps.Settings
+	s.mu.Unlock()
+	if err != nil {
+		s.toast(err.Error(), true)
+		return err
+	}
+	return s.persistSettings(snap, "fork added: "+f.Slug)
+}
+
+// RemoveFork deletes a distribution source (persisted). Removing the
+// active fork resets the selection to upstream and swaps the client back;
+// the upstream entry itself is refused.
+func (s *Session) RemoveFork(slug string) error {
+	s.mu.Lock()
+	wasActive := s.deps.Settings.ActiveFork == slug
+	err := s.deps.Settings.RemoveFork(slug)
+	snap := s.deps.Settings
+	if err == nil && wasActive {
+		s.swapGHLocked(snap.Active())
+	}
+	s.mu.Unlock()
+	if err != nil {
+		s.toast(err.Error(), true)
+		return err
+	}
+	return s.persistSettings(snap, "fork removed: "+slug)
+}
+
+// persistSettings saves snap and toasts the outcome: the save error (both
+// toasted and returned) or okToast on success.
+func (s *Session) persistSettings(snap settings.Settings, okToast string) error {
+	if err := settings.Save(s.deps.SettingsRoot, snap); err != nil {
+		s.toast("settings not saved: "+err.Error(), true)
+		return err
+	}
+	s.toast(okToast, false)
+	return nil
+}
+
+// swapGHLocked rebuilds the GitHub client for fork through the NewGH
+// factory and clears the fork-scoped memos. Callers hold s.mu. A nil
+// factory keeps the injected client (tests that never switch forks).
+func (s *Session) swapGHLocked(fork settings.Fork) {
+	if s.deps.NewGH != nil {
+		s.deps.GH = s.deps.NewGH(fork)
+	}
+	s.latestTag = ""
+	s.resolvedDefaultKey = ""
+	s.resolvedDefaultVersion = ""
+	s.resolvedDefaultFresh = false
+	s.resolvedDefaultAt = time.Time{}
+}
+
+// ClearBundleCache deletes all cached OptiScaler bundles (every fork
+// namespace). The deletion runs in the background (large caches can take
+// a while); a toast reports the outcome.
 func (s *Session) ClearBundleCache() {
 	dir := filepath.Join(s.deps.CacheDir, "optiscaler")
 	go func() {

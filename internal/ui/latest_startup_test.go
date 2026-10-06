@@ -50,7 +50,7 @@ func TestStartPreloadsLatestBundleIntoCache(t *testing.T) {
 	// The latest bundle must land in the download cache at startup.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		matches, _ := filepath.Glob(filepath.Join(e.sess.deps.CacheDir, "optiscaler", "v0.9.4-test", "*.7z"))
+		matches, _ := filepath.Glob(filepath.Join(settings.BundleCacheDir(e.sess.deps.CacheDir, ""), "v0.9.4-test", "*.7z"))
 		if len(matches) > 0 {
 			t.Log("startup preloaded the latest bundle into the cache:", matches[0])
 			return
@@ -85,7 +85,7 @@ func TestStartPreloadSkippedWhenBundleCached(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bdir := filepath.Join(e.sess.deps.CacheDir, "optiscaler", "v0.9.4-test")
+	bdir := filepath.Join(settings.BundleCacheDir(e.sess.deps.CacheDir, ""), "v0.9.4-test")
 	if err := os.MkdirAll(bdir, 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -113,10 +113,11 @@ func (s *Session) memoizePinnedDefault(requested string) {
 // ghResolveVersion is the production resolve seam: one bounded gh.Resolve.
 // fresh reports that the answer came from a live fetch, not the cache.
 func (s *Session) ghResolveVersion(ctx context.Context, requested string) (string, bool, error) {
-	if s.deps.GH == nil {
+	client := s.ghClient()
+	if client == nil {
 		return "", false, fmt.Errorf("ui: no GitHub client configured")
 	}
-	resolved, fromCache, err := s.deps.GH.Resolve(ctx, requested)
+	resolved, fromCache, err := client.Resolve(ctx, requested)
 	if err != nil {
 		return "", false, err
 	}
@@ -139,5 +140,6 @@ func (s *Session) defaultRecentlyResolved() bool {
 	if own {
 		return true
 	}
-	return s.deps.GH != nil && s.deps.GH.CacheFresh()
+	client := s.ghClient()
+	return client != nil && client.CacheFresh()
 }

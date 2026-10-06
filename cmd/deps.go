@@ -8,11 +8,13 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/app"
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
 	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
 	"github.com/cr1cr1/optiscaler-manager/internal/launch"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 )
 
@@ -26,7 +28,14 @@ type Deps struct {
 	DataRoot string
 	CacheDir string
 	GH       *gh.Client
-	Version  string
+	// NewGH builds the GitHub client for a fork; sessions swap their
+	// client through it when the active fork changes. Nil in tests that
+	// inject GH directly (fork switching then keeps the injected client).
+	NewGH   func(fork settings.Fork) *gh.Client
+	Version string
+	// Prefs is the settings snapshot newDeps loaded; one-shot commands
+	// read the active fork from it (sessions load their own).
+	Prefs settings.Settings
 	// DLSS, Launcher, and Covers are the same test seams GH is: nil
 	// (production) lets newSession build the default clients; tests
 	// inject fakes (or dead-URL clients, since a cover miss is tolerated).
@@ -38,6 +47,18 @@ type Deps struct {
 	// already carries the same flag). Tests MUST pin it to the fixture
 	// root so a scan never touches the real machine's libraries.
 	SteamRoot string
+}
+
+// newGHFactory builds fork-scoped GitHub clients against base ("" = the
+// production GitHub API), each with its own per-fork cache namespace.
+func newGHFactory(cacheDir, base string) func(settings.Fork) *gh.Client {
+	return func(fork settings.Fork) *gh.Client {
+		dir := settings.BundleCacheDir(cacheDir, fork.Slug)
+		if base != "" {
+			return gh.NewForkWithBaseURL(nil, dir, base, fork.Slug, fork.AssetPattern)
+		}
+		return gh.NewFork(nil, dir, fork.Slug, fork.AssetPattern)
+	}
 }
 
 // newDeps builds production dependencies. OM_DATA_DIR overrides the store
@@ -56,20 +77,24 @@ func newDeps(version string) (*Deps, error) {
 	if cacheDir == "" {
 		cacheDir = defaultCacheRoot()
 	}
-	var ghClient *gh.Client
-	if base := os.Getenv("OM_GH_BASE_URL"); base != "" {
-		ghClient = gh.NewWithBaseURL(nil, cacheDir, base)
-	} else {
-		ghClient = gh.New(nil, cacheDir)
+	prefs, err := settings.Load(root)
+	if err != nil {
+		log.Warn().Err(err).Msg("settings unreadable, using defaults")
+		prefs = settings.Defaults()
 	}
+	app.MigrateLegacyBundleCache(cacheDir)
+	base := os.Getenv("OM_GH_BASE_URL")
+	factory := newGHFactory(cacheDir, base)
 	return &Deps{
 		Out:      os.Stdout,
 		ErrOut:   os.Stderr,
 		Store:    store.New(root),
 		DataRoot: root,
 		CacheDir: cacheDir,
-		GH:       ghClient,
+		GH:       factory(prefs.Active()),
+		NewGH:    factory,
 		Version:  version,
+		Prefs:    prefs,
 	}, nil
 }
 

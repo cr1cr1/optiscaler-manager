@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 )
 
 // Tone is a badge color hint; each frontend maps tones to its own palette.
@@ -56,7 +57,11 @@ type GameRow struct {
 	ExePath           string       // resolved main executable; "" when unknown
 	CompatPrefix      string       // Proton prefix (linux only); "" when absent
 	OptiScalerVersion string       // "" when not installed or unknown
-	Components        []string     // marketing names, e.g. ["DLSS 3.7.10","FSR 3.1.4"]
+	// Fork is the owner/repo slug of the distribution the install came
+	// from ("" when not installed; a legacy or external install reads as
+	// upstream).
+	Fork       string
+	Components []string // marketing names, e.g. ["DLSS 3.7.10","FSR 3.1.4"]
 	// DLSSVersion is the raw PE version of nvngx_dlss.dll ("1.2.3.4" form,
 	// "" unreadable/absent): the applied version the frontends compare
 	// against the session's DLSSLatest to mark an update as available.
@@ -64,6 +69,19 @@ type GameRow struct {
 	// rows render the DLSS pill as the interactive update control.
 	DLSSVersion string
 	DLSSReady   bool
+}
+
+// ForkLabel names the distribution a row was installed from, for display:
+// the repo segment of the fork slug for non-upstream installs, "" for
+// upstream, unknown, or legacy installs (those need no marker).
+func (r GameRow) ForkLabel() string {
+	if r.Fork == "" || r.Fork == settings.DefaultForkSlug {
+		return ""
+	}
+	if i := strings.LastIndex(r.Fork, "/"); i >= 0 && i < len(r.Fork)-1 {
+		return r.Fork[i+1:]
+	}
+	return r.Fork
 }
 
 // SortMode selects the row ordering VisibleRows applies.

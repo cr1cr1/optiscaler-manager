@@ -14,6 +14,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 )
 
@@ -145,7 +146,7 @@ settled:
 	if lerr != nil || len(manifests) != 0 {
 		t.Errorf("manifests after cancel: %d (%v), want 0", len(manifests), lerr)
 	}
-	matches, _ := filepath.Glob(filepath.Join(cacheDir, "optiscaler", "*", "*"))
+	matches, _ := filepath.Glob(filepath.Join(settings.BundleCacheDir(cacheDir, ""), "*", "*"))
 	for _, m := range matches {
 		st_, serr := os.Stat(m)
 		if serr == nil && !st_.IsDir() {

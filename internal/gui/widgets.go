@@ -510,11 +510,15 @@ func shortenPath(p string, max int) string {
 // no pill and no version dropdown.
 func optiBadge(e *ui.GameRow) (ui.Badge, bool) {
 	external := e.Status == domain.StatusExternal
+	forkSuffix := ""
+	if l := e.ForkLabel(); l != "" {
+		forkSuffix = " · " + l
+	}
 	switch {
 	case e.OptiScalerVersion != "" && external:
 		return ui.Badge{Label: "✦ OptiScaler " + e.OptiScalerVersion + " · external", Tone: ui.ToneBlue}, true
 	case e.OptiScalerVersion != "":
-		return ui.Badge{Label: "✦ OptiScaler " + e.OptiScalerVersion, Tone: ui.TonePurple}, true
+		return ui.Badge{Label: "✦ OptiScaler " + e.OptiScalerVersion + forkSuffix, Tone: ui.TonePurple}, true
 	case external:
 		return ui.Badge{Label: "✦ OptiScaler · external", Tone: ui.ToneBlue}, true
 	case e.Status == domain.StatusCommitted:

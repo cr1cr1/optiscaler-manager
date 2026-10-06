@@ -256,7 +256,7 @@ draining:
 // completion toast is posted.
 func TestClearBundleCache_Async(t *testing.T) {
 	e := newTestEnv(t)
-	dir := filepath.Join(e.sess.deps.CacheDir, "optiscaler", "v1")
+	dir := filepath.Join(settings.BundleCacheDir(e.sess.deps.CacheDir, ""), "v1")
 	writeUIFile(t, filepath.Join(dir, "bundle.7z"), "cached")
 	e.sess.removeAll = func(path string) error {
 		time.Sleep(time.Second)

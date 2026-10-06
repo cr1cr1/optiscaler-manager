@@ -54,20 +54,24 @@ type CreatedEntry struct {
 // install dir. It is written before the first destructive write and drives
 // rollback and uninstall.
 type Manifest struct {
-	ID               string             `json:"id"`
-	SchemaVersion    int                `json:"schema_version"`
-	Status           Status             `json:"status"`
-	GameRoot         string             `json:"game_root"`
-	InstallDir       string             `json:"install_dir"` // canonical
-	RequestedVersion string             `json:"requested_version"`
-	Resolved         ResolvedAsset      `json:"resolved"`
-	Ops              []OpEntry          `json:"ops"`
-	Overwritten      []OverwrittenEntry `json:"overwritten"`
-	Created          []CreatedEntry     `json:"created"`
-	CreatedDirs      []string           `json:"created_dirs"`
-	CreatedAt        time.Time          `json:"created_at"`
-	UpdatedAt        time.Time          `json:"updated_at"`
-	LastError        string             `json:"last_error"`
+	ID               string        `json:"id"`
+	SchemaVersion    int           `json:"schema_version"`
+	Status           Status        `json:"status"`
+	GameRoot         string        `json:"game_root"`
+	InstallDir       string        `json:"install_dir"` // canonical
+	RequestedVersion string        `json:"requested_version"`
+	Resolved         ResolvedAsset `json:"resolved"`
+	// Fork is the owner/repo slug of the distribution the bundle came
+	// from (the upstream slug for the default source). Empty on legacy
+	// manifests, which read as upstream.
+	Fork        string             `json:"fork,omitempty"`
+	Ops         []OpEntry          `json:"ops"`
+	Overwritten []OverwrittenEntry `json:"overwritten"`
+	Created     []CreatedEntry     `json:"created"`
+	CreatedDirs []string           `json:"created_dirs"`
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
+	LastError   string             `json:"last_error"`
 }
 
 // ManifestID derives the stable, filesystem-safe manifest key for a

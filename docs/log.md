@@ -3265,3 +3265,27 @@ opens the restore menu of local backup sets.
 - `TestVendorCSDPatchPresent` and the cursor behavior tests pass
   unchanged; full `go test ./...` green; `go vet` clean.
   `docs/vendor-patches.md` records the v0.8.0 reapplication.
+
+## 2026-10-06 — issue 5: selectable OptiScaler distribution forks
+
+- Settings (GUI modal and TUI screen) can now choose the OptiScaler
+  distribution: a fork list (`owner/repo` slug + release-asset glob) with
+  one active entry, add/delete for custom forks, upstream undeletable.
+  Bundled alternatives: upstream `optiscaler/OptiScaler` and
+  `jlrouzies-fr/OptiScaler-DLSSNR-PreSR-Multipass`
+  (`OptiScaler-NR-*.zip`).
+- `settings.Fork` + `Forks`/`ActiveFork` with `Load` normalization;
+  `gh.NewFork` resolves/downloads any repo with a `path.Match` asset
+  glob; `internal/archive` extracts `.zip` through the same sanitized
+  pipeline as `.7z`; caches namespace per fork
+  (`cache/optiscaler/<owner>__<repo>/`, legacy flat layout migrates
+  best-effort); manifests record the fork slug and rows surface it
+  (GUI badge / TUI detail suffix for non-upstream installs).
+- The session swaps its GitHub client through a `NewGH` factory on fork
+  change and clears the fork-scoped memos (startup latest, resolved
+  default); CLI one-shots install from the active fork.
+- TDD throughout (red witnessed per layer: settings, gh, archive, app,
+  installer, session, migration, GUI, TUI); ponytail-review folded in
+  (dedup toast helper, shared `persistSettings`, inlined single-use
+  validation). `go test ./...` green, `go vet`/`gofmt` clean. README,
+  scope.md, architecture.md updated.

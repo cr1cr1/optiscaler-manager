@@ -7,6 +7,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/app"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 )
 
 // startupPreload is the one-shot startup version check and pre-warm (user
@@ -19,25 +20,28 @@ import (
 // published set). Failures degrade silently: the menu falls back to the
 // concrete cached versions and the next press resolves online as before.
 func (s *Session) startupPreload(ctx context.Context) {
-	if s.deps.GH == nil {
+	client := s.ghClient()
+	if client == nil {
 		return
 	}
 	if !s.Settings().OnlineLookups {
 		return
 	}
-	resolved, _, err := s.deps.GH.Resolve(ctx, "latest")
+	resolved, _, err := client.Resolve(ctx, "latest")
 	if err != nil {
 		log.Debug().Err(err).Msg("startup latest check failed; no Latest option this boot")
 		return
 	}
 	s.setLatestTag(resolved.Version)
-	for _, v := range app.CachedVersions(s.deps.CacheDir) {
+	fork := s.Settings().Active()
+	bundleRoot := settings.BundleCacheDir(s.deps.CacheDir, fork.Slug)
+	for _, v := range app.CachedVersions(bundleRoot, fork.AssetPattern) {
 		if v == resolved.Version {
 			return
 		}
 	}
-	dir := filepath.Join(s.deps.CacheDir, "optiscaler", resolved.Version)
-	if _, _, err := s.deps.GH.Download(ctx, resolved, dir); err != nil {
+	dir := filepath.Join(bundleRoot, resolved.Version)
+	if _, _, err := client.Download(ctx, resolved, dir); err != nil {
 		log.Warn().Err(err).Str("tag", resolved.Version).Msg("startup latest bundle preload failed")
 		return
 	}

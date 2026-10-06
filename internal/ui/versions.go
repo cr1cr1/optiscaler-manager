@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/app"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/version"
 )
 
@@ -73,7 +74,8 @@ func (s *Session) Versions(gameDir string) []string {
 	if row := s.findRow(gameDir); row != nil {
 		add(row.OptiScalerVersion)
 	}
-	for _, v := range app.CachedVersions(s.deps.CacheDir) {
+	fork := s.Settings().Active()
+	for _, v := range app.CachedVersions(settings.BundleCacheDir(s.deps.CacheDir, fork.Slug), fork.AssetPattern) {
 		add(v)
 	}
 	switch pref := s.Settings().DefaultVersion; pref {

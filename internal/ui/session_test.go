@@ -212,7 +212,7 @@ func seedOldProcessReleaseCache(t *testing.T, e *testEnv) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(cacheDir, "optiscaler", "v0.9.4-test")
+	dir := filepath.Join(settings.BundleCacheDir(cacheDir, ""), "v0.9.4-test")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +420,7 @@ func TestOpBusyReflectsInFlightOp(t *testing.T) {
 
 func TestClearBundleCache(t *testing.T) {
 	e := newTestEnv(t)
-	dir := filepath.Join(e.sess.deps.CacheDir, "optiscaler", "v1")
+	dir := filepath.Join(settings.BundleCacheDir(e.sess.deps.CacheDir, ""), "v1")
 	writeUIFile(t, filepath.Join(dir, "bundle.7z"), "cached")
 
 	e.sess.ClearBundleCache()

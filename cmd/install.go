@@ -20,6 +20,7 @@ func (c *InstallCmd) Run(d *Deps) error {
 	m, err := app.Install(context.Background(), d.Store, d.GH, d.CacheDir, c.Path, app.InstallOpts{
 		AllowCached: c.AllowCached,
 		EACOverride: c.Force,
+		ForkSlug:    d.Prefs.Active().Slug,
 	})
 	if errors.Is(err, app.ErrEACProtected) {
 		return fmt.Errorf("%v (use --force to proceed anyway)", err)

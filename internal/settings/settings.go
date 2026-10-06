@@ -64,11 +64,24 @@ type Settings struct {
 	// containing toolmanifest.vdf; the umu package's FindRunners returns
 	// exactly such paths.
 	UmuProtonPath string `json:"umu_proton_path,omitempty"`
+	// Forks is the list of OptiScaler distribution sources; the upstream
+	// entry (DefaultForkSlug) is always present after Load. ActiveFork is
+	// the slug installs/switches download from; empty or unknown resolves
+	// to upstream (see Active).
+	Forks      []Fork `json:"forks,omitempty"`
+	ActiveFork string `json:"active_fork,omitempty"`
 }
 
 // Defaults returns the out-of-box settings.
 func Defaults() Settings {
-	return Settings{DefaultVersion: "latest", LaunchTemplate: DefaultLaunchTemplate, OnlineLookups: true, CardSize: CardSizeMedium}
+	return Settings{
+		DefaultVersion: "latest",
+		LaunchTemplate: DefaultLaunchTemplate,
+		OnlineLookups:  true,
+		CardSize:       CardSizeMedium,
+		Forks:          append([]Fork(nil), builtinForks...),
+		ActiveFork:     DefaultForkSlug,
+	}
 }
 
 func path(root string) string { return filepath.Join(root, "settings.json") }
@@ -93,6 +106,8 @@ func Load(root string) (Settings, error) {
 		CardSize       CardSize          `json:"card_size,omitempty"`
 		UmuEnabled     *bool             `json:"umu_enabled"`
 		UmuProtonPath  string            `json:"umu_proton_path,omitempty"`
+		Forks          []Fork            `json:"forks,omitempty"`
+		ActiveFork     string            `json:"active_fork,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return Defaults(), fmt.Errorf("settings: parse: %w", err)
@@ -106,6 +121,8 @@ func Load(root string) (Settings, error) {
 		CardSize:       raw.CardSize,
 		UmuEnabled:     false,
 		UmuProtonPath:  raw.UmuProtonPath,
+		Forks:          raw.Forks,
+		ActiveFork:     raw.ActiveFork,
 	}
 	if raw.OnlineLookups != nil {
 		s.OnlineLookups = *raw.OnlineLookups
@@ -120,6 +137,7 @@ func Load(root string) (Settings, error) {
 		s.LaunchTemplate = DefaultLaunchTemplate
 	}
 	s.CardSize = s.CardSize.OrDefault()
+	s.normalizeForks()
 	return s, nil
 }
 

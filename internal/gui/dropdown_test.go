@@ -24,7 +24,7 @@ func dropdownFakes(t *testing.T) (*ui.Session, string) {
 		s := settings.Defaults()
 		s.DefaultVersion = "v0.8.0-test"
 		d.Settings = s
-		dir := filepath.Join(d.CacheDir, "optiscaler", "v0.9.4-test")
+		dir := filepath.Join(settings.BundleCacheDir(d.CacheDir, ""), "v0.9.4-test")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
 )
@@ -70,7 +71,7 @@ func newAppFakes(t *testing.T) *appFakes {
 // seedCache places the fixture bundle at the versioned cache path.
 func (f *appFakes) seedCache(t *testing.T) string {
 	t.Helper()
-	dir := filepath.Join(f.cacheDir, "optiscaler", "v0.9.4-test")
+	dir := filepath.Join(settings.BundleCacheDir(f.cacheDir, ""), "v0.9.4-test")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +121,7 @@ func TestInstallDownloadsWhenCacheMissing(t *testing.T) {
 	if f.bundleHits != 1 {
 		t.Fatalf("expected 1 download, got %d", f.bundleHits)
 	}
-	cached := filepath.Join(f.cacheDir, "optiscaler", "v0.9.4-test", "Optiscaler_test.7z")
+	cached := filepath.Join(settings.BundleCacheDir(f.cacheDir, ""), "v0.9.4-test", "Optiscaler_test.7z")
 	if _, err := os.Stat(cached); err != nil {
 		t.Fatalf("downloaded bundle not cached at %s: %v", cached, err)
 	}

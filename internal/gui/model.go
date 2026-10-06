@@ -42,6 +42,8 @@ type model struct {
 	onlineBuf           bool                          // settings-modal online-lookups toggle buffer, primed on open
 	umuEnabledBuf       bool                          // settings-modal umu-launcher toggle buffer, primed on open
 	umuProtonBuf        string                        // settings-modal umu-launcher Proton path buffer, primed on open
+	forkSlugBuf         string                        // settings-modal add-fork slug input
+	forkPatternBuf      string                        // settings-modal add-fork asset-glob input
 	cardSize            settings.CardSize             // current grid card preset, synced from session.Settings().CardSize in drain
 	selIdx              int                           // keyboard-driven selection index into visible rows
 	hoveredDir          string                        // install dir of the card under the mouse, "" when none

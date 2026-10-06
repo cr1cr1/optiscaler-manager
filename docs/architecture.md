@@ -55,14 +55,19 @@ internal/
               OptiScalerVersion (manifest → log → ini evidence chain),
               DetectOptiScaler (external-install probe: injection-name
               candidates matched by PE version-info identity, bounded reads)
-  gh/         GitHub releases: glob asset match, cooldown cache
+  gh/         GitHub releases for one distribution fork (NewFork:
+              owner/repo slug + per-fork path.Match asset glob,
+              defaulting to upstream): release-list resolution, per-fork
+              cooldown cache and bundle downloads under
+              cache/optiscaler/<fork-key>/
   dlss/       NVIDIA DLSS runtime updater (opt-in, on user action):
               resolves NVIDIA/DLSS main to an immutable commit, downloads
               the three lib/Windows_x86_64/rel DLLs at that commit into a
               commit-keyed download cache under cacheDir (OptiScaler
               bundle-cache pattern), and keeps transactional snapshot
               backups (hash-verified) under the state root for restore
-  archive/    7z extraction with hostile-input defenses (sevenzip)
+  archive/    7z (sevenzip) and zip (stdlib) extraction, dispatched on
+              the bundle's extension, with hostile-input defenses
   installer/  transaction core: stage → validate → backup → copy → manifest;
               rollback; uninstall; EAC check; ctx cancel at phase boundaries
               (cleanup under context.WithoutCancel)
@@ -83,7 +88,9 @@ internal/
               steam/, protondb/, and the steam store caches
   settings/   persisted preferences (settings.json in the data root):
                default version, launch template, extra dirs, online
-               lookups, card size (CardSize type with OrDefault())
+               lookups, card size (CardSize type with OrDefault()),
+               distribution forks (Fork{Slug, AssetPattern} list, one
+               ActiveFork, upstream built-in always present)
   version/    OptiScaler version-string ordering for upgrade eligibility
               (leading-v normalized, numeric segments, pre-release older
               than release; deliberately not full semver)

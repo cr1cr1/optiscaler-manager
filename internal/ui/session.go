@@ -178,6 +178,11 @@ type Deps struct {
 	// when Steam's storesearch finds nothing; nil disables the fallback.
 	PCGW *pcgw.Client
 
+	// NewGH builds the GitHub client for a fork. SetActiveFork (and
+	// RemoveFork when it resets the active fork) swaps deps.GH through
+	// it; nil keeps the injected GH (tests that never switch forks).
+	NewGH func(fork settings.Fork) *gh.Client
+
 	// GOOS selects the target platform behavior (empty = runtime.GOOS);
 	// ProtonDB enrichment and cached proton tiers are linux-only.
 	GOOS string
@@ -314,6 +319,15 @@ func canonicalDir(p string) string {
 	return filepath.Clean(p)
 }
 
+// ghClient returns the current GitHub client under the lock: SetActiveFork
+// swaps it mid-session, so ops read it through here instead of caching a
+// possibly-stale pointer.
+func (s *Session) ghClient() *gh.Client {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deps.GH
+}
+
 func (s *Session) findRow(dir string) *GameRow {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -345,8 +359,8 @@ func (s *Session) setRowStatus(dir string, status domain.Status) {
 }
 
 // setRowInstalled settles a row after a successful install: committed at
-// the just-installed version.
-func (s *Session) setRowInstalled(dir, version string) {
+// the just-installed version, from the just-used distribution fork.
+func (s *Session) setRowInstalled(dir, version, fork string) {
 	s.mu.Lock()
 	changed := false
 	for i := range s.st.Rows {
@@ -354,6 +368,7 @@ func (s *Session) setRowInstalled(dir, version string) {
 			s.st.Rows[i].Status = domain.StatusCommitted
 			s.st.Rows[i].Actionable = false
 			s.st.Rows[i].OptiScalerVersion = version
+			s.st.Rows[i].Fork = fork
 			sortRows(s.st.Rows)
 			changed = true
 			break
