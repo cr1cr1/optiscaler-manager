@@ -7,11 +7,31 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
-// Buttons take their text color from ContrastingTextColor(ButtonAccent), so a
-// dark accent yields light text automatically. DefaultBackground is shirei's
-// surface color for modals and popup panels.
+// Stock controls take their paint from the app's dark color scheme: the
+// default button role reproduces the pre-v0.8.0 ButtonAccent={220,18,26}
+// computed look (TopBoost 8, ElevationDrop 16), and the focus ring matches
+// the custom widgets' focusBorder. DefaultBackground is shirei's surface
+// color for modals and popup panels.
 func init() {
-	widgets.ButtonAccent = accent
+	scheme := widgets.DarkColorScheme()
+	text := ContrastingTextColor(accent)
+	btn := func(lightness float32) widgets.ButtonPaint {
+		return widgets.ButtonPaint{
+			Background: Vec4{accent[0], accent[1], lightness, 1},
+			Gradient:   Vec4{0, 0, -8, 0},
+			Text:       text,
+			Border:     Vec4{accent[0], accent[1], 20, 0.2},
+			Elevation:  Vec4{accent[0], accent[1], accent[2] - 16, 1},
+		}
+	}
+	scheme.Buttons.Default = widgets.ButtonStyle{
+		Normal:   btn(accent[2] + 8),  // TopBoost
+		Hovered:  btn(accent[2] + 11), // top + 3
+		Pressed:  btn(accent[2] + 5),  // top - 3
+		Disabled: widgets.ButtonPaint{Background: Vec4{accent[0], accent[1], 90, 1}, Text: Vec4{0, 0, 40, 0.5}, Border: Vec4{0, 0, 75, 1}},
+	}
+	scheme.FocusRing = focusBorder
+	widgets.CurrentColorScheme = scheme
 	widgets.DefaultBackground = Vec4{230, 20, 16, 1}
 	// Virtualized lists draw their own scrollbars with this fallback accent;
 	// the default is an off-palette bright cyan.

@@ -44,7 +44,7 @@ func RequestNextFrame() {
 
 func frameHasTransientInput() bool {
 	fi := ui.Host.FrameInput
-	return fi.Mouse != 0 || fi.Key != 0 || fi.Text != "" ||
+	return fi.AccessAction.Kind != 0 || fi.Mouse != 0 || fi.Key != 0 || fi.Text != "" ||
 		fi.Scroll != (Vec2{}) || fi.Motion != (Vec2{}) ||
 		fi.TouchesBeganCount > 0 || fi.TouchesEndedCount > 0
 }
@@ -161,6 +161,11 @@ func RequestOpenURL(url string) {
 // Frame clock (FrameNumber, timeDelta, …) lives on *UI.
 
 type FrameOutputData struct {
+	// Access is the final pass's source-ordered semantic snapshot. Its storage
+	// is valid until the next RunFrameFn; retaining backends copy the slice.
+	Access        []AccessNode
+	AccessChanged bool // independent of paint changes
+
 	Surfaces []Surface
 
 	Copy    string // things we want to put into the clipboard
@@ -184,8 +189,9 @@ type FrameOutputData struct {
 	GlyphsAdded   []GlyphKey
 	GlyphsEvicted []GlyphKey
 
-	// GlyphRuns is the stamp buffer GlyphRunFirst/Count index into. Backends
-	// that present after the next produce must copy this with Surfaces.
+	// GlyphRuns holds screen-space glyphs for surfaces without GlyphData.
+	// Backends retaining a frame copy this buffer and Surfaces. Shared GlyphData
+	// stays alive through the copied surfaces and does not need a deep copy.
 	GlyphRuns []GlyphRun
 
 	// ContainerCount is the live layout tree after the last pass (one node per
@@ -244,7 +250,9 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 
 		prevFrameStart := ui.frameStart
 		ui.frameStart = time.Now()
-		ui.timeDelta = float32(ui.frameStart.Sub(prevFrameStart).Milliseconds()) / 1e3
+		if !ui.pinnedTimeDelta {
+			ui.timeDelta = float32(ui.frameStart.Sub(prevFrameStart).Milliseconds()) / 1e3
+		}
 
 		// click-streak detection (double clicks and beyond): a click close in
 		// time and space to the previous one continues the streak
@@ -365,6 +373,9 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 		PopupsHost()
 		DebugPanel()
 		warnLeftoverAccess()
+		for _, cleanup := range frameCleanups {
+			cleanup()
+		}
 
 		resolveSizeFromInside(root)
 
@@ -377,11 +388,9 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 		// Clip to the root's layout size, not Host.WindowSize: with CSD those
 		// differ (root = surface, WindowSize = content below the titlebar).
 		resolveLayout(ui.current, Rect{Size: ui.current.resolvedSize})
-		collectAccessTree(ui.current)
 		revealFocusedInScrollPorts()
 
 		// ======== begin rendering surfaces ========
-		g.ResetSlice(&ui.surfaces)
 		g.ResetSlice(&ui.hoverables)
 		g.ResetSlice(&ui.focusables)
 		if ui.anyFocusable {
@@ -395,8 +404,20 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 		focusTrapFirstStop()
 		tabAfterFirstStop(ui.tabAfterSpecs)
 
-		g.ResetSlice(&ui.glyphRuns)
-		_renderToSurfaces(ui.current, Rect{Size: ui.current.resolvedSize})
+		// Intermediate passes supply interaction geometry to the next build.
+		// Only the final pass publishes paint output.
+		finalPass := !ui.stabilizeRequested || pass >= 1
+		if finalPass {
+			if layoutWarnings && ui.Host.WindowSize[0] > 0 && ui.Host.WindowSize[1] > 0 {
+				warnCollapsedLayout(ui.current)
+			}
+			clear(ui.surfaces) // Drop glyph-data references before reusing the frame buffer.
+			g.ResetSlice(&ui.surfaces)
+			g.ResetSlice(&ui.glyphRuns)
+		}
+		ui.accessPaintOrder = 0
+		collectFrameArtifacts(ui.current, Rect{Size: ui.current.resolvedSize}, finalPass)
+		collectAccessTree(ui.current)
 		ui.SurfaceCount = len(ui.surfaces)
 		ui.ContainerCount = ui.treeCount + 1
 		ui.ContainerBuilt = ui.containerBuilt
@@ -420,7 +441,7 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 		// ======== end frame pass ========
 
 		anyRequested = anyRequested || ui.Host.NextFrame.Load()
-		if !ui.stabilizeRequested || pass >= 1 {
+		if finalPass {
 			break
 		}
 	}
@@ -438,6 +459,9 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 
 	var output FrameOutputData
 
+	output.Access = ui.access
+	output.AccessChanged = !slices.Equal(ui.access, ui.publishedAccess)
+	ui.publishedAccess = append(ui.publishedAccess[:0], ui.access...)
 	output.Surfaces = ui.surfaces
 	output.GlyphRuns = ui.glyphRuns
 	output.ContainerCount = ui.ContainerCount
@@ -483,12 +507,12 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 	return output
 }
 
-// LastFrameSurfaces returns a copy of the surface list from the most recently
-// completed frame pass. Behavior-test drivers are the intended consumer.
+// LastFrameSurfaces returns a copy of the most recently produced surface list.
+// Behavior-test drivers are the intended consumer.
 //
-// Call it from inside the frame (frameFn / a widget body): the render stage
-// rebuilds ui.surfaces AFTER the app's build code runs, so during the build
-// the list still holds the previous pass's output. From any other goroutine,
+// During a build, including settle passes, the list holds the previous
+// RunFrameFn call's output. Only the final pass emits surfaces after the build.
+// From any other goroutine,
 // serialize with WithFrameLock or the read races with the render stage.
 func LastFrameSurfaces() []Surface {
 	return append([]Surface(nil), ui.surfaces...)
@@ -583,9 +607,10 @@ type Surface struct {
 	Transparency    float32
 	PopTransparency bool
 
-	// GlyphRunFirst/Count index a span of FrameOutputData.GlyphRuns (or the
-	// backend's stashed copy). A line of text is one surface plus N run items.
-	// First is not content (hash zeros it).
+	// GlyphRunCount is the number of text glyphs. With GlyphData set, it is
+	// GlyphData.Len(), Rect.Origin places the line, and nonzero Color1 overrides
+	// glyph colors. Otherwise First/Count index screen-space FrameOutputData.GlyphRuns.
+	// First is storage location, not content.
 	GlyphRunFirst int32
 	GlyphRunCount int32
 
@@ -593,6 +618,10 @@ type Surface struct {
 	// ContentScale float32
 
 	// TODO: image, glyph, shape (vector)
+
+	// GlyphData owns immutable line-relative geometry. Keep this pointer last:
+	// surface hashing reads the pointer-free prefix and its cached content hash.
+	GlyphData *GlyphRunData
 }
 
 // GlyphRun is one glyph in a GlyphRunCount span. Same fields a per-glyph
@@ -705,6 +734,20 @@ const (
 	AlignMiddle
 	AlignEnd
 )
+
+// alignFactor is the leftover-space multiplier for each Alignment: start
+// and unset take none, middle takes half, end takes all. alignF masks the
+// index so an out-of-range Alignment behaves as start.
+var alignFactor = [4]float32{
+	AlignUnset:  0,
+	AlignStart:  0,
+	AlignMiddle: 0.5,
+	AlignEnd:    1,
+}
+
+func alignF(a Alignment) float32 {
+	return alignFactor[uint(a)&3]
+}
 
 type AttrSet struct {
 
@@ -838,11 +881,9 @@ type _Container struct {
 	glyphOffset Vec2
 
 	// Optional paint lists for a text line: one layout box, many glyphs.
-	// glyphRuns is the line's precomputed relative GlyphRun geometry —
-	// shared straight from the shape cache, or a per-glyph color copy when
-	// spans recolor. glyphRunColor tints every run when nonzero; zero means
-	// the colors are baked into the runs.
-	glyphRuns     []GlyphRun
+	// glyphData shares immutable geometry and any span colors. glyphRunColor
+	// overrides every glyph's color when nonzero.
+	glyphData     *GlyphRunData
 	glyphRunColor Vec4
 	paintRects    []paintRect
 	textRunWidth  float32 // shaped line width; used with MainAlign to place runs
@@ -864,8 +905,11 @@ type _Container struct {
 	anyGrowOrExpand bool // in-flow child with Grow or ExpandAcross; from-outside no-ops otherwise
 	ContentSize     Vec2 // used for scrolling
 
-	access    AccessAttrs
-	accessSet bool
+	access        AccessAttrs
+	accessSet     bool
+	accessText    string
+	accessActions AccessActionKind
+	accessOrder   int
 
 	parent   *_Container
 	children []*_Container
@@ -1199,10 +1243,11 @@ func PressAction() bool {
 	return action
 }
 
-// returns true if focus was received now
+// FocusOnClick takes focus on a pointer press over the current container and
+// clears its ordinary focus indicator. A press elsewhere schedules a blur.
 func FocusOnClick() {
 	if ui.Host.FrameInput.Mouse == MouseClick {
-		if ui.focused != ui.current.node && IsHovered() {
+		if IsHovered() {
 			focusImmediate()
 		} else if ui.focused == ui.current.node && !IsHovered() {
 			// blur.
@@ -1278,8 +1323,8 @@ func animateVec4From(value *Vec4, prev Vec4, rate float32, cutoff float32) {
 const layoutSizeSettleEps float32 = 0.5
 
 // commitLayoutSizeAndDetectStale records the node's pre-animation layout
-// target and, when a public geometry query hit this pass, requests a settle
-// if that target moved versus the previous pass. Comparing layout targets
+// targets and, when a public query hit this pass, requests a settle if a
+// queried outer/content dimension changed. Comparing layout targets
 // (not rd.ResolvedSize) keeps AnimSize easing from looking like instability:
 // the ease changes presented size while the target stays put. resolveLayout
 // runs it for each child before that child's animate block; the root (never
@@ -1289,14 +1334,20 @@ func commitLayoutSizeAndDetectStale(c *_Container) {
 	if n == nil {
 		return
 	}
+	contentSize := Vec2Sub(c.resolvedSize, PadSize(c.Padding))
 	if n.geometryQueryFrame == ui.FrameNumber && n.layoutSizeFrame == ui.FrameNumber-1 {
-		dz0 := Absf32(c.resolvedSize[0] - n.layoutSize[0])
-		dz1 := Absf32(c.resolvedSize[1] - n.layoutSize[1])
-		if dz0 > layoutSizeSettleEps || dz1 > layoutSizeSettleEps {
-			ui.stabilizeRequested = true
+		for axis := range 2 {
+			outerChanged := n.geometryQueryMask&(queryWidth<<axis) != 0 &&
+				Absf32(c.resolvedSize[axis]-n.layoutSize[axis]) > layoutSizeSettleEps
+			contentChanged := n.geometryQueryMask&(queryContentWidth<<axis) != 0 &&
+				Absf32(contentSize[axis]-n.layoutContentSize[axis]) > layoutSizeSettleEps
+			if outerChanged || contentChanged {
+				ui.stabilizeRequested = true
+			}
 		}
 	}
 	n.layoutSize = c.resolvedSize
+	n.layoutContentSize = contentSize
 	n.layoutSizeFrame = ui.FrameNumber
 }
 
@@ -1359,25 +1410,14 @@ func resolveLayout(container *_Container, clipRect Rect) {
 		nextLineOrigin = Vec2Sub(nextLineOrigin, container.ScrollOffset)
 
 		// cross alignment works on two levels: first we apply it to the wrap lines, then we apply it inside each wrap line!
-		switch container.CrossAlign {
-		case AlignMiddle:
-			nextLineOrigin[crossAxis] += (availableSize[crossAxis] - container.ContentSize[crossAxis]) / 2
-		case AlignEnd:
-			nextLineOrigin[crossAxis] += (availableSize[crossAxis] - container.ContentSize[crossAxis])
-		}
+		nextLineOrigin[crossAxis] += (availableSize[crossAxis] - container.ContentSize[crossAxis]) * alignF(container.CrossAlign)
 
 		for i := range container.wrapLines {
 			nextItemOrigin := nextLineOrigin
 			wrapLine := &container.wrapLines[i]
 			crossSize := wrapLine.size[crossAxis]
 
-			// apply main axis alignment
-			switch container.MainAlign {
-			case AlignMiddle:
-				nextItemOrigin[mainAxis] += (availableSize[mainAxis] - wrapLine.size[mainAxis]) / 2
-			case AlignEnd:
-				nextItemOrigin[mainAxis] += (availableSize[mainAxis] - wrapLine.size[mainAxis])
-			}
+			nextItemOrigin[mainAxis] += (availableSize[mainAxis] - wrapLine.size[mainAxis]) * alignF(container.MainAlign)
 
 			// Floating children do not participate in main-axis packing or gaps
 			// (see resolveSizesFromInside: inFlowOnLine). Origins still walk the
@@ -1397,20 +1437,12 @@ func resolveLayout(container *_Container, clipRect Rect) {
 					child.relativeOrigin = child.Float
 				} else {
 					child.relativeOrigin = nextItemOrigin
-					// cross align!
-					var childCrossSize = child.resolvedSize[crossAxis]
-					if crossSize > childCrossSize {
-						var crossAlign = container.CrossAlign
-						if child.SelfAlign != AlignUnset {
-							crossAlign = child.SelfAlign
-						}
-						switch crossAlign {
-						case AlignMiddle:
-							child.relativeOrigin[crossAxis] += (crossSize - childCrossSize) / 2
-						case AlignEnd:
-							child.relativeOrigin[crossAxis] += (crossSize - childCrossSize)
-						}
+					crossAlign := container.CrossAlign
+					if child.SelfAlign != AlignUnset {
+						crossAlign = child.SelfAlign
 					}
+					childCrossSize := child.resolvedSize[crossAxis]
+					child.relativeOrigin[crossAxis] += max(0, crossSize-childCrossSize) * alignF(crossAlign)
 					nextItemOrigin[mainAxis] += child.resolvedSize[mainAxis] + container.Gap
 				}
 
@@ -1599,7 +1631,23 @@ func revealFocusedInScrollPorts() {
 
 // called during the build up of the layout
 func resolveSizeFromInside(container *_Container) {
-	attrs := container.AttrSet
+	attrs := &container.AttrSet
+	// Leaves depend only on padding and size constraints; they have no
+	// child packing, orientation, or wrapping to resolve.
+	if len(container.children) == 0 {
+		size := PadSize(attrs.Padding)
+		size[0] = max(size[0], attrs.MinSize[0])
+		size[1] = max(size[1], attrs.MinSize[1])
+		if attrs.MaxSize[0] > 0 {
+			size[0] = min(size[0], attrs.MaxSize[0])
+		}
+		if attrs.MaxSize[1] > 0 {
+			size[1] = min(size[1], attrs.MaxSize[1])
+		}
+		container.resolvedSize = size
+		container.ContentSize = Vec2{}
+		return
+	}
 
 	// assumes children sizes are already resolved!
 	// we will now resolve _our_ size based on the content size
@@ -1799,16 +1847,19 @@ type HoverableArtifacts struct {
 
 // Interaction focus graph lives on *UI (ui.active, ui.focused, …).
 
-// _renderToSurfaces walks the resolved container tree into the frame's
-// surfaces / hoverables lists (see "begin rendering surfaces" in RunFrameFn).
-// Focusables are collected separately in source order (collectFocusables).
+// collectFrameArtifacts collects hoverables in paint order and, when paint is
+// true, emits surfaces in the same walk. Intermediate settle passes collect
+// interaction geometry without emitting paint. Focusables are collected
+// separately in source order (collectFocusables).
 //
 // clipRect is the ancestor clip (same chain as resolveLayout). A container
 // whose ScreenRect is empty is fully outside that clip. If it also Clips,
 // descendants cannot paint and the subtree is skipped. If it does not Clip,
 // children can still sit in the visible range (overflow, floats) and are
 // visited against the same ancestor clip.
-func _renderToSurfaces(container *_Container, clipRect Rect) {
+func collectFrameArtifacts(container *_Container, clipRect Rect, paint bool) {
+	container.accessOrder = ui.accessPaintOrder
+	ui.accessPaintOrder++
 	screen := container.ScreenRect
 	screenEmpty := screen.Size[0] <= 0 || screen.Size[1] <= 0
 
@@ -1827,31 +1878,33 @@ func _renderToSurfaces(container *_Container, clipRect Rect) {
 		return
 	}
 
-	// Clip constrains later surfaces (text, descendants), not this node's
-	// own fill — ClipPush is applied after the fill is drawn. A childless
-	// node with no text has nothing to clip. Fill is skipped when it would
-	// not paint and is not needed as a clip/transparency opener.
-	emitKids := !skipChildren && len(container.children) > 0
-	hasText := len(container.glyphRuns) > 0 || len(container.paintRects) > 0
-	needClip := container.Clip && (emitKids || hasText)
-	fillVisual := container.Background[3] > 0 || container.Gradient != (Vec4{}) ||
-		container.imageId != 0 || (container.fontId > 0 && container.glyphId > 0)
-	needFill := fillVisual || needClip || (container.Transparency > 0 && (emitKids || hasText))
-	openedTransparency := container.Transparency > 0 && needFill
-	needPop := needClip || openedTransparency || container.BorderWidth > 0
+	var resolvedRect Rect
+	var clip2 ClipStackOp
+	var needPop, openedTransparency bool
+	if paint && !skipOwn {
+		// Clip constrains later surfaces (text, descendants), not this node's
+		// own fill — ClipPush is applied after the fill is drawn. A childless
+		// node with no text has nothing to clip. Fill is skipped when it would
+		// not paint and is not needed as a clip/transparency opener.
+		emitKids := !skipChildren && len(container.children) > 0
+		hasText := container.glyphData != nil || len(container.paintRects) > 0
+		needClip := container.Clip && (emitKids || hasText)
+		fillVisual := container.Background[3] > 0 || container.Gradient != (Vec4{}) ||
+			container.imageId != 0 || (container.fontId > 0 && container.glyphId > 0)
+		needFill := fillVisual || needClip || (container.Transparency > 0 && (emitKids || hasText))
+		openedTransparency = container.Transparency > 0 && needFill
+		needPop = needClip || openedTransparency || container.BorderWidth > 0
 
-	var clip1, clip2 ClipStackOp
-	if needClip {
-		clip1 = ClipPush
-		clip2 = ClipPop
-	}
+		var clip1 ClipStackOp
+		if needClip {
+			clip1 = ClipPush
+			clip2 = ClipPop
+		}
 
-	resolvedRect := Rect{
-		Origin: container.resolvedOrigin,
-		Size:   container.resolvedSize,
-	}
-
-	if !skipOwn {
+		resolvedRect = Rect{
+			Origin: container.resolvedOrigin,
+			Size:   container.resolvedSize,
+		}
 		if container.Shadow.Alpha > 0 {
 			blur := container.Shadow.Blur
 			unpadded := resolvedRect.Size
@@ -1889,14 +1942,14 @@ func _renderToSurfaces(container *_Container, clipRect Rect) {
 			})
 		}
 
-		if !container.ClickThrough {
-			g.Append(&ui.hoverables, HoverableArtifacts{
-				Rect:      container.ScreenRect,
-				Container: container,
-			})
-		}
-
 		emitTextRuns(container)
+	}
+
+	if !skipOwn && !container.ClickThrough {
+		g.Append(&ui.hoverables, HoverableArtifacts{
+			Rect:      container.ScreenRect,
+			Container: container,
+		})
 	}
 
 	if !skipChildren {
@@ -1922,15 +1975,21 @@ func _renderToSurfaces(container *_Container, clipRect Rect) {
 		}
 
 		for _, child := range children {
-			_renderToSurfaces(child, nextClip)
+			collectFrameArtifacts(child, nextClip, paint)
 		}
 	}
 
-	if !skipOwn && needPop {
+	if needPop {
+		// A zero-width surface is a fill, so clip/transparency closers carry
+		// no paint unless this container has a visible border.
+		var borderColor Vec4
+		if container.BorderWidth > 0 {
+			borderColor = container.BorderColor
+		}
 		pushSurface(Surface{
 			Rect:    resolvedRect,
-			Color1:  container.BorderColor,
-			Color2:  container.BorderColor,
+			Color1:  borderColor,
+			Color2:  borderColor,
 			Corners: container.Corners,
 			Stroke:  container.BorderWidth,
 			Clip:    clip2,
@@ -1941,7 +2000,7 @@ func _renderToSurfaces(container *_Container, clipRect Rect) {
 }
 
 func emitTextRuns(c *_Container) {
-	if len(c.paintRects) == 0 && len(c.glyphRuns) == 0 {
+	if len(c.paintRects) == 0 && c.glyphData == nil {
 		return
 	}
 	origin := c.resolvedOrigin
@@ -1953,7 +2012,7 @@ func emitTextRuns(c *_Container) {
 			Color2: r.Color,
 		})
 	}
-	if len(c.glyphRuns) == 0 {
+	if c.glyphData == nil || c.glyphData.Len() == 0 {
 		return
 	}
 	padL := c.Padding[PAD_LEFT]
@@ -1964,64 +2023,47 @@ func emitTextRuns(c *_Container) {
 	y := padT - c.ScrollOffset[1]
 	runW := c.textRunWidth
 	if runW <= 0 {
-		for i := range c.glyphRuns {
-			runW += c.glyphRuns[i].Rect.Size[0]
+		for i := range c.glyphData.glyphs {
+			runW += c.glyphData.glyphs[i].Rect.Size[0]
 		}
 	}
-	switch c.MainAlign {
-	case AlignMiddle:
-		x += (avail - runW) / 2
-	case AlignEnd:
-		x += avail - runW
-	}
-	// The runs carry line-relative geometry precomputed at shape time; emit
-	// is a bulk copy plus an origin shift (and the uniform tint, unless the
-	// span path baked per-glyph colors — glyphRunColor zero).
-	first := len(ui.glyphRuns)
-	ui.glyphRuns = append(ui.glyphRuns, c.glyphRuns...)
-	dst := ui.glyphRuns[first:]
+	x += (avail - runW) * alignF(c.MainAlign)
 	ox := origin[0] + x
 	oy := origin[1] + y
-	if c.glyphRunColor != (Vec4{}) {
-		for i := range dst {
-			dst[i].Rect.Origin[0] += ox
-			dst[i].Rect.Origin[1] += oy
-			dst[i].Color = c.glyphRunColor
-		}
-	} else {
-		for i := range dst {
-			dst[i].Rect.Origin[0] += ox
-			dst[i].Rect.Origin[1] += oy
-		}
-	}
 	pushSurface(Surface{
 		Rect: Rect{
 			Origin: Vec2{ox, oy},
 			Size:   Vec2{runW, c.textRunEm},
 		},
-		GlyphRunFirst: int32(first),
-		GlyphRunCount: int32(len(dst)),
+		Color1:        c.glyphRunColor,
+		GlyphRunCount: int32(c.glyphData.Len()),
+		GlyphData:     c.glyphData,
 	})
 }
 
 // Focus requests keyboard focus for the current container; the change takes
-// effect as the frame is committed.
+// effect as the frame is committed. It clears the ordinary focus indicator;
+// keyboard-driven callers can follow it with ShowFocusIndicator().
 func Focus() {
+	ui.focusVisible = false
 	ui.nextFocused = ui.current.node
 }
 
 func focusImmediate() {
+	ui.focusVisible = false
 	ui.focused = ui.current.node
 	ui.nextFocused = ui.current.node
 }
 
 // FocusImmediateOn moves keyboard focus to the container with the given handle
-// immediately (this frame), if the handle is valid.
+// immediately (this frame), if the handle is valid. It clears the ordinary focus
+// indicator; keyboard-driven callers can follow it with ShowFocusIndicator().
 func FocusImmediateOn(id ContainerId) {
 	n := resolveIdent(id)
 	if n == nil {
 		return
 	}
+	ui.focusVisible = false
 	ui.focused = n
 	ui.nextFocused = n
 }
@@ -2038,6 +2080,7 @@ func Blur() {
 // ClearFocus drops keyboard focus immediately (this frame). Use when a parent
 // wants to dismiss child focus (e.g. Escape blurring a field).
 func ClearFocus() {
+	ui.focusVisible = false
 	ui.focused = nil
 	ui.nextFocused = nil
 }
@@ -2194,6 +2237,7 @@ func cycleFocusFrom(from *identNode, dir int) {
 		nextIdx += len(ui.focusables)
 	}
 	ui.nextFocused = ui.focusables[nextIdx]
+	ShowFocusIndicator()
 }
 
 // Tab steps the tab ring from the current focus (or to the first/last
@@ -2250,6 +2294,29 @@ func FirstRender() bool {
 // HasFocus reports whether the current container holds keyboard focus.
 func HasFocus() bool {
 	return ui.focused == ui.current.node
+}
+
+// ShowFocusIndicator enables the ordinary focus indicator for this UI's current
+// or pending keyboard focus. Call after requesting focus from keyboard navigation
+// or an accessibility action. Focus and FocusImmediateOn clear this flag; Tab
+// and TabFrom enable it. Pointer motion and unrelated keys do not change it.
+func ShowFocusIndicator() {
+	if !ui.focusVisible {
+		ui.focusVisible = true
+		RequestNextFrame()
+	}
+}
+
+// HasVisibleFocus reports whether the current container has keyboard focus and
+// its ordinary focus indicator is enabled. Use HasFocus for keyboard behavior
+// and for text editors' caret and focused editing appearance.
+func HasVisibleFocus() bool {
+	return HasFocus() && ui.focusVisible
+}
+
+// IdHasVisibleFocus is HasVisibleFocus for the container with the given handle.
+func IdHasVisibleFocus(id ContainerId) bool {
+	return IdHasFocus(id) && ui.focusVisible
 }
 
 // IdHasFocus reports whether the container with the given handle holds keyboard
@@ -2468,7 +2535,7 @@ func GetLastSize() Vec2 {
 // variants take a ContainerId handle and read the same data for that container.
 // An unknown or not-yet-built handle yields zero values.
 
-func idRenderData(id ContainerId) RenderData {
+func idRenderData(id ContainerId, query geometryQuery) RenderData {
 	n := resolveIdent(id)
 	if n == nil {
 		// an id can be legitimately unregistered here: a forward reference
@@ -2478,63 +2545,95 @@ func idRenderData(id ContainerId) RenderData {
 		}
 		return RenderData{}
 	}
-	return queriedRenderData(n)
+	return queriedRenderData(n, query)
 }
 
 // GetRenderData returns the current container's last-pass layout: resolved
 // geometry, padding, and animation-channel values. Scroll is
 // GetScrollOffset (live) / GetScrollOffsetOf (last presented).
 func GetRenderData() RenderData {
-	return queriedRenderData(ui.current.node)
+	return queriedRenderData(ui.current.node, queryResolvedSize)
 }
 
 // GetRenderDataOf returns the render data of the container with the given handle.
 func GetRenderDataOf(id ContainerId) RenderData {
-	return idRenderData(id)
+	return idRenderData(id, queryResolvedSize)
 }
 
 // Get the screen rect of the current element from the previous frame data
 func GetScreenRect() Rect {
-	return queriedRenderData(ui.current.node).screenRect
+	return queriedRenderData(ui.current.node, queryResolvedSize).screenRect
 }
 
 // GetScreenRectOf returns the on-screen rectangle (after clipping) of the
 // container with the given handle.
 func GetScreenRectOf(target ContainerId) Rect {
-	return idRenderData(target).screenRect
+	return idRenderData(target, queryResolvedSize).screenRect
 }
 
 // GetResolvedRectOf returns the laid-out rectangle (resolved origin and size,
 // before clipping) of the container with the given handle.
 func GetResolvedRectOf(target ContainerId) Rect {
-	rd := idRenderData(target)
+	rd := idRenderData(target, queryResolvedSize)
 	return Rect{
 		Origin: rd.ResolvedOrigin,
 		Size:   rd.ResolvedSize,
 	}
 }
 
+// GetResolvedWidth returns the current container's last-pass outer width.
+// Only a width target change requests a settle pass; height is independent.
+func GetResolvedWidth() float32 {
+	return queriedRenderData(ui.current.node, queryWidth).ResolvedSize[0]
+}
+
+// GetResolvedHeight returns the current container's last-pass outer height.
+// Only a height target change requests a settle pass; width is independent.
+func GetResolvedHeight() float32 {
+	return queriedRenderData(ui.current.node, queryHeight).ResolvedSize[1]
+}
+
 // GetResolvedSize returns the current container's resolved (laid-out) size.
+// It tracks both dimensions. Use GetResolvedWidth or GetResolvedHeight when
+// only one dimension affects the build.
 func GetResolvedSize() Vec2 {
-	return queriedRenderData(ui.current.node).ResolvedSize
+	return queriedRenderData(ui.current.node, queryResolvedSize).ResolvedSize
+}
+
+// GetContentWidth returns the last-pass outer width minus horizontal padding.
+// It tracks that content-area width, including changes caused by padding.
+// It does not return the width of overflowing or scrollable children.
+func GetContentWidth() float32 {
+	rd := queriedRenderData(ui.current.node, queryContentWidth)
+	return rd.ResolvedSize[0] - (rd.Padding[PAD_LEFT] + rd.Padding[PAD_RIGHT])
+}
+
+// GetContentHeight returns the last-pass outer height minus vertical padding.
+// It tracks that content-area height, including changes caused by padding.
+// It does not return the height of overflowing or scrollable children.
+func GetContentHeight() float32 {
+	rd := queriedRenderData(ui.current.node, queryContentHeight)
+	return rd.ResolvedSize[1] - (rd.Padding[PAD_TOP] + rd.Padding[PAD_BOTTOM])
 }
 
 // GetAvailableSize returns the size of the current container's content area —
-// its resolved size minus padding.
+// its resolved size minus padding. It tracks both content dimensions; use
+// GetContentWidth or GetContentHeight when only one affects the build.
 func GetAvailableSize() Vec2 {
-	return GetContentRect().Size
+	rd := queriedRenderData(ui.current.node, queryContentSize)
+	return Vec2Sub(rd.ResolvedSize, PadSize(rd.Padding))
 }
 
 // GetContentRect returns the current container's content rectangle: its resolved
 // rectangle inset by padding.
 func GetContentRect() Rect {
-	return contentRectOf(queriedRenderData(ui.current.node))
+	return contentRectOf(queriedRenderData(ui.current.node, queryResolvedSize|queryContentSize))
 }
 
 // GetContentRectOf returns the content rectangle (resolved rect inset by padding)
 // of the container with the given handle.
 func GetContentRectOf(id ContainerId) Rect {
-	return contentRectOf(idRenderData(id))
+	return contentRectOf(idRenderData(id, queryResolvedSize|queryContentSize))
 }
 
 func contentRectOf(rd RenderData) Rect {

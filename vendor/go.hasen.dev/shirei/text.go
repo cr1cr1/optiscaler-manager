@@ -510,6 +510,10 @@ func lineFirstCluster(line *ShapedTextLine) int {
 }
 
 func ShapedTextLineLayout(line *ShapedTextLine, style TextStyleAttrs, spans []StyleSpan, baseDir Direction, selectionFrom int, selectionTo int, nextLinePaddingTop *f32) {
+	shapedTextLineLayoutColor(line, style, spans, baseDir, selectionFrom, selectionTo, nextLinePaddingTop, SelectionColor)
+}
+
+func shapedTextLineLayoutColor(line *ShapedTextLine, style TextStyleAttrs, spans []StyleSpan, baseDir Direction, selectionFrom int, selectionTo int, nextLinePaddingTop *f32, selectionColor Vec4) {
 	// the line box is lineEm tall (max em on the line); the rest of the line
 	// height (the leading) is applied as top padding, spacing this line from
 	// the previous one. Glyph bitmaps are keyed by container height
@@ -573,13 +577,26 @@ func ShapedTextLineLayout(line *ShapedTextLine, style TextStyleAttrs, spans []St
 		ui.current.textRunEm = line.maxEm
 		stamps := line.stamps
 		if spanRecolors {
-			colored := slices.Clone(line.runs)
-			for i := range colored {
-				colored[i].Color = styleAt(style, spans, int(stamps[i].Cluster)).TextColor
+			var hash xxhash.Digest
+			Hash(&hash, &style.TextColor)
+			for i := range spans {
+				Hash(&hash, &spans[i].From)
+				Hash(&hash, &spans[i].To)
+				Hash(&hash, &spans[i].Style.TextColor)
 			}
-			ui.current.glyphRuns = colored
+			key := coloredGlyphKey{line.runData, hash.Sum64()}
+			data, ok := res.coloredGlyphCache.Get(key)
+			if !ok {
+				colored := slices.Clone(line.runs)
+				for i := range colored {
+					colored[i].Color = styleAt(style, spans, int(stamps[i].Cluster)).TextColor
+				}
+				data = &GlyphRunData{glyphs: colored, hash: xxhash.Sum64(g.UnsafeSliceBytes(colored)), dependencies: line.runData.dependencies}
+				res.coloredGlyphCache.Set(key, data)
+			}
+			ui.current.glyphData = data
 		} else {
-			ui.current.glyphRuns = line.runs
+			ui.current.glyphData = line.runData
 			ui.current.glyphRunColor = style.TextColor
 		}
 
@@ -611,7 +628,7 @@ func ShapedTextLineLayout(line *ShapedTextLine, style TextStyleAttrs, spans []St
 			appendAdvanceBands(&rects, stamps, selOrigin[1], selHeight, func(g *glyphStamp) Vec4 {
 				i := int(g.Cluster)
 				if i >= selectionFrom && i < selectionTo {
-					return SelectionColor
+					return selectionColor
 				}
 				return Vec4{}
 			})
@@ -751,13 +768,21 @@ func descenderPadForLine(line *ShapedTextLine, style TextStyleAttrs) f32 {
 func ShapedTextLayout(shaped ShapedText, style TextStyleAttrs, selectionFrom int, selectionTo int, spans ...StyleSpan) {
 	// Compose overlapping spans once; layout only sees disjoint full styles.
 	flat := effectiveSpans(style, spans, len(shaped.Runes))
-	shapedTextLayoutFlat(shaped, style, selectionFrom, selectionTo, flat)
+	shapedTextLayoutFlat(shaped, style, selectionFrom, selectionTo, flat, string(shaped.Runes), SelectionColor)
+}
+
+// ShapedTextLayoutStyled draws a shaped paragraph with an explicit selection color.
+// Transparent zero is literal; the package SelectionColor is not consulted.
+func ShapedTextLayoutStyled(shaped ShapedText, style TextStyleAttrs, selectionFrom, selectionTo int, selectionColor Vec4, spans ...StyleSpan) {
+	flat := effectiveSpans(style, spans, len(shaped.Runes))
+	shapedTextLayoutFlat(shaped, style, selectionFrom, selectionTo, flat, string(shaped.Runes), selectionColor)
 }
 
 // shapedTextLayoutFlat is ShapedTextLayout after span flattening: spans must
 // be effectiveSpans output. Text calls it directly with the spans it already
 // resolved for shaping.
-func shapedTextLayoutFlat(shaped ShapedText, style TextStyleAttrs, selectionFrom int, selectionTo int, spans []StyleSpan) {
+func shapedTextLayoutFlat(shaped ShapedText, style TextStyleAttrs, selectionFrom int, selectionTo int, spans []StyleSpan, source string, selectionColor Vec4) {
+	ui.anyAccess = true
 	// Block size is content-driven; wrap constraint is the parent's cascaded
 	// MaxSize (set by Text under a max-width container, or by an explicit
 	// MaxWidth host). Soft-wrap line breaks were already applied at shape time.
@@ -790,9 +815,10 @@ func shapedTextLayoutFlat(shaped ShapedText, style TextStyleAttrs, selectionFrom
 		// MinSize is the outer box: em plus the symmetric descender pads.
 		blockAttrs.MinSize[1] = lineEm + 2*blockAttrs.Padding[PAD_TOP]
 		Container(blockAttrs, func() {
+			ui.current.accessText = source
 			ui.current.textRunWidth = line.Width
 			ui.current.textRunEm = line.maxEm
-			ui.current.glyphRuns = line.runs
+			ui.current.glyphData = line.runData
 			ui.current.glyphRunColor = style.TextColor
 		})
 		return
@@ -801,9 +827,10 @@ func shapedTextLayoutFlat(shaped ShapedText, style TextStyleAttrs, selectionFrom
 	var nextLinePaddingTop float32 // to manage spaces between lines
 
 	Container(blockAttrs, func() {
+		ui.current.accessText = source
 		for idx := range shaped.Lines {
 			line := &shaped.Lines[idx]
-			ShapedTextLineLayout(line, style, spans, shaped.BaseDir, selectionFrom, selectionTo, &nextLinePaddingTop)
+			shapedTextLineLayoutColor(line, style, spans, shaped.BaseDir, selectionFrom, selectionTo, &nextLinePaddingTop, selectionColor)
 		}
 	})
 }
@@ -835,6 +862,16 @@ func SafeTruncateUTF8(s string, limit int) string {
 //
 // Label is the convenience for current text style + call-local mods with no spans.
 func Text(label string, style TextStyleAttrs, spans ...TextSpan) {
+	text(label, style, false, spans...)
+}
+
+// DecorativeText draws text without exposing its characters to assistive
+// technology. Icon fonts use this; the surrounding control supplies a label.
+func DecorativeText(label string, style TextStyleAttrs) {
+	text(label, style, true)
+}
+
+func text(label string, style TextStyleAttrs, decorative bool, spans ...TextSpan) {
 	// For performance reasons, do not accept text larger than 16kb
 	// We will add a segmented text view in the future to handle large text blobs
 	label = SafeTruncateUTF8(label, 16*1024)
@@ -852,7 +889,11 @@ func Text(label string, style TextStyleAttrs, spans ...TextSpan) {
 		flat = effectiveSpans(style, resolveTextSpans(style, spans), utf8.RuneCountInString(label))
 	}
 	shaped := shapeTextMaxFlat(label, style, maxWidth, flat)
-	shapedTextLayoutFlat(shaped, style, 0, 0, flat)
+	source := label
+	if decorative {
+		source = ""
+	}
+	shapedTextLayoutFlat(shaped, style, 0, 0, flat, source, SelectionColor)
 }
 
 type TextLayout struct {
@@ -1167,6 +1208,7 @@ func lineBreakShapedSegments(allSegments []GlyphsSegment, style TextStyleAttrs, 
 		}
 		line.stamps = stamps
 		line.runs = runs
+		line.runData = ownGlyphRunData(runs)
 		line.maxEm = maxEm
 	}
 
@@ -1214,13 +1256,14 @@ type ShapedTextLine struct {
 	lineEm float32
 	// runs are the line's paint geometry precomputed at shape time:
 	// line-relative GlyphRuns (origin = advance accumulation, zero Color —
-	// the shape-cache key does not include render-tier color). Emission
-	// bulk-copies them and shifts origins. stamps carry the per-glyph
+	// the shape-cache key does not include render-tier color). runData owns
+	// this slice and its cached hash/dependencies. stamps carry the per-glyph
 	// advance + cluster for decoration bands and span/selection mapping.
 	// maxEm is the tallest glyph em — the emitted run surface height.
-	runs   []GlyphRun
-	stamps []glyphStamp
-	maxEm  float32
+	runs    []GlyphRun
+	runData *GlyphRunData
+	stamps  []glyphStamp
+	maxEm   float32
 }
 
 // unwrappedShaped is HarfBuzz output before wrap: segments in logical

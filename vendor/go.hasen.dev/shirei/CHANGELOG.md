@@ -1,5 +1,85 @@
 # Changelog
 
+## v0.8.0 - 2026-09-24
+
+Shirei has coordinated light and dark color schemes for application surfaces and
+stock controls. Default controls, focus cues, and the example applications use
+the same scheme system. Apps start in the built-in light scheme; selecting a
+different scheme or following OS appearance is optional.
+
+* Four complete presets cover cool and warm light and dark palettes. Apps select
+  a scheme directly or set preferred light/dark schemes and choose a mode.
+  Following the OS appearance is an application choice through `ext/darkmode`.
+* `UseSurface` applies semantic canvas, panel, and toolbar colors with inherited
+  text color. Stock widgets resolve their paint from `CurrentColorScheme`; the
+  `Styled` variants accept complete, explicit paint without reading that scheme.
+* Buttons gain default, primary, and destructive roles, with one-shot
+  `NextButton*` properties. Shared flat tabs and a controls showcase demonstrate
+  the new styles. Segmented controls have clearer selected-state contrast.
+* Keyboard navigation has a visible focus indicator that stays separate from
+  keyboard focus. Stock controls use the scheme's `FocusRing` color.
+* `SHIREI_LAYOUT_WARN=1` reports collapsed extrinsic containers during layout.
+  Git History, Haystack, Dir Weight, Process Monitor, and Hacker News Reader
+  have updated layouts and light/dark presentation. The layout-shell tutorial
+  and example screenshots use the built-in schemes.
+* On iOS, `ext/darkmode` follows appearance changes while an app is running.
+* The appearance and custom-widget accessibility tutorials cover optional
+  customization and screen-reader metadata.
+
+### Upgrading from v0.7.0
+
+* Update `go.hasen.dev/shirei` and any Shirei extensions to matching `v0.8.0`
+  module versions. Separately versioned examples and demos also use v0.8.0.
+* If your code uses the removed `widgets.ButtonAccent` or `widgets.FocusRing`
+  globals, move those customizations to the active color scheme. If it sets
+  `ButtonLook.TopBoost` or `ButtonLook.ElevationDrop`, use explicit button
+  state paint. `DefaultAccent` and `DefaultBackground` remain explicit color
+  presets but do not set stock widget colors.
+* If a custom control paints its focus outline using `HasFocus()`, use
+  `HasVisibleFocus()` for that outline. After programmatic keyboard navigation
+  requests focus, call `ShowFocusIndicator()`.
+
+See [the v0.8.0 migration notes](docs/migration-v0.8.0.md) for code examples.
+Accessibility remains at the basic-control scope described in
+[accessibility](docs/accessibility.md); accessible text editing and selection,
+advanced list/table navigation, and X11 accessibility are outside this release.
+
+## v0.7.0 - 2026-09-18
+
+Basic desktop screen-reader support and glyph-rendering improvements.
+
+* Native accessibility bridges for macOS (Cocoa/VoiceOver), Linux Wayland
+  (AT-SPI/Orca), and 64-bit Windows (UI Automation and MSAA).
+* Static text and basic controls expose spoken labels, roles, state, bounds,
+  keyboard focus and actions. Buttons, toggles and sliders share the normal
+  widget interaction path; custom controls can supply accessibility metadata.
+* Password values stay out of accessibility snapshots. Hidden subtrees and
+  background controls behind active focus traps stay out of the native tree.
+* Native form checks and independent AT-SPI, UIA and MSAA clients support
+  integration testing. Speech checks cover VoiceOver, Orca and NVDA under Proton;
+  native Windows screen-reader acceptance is pending.
+* Glyph rendering reuses converted colors and skips fully clipped glyphs before
+  atlas lookup. Inactive debug overlays avoid formatting work.
+* Drive commands support starting and stopping CPU profiles.
+
+This is initial support for basic controls. Accessible text editing/selection,
+advanced list/table navigation and X11 accessibility are outside its scope.
+See [accessibility](docs/accessibility.md) for setup, APIs and platform limits.
+
+## v0.6.12 - 2026-09-18
+
+The feature set matches v0.7.0 above. Use v0.7.0 for this release.
+
+## v0.6.11 - 2026-09-16
+
+Bug fixes and performance improvements
+
+* Fix `shirei_mobilerun` failing to deploy to a connected iPhone
+* Fix web backend not building with `GOOS=js GOARCH=wasm`
+* Web: clamp the floating shell to the viewport; fill the host slot on mobile
+* Axis-specific size queries (`GetResolvedWidth` / `GetResolvedHeight` / `GetContentWidth` / `GetContentHeight`)
+* Skip paint on intermediate layout settle passes; share glyph geometry across frames
+
 ## v0.6.10 - 2026-09-11
 
 Nested modules require `go.hasen.dev/shirei v0.6.10`.

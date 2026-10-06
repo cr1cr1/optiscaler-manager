@@ -304,9 +304,14 @@ func produceFrame(w, h float64) {
 	lastProducedW, lastProducedH = float32(w), float32(h)
 
 	flushPendingFrameText()
+	flushAccessAction()
 
 	out := shirei.RunFrameFn(frameFn)
+	if out.AccessChanged {
+		updateAccess(out.Access)
+	}
 
+	clear(frameSurfaces) // Release immutable glyph data from the previous snapshot.
 	frameSurfaces = append(frameSurfaces[:0], out.Surfaces...)
 	frameGlyphRuns = append(frameGlyphRuns[:0], out.GlyphRuns...)
 	frameGlyphsAdded = append(frameGlyphsAdded[:0], out.GlyphsAdded...)
@@ -325,7 +330,7 @@ func produceFrame(w, h float64) {
 		openURL(out.OpenURL)
 	}
 
-	setWantsFrame(out.NextFrameRequested)
+	setWantsFrame(out.NextFrameRequested || len(accessPending) > 0)
 	frameHash = out.SurfacesHash
 }
 

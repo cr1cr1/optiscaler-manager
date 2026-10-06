@@ -3,7 +3,7 @@
 # github.com/alecthomas/kong v1.16.1
 ## explicit; go 1.20
 github.com/alecthomas/kong
-# github.com/andybalholm/brotli v1.2.4
+# github.com/andybalholm/brotli v1.2.6
 ## explicit; go 1.22
 github.com/andybalholm/brotli
 github.com/andybalholm/brotli/matchfinder
@@ -75,10 +75,10 @@ github.com/charmbracelet/x/ansi/parser
 # github.com/charmbracelet/x/cellbuf v0.0.15
 ## explicit; go 1.24.2
 github.com/charmbracelet/x/cellbuf
-# github.com/charmbracelet/x/exp/golden v0.0.0-20260906004030-3986e9119cf9
+# github.com/charmbracelet/x/exp/golden v0.1.0
 ## explicit; go 1.24.0
 github.com/charmbracelet/x/exp/golden
-# github.com/charmbracelet/x/exp/teatest v0.0.0-20260906004030-3986e9119cf9
+# github.com/charmbracelet/x/exp/teatest v0.0.0-20261004011457-ad85c59fdf4e
 ## explicit; go 1.24.0
 github.com/charmbracelet/x/exp/teatest
 # github.com/charmbracelet/x/term v0.2.2
@@ -97,7 +97,7 @@ github.com/clipperhouse/uax29/v2/graphemes
 ## explicit; go 1.18
 github.com/dboslee/lru
 github.com/dboslee/lru/internal
-# github.com/ebitengine/purego v0.11.0
+# github.com/ebitengine/purego v0.11.1
 ## explicit; go 1.25.0
 github.com/ebitengine/purego
 github.com/ebitengine/purego/cstrings
@@ -126,6 +126,7 @@ github.com/go-text/typesetting/language
 # github.com/godbus/dbus/v5 v5.2.2
 ## explicit; go 1.20
 github.com/godbus/dbus/v5
+github.com/godbus/dbus/v5/introspect
 # github.com/hashicorp/golang-lru/v2 v2.0.7
 ## explicit; go 1.18
 github.com/hashicorp/golang-lru/v2
@@ -141,7 +142,7 @@ github.com/jezek/xgb/xproto
 # github.com/joho/godotenv v1.5.1
 ## explicit; go 1.12
 github.com/joho/godotenv
-# github.com/klauspost/compress v1.20.0
+# github.com/klauspost/compress v1.20.1
 ## explicit; go 1.25
 github.com/klauspost/compress
 github.com/klauspost/compress/flate
@@ -160,7 +161,7 @@ github.com/lewisgibson/go-vdf/internal
 # github.com/lucasb-eyer/go-colorful v1.4.1
 ## explicit; go 1.12
 github.com/lucasb-eyer/go-colorful
-# github.com/mattn/go-colorable v0.1.15
+# github.com/mattn/go-colorable v0.1.16
 ## explicit; go 1.18
 github.com/mattn/go-colorable
 # github.com/mattn/go-isatty v0.0.24
@@ -182,8 +183,8 @@ github.com/muesli/cancelreader
 # github.com/muesli/termenv v0.16.0
 ## explicit; go 1.17
 github.com/muesli/termenv
-# github.com/pierrec/lz4/v4 v4.1.29
-## explicit; go 1.17
+# github.com/pierrec/lz4/v4 v4.1.33
+## explicit; go 1.22
 github.com/pierrec/lz4/v4
 github.com/pierrec/lz4/v4/internal/lz4block
 github.com/pierrec/lz4/v4/internal/lz4errors
@@ -211,24 +212,25 @@ github.com/spf13/afero/mem
 ## explicit; go 1.17
 github.com/stangelandcl/ppmd
 github.com/stangelandcl/ppmd/internal/h7z
-# github.com/ulikunitz/xz v0.5.16
+# github.com/ulikunitz/xz v0.5.17
 ## explicit; go 1.20
 github.com/ulikunitz/xz/internal/hash
 github.com/ulikunitz/xz/internal/xlog
 github.com/ulikunitz/xz/lzma
-# github.com/xo/terminfo v1.0.0
-## explicit; go 1.19
+# github.com/xo/terminfo v1.2.0
+## explicit; go 1.25
 github.com/xo/terminfo
 # go.hasen.dev/generic v0.1.8
 ## explicit; go 1.21
 go.hasen.dev/generic
-# go.hasen.dev/shirei v0.6.10
+# go.hasen.dev/shirei v0.8.0
 ## explicit; go 1.25.0
 go.hasen.dev/shirei
 go.hasen.dev/shirei/androidbackend
 go.hasen.dev/shirei/app
 go.hasen.dev/shirei/cocoabackend
 go.hasen.dev/shirei/gpurender
+go.hasen.dev/shirei/internal/atspi
 go.hasen.dev/shirei/internal/iconimg
 go.hasen.dev/shirei/internal/qwerty
 go.hasen.dev/shirei/internal/wayland/cursorshape

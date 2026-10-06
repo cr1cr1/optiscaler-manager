@@ -3239,3 +3239,29 @@ opens the restore menu of local backup sets.
   `TestTUIRestorePickGatedOnDLSSReady`,
   `TestTUIRestorePickPopulatesOnDetailEntry`,
   `TestTUIRestorePickResyncsOnSettle`, `TestRestoreBoxWindowsLongLists`.
+
+## 2026-10-06 — issue 4: shirei v0.8.0 migration + vendor-patch reapplication
+
+- Finished the previously uncommitted shirei v0.6.10 → v0.8.0 bump (plus
+  teatest/brotli/lz4 refreshes): the re-vendor had wiped the
+  optiscaler-manager patch set, leaving `internal/gui` uncompilable
+  (`PointerHand`, `TextEntry`, `ImageFill`, `widgets.ButtonAccent`
+  undefined).
+- Reapplied all nine active vendor patches onto v0.8.0: verbatim copies
+  for the five files upstream left untouched (`images.go`,
+  `waylandkeyboard_linux.go`, `waylandcursor_linux.go`,
+  `waylandinput_linux.go`), hunk-level adaptation for the six it changed
+  (`shirei.go`, `attrs.go`, `softrender.go`, `renderpng.go`,
+  `waylanddecor_linux.go`, `waylandbackend_linux.go`,
+  `win32backend_windows.go`). v0.8.0 supersedes none of them — its new
+  `ImageViewAt` still emits `ImageScale: true` surfaces, so the v0.14
+  cover-stretch patch stays.
+- `internal/gui/theme.go` migrates off the removed
+  `widgets.ButtonAccent`/`FocusRing` globals onto the v0.8.0 color-scheme
+  API: `CurrentColorScheme` derives from `widgets.DarkColorScheme()` with
+  a `Buttons.Default` `ButtonStyle` recomputing the exact pre-v0.8.0
+  accent paint (TopBoost 8, ElevationDrop 16, hover +3 / press −3) and
+  the app's `focusBorder` as `FocusRing`.
+- `TestVendorCSDPatchPresent` and the cursor behavior tests pass
+  unchanged; full `go test ./...` green; `go vet` clean.
+  `docs/vendor-patches.md` records the v0.8.0 reapplication.

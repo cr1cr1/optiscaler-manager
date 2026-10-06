@@ -18,24 +18,26 @@ type UI struct {
 	Host Host
 
 	// Build cursor and pass buffers (layout / surface emit for one frame world).
-	current        *_Container
-	nextAccess     AccessAttrs
-	access         []AccessNode
-	accessByName   map[string][]int
-	surfaces       []Surface
-	glyphRuns      []GlyphRun
-	surfaceHash    uint64 // hash of last presented surfaces (present skip)
-	SurfaceCount   int    // surfaces emitted last pass
-	ContainerCount int    // live layout tree (last pass)
-	ContainerBuilt int    // ContainerWithKey this pass, including nested Measure
-	containerBuilt int    // running ContainerWithKey count for the current pass
+	current          *_Container
+	nextAccess       AccessAttrs
+	access           []AccessNode
+	publishedAccess  []AccessNode
+	accessByName     map[string][]int
+	accessPaintOrder int
+	surfaces         []Surface
+	glyphRuns        []GlyphRun
+	surfaceHash      uint64 // hash of last presented surfaces (present skip)
+	SurfaceCount     int    // surfaces emitted last pass
+	ContainerCount   int    // live layout tree (last pass)
+	ContainerBuilt   int    // ContainerWithKey this pass, including nested Measure
+	containerBuilt   int    // running ContainerWithKey count for the current pass
 	// treeCount counts containers in the current pass's live tree (root
 	// excluded). Nested Measure increments the measure-UI's own counter,
 	// which is discarded; unlike containerBuilt it is not transferred back.
 	treeCount            int
 	anyFocusable         bool // set during build; skip collectFocusables when false
 	anyTabAfter          bool // set during build; skip gatherTabAfter when false
-	anyAccess            bool // set by AssignAccess; skip access walk when false
+	anyAccess            bool // set by AssignAccess or text capture; skip access walk when false
 	hoverables           []HoverableArtifacts
 	focusables           []*identNode
 	tabAfterSpecs        []*_Container
@@ -57,10 +59,11 @@ type UI struct {
 	frameInProgress bool
 
 	// Mouse/key focus graph (identity-node pointers).
-	active      *identNode // engaged with the mouse
-	focused     *identNode // receives key events
-	prevFocused *identNode
-	nextFocused *identNode // requested focus
+	active       *identNode // engaged with the mouse
+	focused      *identNode // receives key events
+	prevFocused  *identNode
+	nextFocused  *identNode // requested focus
+	focusVisible bool       // explicit visual indication for current/pending keyboard focus
 
 	// Widget command queue (per-UI).
 	pendingCommands map[_CommandKey]pendingCommand
@@ -74,10 +77,14 @@ type UI struct {
 	FrameTimings FrameTimings
 
 	// Frame clock and pass control (per-UI).
-	FrameNumber        int64
-	runFirstFrame      int64 // FrameNumber of the current RunFrameFn call's first pass
-	frameStart         time.Time
-	timeDelta          float32 // fraction of a second since previous pass start
+	FrameNumber   int64
+	runFirstFrame int64 // FrameNumber of the current RunFrameFn call's first pass
+	frameStart    time.Time
+	timeDelta     float32 // fraction of a second since previous pass start
+	// pinnedTimeDelta, when true, keeps timeDelta as set by the caller
+	// instead of sampling the wall clock. Layout dump tests pin animation
+	// goldens this way.
+	pinnedTimeDelta    bool
 	stabilizeRequested bool
 	lastClickTime      time.Time
 	lastClickPoint     Vec2
@@ -121,7 +128,6 @@ func NewUI() *UI {
 	return &UI{
 		Host:            defaultHost(),
 		surfaces:        make([]Surface, 0, 1024*16),
-		glyphRuns:       make([]GlyphRun, 0, 1024*16),
 		popups:          make([]func(), 0, 128),
 		identRoot:       root,
 		pendingCommands: make(map[_CommandKey]pendingCommand),
@@ -165,8 +171,7 @@ func swapContainerSlab() {
 // newContainer hands out a zeroed container from the active slab, growing
 // the slab the first time the tree reaches this size. Steady-state frames
 // allocate no containers at all. Reused entries are reset here (keeping
-// children / wrapLines capacity; glyphRuns aliases a shared shape cache
-// and must not keep capacity).
+// children / wrapLines capacity; glyphData references immutable cached geometry).
 func newContainer() *_Container {
 	s := &ui.containerSlabs[ui.slabIndex]
 	if s.used < len(s.items) {

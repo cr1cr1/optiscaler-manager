@@ -25,6 +25,23 @@ made `widgets.ButtonExt`/`ToggleSwitchExt` faces self-focusing with
 press→release key activation, which `internal/gui` adapted to (see
 `internal/gui/widgets.go`).
 
+**v0.8.0 reapplication (2026-10-06, issue 4).** The v0.8.0 bump wiped the
+set again; all nine active patches were reapplied. Five files upstream
+did not touch between v0.6.10 and v0.8.0 were copied verbatim from the
+patched v0.6.10 tree (`images.go`, `waylandkeyboard_linux.go`,
+`waylandcursor_linux.go`, `waylandinput_linux.go`); six were adapted hunk
+by hunk (`shirei.go`, `attrs.go`, `softrender.go`, `renderpng.go`,
+`waylanddecor_linux.go`, `waylandbackend_linux.go`,
+`win32backend_windows.go` — its v0.8.0 `wmKillfocus` gained an
+accessibility `refreshAccess()` line; the cancel-repeat hook anchors
+after it). No patch was superseded by v0.8.0: its new `ImageViewAt` still
+emits `ImageScale: true` surfaces, so the v0.14 stretch patch remains
+necessary. v0.8.0 removed the `widgets.ButtonAccent`/`widgets.FocusRing`
+globals upstream; `internal/gui/theme.go` moved to the color-scheme API
+(`widgets.DarkColorScheme()` + `CurrentColorScheme`) with a
+`Buttons.Default` paint reproducing the old computed accent look — that
+is application-code migration, not a vendor patch.
+
 ## shirei: dark Wayland CSD titlebar (v0.5)
 
 - **File**: `vendor/go.hasen.dev/shirei/waylandbackend/waylanddecor_linux.go`
