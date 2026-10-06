@@ -104,9 +104,10 @@ func TestGUILaunchTemplateEdit(t *testing.T) {
 	t.Logf("launch template persisted: %q", s.LaunchTemplate)
 }
 
-// TestGUISettingsShowsOnlineLookupsToggle: the General section shows the
-// online-lookups toggle primed from the session, and Tab+Enter flips it
-// through sess.SetOnlineLookups.
+// TestGUISettingsShowsOnlineLookupsToggle: the General tab shows the
+// online-lookups toggle primed from the session (right after the tab bar
+// in the focus cycle), and Tab+Enter flips it through
+// sess.SetOnlineLookups.
 func TestGUISettingsShowsOnlineLookupsToggle(t *testing.T) {
 	sess, _ := guiFakesWithDirs(t)
 	m := newModel(Config{Session: sess})
@@ -117,7 +118,8 @@ func TestGUISettingsShowsOnlineLookupsToggle(t *testing.T) {
 	}
 
 	headlessFrames(t, 1100, 700)
-	keyFrame(KeyCodeNone, 0, m.rootView) // open frame: the trap auto-focuses the version field (v0.6.10)
+	keyFrame(KeyCodeNone, 0, m.rootView) // open frame: the trap auto-focuses the General tab
+	keyFrame(KeyTab, 0, m.rootView)      // Optiscaler tab
 	keyFrame(KeyTab, 0, m.rootView)      // online-lookups toggle
 	keyFrame(KeyEnter, 0, m.rootView)    // arm the flip
 	keyFrame(KeyCodeNone, 0, m.rootView) // release flips (v0.6.10 press->release)
@@ -133,17 +135,21 @@ func TestGUISettingsShowsOnlineLookupsToggle(t *testing.T) {
 
 // TestGUISettingsThemedInputs: the settings modal fields are the themed dark
 // inputs (the searchInput pattern, not shirei's light TextInputExt): they
-// join the Tab focus cycle, receive the trap's auto-focus on open (v0.6.10
-// focusTrapFirstStop: the first stop — the version field — is focused when
-// the modal mounts), edit their model buffers via FrameInput text/backspace,
-// clear on Esc without closing the modal, and applySettings still persists
-// the edited template.
+// join the Tab focus cycle, edit their model buffers via FrameInput
+// text/backspace, clear on Esc without closing the modal, and
+// applySettings still persists the edited template. The version field
+// lives on the Optiscaler tab; the template field on the General tab.
 //
-// Tab cycle in the settings modal (top-to-bottom, must match this list):
+// Tab cycle on the General tab (top-to-bottom, must match this list):
 //
-//	version → online-lookups → card-size (small/medium/large) →
-//	add-directory → template → umu-enabled → umu-proton →
-//	apply/clear-cache/close.
+//	general-tab → optiscaler-tab → online-lookups →
+//	card-size (small/medium/large) → add-directory → template →
+//	umu-enabled → umu-proton → apply → close.
+//
+// Tab cycle on the Optiscaler tab:
+//
+//	general-tab → optiscaler-tab → version → fork rows → fork slug →
+//	fork pattern → add-fork → clear-cache → apply → close.
 func TestGUISettingsThemedInputs(t *testing.T) {
 	sess, root := guiFakesWithDirs(t)
 	m := newModel(Config{Session: sess})
@@ -159,10 +165,13 @@ func TestGUISettingsThemedInputs(t *testing.T) {
 	version0 := m.versionBuf
 	template0 := m.templateBuf
 
-	typeFrame("", KeyCodeNone)  // open frame: registers focusables, trap mounts
-	typeFrame("x", KeyCodeNone) // typing lands in the auto-focused version field
+	typeFrame("", KeyCodeNone)        // open frame: trap auto-focuses the General tab
+	typeFrame("", KeyTab)             // Optiscaler tab
+	keyFrame(KeyEnter, 0, m.rootView) // switch to the Optiscaler tab
+	typeFrame("", KeyTab)             // version field (first content stop on the tab)
+	typeFrame("x", KeyCodeNone)       // typing lands in the version field
 	if m.versionBuf != version0+"x" {
-		t.Fatalf("version buffer %q after open-focus typing, want %q (v0.6.10 trap auto-focus)", m.versionBuf, version0+"x")
+		t.Fatalf("version buffer %q after tab switch + typing, want %q", m.versionBuf, version0+"x")
 	}
 
 	typeFrame("-test", KeyCodeNone) // still focused: append editing
@@ -184,9 +193,15 @@ func TestGUISettingsThemedInputs(t *testing.T) {
 		t.Fatal("Esc inside a settings field closed the modal; want the field cleared instead")
 	}
 
-	// Tab cycle from a blurred state restarts at the top of the modal trap.
-	// Slots: 1 version, 2 online-lookups, 3-5 card-size, 6 add-directory,
-	// 7 template, 8 umu-enabled, 9 umu-proton.
+	// Tab from a blurred state restarts at the top of the modal trap (the
+	// General tab); Enter switches back, then 7 Tabs reach the template
+	// field: optiscaler-tab, online-lookups, card-size ×3, add-directory,
+	// template.
+	typeFrame("", KeyTab)
+	keyFrame(KeyEnter, 0, m.rootView)
+	if m.settingsTab != settingsTabGeneral {
+		t.Fatalf("settingsTab = %v after Enter on the General tab, want General", m.settingsTab)
+	}
 	for i := 0; i < 7; i++ {
 		typeFrame("", KeyTab)
 	}
@@ -250,16 +265,16 @@ func TestGUISettingsUmuSection(t *testing.T) {
 }
 
 // TestGUISettingsUmuToggleFlipsViaKeyboard: the umu toggle enters the
-// Tab focus cycle at slot 8 (after the template field) and Enter flips
-// it through SetUmuEnabled.
+// General tab's Tab focus cycle at slot 9 (after the template field) and
+// Enter flips it through SetUmuEnabled.
 func TestGUISettingsUmuToggleFlipsViaKeyboard(t *testing.T) {
 	sess, _ := guiFakesWithDirs(t)
 	m := newModel(Config{Session: sess})
 	m.openSettings()
 
 	headlessFrames(t, 1100, 700)
-	keyFrame(KeyCodeNone, 0, m.rootView) // open frame: trap auto-focuses the version field (v0.6.10)
-	for i := 0; i < 7; i++ {             // one Tab less: version already focused on open
+	keyFrame(KeyCodeNone, 0, m.rootView) // open frame: trap auto-focuses the General tab
+	for i := 0; i < 8; i++ {             // optiscaler-tab, online, card-size ×3, add-dir, template, umu-enabled
 		keyFrame(KeyTab, 0, m.rootView)
 	}
 	keyFrame(KeyEnter, 0, m.rootView)    // arm the flip

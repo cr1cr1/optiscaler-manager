@@ -37,6 +37,7 @@ type model struct {
 	auditGrid           bool
 	about               bool
 	settingsOpen        bool
+	settingsTab         settingsTab // settings-modal active tab, reset to General on open
 	versionBuf          string
 	templateBuf         string
 	onlineBuf           bool                          // settings-modal online-lookups toggle buffer, primed on open

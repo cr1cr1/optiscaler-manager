@@ -3289,3 +3289,20 @@ opens the restore menu of local backup sets.
   (dedup toast helper, shared `persistSettings`, inlined single-use
   validation). `go test ./...` green, `go vet`/`gofmt` clean. README,
   scope.md, architecture.md updated.
+
+## 2026-10-07 — issue 6: tabbed GUI settings modal
+
+- The GUI settings modal gains a General/Optiscaler pill tab strip under
+  the title (recessed track, active tab raised and accent-tinted — the
+  sidebar's active language). All OptiScaler-specific settings moved to
+  the Optiscaler tab: Version (default version input), Sources (forks),
+  Cache (clear bundle cache). General keeps Library (online lookups,
+  card size), Scan Directories, Launch Template, umu-launcher.
+  Apply/Close stay in the shared footer; the modal always opens on
+  General.
+- Tabs are focusable (Enter/Space activate, Left/Right switch while a
+  tab is focused; global arrow handlers are muted in modals).
+- TDD: `settings_tabs_test.go` red first; the three existing
+  focus-cycle tests updated to the new per-tab Tab order; forks render
+  test switched to the Optiscaler tab. `go test ./...` green, `go vet`/
+  `gofmt` clean. TUI settings screen untouched (already grouped).

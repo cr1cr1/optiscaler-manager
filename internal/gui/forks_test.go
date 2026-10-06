@@ -10,12 +10,13 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 )
 
-// The settings modal's OptiScaler Sources section lists the built-in
-// forks (upstream active) and renders a valid frame.
+// The settings modal's Optiscaler tab lists the built-in forks (upstream
+// active) in its Sources section and renders a valid frame.
 func TestGUISettingsForksSectionListsBuiltins(t *testing.T) {
 	sess, _ := guiFakesWithDirs(t)
 	m := newModel(Config{Session: sess})
 	m.openSettings()
+	m.settingsTab = settingsTabOptiscaler // the Sources section lives on this tab
 
 	forks := sess.Settings().Forks
 	if len(forks) != 2 {

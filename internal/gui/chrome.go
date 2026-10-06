@@ -91,6 +91,7 @@ func (m *model) openSettings() {
 		m.umuEnabledBuf = s.UmuEnabled
 		m.umuProtonBuf = s.UmuProtonPath
 	}
+	m.settingsTab = settingsTabGeneral
 	m.settingsOpen = true
 }
 
@@ -99,70 +100,149 @@ func sectionTitle(s string) {
 	Label(s, FontSize(13), TextColorVec(txtMain), FontWeight(WeightBold))
 }
 
+// settingsTab identifies the settings modal's tabbed pages: General holds
+// library/launch settings, Optiscaler everything OptiScaler-specific.
+type settingsTab int
+
+const (
+	settingsTabGeneral settingsTab = iota
+	settingsTabOptiscaler
+)
+
 func (m *model) settingsModal() {
 	modal(settingsModalW, func() { m.settingsOpen = false }, func() {
 		Container(Attrs(Expand, Gap(sp16), BackgroundVec(bgPanel)), func() {
 			Label("Settings", FontSize(18), TextColorVec(txtMain), FontWeight(WeightBold))
+			m.settingsTabBar()
+			if m.settingsTab == settingsTabOptiscaler {
+				m.settingsOptiscalerTab()
+			} else {
+				m.settingsGeneralTab()
+			}
 
-			Container(Attrs(Expand, Gap(sp4)), func() {
-				sectionTitle("General")
-				muted("Default OptiScaler version (tag or 'latest')")
-				themedInput(&m.versionBuf, "latest", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
-				if m.sess != nil {
-					focusableToggle(&m.onlineBuf, "Online game info (Steam/ProtonDB)")
-					if m.onlineBuf != m.sess.Settings().OnlineLookups {
-						m.sess.SetOnlineLookups(m.onlineBuf)
-					}
-					m.cardSizeSelector()
-				}
-			})
-
-			Container(Attrs(Expand, Gap(sp4)), func() {
-				sectionTitle("Scan Directories")
-				m.settingsDirsSection()
-			})
-
-			Container(Attrs(Expand, Gap(sp4)), func() {
-				sectionTitle("Launch Template")
-				muted("Command template for manually added games; {exe} and {args} are substituted")
-				themedInput(&m.templateBuf, `"{exe}" {args}`, NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
-			})
-
-			Container(Attrs(Expand, Gap(sp4)), func() {
-				sectionTitle("umu-launcher (Linux: Windows games via Proton)")
-				if m.sess != nil {
-					focusableToggle(&m.umuEnabledBuf, "Launch Windows binaries via umu-launcher")
-					if m.umuEnabledBuf != m.sess.Settings().UmuEnabled {
-						m.sess.SetUmuEnabled(m.umuEnabledBuf)
-					}
-					muted("Proton path (blank = auto-detect from Steam / Bottles / umu)")
-					themedInput(&m.umuProtonBuf, "", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
-					if m.umuProtonBuf != m.sess.Settings().UmuProtonPath {
-						m.sess.SetUmuProtonPath(m.umuProtonBuf)
-					}
-				}
-			})
-
-			Container(Attrs(Expand, Gap(sp4)), func() {
-				sectionTitle("OptiScaler Sources")
-				muted("Distribution fork installs download from (owner/repo + asset glob)")
-				m.settingsForksSection()
-			})
-
-			if m.sess != nil {
-				Container(Attrs(Row, Gap(sp8)), func() {
-					if focusableButton(SymIRight, "Apply") {
-						m.applySettings()
-					}
-					if focusableButton(SymIRight, "Clear OptiScaler cache") {
-						m.sess.ClearBundleCache()
-					}
-				})
+			if m.sess != nil && focusableButton(SymIRight, "Apply") {
+				m.applySettings()
 			}
 			if focusableButton(SymILeft, "Close") {
 				m.settingsOpen = false
 			}
 		})
+	})
+}
+
+// settingsTabBar is the modal's tab strip: a recessed track with one pill
+// per tab; the active tab is raised and accent-tinted (sidebar language).
+func (m *model) settingsTabBar() {
+	Container(Attrs(Row, Gap(2), Pad(2), Corners(radiusS), BackgroundVec(bgCard)), func() {
+		m.settingsTabButton(settingsTabGeneral, "General")
+		m.settingsTabButton(settingsTabOptiscaler, "Optiscaler")
+	})
+}
+
+// settingsTabButton is one tab in the strip. Beyond PressAction it answers
+// Enter/Space when focused and Left/Right to move between tabs (the global
+// arrow handlers are muted while the modal is open).
+func (m *model) settingsTabButton(tab settingsTab, label string) {
+	active := m.settingsTab == tab
+	Container(Attrs(Focusable, PointerHand, Center, Pad2(sp4, sp12), Corners(radiusS)), func() {
+		if active || IsHovered() {
+			ModAttrs(BackgroundVec(bgRaised))
+		}
+		if HasFocus() {
+			ModAttrs(func(a *AttrSet) {
+				a.BorderWidth = 2
+				a.BorderColor = focusBorder
+			})
+			switch GetFrameInput().Key {
+			case KeyEnter, KeySpace:
+				GetFrameInput().Key = KeyCodeNone
+				m.settingsTab = tab
+			case KeyRight:
+				GetFrameInput().Key = KeyCodeNone
+				m.settingsTab = settingsTabOptiscaler
+			case KeyLeft:
+				GetFrameInput().Key = KeyCodeNone
+				m.settingsTab = settingsTabGeneral
+			}
+		}
+		if active {
+			Label(label, FontSize(12), TextColorVec(accentHov), FontWeight(WeightBold))
+		} else {
+			Label(label, FontSize(12), TextColorVec(txtMuted))
+		}
+		if PressAction() {
+			m.settingsTab = tab
+		}
+	})
+}
+
+// settingsGeneralTab: library view, scan directories, launch template, and
+// the umu-launcher section.
+func (m *model) settingsGeneralTab() {
+	Container(Attrs(Expand, Gap(sp16)), func() {
+		Container(Attrs(Expand, Gap(sp4)), func() {
+			sectionTitle("Library")
+			if m.sess != nil {
+				focusableToggle(&m.onlineBuf, "Online game info (Steam/ProtonDB)")
+				if m.onlineBuf != m.sess.Settings().OnlineLookups {
+					m.sess.SetOnlineLookups(m.onlineBuf)
+				}
+				m.cardSizeSelector()
+			}
+		})
+
+		Container(Attrs(Expand, Gap(sp4)), func() {
+			sectionTitle("Scan Directories")
+			m.settingsDirsSection()
+		})
+
+		Container(Attrs(Expand, Gap(sp4)), func() {
+			sectionTitle("Launch Template")
+			muted("Command template for manually added games; {exe} and {args} are substituted")
+			themedInput(&m.templateBuf, `"{exe}" {args}`, NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+		})
+
+		Container(Attrs(Expand, Gap(sp4)), func() {
+			sectionTitle("umu-launcher (Linux: Windows games via Proton)")
+			if m.sess != nil {
+				focusableToggle(&m.umuEnabledBuf, "Launch Windows binaries via umu-launcher")
+				if m.umuEnabledBuf != m.sess.Settings().UmuEnabled {
+					m.sess.SetUmuEnabled(m.umuEnabledBuf)
+				}
+				muted("Proton path (blank = auto-detect from Steam / Bottles / umu)")
+				themedInput(&m.umuProtonBuf, "", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+				if m.umuProtonBuf != m.sess.Settings().UmuProtonPath {
+					m.sess.SetUmuProtonPath(m.umuProtonBuf)
+				}
+			}
+		})
+	})
+}
+
+// settingsOptiscalerTab: everything OptiScaler-specific — the default
+// version, the distribution sources (forks), and the bundle cache.
+func (m *model) settingsOptiscalerTab() {
+	Container(Attrs(Expand, Gap(sp16)), func() {
+		Container(Attrs(Expand, Gap(sp4)), func() {
+			sectionTitle("Version")
+			muted("Default OptiScaler version (tag or 'latest')")
+			themedInput(&m.versionBuf, "latest", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
+		})
+
+		Container(Attrs(Expand, Gap(sp4)), func() {
+			sectionTitle("Sources")
+			muted("Distribution fork installs download from (owner/repo + asset glob)")
+			m.settingsForksSection()
+		})
+
+		if m.sess != nil {
+			Container(Attrs(Expand, Gap(sp4)), func() {
+				sectionTitle("Cache")
+				if focusableButton(SymIRight, "Clear OptiScaler cache") {
+					m.sess.ClearBundleCache()
+				}
+			})
+		}
 	})
 }
 
@@ -181,22 +261,26 @@ func (m *model) settingsForksSection() {
 	for _, f := range s.Forks {
 		fork := f
 		active := fork.Slug == s.ActiveFork
-		Container(Attrs(Row, Expand, CrossMid, Gap(sp8), Pad2(2, sp4), Corners(radiusS), BackgroundVec(bgCard), Clip), func() {
-			label := fork.Slug
-			if active {
-				label = "● " + label
-			}
-			Label(label, TextColorVec(txtMain), FontSize(12))
-			Filler(1)
+		// Two-line row: long slugs (the bundled DLSSNR fork is 45 chars)
+		// plus the pattern and buttons never fit one line in the modal.
+		Container(Attrs(Expand, Gap(1), Pad2(sp4, sp8), Corners(radiusS), BackgroundVec(bgCard), Clip), func() {
+			Container(Attrs(Row, Expand, CrossMid, Gap(sp8)), func() {
+				label := fork.Slug
+				if active {
+					label = "● " + label
+				}
+				Label(label, TextColorVec(txtMain), FontSize(12))
+				Filler(1)
+				if active {
+					muted("in use")
+				} else if focusableButton(SymIRight, "Use") {
+					_ = m.sess.SetActiveFork(fork.Slug)
+				}
+				if fork.Slug != settings.DefaultForkSlug && focusableButton(TypCancel, "Remove") {
+					m.removeFork(fork.Slug)
+				}
+			})
 			muted(fork.AssetPattern)
-			if active {
-				muted("in use")
-			} else if focusableButton(SymIRight, "Use") {
-				_ = m.sess.SetActiveFork(fork.Slug)
-			}
-			if fork.Slug != settings.DefaultForkSlug && focusableButton(TypCancel, "Remove") {
-				m.removeFork(fork.Slug)
-			}
 		})
 	}
 	themedInput(&m.forkSlugBuf, "owner/repo", NoIcon, MinSize(200, fieldH), MaxSizeVec(Vec2{460, fieldH}))
