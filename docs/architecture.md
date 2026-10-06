@@ -230,7 +230,10 @@ external files up SHA-verified, so uninstall/rollback restores them
 byte-identically and the post-uninstall re-detect (`pever.DetectOptiScaler`
 on the row's injection dir) surfaces the row as external again. Uninstall of
 a never-managed external row is refused up front with a clean toast (the
-`app.ErrNotManaged` sentinel never leaks raw). `GameRow.CanOpenINI()`
+`app.ErrNotManaged` sentinel never leaks raw). Every warn toast also mirrors
+to zerolog at warn level (issue 11): the toast funnel is the single point
+where user-facing warnings/errors reach the log console (stderr for CLI/GUI,
+`tui.log` for the TUI), so no warning path can forget to log. `GameRow.CanOpenINI()`
 (committed or external) gates Open INI in both frontends. A version switch
 that crosses distribution forks (manifest fork ≠ active source) runs the
 uninstall leg in relocation mode (issue 10): the old fork's file set moves

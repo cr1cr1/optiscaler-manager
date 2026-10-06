@@ -462,7 +462,15 @@ func (s *Session) opCancelled(gameDir string, pre domain.Status) {
 	s.emit(Event{Kind: EvOpCancelled, Text: "Cancelled", GameDir: gameDir})
 }
 
+// toast appends a user-facing toast; warn toasts (every warning/error the
+// UI shows) MUST also reach the log console (issue 11), so the warn branch
+// mirrors the text to zerolog. Call sites that already log a structured
+// log.Warn().Err(err) keep it: that entry carries the machine detail, this
+// one carries the exact text the user saw. Info toasts are not logged.
 func (s *Session) toast(text string, warn bool) {
+	if warn {
+		log.Warn().Msg(text)
+	}
 	s.mu.Lock()
 	s.st.Toasts = append(s.st.Toasts, Toast{Text: text, Warn: warn, AddedAt: s.now()})
 	s.mu.Unlock()

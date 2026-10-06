@@ -3391,3 +3391,19 @@ opens the restore menu of local backup sets.
   at the curated-ini step, relocation APIs absent, the fork-switch chain
   leaving no dated dir), then the implementation. `go test ./...` green,
   `go vet`/`gofmt` clean.
+
+## 2026-10-07 — issue 11: warning toasts reach the log console
+
+- `Session.toast(text, true)` — the single funnel for user-facing
+  warnings/errors — never wrote to zerolog; only call sites that
+  remembered a paired `log.Warn` left a trace, so failures like
+  opFailed, the not-managed refusal, busy refusals, and fork validation
+  errors were invisible in the log console (stderr for CLI/GUI,
+  tui.log for the TUI). The warn branch now mirrors the toast text at
+  warn level, so no current or future warning path can forget to log.
+- Call sites that already log a structured `log.Warn().Err(err)` keep
+  it: the structured entry carries the machine detail, the toast entry
+  carries the exact text the user saw. Info toasts stay out of the log.
+- TDD: reds witnessed (warn toast absent from a captured log buffer,
+  opFailed error text absent), then the three-line fix at the funnel.
+  `go test ./...` green, `go vet`/`gofmt` clean.
