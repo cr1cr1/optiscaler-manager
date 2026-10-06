@@ -122,6 +122,30 @@ func TestGUISettingsAddAndRemoveFork(t *testing.T) {
 	}
 }
 
+// TestGUISettingsAddForkActivates: adding a fork from the modal's add
+// form also makes it the active source ("add & use") — no separate Use
+// click needed.
+func TestGUISettingsAddForkActivates(t *testing.T) {
+	sess, root := guiFakesWithDirs(t)
+	m := newModel(Config{Session: sess})
+	m.openSettings()
+
+	m.forkSlugBuf = "someone/OptiScaler-fork"
+	m.forkPatternBuf = "OptiScaler*.zip"
+	m.addForkFromBuffers()
+
+	if got := sess.Settings().ActiveFork; got != "someone/OptiScaler-fork" {
+		t.Errorf("ActiveFork = %q after adding a fork, want the new fork active", got)
+	}
+	s, err := settings.Load(root)
+	if err != nil {
+		t.Fatalf("settings unreadable: %v", err)
+	}
+	if s.ActiveFork != "someone/OptiScaler-fork" {
+		t.Errorf("persisted ActiveFork = %q, want the new fork active", s.ActiveFork)
+	}
+}
+
 func containsFork(forks []settings.Fork, want settings.Fork) bool {
 	for _, f := range forks {
 		if f == want {

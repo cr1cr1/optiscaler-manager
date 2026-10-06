@@ -3306,3 +3306,19 @@ opens the restore menu of local backup sets.
   focus-cycle tests updated to the new per-tab Tab order; forks render
   test switched to the Optiscaler tab. `go test ./...` green, `go vet`/
   `gofmt` clean. TUI settings screen untouched (already grouped).
+
+## 2026-10-07 — issue 7: settings tab focus fix + add & use
+
+- Bug fix: clicking a settings tab switched the content but left the
+  keyboard focus ring on General (the tab button lacked `FocusOnClick`;
+  `PressAction` is focus-independent). Ring now follows the click, and
+  the active tab label moved from dim `accentHov` to bright bold
+  `txtMain` so selection no longer depends on the ring. Diagnosis proven
+  by toggling the fix under the new mouse-click test.
+- The add-fork form is now one row (slug, asset glob, "Add & use") and
+  a successful add activates the fork immediately — adding and applying
+  a source is one action.
+- TDD: `TestGUISettingsTabSwitchViaMouse` (new rect/id seams) and
+  `TestGUISettingsAddForkActivates` red first. README GUI settings
+  paragraph updated for the two tabs. `go test ./...` green,
+  `go vet`/`gofmt` clean.

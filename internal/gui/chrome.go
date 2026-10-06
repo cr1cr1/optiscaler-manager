@@ -131,7 +131,8 @@ func (m *model) settingsModal() {
 }
 
 // settingsTabBar is the modal's tab strip: a recessed track with one pill
-// per tab; the active tab is raised and accent-tinted (sidebar language).
+// per tab; the active tab is raised with a bright bold label, the inactive
+// one muted (hover raises it).
 func (m *model) settingsTabBar() {
 	Container(Attrs(Row, Gap(2), Pad(2), Corners(radiusS), BackgroundVec(bgCard)), func() {
 		m.settingsTabButton(settingsTabGeneral, "General")
@@ -139,12 +140,23 @@ func (m *model) settingsTabBar() {
 	})
 }
 
-// settingsTabButton is one tab in the strip. Beyond PressAction it answers
-// Enter/Space when focused and Left/Right to move between tabs (the global
+// settingsTabButton is one tab in the strip. A click both activates the
+// tab and moves keyboard focus to it (FocusOnClick — the focus ring is
+// the selection read-out, so it must follow the click); Enter/Space
+// activate when focused and Left/Right move between tabs (the global
 // arrow handlers are muted while the modal is open).
 func (m *model) settingsTabButton(tab settingsTab, label string) {
 	active := m.settingsTab == tab
 	Container(Attrs(Focusable, PointerHand, Center, Pad2(sp4, sp12), Corners(radiusS)), func() {
+		FocusOnClick()
+		if m.settingsTabIDs == nil {
+			m.settingsTabIDs = map[settingsTab]ContainerId{}
+		}
+		m.settingsTabIDs[tab] = CurrentId()
+		if m.settingsTabRects == nil {
+			m.settingsTabRects = map[settingsTab]Rect{}
+		}
+		m.settingsTabRects[tab] = GetScreenRectOf(CurrentId())
 		if active || IsHovered() {
 			ModAttrs(BackgroundVec(bgRaised))
 		}
@@ -166,7 +178,9 @@ func (m *model) settingsTabButton(tab settingsTab, label string) {
 			}
 		}
 		if active {
-			Label(label, FontSize(12), TextColorVec(accentHov), FontWeight(WeightBold))
+			// txtMain, not accentHov: the accent (lightness 34) is too dim
+			// against bgRaised to read as the selected state.
+			Label(label, FontSize(12), TextColorVec(txtMain), FontWeight(WeightBold))
 		} else {
 			Label(label, FontSize(12), TextColorVec(txtMuted))
 		}
@@ -283,21 +297,25 @@ func (m *model) settingsForksSection() {
 			muted(fork.AssetPattern)
 		})
 	}
-	themedInput(&m.forkSlugBuf, "owner/repo", NoIcon, MinSize(200, fieldH), MaxSizeVec(Vec2{460, fieldH}))
-	themedInput(&m.forkPatternBuf, "asset glob, e.g. OptiScaler*.zip", NoIcon, MinSize(200, fieldH), MaxSizeVec(Vec2{460, fieldH}))
-	if focusableButton(SymIPlus, "Add fork") {
-		m.addForkFromBuffers()
-	}
+	Container(Attrs(Row, Expand, CrossMid, Gap(sp8)), func() {
+		themedInput(&m.forkSlugBuf, "owner/repo", NoIcon, MinSize(180, fieldH), MaxSizeVec(Vec2{220, fieldH}))
+		themedInput(&m.forkPatternBuf, "asset glob, e.g. OptiScaler*.zip", NoIcon, MinSize(180, fieldH), MaxSizeVec(Vec2{220, fieldH}))
+		if focusableButton(SymIPlus, "Add & use") {
+			m.addForkFromBuffers()
+		}
+	})
 }
 
-// addForkFromBuffers registers the fork described by the add inputs. A
-// successful add clears the buffers; a refusal keeps them for editing (the
-// session toasts the reason).
+// addForkFromBuffers registers the fork described by the add inputs and
+// makes it the active source (add & use). A successful add clears the
+// buffers; a refusal keeps them for editing (the session toasts the
+// reason).
 func (m *model) addForkFromBuffers() {
 	fork := settings.Fork{Slug: m.forkSlugBuf, AssetPattern: m.forkPatternBuf}
 	if err := m.sess.AddFork(fork); err != nil {
 		return
 	}
+	_ = m.sess.SetActiveFork(fork.Slug)
 	m.forkSlugBuf = ""
 	m.forkPatternBuf = ""
 }

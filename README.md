@@ -126,10 +126,11 @@ resolved at startup and re-resolved at pick time) or any cached bundle
 version to switch to it, keeping your `OptiScaler.ini`.
 Arrow keys move the
 selection, Enter opens the detail panel, Esc closes it. The Settings window
-holds the default OptiScaler version, the card size, the scan-directory list,
-the launch template, the online game-info toggle, the OptiScaler sources
-(pick the active distribution fork, add or remove your own), and the
-clear-cache action.
+is split into two tabs. General holds the card size, the scan-directory
+list, the launch template, and the online game-info toggle. Optiscaler
+holds the default OptiScaler version, the OptiScaler sources (pick the
+active distribution fork, or add your own with owner/repo + asset glob —
+a new source becomes active on add), and the clear-cache action.
 Installed games get a Disable/Enable button in the detail panel: it parks
 the injection hook by renaming it — `.disabled`, or the backup name you
 chose if you renamed it by hand — instead of removing it, so the game

@@ -90,3 +90,32 @@ func TestGUISettingsGeneralTabHidesOptiscalerFields(t *testing.T) {
 		t.Error("OnlineLookups still true after 2 Tabs + Enter on the General tab; the version field must not sit between the tab bar and the toggle")
 	}
 }
+
+// TestGUISettingsTabSwitchViaMouse: clicking the Optiscaler tab switches
+// the modal to it AND moves keyboard focus to it (the focus ring is the
+// selection read-out; a click that leaves the ring on General looks like
+// "General stays selected").
+func TestGUISettingsTabSwitchViaMouse(t *testing.T) {
+	sess, _ := guiFakesWithDirs(t)
+	m := newModel(Config{Session: sess})
+	m.openSettings()
+
+	headlessFrames(t, 1100, 700)
+	keyFrame(KeyCodeNone, 0, m.rootView) // build + register tab rects/ids
+	r := m.settingsTabRects[settingsTabOptiscaler]
+	if r.Size[0] == 0 {
+		t.Fatal("Optiscaler tab rect not registered")
+	}
+	clickRect(r, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView) // settle
+
+	if m.settingsTab != settingsTabOptiscaler {
+		t.Fatalf("settingsTab = %v after clicking the Optiscaler tab, want Optiscaler", m.settingsTab)
+	}
+	if id := m.settingsTabIDs[settingsTabOptiscaler]; id == nil || !IdHasFocus(id) {
+		t.Error("clicking the Optiscaler tab did not move keyboard focus to it (ring still on General)")
+	}
+	if id := m.settingsTabIDs[settingsTabGeneral]; id != nil && IdHasFocus(id) {
+		t.Error("General tab kept keyboard focus after the Optiscaler tab was clicked")
+	}
+}
