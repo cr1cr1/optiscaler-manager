@@ -73,4 +73,4 @@ suffixes, `s.now` clock seam), toasting the dir name. Design decisions
 backup) confirmed with the user. Evidence: the real cached DLSSNR zip
 (injector at root, support DLLs under `OptiScaler/`, no fakenvapi) vs
 the flat upstream 7z. TDD reds witnessed before the implementation;
-full suite, vet, gofmt green. Commit `3dc930a`.
+full suite, vet, gofmt green. Commit `62fb68f`.
