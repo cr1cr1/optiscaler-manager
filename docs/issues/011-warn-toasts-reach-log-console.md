@@ -40,4 +40,4 @@ call sites unchanged (complementary detail); info toasts unlogged.
 Tests capture the global logger into a buffer (sequential package, swap
 restored on cleanup) and pin: warn toast → warn-level log entry, info
 toast → none, `opFailed` → error text logged. TDD reds witnessed before
-the fix; full suite, vet, gofmt green.
+the fix; full suite, vet, gofmt green. Commit `bf7d2b9`.
