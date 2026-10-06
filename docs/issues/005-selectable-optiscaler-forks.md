@@ -84,7 +84,7 @@ its GitHub client through a `NewGH` factory when the active fork changes.
   only caller.
 - `go test ./...` green, `go vet` clean, `gofmt` clean. README,
   docs/scope.md (distribution forks section), docs/architecture.md
-  (gh/archive/settings package lines) updated.
+  (gh/archive/settings package lines) updated (b157d08).
 - Prerequisite: issue 4 (shirei v0.8.0 migration) landed first; the
   workspace's half-done dep bump blocked the GUI half of this work.
 
