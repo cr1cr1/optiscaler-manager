@@ -11,7 +11,7 @@ keep them true.
 ## Invariants
 
 1. **No write into a game directory until the bundle is staged, path-sanitized,
-   required-file validated, and hash-manifested.**
+   injector validated, and hash-manifested.**
 2. **A manifest is persisted before the first destructive write.**
 3. **An original file's bytes are verified in the backup before it is
    overwritten.**
@@ -19,7 +19,10 @@ keep them true.
    any step.
 5. **Uninstall deletes only files whose current SHA-256 matches the manifest**;
    anything else is refused and surfaced to the user (no silent deletion of
-   foreign bytes — `dxgi.dll` et al. may be native game files).
+   foreign bytes — `dxgi.dll` et al. may be native game files). The
+   fork-switch relocation variant (`UninstallOptions.RelocateDir`) is held
+   to the same gate: matched bytes are MOVED into the dated fork dir,
+   foreign-modified files are still refused, never moved.
 
 ## Manifest
 
@@ -64,7 +67,9 @@ content-addressed store in v0.1 (dedup is not a correctness problem).
 Third-party archives are hostile input. Before any write: reject absolute
 paths, `..` traversal, drive roots, UNC paths, reserved names, symlink/hardlink
 metadata, case-folded duplicate targets, dir/file conflicts, decompression-bomb
-totals, and unexpected filenames. Extract to staging; verify required files and
+totals, and unexpected filenames. Extract to staging; verify the injector dll
+is present (the one universal requirement — each distribution's archive
+listing defines the rest of its own file set, nested paths included) and
 hashes; only then copy into the game dir.
 
 ## Fault-injection scope

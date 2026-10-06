@@ -206,6 +206,14 @@ func (s *Session) doUninstall(gameDir string) {
 // errOpBusy when the game is busy, the context cause on cancel, and the
 // surfaced error on failure.
 func (s *Session) runUninstall(gameDir string) error {
+	return s.runUninstallOpt(gameDir, "")
+}
+
+// runUninstallOpt is runUninstall with a relocation target: when
+// relocateDir is non-empty the old distribution's file set is moved there
+// (relative paths preserved) instead of deleted — the fork-switch
+// preservation path (issue 10).
+func (s *Session) runUninstallOpt(gameDir, relocateDir string) error {
 	row := s.findRow(gameDir)
 	if row != nil && row.Status == domain.StatusExternal {
 		s.toast(errNotManagedToast, true)
@@ -218,7 +226,12 @@ func (s *Session) runUninstall(gameDir string) error {
 		return errOpBusy
 	}
 	s.opStarted("Uninstalling…")
-	_, err := app.Uninstall(ctx, s.deps.Store, gameDir)
+	var err error
+	if relocateDir != "" {
+		_, err = app.UninstallRelocating(ctx, s.deps.Store, gameDir, relocateDir)
+	} else {
+		_, err = app.Uninstall(ctx, s.deps.Store, gameDir)
+	}
 	s.finishOp(gameDir)
 	if errors.Is(err, context.Canceled) {
 		s.opCancelled(gameDir, pre)

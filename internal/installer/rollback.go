@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 
@@ -94,12 +95,21 @@ func (e *RefusedError) Error() string {
 	return fmt.Sprintf("uninstall refused %d changed file(s): %v", len(e.Paths), e.Paths)
 }
 
-// Uninstall reverses a committed install: created files are deleted and
-// overwritten files restored, but only where current bytes match what the
-// manifest recorded. Refusals abort with RefusedError and leave the manifest
-// committed (already-processed entries are dropped, so retry resumes).
-// On full success the manifest and backup dir are removed.
-func Uninstall(ctx context.Context, st *store.Store, id string) error {
+// UninstallOptions tunes UninstallWithOptions.
+type UninstallOptions struct {
+	// RelocateDir, when set, receives the current bytes of every
+	// hash-matching tracked file (paths relative to the install dir
+	// preserved) instead of deleting them: a fork switch preserves the
+	// old distribution's whole file set for the user (issue 10).
+	// Overwritten files still get their SHA-verified pre-install
+	// originals restored after the current bytes move out.
+	// Foreign-modified files are refused exactly as before — never
+	// moved, never deleted.
+	RelocateDir string
+}
+
+// UninstallWithOptions is Uninstall with options; see UninstallOptions.
+func UninstallWithOptions(ctx context.Context, st *store.Store, id string, opts UninstallOptions) error {
 	m, err := st.Load(id)
 	if err != nil {
 		return err
@@ -109,6 +119,32 @@ func Uninstall(ctx context.Context, st *store.Store, id string) error {
 	}
 	if m.Status != domain.StatusCommitted {
 		return fmt.Errorf("install %s is %s; only committed installs can be uninstalled", id, m.Status)
+	}
+
+	relocate := func(path string) (string, error) {
+		rel, err := filepath.Rel(m.InstallDir, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return "", fmt.Errorf("uninstall relocate %s: outside install dir %s", path, m.InstallDir)
+		}
+		dst := filepath.Join(opts.RelocateDir, rel)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return "", fmt.Errorf("uninstall relocate %s: %w", path, err)
+		}
+		if err := os.Rename(path, dst); err != nil {
+			return "", fmt.Errorf("uninstall relocate %s: %w", path, err)
+		}
+		return dst, nil
+	}
+	// removeOrRelocate applies the created-file fate: move the matched
+	// bytes into the dated fork dir, or delete them outright.
+	removeOrRelocate := func(path string) (string, error) {
+		if opts.RelocateDir != "" {
+			return relocate(path)
+		}
+		if err := os.Remove(path); err != nil {
+			return "", fmt.Errorf("uninstall delete %s: %w", path, err)
+		}
+		return "", nil
 	}
 
 	var refused []string
@@ -126,10 +162,14 @@ func Uninstall(ctx context.Context, st *store.Store, id string) error {
 			return fmt.Errorf("uninstall inspect %s: %w", c.Path, err)
 		}
 		if current == c.SHA256 {
-			if err := os.Remove(c.Path); err != nil {
-				return fmt.Errorf("uninstall delete %s: %w", c.Path, err)
+			if _, err := removeOrRelocate(c.Path); err != nil {
+				return err
 			}
-			m.Ops = append(m.Ops, domain.OpEntry{Op: "delete", Path: c.Path})
+			op := "delete"
+			if opts.RelocateDir != "" {
+				op = "relocate"
+			}
+			m.Ops = append(m.Ops, domain.OpEntry{Op: op, Path: c.Path})
 			continue
 		}
 		refused = append(refused, c.Path)
@@ -143,8 +183,9 @@ func Uninstall(ctx context.Context, st *store.Store, id string) error {
 			return abortUninstall(ctx, st, m, m.Created, append(keptOw, m.Overwritten[i:]...))
 		}
 		current, err := hashFile(ow.Path)
+		vanished := os.IsNotExist(err)
 		switch {
-		case os.IsNotExist(err):
+		case vanished:
 			// Our installed file vanished; restoring the original is still right.
 		case err != nil:
 			return fmt.Errorf("uninstall inspect %s: %w", ow.Path, err)
@@ -152,6 +193,14 @@ func Uninstall(ctx context.Context, st *store.Store, id string) error {
 			refused = append(refused, ow.Path)
 			keptOw = append(keptOw, ow)
 			continue
+		}
+		if !vanished && opts.RelocateDir != "" {
+			// The old distribution's bytes move out BEFORE the original
+			// is restored over the now-empty path.
+			if _, err := relocate(ow.Path); err != nil {
+				return err
+			}
+			m.Ops = append(m.Ops, domain.OpEntry{Op: "relocate", Path: ow.Path})
 		}
 		backup := filepath.Join(st.BackupDir(id), "files", ow.BackupRelPath)
 		backupSHA, err := hashFile(backup)
@@ -188,6 +237,15 @@ func Uninstall(ctx context.Context, st *store.Store, id string) error {
 		return fmt.Errorf("remove backups %s: %w", id, err)
 	}
 	return st.Delete(id)
+}
+
+// Uninstall reverses a committed install: created files are deleted and
+// overwritten files restored, but only where current bytes match what the
+// manifest recorded. Refusals abort with RefusedError and leave the manifest
+// committed (already-processed entries are dropped, so retry resumes).
+// On full success the manifest and backup dir are removed.
+func Uninstall(ctx context.Context, st *store.Store, id string) error {
+	return UninstallWithOptions(ctx, st, id, UninstallOptions{})
 }
 
 // abortUninstall persists uninstall progress on cancellation: processed

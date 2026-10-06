@@ -22,9 +22,12 @@ import (
 // injectionDLL is the name OptiScaler.dll takes in the game directory.
 const injectionDLL = "dxgi.dll"
 
-// requiredBaseNames is the post-extract validation set (0.9.4 bundle ground
-// truth; see docs/log.md M2d).
-var requiredBaseNames = []string{"optiscaler.dll", "fakenvapi.dll", "fakenvapi.ini"}
+// requiredBaseName is the one file every OptiScaler distribution ships:
+// the injector dll. Each distribution's archive listing is its own exact
+// install set (issue 10) — DLSSNR carries no fakenvapi and keeps support
+// DLLs under an OptiScaler/ subdir — so nothing else may be required and
+// no path may be stripped.
+const requiredBaseName = "optiscaler.dll"
 
 // copyFileFn is the file-copy seam for fault-injection tests (white-box only).
 var copyFileFn = copyFile
@@ -298,7 +301,12 @@ func applyCuratedINI(st *store.Store, m *domain.Manifest) error {
 			return st.Save(m)
 		}
 	}
-	return fmt.Errorf("curated ini %s not tracked in manifest", iniPath)
+	// The bundle shipped no ini (fork layouts differ — issue 10): the
+	// curated defaults become a tracked created file so uninstall and
+	// fork-switch relocation treat them as part of the distribution.
+	m.Created = append(m.Created, domain.CreatedEntry{Path: iniPath, SHA256: digest})
+	m.Ops = append(m.Ops, domain.OpEntry{Op: "profile", Path: iniPath})
+	return st.Save(m)
 }
 
 // fail marks the manifest failed and persists it before returning the error.
@@ -348,12 +356,12 @@ func ManifestIDFor(installDir string) (string, error) {
 
 // buildPlan validates raw archive member names and maps them to destinations.
 // Directory members are skipped; OptiScaler.dll is renamed to the injection
-// DLL. This is the plan-time hostile-input gate (safety invariant 1).
+// DLL; every other member installs verbatim, nested subdir paths included.
+// The only required file is the injector — the distribution's own listing
+// defines the rest of the set. This is the plan-time hostile-input gate
+// (safety invariant 1).
 func buildPlan(names []string) ([]filePlan, error) {
-	required := map[string]bool{}
-	for _, base := range requiredBaseNames {
-		required[base] = false
-	}
+	foundInjector := false
 	seen := map[string]bool{}
 	var plan []filePlan
 
@@ -367,10 +375,8 @@ func buildPlan(names []string) ([]filePlan, error) {
 		}
 		dstRel := rel
 		base := strings.ToLower(filepath.Base(rel))
-		if _, tracked := required[base]; tracked {
-			required[base] = true
-		}
-		if base == "optiscaler.dll" {
+		if base == requiredBaseName {
+			foundInjector = true
 			dstRel = injectionDLL
 		}
 		key := strings.ToLower(dstRel)
@@ -380,10 +386,8 @@ func buildPlan(names []string) ([]filePlan, error) {
 		seen[key] = true
 		plan = append(plan, filePlan{srcRel: rel, dstRel: dstRel})
 	}
-	for base, found := range required {
-		if !found {
-			return nil, fmt.Errorf("bundle is missing required file %q", base)
-		}
+	if !foundInjector {
+		return nil, fmt.Errorf("bundle is missing required file %q", requiredBaseName)
 	}
 	return plan, nil
 }

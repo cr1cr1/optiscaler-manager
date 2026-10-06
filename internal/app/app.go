@@ -498,6 +498,18 @@ func requireManaged(st *store.Store, id, dir string) error {
 
 // Uninstall reverses the committed install for a game root.
 func Uninstall(ctx context.Context, st *store.Store, gameRoot string) (string, error) {
+	return uninstall(ctx, st, gameRoot, "")
+}
+
+// UninstallRelocating reverses the committed install like Uninstall, but
+// moves the old distribution's file set into relocateDir (relative paths
+// preserved) instead of deleting it — the fork-switch preservation path
+// (issue 10). relocateDir lives inside the game's injection dir.
+func UninstallRelocating(ctx context.Context, st *store.Store, gameRoot, relocateDir string) (string, error) {
+	return uninstall(ctx, st, gameRoot, relocateDir)
+}
+
+func uninstall(ctx context.Context, st *store.Store, gameRoot, relocateDir string) (string, error) {
 	id, dir, err := ManifestIDFor(gameRoot)
 	if err != nil {
 		return "", err
@@ -505,7 +517,7 @@ func Uninstall(ctx context.Context, st *store.Store, gameRoot string) (string, e
 	if err := requireManaged(st, id, dir); err != nil {
 		return "", err
 	}
-	if err := installer.Uninstall(ctx, st, id); err != nil {
+	if err := installer.UninstallWithOptions(ctx, st, id, installer.UninstallOptions{RelocateDir: relocateDir}); err != nil {
 		return "", err
 	}
 	return dir, nil

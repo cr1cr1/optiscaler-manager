@@ -5,13 +5,46 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 )
+
+// forkSlugOrDefault normalizes a manifest/row fork slug: legacy installs
+// predate fork tracking and read as upstream.
+func forkSlugOrDefault(slug string) string {
+	if slug == "" {
+		return settings.DefaultForkSlug
+	}
+	return slug
+}
+
+// forkBackupDir names the fork-switch preservation dir: <repo>.YYMMDD
+// (repo segment of the old fork's slug, local date) inside the injection
+// dir. A same-day repeat gets -2, -3, … so an earlier backup is never
+// clobbered.
+func forkBackupDir(installDir, oldFork string, now time.Time) string {
+	name := forkSlugOrDefault(oldFork)
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:]
+	}
+	base := filepath.Join(installDir, name+"."+now.Format("060102"))
+	dir := base
+	for n := 2; n < 100; n++ {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			return dir
+		}
+		dir = fmt.Sprintf("%s-%d", base, n)
+	}
+	return dir
+}
 
 // SwitchVersion starts a per-game switch to a chosen OptiScaler version:
 // the version-parameterized sibling of Upgrade. version may be the literal
@@ -136,7 +169,16 @@ func (s *Session) doSwitchVersionChain(gameDir, version string, eacConsented boo
 	// NOT ATOMIC (same as doUpgrade): the installer refuses to install
 	// over a committed manifest, so the old build is uninstalled first;
 	// a crash between the legs leaves the game clean and installable.
-	if err := s.runUninstall(gameDir); err != nil {
+	//
+	// Fork switch (issue 10): when the installed distribution differs
+	// from the active source, the old fork's whole file set moves into
+	// <repo>.YYMMDD inside the injection dir instead of being deleted —
+	// the archive-derived manifest file set is exactly what gets moved.
+	relocateDir := ""
+	if forkSlugOrDefault(row.Fork) != s.Settings().Active().Slug {
+		relocateDir = forkBackupDir(row.InjectionDir, row.Fork, s.now())
+	}
+	if err := s.runUninstallOpt(gameDir, relocateDir); err != nil {
 		if removedINI {
 			// Nothing else ran (refused or busy): put the ini back so
 			// the game is exactly as found.
@@ -148,6 +190,9 @@ func (s *Session) doSwitchVersionChain(gameDir, version string, eacConsented boo
 			}
 		}
 		return "switch failed: " + err.Error() // the uninstall error was already surfaced
+	}
+	if relocateDir != "" {
+		s.toast("Old fork files saved to "+filepath.Base(relocateDir), false)
 	}
 	if s.upgradeGapHook != nil {
 		s.upgradeGapHook(gameDir)

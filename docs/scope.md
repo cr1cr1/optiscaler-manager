@@ -24,7 +24,13 @@ here are closed; reopen only with new evidence.
   date and a `_MM` marker). The glob is per distribution fork: upstream
   uses `Optiscaler_*.7z`; forks define their own (see the fork section
   below).
-- After extraction, a **required-file set is validated**; mismatch fails loudly.
+- After extraction, the bundle is validated against the one universal
+  requirement — the injector dll (`OptiScaler.dll`, renamed to `dxgi.dll`
+  on install); anything else is the distribution's own business. Each
+  distribution's **archive listing is its exact install set** (v0.16):
+  forks lay files out differently (DLSSNR ships no fakenvapi and keeps
+  support DLLs under an `OptiScaler/` subdir), and members install
+  verbatim, nested paths preserved, never stripped.
 - The separate upstream downloads the reference C# client uses are stale:
   Nukem9/dlssg-to-fsr3 ≥ 0.130 has no GitHub assets (moved to Nexus Mods);
   OptiPatcher is a raw `.asi` and out of scope.
@@ -46,6 +52,17 @@ here are closed; reopen only with new evidence.
   on startup.
 - `.zip` bundles extract through the same sanitized pipeline as `.7z`
   (archive format dispatches on the matched asset's extension).
+- **Fork switches preserve the old distribution** (v0.16): when a
+  per-game version switch crosses forks (the manifest's fork ≠ the
+  active source), the old distribution's file set — exactly what its
+  archive listed, via the manifest — moves into
+  `<injection-dir>/<repo-name>.YYMMDD/` (old fork's repo segment, local
+  date; `-2`, `-3`… on same-day repeats) instead of being deleted.
+  Overwritten files still restore their SHA-verified pre-install
+  originals; foreign-modified files are still refused, never moved.
+  Same-fork release switches keep the internal rollback backup only — no
+  dated dirs pile up on version bumps. The user's `OptiScaler.ini` stays
+  with the new install (the usual ini preservation), not the dated dir.
 
 ## Install
 

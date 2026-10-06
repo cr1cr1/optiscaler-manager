@@ -68,8 +68,11 @@ internal/
               backups (hash-verified) under the state root for restore
   archive/    7z (sevenzip) and zip (stdlib) extraction, dispatched on
               the bundle's extension, with hostile-input defenses
-  installer/  transaction core: stage → validate → backup → copy → manifest;
-              rollback; uninstall; EAC check; ctx cancel at phase boundaries
+  installer/  transaction core: stage → validate (injector-only; each
+              distribution's archive listing defines its own file set,
+              nested paths verbatim) → backup → copy → manifest;
+              rollback; uninstall (delete or fork-switch relocate);
+              EAC check; ctx cancel at phase boundaries
               (cleanup under context.WithoutCancel)
   profile/    curated OptiScaler.ini writer
   covers/     cover art: Steam CDN by appid → PCGW → hero image → scored
@@ -228,7 +231,12 @@ byte-identically and the post-uninstall re-detect (`pever.DetectOptiScaler`
 on the row's injection dir) surfaces the row as external again. Uninstall of
 a never-managed external row is refused up front with a clean toast (the
 `app.ErrNotManaged` sentinel never leaks raw). `GameRow.CanOpenINI()`
-(committed or external) gates Open INI in both frontends.
+(committed or external) gates Open INI in both frontends. A version switch
+that crosses distribution forks (manifest fork ≠ active source) runs the
+uninstall leg in relocation mode (issue 10): the old fork's file set moves
+into `<injection-dir>/<repo>.YYMMDD/` with relative paths preserved instead
+of being deleted, while overwritten files still restore their SHA-verified
+originals and foreign-modified files still refuse.
 
 ## Hook disable/enable toggle (v0.13)
 

@@ -3360,3 +3360,34 @@ opens the restore menu of local backup sets.
   reds witnessed (no empty-field caret; ink edge 51.9 vs 49.9 across
   blink; no wake on move), then the fix. `go test ./...` green,
   `go vet`/`gofmt` clean.
+
+## 2026-10-07 — issue 10: fork archive layouts and fork-switch dated backups
+
+- Installing the bundled DLSSNR fork failed outright: `buildPlan`
+  hard-required the upstream 0.9.4 set (optiscaler.dll + fakenvapi.dll +
+  fakenvapi.ini), and DLSSNR ships no fakenvapi. The required set is now
+  derived from each distribution's own archive listing: the injector dll
+  is the one universal requirement; every other member installs verbatim,
+  nested subdir paths preserved (DLSSNR keeps support DLLs under
+  `OptiScaler/`, paths the mod expects relative to the game dir — never
+  stripped). A bundle without `OptiScaler.ini` gets the curated defaults
+  tracked as a created file instead of failing at `applyCuratedINI`.
+- Fork switches preserve the old distribution: a version switch whose
+  manifest fork ≠ the active source runs the uninstall leg in relocation
+  mode — the old fork's whole file set moves into
+  `<injection-dir>/<repo>.YYMMDD/` (old fork's repo segment, local date,
+  `-2`… on same-day repeats) with nested paths intact. Overwritten files
+  still restore SHA-verified pre-install originals; foreign-modified
+  files are still refused, never moved. Same-fork switches keep the
+  internal rollback backup only (no dated dirs on version bumps). The
+  preserved `OptiScaler.ini` follows the new install, not the dated dir.
+- Archive evidence gathered from the real cached bundles: upstream
+  0.9.4 7z is flat with fakenvapi; DLSSNR v0.8.92 zip has the injector
+  at the root, support DLLs under `OptiScaler/`, ~30 doc files, no
+  fakenvapi — the mixed layout that motivated per-distribution file
+  sets.
+- TDD: reds witnessed first (buildPlan rejecting the DLSSNR-shaped
+  listing, install failing on missing fakenvapi, no-ini bundle failing
+  at the curated-ini step, relocation APIs absent, the fork-switch chain
+  leaving no dated dir), then the implementation. `go test ./...` green,
+  `go vet`/`gofmt` clean.
