@@ -112,6 +112,10 @@ type editState struct {
 	dragging bool
 	textRect Rect // screen rect of the text area, recorded each frame
 	boxRect  Rect // screen rect of the field box, recorded each frame (width-stability seam)
+	// Test seams, recorded each frame by the caret/text rendering:
+	caretVisible bool    // the caret bar was painted this frame
+	caretX       float32 // screen x of the caret bar's center
+	inkRight     float32 // screen x of the text/hint ink's right edge
 }
 
 // selRange normalizes anchor/cursor into (lo, hi, hasSelection).
@@ -155,6 +159,10 @@ func editKeys(buf *string, st *editState) {
 			st.anchor = -1
 		}
 		st.cursor = to
+		// Wake the blink: the caret is visible right after a move instead
+		// of surfacing at the next phase flip (issue 9).
+		st.phase = true
+		st.blink = time.Now()
 	}
 	insert := func(s string) {
 		rs := []rune(s)
@@ -354,20 +362,55 @@ func editMouse(buf *string, st *editState) {
 	wake()
 }
 
-// caretBar renders the caret when the blink phase is on and advances the
-// 500ms blink clock (real caret feel: flush with the text, blinking).
-func caretBar(st *editState, focused bool) {
+// caretFloat paints the text caret as a direct float child of the text
+// row: out of the layout flow, so caret motion and blink never reflow
+// the text — the letters stay put (issue 9). x is the caret's center
+// relative to the text row's origin. (The caret must float in the row
+// itself, not in a zero-width anchor: a float nested in a container
+// without in-flow children is never sized by shirei's layout and paints
+// nothing.) The bar spans the row height and is NoAnimate — shirei eases
+// relativeOrigin by default, and an easing caret would glide over the
+// text. The blink clock advances here; the bar paints only while focused
+// and the phase is on.
+func caretFloat(st *editState, focused bool, x float32) {
 	if !focused {
+		st.caretVisible = false
 		return
 	}
 	if time.Since(st.blink) > 500*time.Millisecond {
 		st.phase = !st.phase
 		st.blink = time.Now()
 	}
+	st.caretVisible = st.phase
 	if st.phase {
-		Container(Attrs(FixSize(2, 13), BackgroundVec(focusBorder)), func() {})
+		h := st.textRect.Size[1]
+		if h == 0 {
+			h = 16
+		}
+		Container(Attrs(Float(x-1, 0), FixSize(2, h), NoAnimate, BackgroundVec(focusBorder)), func() {})
 	}
 	RequestNextFrame()
+}
+
+// advanceUpTo returns the shaped advance of the runes before cursor —
+// the caret's x offset inside the single shaped text run.
+func advanceUpTo(text string, cursor int) float32 {
+	w := float32(0)
+	for _, g := range shapedGlyphs(text) {
+		if int(g.Cluster) >= cursor {
+			break
+		}
+		w += g.XAdvance
+	}
+	return w
+}
+
+// inkRightEdge returns the screen x of the right edge of the last
+// rendered element (a text/hint Label), resolved from the previous
+// frame — the letters-don't-move seam.
+func inkRightEdge() float32 {
+	r := GetScreenRectOf(GetLastId())
+	return r.Origin[0] + r.Size[0]
 }
 
 // themedInput is themedInputState with the state kept internally; it is
@@ -414,26 +457,38 @@ func themedInputState(buf *string, hint string, icon widgets.IconGlyph, st *edit
 				st.textRect = GetScreenRect()
 				switch {
 				case hasSel:
+					// The selection highlight needs the split (its own
+					// background box); the caret floats at the selection
+					// boundary, out of the layout flow like everywhere
+					// else.
 					Label(string(r[:lo]), FontSize(13), TextColorVec(txtMain))
 					Container(Attrs(Row, Gap(0), CrossMid, BackgroundVec(selBg), Corners(2)), func() {
 						Label(string(r[lo:hi]), FontSize(13), TextColorVec(txtMain))
-						if st.cursor == hi {
-							caretBar(st, focused)
-						}
 					})
-					if st.cursor == lo {
-						caretBar(st, focused)
-					}
 					Label(string(r[hi:]), FontSize(13), TextColorVec(txtMain))
+					st.inkRight = inkRightEdge()
+					x := advanceUpTo(*buf, st.cursor)
+					st.caretX = st.textRect.Origin[0] + x
+					caretFloat(st, focused, x)
 				case len(r) > 0:
-					Label(string(r[:st.cursor]), FontSize(13), TextColorVec(txtMain))
-					caretBar(st, focused)
-					Label(string(r[st.cursor:]), FontSize(13), TextColorVec(txtMain))
+					// ONE Label for the whole buffer: shaped once, so the
+					// letters sit at identical positions for every caret
+					// position and blink phase (issue 9).
+					Label(*buf, FontSize(13), TextColorVec(txtMain))
+					st.inkRight = inkRightEdge()
+					x := advanceUpTo(*buf, st.cursor)
+					st.caretX = st.textRect.Origin[0] + x
+					caretFloat(st, focused, x)
 				default:
-					// Empty: the hint stays even when focused (the focus border
-					// is the affordance) so the field never resizes when the
-					// hint would disappear; the caret appears once text exists.
+					// Empty: the hint stays even when focused (issue 8) and
+					// the caret floats at position 0 over the hint's left
+					// edge — focused empty fields no longer look dead
+					// (issue 9), and the floating bar takes no layout
+					// space, so the field still never resizes.
 					Label(hint, FontSize(13), TextColorVec(txtMuted))
+					st.inkRight = inkRightEdge()
+					st.caretX = st.textRect.Origin[0]
+					caretFloat(st, focused, 0)
 				}
 			})
 		})

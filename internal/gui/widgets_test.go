@@ -827,3 +827,70 @@ func TestEditFieldRowGeometryStable(t *testing.T) {
 			focusedRect.Size[1], textRect.Size[1], hintRect.Size[1])
 	}
 }
+
+// An empty FOCUSED field paints a caret at position 0 (over the hint's
+// left edge). The add-fork slug/glob inputs start empty; without the
+// caret they look dead when focused.
+func TestEditEmptyFieldShowsCaretWhenFocused(t *testing.T) {
+	WaitForSystemFontScan()
+	buf := ""
+	st, view := editField(t, &buf) // focused + empty
+	st.phase, st.blink = true, time.Now()
+	RunFrameFn(view)
+	if !st.caretVisible {
+		t.Error("empty focused field paints no caret — focused empty inputs look dead")
+	}
+}
+
+// Blinking the caret must never move the text ink: the caret is an
+// overlay, not an in-flow box that pushes the tail aside.
+func TestEditCaretBlinkDoesNotMoveText(t *testing.T) {
+	WaitForSystemFontScan()
+	buf := "hello"
+	st, view := editField(t, &buf)
+	keyFrame(KeyHome, 0, view)
+	keyFrame(KeyRight, 0, view)
+	keyFrame(KeyRight, 0, view) // caret at 2: "he|llo"
+	st.phase, st.blink = true, time.Now()
+	RunFrameFn(view)
+	RunFrameFn(view) // inkRight resolves from the previous frame
+	on := st.inkRight
+	st.phase, st.blink = false, time.Now()
+	RunFrameFn(view)
+	RunFrameFn(view)
+	off := st.inkRight
+	if on != off {
+		t.Errorf("text ink right edge = %v with caret painted vs %v hidden — the blink reflows the text", on, off)
+	}
+}
+
+// Moving the caret wakes the blink: the caret is visible right after an
+// arrow-key move instead of staying hidden for the rest of the off phase.
+func TestEditCaretMoveWakesBlink(t *testing.T) {
+	WaitForSystemFontScan()
+	buf := "hello"
+	st, view := editField(t, &buf)
+	st.phase, st.blink = false, time.Now() // mid off-phase: no wake means no caret
+	keyFrame(KeyLeft, 0, view)
+	if !st.caretVisible {
+		t.Error("caret not visible right after an arrow-key move — moves must wake the blink")
+	}
+}
+
+// The caret sits at the shaped advance of the cursor: exactly where the
+// next typed rune will land, for every caret position.
+func TestEditCaretXTracksCursor(t *testing.T) {
+	WaitForSystemFontScan()
+	buf := "hello"
+	st, view := editField(t, &buf)
+	keyFrame(KeyHome, 0, view)
+	keyFrame(KeyRight, 0, view)
+	keyFrame(KeyRight, 0, view) // caret at 2
+	st.phase, st.blink = true, time.Now()
+	RunFrameFn(view)
+	RunFrameFn(view) // caretX resolves from the previous frame
+	want := st.textRect.Origin[0] + textWidth("he")
+	if d := st.caretX - want; d < -1 || d > 1 {
+		t.Errorf("caret x = %v, want %v (text origin + advance of 'he')", st.caretX, want)
+	}
+}

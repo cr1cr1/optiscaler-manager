@@ -3337,3 +3337,26 @@ opens the restore menu of local backup sets.
   behavioral reds witnessed (height 303.5 vs 417.3; width 209.9 vs 180),
   then the fixes. Tab funcs flattened into the measuring wrapper.
   `go test ./...` green, `go vet`/`gofmt` clean.
+
+## 2026-10-07 — issue 9: caret reflow and empty-field caret
+
+- GUI text fields render the buffer as ONE shaped Label instead of two
+  split Labels around an in-flow caret box: moving the caret or blinking
+  no longer eases/shifts the letters (shirei eases relativeOrigin by
+  default; the 2px caret slot also inserted/removed itself on blink).
+  The caret is now a 2px bar floating in the text row at the shaped
+  advance of the cursor (`caretFloat`, `NoAnimate`, row-height).
+- Empty focused fields show the caret again (floats at position 0 over
+  the hint, no layout space taken, so issue 8's width stability holds);
+  the add-fork slug/glob inputs no longer look dead on focus.
+  Supersedes issue 8's "focused-empty caret is gone by design".
+- Arrow/Home/End moves wake the blink so the caret is visible right
+  after a move.
+- shirei lessons encoded: a float inside a container without in-flow
+  children never gets sized (zero-width anchor approach painted
+  nothing); font-dependent geometry tests need `WaitForSystemFontScan()`
+  or isolated `-run` executions shape zero-width text.
+- TDD: `caretVisible`/`caretX`/`inkRight` seams first, three behavioral
+  reds witnessed (no empty-field caret; ink edge 51.9 vs 49.9 across
+  blink; no wake on move), then the fix. `go test ./...` green,
+  `go vet`/`gofmt` clean.
