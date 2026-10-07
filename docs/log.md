@@ -3639,3 +3639,37 @@ opens the restore menu of local backup sets.
   sorted FIRST), then green.
 - Verification: `go test ./...` (29 packages) exit 0, `go vet`/`gofmt`
   clean, `GOOS=windows`/`darwin go build ./...` OK.
+
+## 2026-10-07 — issue 23: universal in-game backup + 100MB consent gate
+
+- Every original file the app replaces is now backed up inside the game
+  directory first. OptiScaler install backups moved from the central
+  `<state>/backups/<id>/` to `<installDir>/optiscaler-backups/files/`
+  (same layout, same per-file verify-on-write; uninstall/rollback read
+  there and remove the tree when the manifest settles).
+  `store.BackupDir` is gone with its last caller; `classify.DirFiles`
+  skips `optiscaler-backups` like `dlss-backups`/`.git`. Clean break
+  (user decision): pre-023 central backups are not read — uninstall of
+  such an install errors on the missing backup instead of silently
+  losing originals, and the legacy `<state>/backups/` tree can be
+  deleted by hand.
+- 100 MiB consent gate: `dlss.Update/Restore` and `installer.Install`
+  compute planned new bytes and refuse with a sentinel
+  (`LargeBackupError`) BEFORE backing up or modifying anything. DLSS
+  plans zero bytes on an incomplete set (issue 018) or a dedup hit, so
+  ping-pong never prompts; install sums the pre-existing targets' sizes
+  and refuses before staging. The session maps the sentinel to the new
+  `ConfirmLargeBackup` kind (message names the size); accept resumes
+  with the override, decline aborts untouched. CLI flows through the
+  existing `EvConfirm` gate: TTY prompts y/n, non-TTY refuses.
+- Consent flags (`eacOK/cachedOK/largeOK`) collapsed into one
+  `installConsent` struct that accumulates across gates via
+  `Confirmation.consent` — a later gate never re-asks an earlier one.
+  Policy owner: `app.MaxBackupNoConfirm` (installer's
+  `defaultMaxBackupNoConfirm` mirrors it for direct library callers).
+- ATDD reds witnessed: S1 backup path + `DirFiles` leak (runtime), S2
+  gate disabled → `TestUpdateLargeBackupRefusedWithoutConsent` fails,
+  S3 compile red + gate disabled → `TestLargeBackupConfirmBlocksInstall`
+  fails; all restored to green.
+- Verification: `go test ./...` (29 packages) exit 0, `go vet`/`gofmt`
+  clean, `GOOS=windows`/`darwin go build ./...` OK.

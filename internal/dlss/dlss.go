@@ -85,6 +85,19 @@ type Latest struct {
 	Commit  string
 }
 
+// LargeBackupError refuses an operation whose pending backup exceeds the
+// caller's no-confirm budget, BEFORE anything is backed up or modified
+// (issue 023). The UI layer maps it to a consent gate and retries with
+// allowLarge; a decline or a non-interactive CLI leaves every byte
+// untouched.
+type LargeBackupError struct {
+	Bytes int64
+}
+
+func (e *LargeBackupError) Error() string {
+	return fmt.Sprintf("dlss: backup needs %d bytes, above the no-confirm budget", e.Bytes)
+}
+
 // Update installs the NVIDIA runtime set for gameDir from the download
 // cache: a commit hint whose cache dir is complete (the startup check's
 // published commit already fetched) is served with zero network; anything
@@ -99,7 +112,7 @@ type Latest struct {
 // exists. Downloads are cached per commit under cacheRoot (same layout as
 // the OptiScaler bundle cache — fetch once per version — plus a SHA-256
 // manifest).
-func Update(ctx context.Context, c *Client, cacheRoot, gameDir, commitHint string) (Snapshot, error) {
+func Update(ctx context.Context, c *Client, cacheRoot, gameDir, commitHint string, maxNoConfirm int64, allowLarge bool) (Snapshot, error) {
 	if c == nil {
 		return Snapshot{}, fmt.Errorf("dlss: no download client")
 	}
@@ -136,7 +149,7 @@ func Update(ctx context.Context, c *Client, cacheRoot, gameDir, commitHint strin
 	if applied, err := pever.FileVersion(filepath.Join(gameDir, Files[0])); err == nil && version.Compare(applied, targetVersion) >= 0 {
 		return Snapshot{}, &AlreadyLatestError{Version: applied}
 	}
-	snap, err := backupIfComplete(gameDir, commit)
+	snap, err := backupIfComplete(gameDir, commit, maxNoConfirm, allowLarge)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -160,12 +173,12 @@ func Update(ctx context.Context, c *Client, cacheRoot, gameDir, commitHint strin
 // Restore backs up the current set first when it is complete (a partial or
 // absent current set only warns and the restore proceeds without a rollback
 // backup), then restores the chosen prior set.
-func Restore(ctx context.Context, gameDir, id string) (Snapshot, error) {
+func Restore(ctx context.Context, gameDir, id string, maxNoConfirm int64, allowLarge bool) (Snapshot, error) {
 	target, err := load(gameDir, id)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	current, err := backupIfComplete(gameDir, "")
+	current, err := backupIfComplete(gameDir, "", maxNoConfirm, allowLarge)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -511,16 +524,12 @@ func sameSet(gameDir, cacheDir string) bool {
 // backup — the operation still installs/restores the complete target set.
 // The zero Snapshot also neutralizes the caller's rollback-on-failure leg:
 // restoreFiles over zero files is a no-op.
-func backupIfComplete(gameDir, source string) (Snapshot, error) {
+func backupIfComplete(gameDir, source string, maxNoConfirm int64, allowLarge bool) (Snapshot, error) {
 	if err := requireFiles(gameDir); err != nil {
 		log.Warn().Err(err).Str("gameDir", gameDir).
 			Msg("dlss: current set incomplete; proceeding without a rollback backup")
 		return Snapshot{}, nil
 	}
-	return backup(gameDir, source)
-}
-
-func backup(gameDir, source string) (Snapshot, error) {
 	// The current set is hashed first so a digest-identical prior snapshot
 	// can be reused untouched (update/restore ping-pong must not pile up
 	// duplicate ~115 MB dirs).
@@ -537,7 +546,26 @@ func backup(gameDir, source string) (Snapshot, error) {
 		}
 		current = append(current, File{Name: name, Version: v, SHA256: h})
 	}
-	if prior := identicalSnapshot(gameDir, current); prior.ID != "" {
+	prior := identicalSnapshot(gameDir, current)
+	if prior.ID == "" && !allowLarge {
+		// Consent gate (issue 023): a backup that would write more than
+		// the no-confirm budget refuses BEFORE the first copy. A dedup
+		// hit plans zero new bytes and never gates.
+		var total int64
+		for _, name := range Files {
+			if st, err := os.Stat(filepath.Join(gameDir, name)); err == nil {
+				total += st.Size()
+			}
+		}
+		if total > maxNoConfirm {
+			return Snapshot{}, &LargeBackupError{Bytes: total}
+		}
+	}
+	return backup(gameDir, source, current, prior)
+}
+
+func backup(gameDir, source string, current []File, prior Snapshot) (Snapshot, error) {
+	if prior.ID != "" {
 		return prior, nil
 	}
 	created := time.Now()

@@ -39,7 +39,7 @@ internal/
               Component, Kind, Manifest, entries; Status
               state machine: 4 persisted (in_progress/committed/failed/
               rolled_back) + 1 derived (external, scan-time only)
-  store/      manifest + backup persistence (external root)
+  store/      manifest persistence (external root)
   discovery/  multi-store scan. OS-agnostic parsers (Steam VDF, Epic .item,
               GOG goggame info, Heroic installed.json, recursive roots,
               plist) test on every GOOS;
@@ -69,7 +69,8 @@ internal/
               the three lib/Windows_x86_64/rel DLLs at that commit into a
               commit-keyed download cache under cacheDir (OptiScaler
               bundle-cache pattern), and keeps transactional snapshot
-              backups (hash-verified) under the state root for restore
+              backups (hash-verified) in the game directory itself
+              (dlss-backups/, issue 022) for restore
   archive/    7z (sevenzip) and zip (stdlib) extraction, dispatched on
               the bundle's extension, with hostile-input defenses
   installer/  transaction core: stage → validate (injector-only; each
@@ -634,9 +635,16 @@ and re-renders.
 
 ## External state root
 
-Manifests and backups live outside game directories under the platform data
+Manifests live outside game directories under the platform data
 dir (XDG: `$XDG_DATA_HOME/optiscaler-manager` or `~/.local/share/...`),
-overridable for tests. Game directories are never used as our database.
+overridable for tests. Game directories are never used as our database —
+but they ARE our backup store (issues 022/023): every original file the
+app replaces is backed up into the game directory itself
+(`optiscaler-backups/` for OptiScaler installs, `dlss-backups/` for the
+NVIDIA runtime), where it travels with the folder and can be recovered
+by hand. A pending backup over 100 MiB pauses the operation for explicit
+consent before a byte is touched (decline, or a non-interactive CLI,
+aborts); a DLSS dedup hit plans zero new bytes and never prompts.
 
 ## Why bundle-only
 

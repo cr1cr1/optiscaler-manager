@@ -197,7 +197,7 @@ func TestUninstallCancel_IdempotentResume(t *testing.T) {
 	if _, err := st.Load(id); err == nil {
 		t.Error("manifest should be deleted after resumed clean uninstall")
 	}
-	if _, err := os.Stat(st.BackupDir(id)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(bin, "optiscaler-backups")); !os.IsNotExist(err) {
 		t.Error("backup dir should be deleted after resumed clean uninstall")
 	}
 	t.Log("cancelled uninstall resumed idempotently to a byte-clean state")

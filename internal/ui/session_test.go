@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/app"
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
@@ -185,6 +186,53 @@ func TestEACConfirmBlocksInstall(t *testing.T) {
 		t.Fatal("install did not proceed after consent")
 	}
 	t.Log("EAC gate: blocked, declined, consented")
+}
+
+// TestLargeBackupConfirmBlocksInstall: an overwrite backup over the
+// consent budget pauses the install with a size-naming confirmation
+// (issue 023) — declining leaves every byte untouched, accepting resumes
+// and backs the original up into the game directory.
+func TestLargeBackupConfirmBlocksInstall(t *testing.T) {
+	e := newTestEnv(t)
+	writeUIFile(t, filepath.Join(e.bin, "dxgi.dll"), "EXTERNAL-DXGI")
+	orig := app.MaxBackupNoConfirm
+	app.MaxBackupNoConfirm = 1
+	t.Cleanup(func() { app.MaxBackupNoConfirm = orig })
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+
+	e.sess.QuickInstall(e.gameRoot)
+	waitEvent(t, e.sess, EvConfirm)
+
+	st := e.sess.Snapshot()
+	if st.Confirm == nil || st.Confirm.Kind != ConfirmLargeBackup || st.Confirm.Op != OpInstall {
+		t.Fatalf("expected pending large-backup confirmation, got %+v", st.Confirm)
+	}
+	if !strings.Contains(st.Confirm.Message, "MB") {
+		t.Errorf("consent message %q does not name the size", st.Confirm.Message)
+	}
+	if got, _ := os.ReadFile(filepath.Join(e.bin, "dxgi.dll")); string(got) != "EXTERNAL-DXGI" {
+		t.Fatal("install proceeded without confirmation")
+	}
+
+	e.sess.AnswerConfirm(false)
+	if st := e.sess.Snapshot(); st.Confirm != nil {
+		t.Fatal("declined confirmation was not cleared")
+	}
+	if got, _ := os.ReadFile(filepath.Join(e.bin, "dxgi.dll")); string(got) != "EXTERNAL-DXGI" {
+		t.Fatal("declined install modified the original")
+	}
+
+	// Re-ask and accept this time: the original moves into the in-game
+	// backup and the bundle's dxgi.dll lands.
+	e.sess.QuickInstall(e.gameRoot)
+	waitEvent(t, e.sess, EvConfirm)
+	e.sess.AnswerConfirm(true)
+	waitEvent(t, e.sess, EvOpDone)
+	if got, _ := os.ReadFile(filepath.Join(e.bin, "optiscaler-backups", "files", "dxgi.dll")); string(got) != "EXTERNAL-DXGI" {
+		t.Fatal("consented install did not back up the original into the game dir")
+	}
+	t.Log("large-backup gate: blocked, declined, consented, backed up in-dir")
 }
 
 // seedOldProcessReleaseCache simulates the release cache a PREVIOUS

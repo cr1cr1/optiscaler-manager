@@ -115,8 +115,9 @@ func TestBacksUpBeforeOverwrite(t *testing.T) {
 		t.Fatalf("Install: %v", err)
 	}
 
-	id := manifestID(t, bin)
-	backup := filepath.Join(st.BackupDir(id), "files", "dxgi.dll")
+	// Backups live in the game directory itself (issue 023), next to the
+	// files they protect — never in the app's central state store.
+	backup := filepath.Join(bin, "optiscaler-backups", "files", "dxgi.dll")
 	data, err := os.ReadFile(backup)
 	if err != nil {
 		t.Fatalf("backup missing at %s: %v", backup, err)
@@ -141,6 +142,44 @@ func TestBacksUpBeforeOverwrite(t *testing.T) {
 		t.Errorf("InstalledSHA256 mismatch with installed bytes")
 	}
 	t.Logf("backup verified: %s, pre=%s installed=%s", backup, ow.PreSHA256, ow.InstalledSHA256)
+}
+
+// TestInstallLargeBackupRefusedWithoutConsent: a pending overwrite backup
+// over the no-confirm budget refuses before anything is staged or
+// written (issue 023) — no manifest, no backup tree, the original
+// untouched; consent installs and backs up.
+func TestInstallLargeBackupRefusedWithoutConsent(t *testing.T) {
+	root, bin, st := newGame(t)
+	original := "ORIGINAL-GAME-DXGI-BYTES"
+	writeFile(t, filepath.Join(bin, "dxgi.dll"), original)
+
+	req := request(root, bin)
+	req.MaxBackupNoConfirm = 1
+	_, err := Install(context.Background(), st, req)
+	var lb *LargeBackupError
+	if !errors.As(err, &lb) {
+		t.Fatalf("err = %v, want *LargeBackupError", err)
+	}
+	if lb.Bytes != int64(len(original)) {
+		t.Errorf("Bytes = %d, want %d (the one overwritten file)", lb.Bytes, len(original))
+	}
+	if data, _ := os.ReadFile(filepath.Join(bin, "dxgi.dll")); string(data) != original {
+		t.Error("original dxgi.dll modified despite the refusal")
+	}
+	if _, err := st.Load(manifestID(t, bin)); err == nil {
+		t.Error("manifest persisted despite the refusal")
+	}
+	if _, err := os.Stat(filepath.Join(bin, "optiscaler-backups")); !os.IsNotExist(err) {
+		t.Error("backup tree written despite the refusal")
+	}
+
+	req.AllowLargeBackup = true
+	if _, err := Install(context.Background(), st, req); err != nil {
+		t.Fatalf("consented install: %v", err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(bin, "optiscaler-backups", "files", "dxgi.dll")); string(data) != original {
+		t.Error("consented install did not back up the original")
+	}
 }
 
 func TestRecordsCreatedAndOverwritten(t *testing.T) {
@@ -303,7 +342,7 @@ func TestInstallUninstallRoundTrip(t *testing.T) {
 	if _, err := st.Load(id); err == nil {
 		t.Error("manifest should be deleted after clean uninstall")
 	}
-	if _, err := os.Stat(st.BackupDir(id)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(bin, "optiscaler-backups")); !os.IsNotExist(err) {
 		t.Error("backup dir should be deleted after clean uninstall")
 	}
 	t.Logf("round trip clean: %d files restored", strings.Count(before, "\n"))

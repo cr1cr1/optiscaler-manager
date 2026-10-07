@@ -75,6 +75,16 @@ here are closed; reopen only with new evidence.
   editor" affordance. **No in-app INI editor, no profiles, no import.**
 - Anti-cheat: `start_protected_game.exe` exists-check → warning modal before
   install.
+- **Originals are always backed up in the game directory first** (issue
+  023): overwritten pre-existing files copy to
+  `<installDir>/optiscaler-backups/files/` (SHA-verified, restored on
+  uninstall/rollback, removed when the manifest settles) — never to the
+  app's state root. Any pending backup over 100 MiB (total per operation)
+  pauses for explicit consent BEFORE a byte is touched; declining — or a
+  non-interactive CLI — aborts the operation untouched. Pre-023 central
+  backups are not read (clean break): uninstalling an install committed
+  before this change errors on the missing backup instead of silently
+  losing the originals.
 
 ## Discovery & classification
 
@@ -575,7 +585,9 @@ decisions the per-version sections above do not cover.
   dismiss), a pick asks for confirmation, and a confirmed restore swaps
   the complete set back after verifying snapshot hashes. Backups
   deduplicate by member digests (identical sets reuse the existing
-  snapshot), and a press on an already-current set is a graceful no-op
+  snapshot — and a dedup hit plans zero new bytes, so it never trips the
+  100 MiB consent gate, issue 023), and a press on an already-current
+  set is a graceful no-op
   ("already at <v>") with no snapshot and no file changes.
 - **Commit-keyed download cache**: same layout as the OptiScaler bundle
   cache — downloaded NVIDIA DLLs persist per source commit under

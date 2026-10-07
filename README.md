@@ -11,7 +11,9 @@ uninstalls cleanly when you're done. Available for **Linux and Windows** (amd64)
   Linux), and manually added folders to build your game library
 - Real game titles and cover art, plus ProtonDB compatibility tiers on Linux
 - One-click install, uninstall, and rollback, with SHA-verified backups of
-  every file it touches
+  every file it touches, written into the game directory itself. Any
+  backup over 100 MB asks for your confirmation before a byte is touched
+  (non-interactive CLI runs refuse instead)
 - Detects and adopts OptiScaler setups you installed by hand, so they become
   managed without losing your files
 - Update NVIDIA DLSS from the official
@@ -124,11 +126,12 @@ Selecting a game (clicking a card or row, opening the TUI detail screen)
 re-checks its OptiScaler state on disk, so files added, removed, or renamed
 by hand between scans show up without a rescan.
 
-Your state (manifests, OptiScaler backups, settings, library cache) lives outside game
+Your state (manifests, settings, library cache) lives outside game
 directories in `~/.local/share/optiscaler-manager`; downloaded bundles and
-cover art are cached in `~/.cache/optiscaler-manager`. DLSS rollback
-backups are the exception: they live in a `dlss-backups/` folder inside
-each game directory, next to the NVIDIA DLLs they protect.
+cover art are cached in `~/.cache/optiscaler-manager`. Backups are the
+exception: every original file the app replaces is backed up inside the
+game directory (`optiscaler-backups/` for OptiScaler installs,
+`dlss-backups/` for the NVIDIA runtime), next to the files it protects.
 
 ### GUI
 
@@ -210,7 +213,7 @@ exit 1, usage errors exit 2.
 
 | Variable | Effect |
 |----------|--------|
-| `OM_DATA_DIR` | Override the state root (manifests, backups, settings) |
+| `OM_DATA_DIR` | Override the state root (manifests, settings, library cache) |
 | `OM_CACHE_DIR` | Override the cache root (bundles, covers) |
 | `OM_STEAM_ROOT` | Scan only this Steam root |
 | `OM_GH_BASE_URL` | Override the GitHub API base URL |

@@ -37,7 +37,7 @@ func Rollback(ctx context.Context, st *store.Store, id string) error {
 		if ow.PreSHA256 == "" {
 			continue // original was never touched before the crash
 		}
-		backup := filepath.Join(st.BackupDir(id), "files", ow.BackupRelPath)
+		backup := filepath.Join(backupsDir(m.InstallDir), "files", ow.BackupRelPath)
 		backupSHA, err := hashFile(backup)
 		if err != nil {
 			return fmt.Errorf("rollback %s: backup unreadable: %w", id, err)
@@ -202,7 +202,7 @@ func UninstallWithOptions(ctx context.Context, st *store.Store, id string, opts 
 			}
 			m.Ops = append(m.Ops, domain.OpEntry{Op: "relocate", Path: ow.Path})
 		}
-		backup := filepath.Join(st.BackupDir(id), "files", ow.BackupRelPath)
+		backup := filepath.Join(backupsDir(m.InstallDir), "files", ow.BackupRelPath)
 		backupSHA, err := hashFile(backup)
 		if err != nil {
 			return fmt.Errorf("uninstall %s: backup unreadable: %w", id, err)
@@ -233,7 +233,7 @@ func UninstallWithOptions(ctx context.Context, st *store.Store, id string, opts 
 		return abortUninstall(ctx, st, m, m.Created, m.Overwritten)
 	}
 
-	if err := os.RemoveAll(st.BackupDir(id)); err != nil {
+	if err := os.RemoveAll(backupsDir(m.InstallDir)); err != nil {
 		return fmt.Errorf("remove backups %s: %w", id, err)
 	}
 	return st.Delete(id)

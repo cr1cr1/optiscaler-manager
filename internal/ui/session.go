@@ -103,7 +103,26 @@ const (
 	// game uninstalled with the ini already deleted.
 	ConfirmVersionSwitch
 	ConfirmDLSSRestore
+	// ConfirmLargeBackup pauses an operation whose pending backup exceeds
+	// the no-confirm budget (issue 023): Op names the paused operation so
+	// accepting resumes the right call with the large-backup override.
+	ConfirmLargeBackup
 )
+
+// Large-backup op discriminators for Confirmation.Op (ConfirmLargeBackup
+// resume routing).
+const (
+	OpDLSSUpdate  = "dlss-update"
+	OpDLSSRestore = "dlss-restore"
+	OpInstall     = "install"
+)
+
+// installConsent accumulates the consent-gate overrides a paused install
+// has collected so far (EAC, stale cache, large backup), so resuming at a
+// later gate never re-asks an earlier one.
+type installConsent struct {
+	eacOK, cachedOK, largeOK bool
+}
 
 // Confirmation is a pending consent request. Installs never proceed past
 // these points until AnswerConfirm(true) — the frontend renders the prompt.
@@ -117,6 +136,10 @@ type Confirmation struct {
 	// happens to resolve to when the answer lands.
 	Version    string
 	SnapshotID string // complete NVIDIA DLL set selected for restoration
+	Op         string // paused operation, ConfirmLargeBackup only
+	// consent is the install's accumulated overrides at pause time
+	// (ConfirmEAC/ConfirmCachedRelease/ConfirmLargeBackup+OpInstall).
+	consent installConsent
 }
 
 // Toast is a transient notification.

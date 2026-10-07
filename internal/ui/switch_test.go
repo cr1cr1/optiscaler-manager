@@ -101,8 +101,9 @@ func TestSwitchExternalAdoptsAtChosenVersion(t *testing.T) {
 		t.Errorf("manifest version = %q, want v0.9.4-test (the CHOSEN tag, not the default latest)",
 			manifests[0].Resolved.Version)
 	}
-	// The adopt path's backup holds the exact external bytes.
-	backup := filepath.Join(e.store.BackupDir(manifests[0].ID), "files", "dxgi.dll")
+	// The adopt path's backup holds the exact external bytes, stored in
+	// the game directory itself (issue 023).
+	backup := filepath.Join(e.bin, "optiscaler-backups", "files", "dxgi.dll")
 	data, err := os.ReadFile(backup)
 	if err != nil {
 		t.Fatalf("external backup missing: %v", err)

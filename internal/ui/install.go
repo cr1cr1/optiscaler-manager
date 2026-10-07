@@ -9,6 +9,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/app"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/installer"
 	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 )
 
@@ -21,12 +22,12 @@ func (s *Session) QuickInstall(gameDir string) {
 		go s.doUninstall(gameDir)
 		return
 	}
-	go s.doInstall(gameDir, false, false)
+	go s.doInstall(gameDir, installConsent{})
 }
 
 // Install starts an install with an explicit EAC override decision.
 func (s *Session) Install(gameDir string) {
-	go s.doInstall(gameDir, false, false)
+	go s.doInstall(gameDir, installConsent{})
 }
 
 // Uninstall starts an uninstall.
@@ -97,24 +98,39 @@ func (s *Session) AnswerConfirm(accept bool) {
 	}
 	switch c.Kind {
 	case ConfirmEAC:
-		go s.doInstallVersion(c.GameDir, c.Version, true, false)
+		cc := c.consent
+		cc.eacOK = true
+		go s.doInstallVersion(c.GameDir, c.Version, cc)
 	case ConfirmCachedRelease:
-		go s.doInstallVersion(c.GameDir, c.Version, false, true)
+		cc := c.consent
+		cc.cachedOK = true
+		go s.doInstallVersion(c.GameDir, c.Version, cc)
 	case ConfirmVersionSwitch:
 		go s.doSwitchVersion(c.GameDir, c.Version, true)
 	case ConfirmDLSSRestore:
-		go s.doRestoreDLSS(c.GameDir, c.SnapshotID)
+		go s.doRestoreDLSS(c.GameDir, c.SnapshotID, false)
+	case ConfirmLargeBackup:
+		switch c.Op {
+		case OpDLSSUpdate:
+			go s.doUpdateDLSS(c.GameDir, true)
+		case OpDLSSRestore:
+			go s.doRestoreDLSS(c.GameDir, c.SnapshotID, true)
+		case OpInstall:
+			cc := c.consent
+			cc.largeOK = true
+			go s.doInstallVersion(c.GameDir, c.Version, cc)
+		}
 	}
 }
 
-func (s *Session) doInstall(gameDir string, eacOK, cachedOK bool) {
-	_ = s.runInstall(gameDir, eacOK, cachedOK)
+func (s *Session) doInstall(gameDir string, consent installConsent) {
+	_ = s.runInstall(gameDir, consent)
 }
 
 // doInstallVersion is doInstall's version-parameterized form: version ""
 // keeps the configured default version.
-func (s *Session) doInstallVersion(gameDir, version string, eacOK, cachedOK bool) {
-	_ = s.runInstallVersion(gameDir, version, eacOK, cachedOK)
+func (s *Session) doInstallVersion(gameDir, version string, consent installConsent) {
+	_ = s.runInstallVersion(gameDir, version, consent)
 }
 
 // runInstall is doInstall's body with an outcome: nil on success,
@@ -122,8 +138,8 @@ func (s *Session) doInstallVersion(gameDir, version string, eacOK, cachedOK bool
 // when the game already has an op, the context cause on cancel, and the
 // surfaced error on failure. Callers that chain ops (version switch)
 // branch on the outcome; fire-and-forget callers discard it.
-func (s *Session) runInstall(gameDir string, eacOK, cachedOK bool) error {
-	return s.runInstallVersion(gameDir, "", eacOK, cachedOK)
+func (s *Session) runInstall(gameDir string, consent installConsent) error {
+	return s.runInstallVersion(gameDir, "", consent)
 }
 
 // eacWarning is the single source of the anti-cheat consent wording: the
@@ -135,18 +151,22 @@ func eacWarning(title string) string {
 // runInstallVersion is runInstall's version-parameterized form: version ""
 // installs the configured default (identical behavior in every respect);
 // a concrete tag installs exactly that release (the version-switch path).
-// The consent gates are version-agnostic: the EAC warning and the
-// stale-cache prompt pause with errInstallPaused and resume through
+// The consent gates are version-agnostic: the EAC warning, the
+// stale-cache prompt and the large-backup gate (issue 023) pause with
+// errInstallPaused and resume through
 // AnswerConfirm, which carries the tag over via Confirmation.Version, so a
-// paused switch never resumes as a different version.
-func (s *Session) runInstallVersion(gameDir, version string, eacOK, cachedOK bool) error {
+// paused switch never resumes as a different version; the accumulated
+// consent travels via Confirmation.consent, so a later gate never
+// re-asks an earlier one.
+func (s *Session) runInstallVersion(gameDir, version string, consent installConsent) error {
 	row := s.findRow(gameDir)
-	if row != nil && row.EAC && !eacOK {
+	if row != nil && row.EAC && !consent.eacOK {
 		s.setConfirm(&Confirmation{
 			Kind:    ConfirmEAC,
 			GameDir: gameDir,
 			Message: eacWarning(row.Title),
 			Version: version,
+			consent: consent,
 		})
 		return errInstallPaused
 	}
@@ -165,8 +185,8 @@ func (s *Session) runInstallVersion(gameDir, version string, eacOK, cachedOK boo
 		requested = s.Settings().DefaultVersion
 	}
 	m, err := app.Install(ctx, s.deps.Store, s.ghClient(), s.deps.CacheDir, gameDir,
-		app.InstallOpts{AllowCached: cachedOK || s.defaultRecentlyResolved(), EACOverride: eacOK, Requested: requested,
-			ForkSlug: s.Settings().Active().Slug})
+		app.InstallOpts{AllowCached: consent.cachedOK || s.defaultRecentlyResolved(), EACOverride: consent.eacOK, Requested: requested,
+			AllowLargeBackup: consent.largeOK, ForkSlug: s.Settings().Active().Slug})
 	s.finishOp(gameDir)
 	if errors.Is(err, context.Canceled) {
 		s.opCancelled(gameDir, pre)
@@ -179,6 +199,20 @@ func (s *Session) runInstallVersion(gameDir, version string, eacOK, cachedOK boo
 			GameDir: gameDir,
 			Message: "GitHub is rate-limiting; only stale cached release info is available. Use it anyway?",
 			Version: version,
+			consent: consent,
+		})
+		return errInstallPaused
+	}
+	var lb *installer.LargeBackupError
+	if errors.As(err, &lb) {
+		s.opAborted()
+		s.setConfirm(&Confirmation{
+			Kind:    ConfirmLargeBackup,
+			GameDir: gameDir,
+			Op:      OpInstall,
+			Message: fmt.Sprintf("Backing up the existing files needs ~%d MB in the game directory. Continue?", humanMB(lb.Bytes)),
+			Version: version,
+			consent: consent,
 		})
 		return errInstallPaused
 	}

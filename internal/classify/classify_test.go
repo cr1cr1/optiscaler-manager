@@ -9,14 +9,16 @@ import (
 )
 
 // TestDirFilesSkipsDLSSBackups: optiscaler-manager's own in-game rollback
-// store (dlss-backups/, issue 022) must never surface through DirFiles —
-// its stale DLL copies would alias into version probing and injection-dir
-// resolution as if they were active game components.
+// stores (dlss-backups/, issue 022; optiscaler-backups/, issue 023) must
+// never surface through DirFiles — their stale DLL copies would alias
+// into version probing and injection-dir resolution as if they were
+// active game components.
 func TestDirFilesSkipsDLSSBackups(t *testing.T) {
 	root := t.TempDir()
 	for _, p := range []string{
 		"nvngx_dlss.dll",
 		"dlss-backups/20261007-130914_dlss-1.0.0/nvngx_dlss.dll",
+		"optiscaler-backups/files/nvngx_dlss.dll",
 	} {
 		full := filepath.Join(root, filepath.FromSlash(p))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -61,6 +63,8 @@ func TestClassifyDetectsKnownComponentDLLs(t *testing.T) {
 		// optiscaler-manager's own in-game DLSS rollback store is not an
 		// active game component (issue 022)
 		{"dlss-backups/20261007-130914_dlss-1.0.0/nvngx_dlss.dll", nil},
+		// nor is its OptiScaler install backup store (issue 023)
+		{"optiscaler-backups/files/dxgi.dll", nil},
 	}
 
 	var want []domain.Component

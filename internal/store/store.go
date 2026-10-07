@@ -123,11 +123,6 @@ func (s *Store) List() ([]*domain.Manifest, error) {
 	return out, nil
 }
 
-// BackupDir returns the per-install backup directory for a manifest ID.
-func (s *Store) BackupDir(id string) string {
-	return filepath.Join(s.root, "backups", id)
-}
-
 // StagingDir returns the per-install extraction staging directory.
 func (s *Store) StagingDir(id string) string {
 	return filepath.Join(s.root, "staging", id)

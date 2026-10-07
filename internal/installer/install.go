@@ -43,6 +43,30 @@ type Request struct {
 	// from; recorded on the manifest verbatim (the app layer normalizes
 	// an empty value to the upstream slug).
 	Fork string
+	// MaxBackupNoConfirm is the consent budget for the overwrite backup
+	// (issue 023): zero means defaultMaxBackupNoConfirm. A pending backup
+	// over budget refuses with *LargeBackupError unless AllowLargeBackup
+	// consents.
+	MaxBackupNoConfirm int64
+	AllowLargeBackup   bool
+}
+
+// defaultMaxBackupNoConfirm is the consent budget when the request leaves
+// it zero (100 MiB). Library default only: production installs always
+// carry the app's value — app.MaxBackupNoConfirm is THE policy owner;
+// this constant must mirror it.
+const defaultMaxBackupNoConfirm = int64(100 << 20)
+
+// LargeBackupError refuses an install whose pending overwrite backup
+// exceeds the no-confirm budget, BEFORE anything is staged or written
+// (issue 023). The UI layer maps it to a consent gate and retries with
+// AllowLargeBackup; a decline leaves every byte untouched.
+type LargeBackupError struct {
+	Bytes int64
+}
+
+func (e *LargeBackupError) Error() string {
+	return fmt.Sprintf("install: backup needs %d bytes, above the no-confirm budget", e.Bytes)
 }
 
 // filePlan maps one archive member to its destination relative to InstallDir.
@@ -100,6 +124,26 @@ func Install(ctx context.Context, st *store.Store, req Request) (*domain.Manifes
 		return nil, err
 	}
 
+	// Consent gate (issue 023): the pending overwrite backup is the sum of
+	// the pre-existing targets' sizes. Over budget without consent the
+	// install refuses here — staging is not even extracted, the manifest
+	// not written, the game untouched.
+	if !req.AllowLargeBackup {
+		var pending int64
+		for _, fp := range plan {
+			if st_, err := os.Stat(filepath.Join(installDir, fp.dstRel)); err == nil {
+				pending += st_.Size()
+			}
+		}
+		budget := req.MaxBackupNoConfirm
+		if budget == 0 {
+			budget = defaultMaxBackupNoConfirm
+		}
+		if pending > budget {
+			return nil, &LargeBackupError{Bytes: pending}
+		}
+	}
+
 	staging := st.StagingDir(id)
 	if err := os.RemoveAll(staging); err != nil {
 		return nil, fmt.Errorf("clean staging: %w", err)
@@ -143,7 +187,7 @@ func Install(ctx context.Context, st *store.Store, req Request) (*domain.Manifes
 		return nil, err
 	}
 
-	backupFiles := filepath.Join(st.BackupDir(id), "files")
+	backupFiles := filepath.Join(backupsDir(installDir), "files")
 	for _, fp := range plan {
 		if err := ctx.Err(); err != nil {
 			return cancelInstall(ctx, st, m)
@@ -184,6 +228,16 @@ func Install(ctx context.Context, st *store.Store, req Request) (*domain.Manifes
 		log.Warn().Str("id", m.ID).Err(err).Msg("clean staging after commit")
 	}
 	return m, nil
+}
+
+// backupsDir is the game's own OptiScaler backup store (issue 023):
+// overwritten originals live inside the game directory itself, next to
+// the files they protect — they travel with the folder and can be
+// restored by hand. Clean-break companion of the DLSS store (issue 022):
+// pre-023 central backups are not read (uninstall of such an install
+// errors on the missing backup instead of silently losing originals).
+func backupsDir(installDir string) string {
+	return filepath.Join(installDir, "optiscaler-backups")
 }
 
 // installOverwrite backs up the original bytes before replacing them. Entry

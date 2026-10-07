@@ -417,6 +417,10 @@ type InstallOpts struct {
 	AllowCached bool   // accept stale cached release info under rate limiting
 	EACOverride bool   // install despite anti-cheat detection
 	Requested   string // release tag to install; "latest" when empty
+	// AllowLargeBackup consents to an overwrite backup over
+	// MaxBackupNoConfirm (issue 023); without it the install refuses with
+	// *installer.LargeBackupError before staging anything.
+	AllowLargeBackup bool
 	// ForkSlug is the owner/repo distribution source; empty resolves to
 	// the upstream fork. It selects the cache namespace (same-named tags
 	// from different distributions can never collide) and is recorded on
@@ -476,12 +480,14 @@ func Install(ctx context.Context, st *store.Store, client *gh.Client, cacheDir, 
 	resolved.SHA256 = digest
 
 	return installer.Install(ctx, st, installer.Request{
-		GameRoot:         root,
-		InstallDir:       installDir,
-		ArchivePath:      bundlePath,
-		RequestedVersion: requested,
-		Resolved:         resolved,
-		Fork:             forkSlug,
+		GameRoot:           root,
+		InstallDir:         installDir,
+		ArchivePath:        bundlePath,
+		RequestedVersion:   requested,
+		Resolved:           resolved,
+		Fork:               forkSlug,
+		MaxBackupNoConfirm: MaxBackupNoConfirm,
+		AllowLargeBackup:   opts.AllowLargeBackup,
 	})
 }
 

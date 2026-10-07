@@ -1,7 +1,6 @@
 package store_test
 
 import (
-	"path/filepath"
 	"reflect"
 	"sort"
 	"testing"
@@ -98,9 +97,5 @@ func TestStoreSaveLoadListManifests(t *testing.T) {
 		t.Error("load of unknown ID: expected error, got nil")
 	} else {
 		t.Logf("unknown ID load errored as expected: %v", err)
-	}
-
-	if d := s.BackupDir(m1.ID); d != filepath.Join(root, "backups", m1.ID) {
-		t.Errorf("BackupDir = %q, want %q", d, filepath.Join(root, "backups", m1.ID))
 	}
 }

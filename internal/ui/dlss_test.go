@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/app"
 	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
@@ -159,6 +160,47 @@ func TestUpdateDLSSMissingDLLProceeds(t *testing.T) {
 	}
 	if snaps := e.sess.DLSSSnapshots(row.InstallDir); len(snaps) != 0 {
 		t.Errorf("backup-less update created %d snapshots, want 0", len(snaps))
+	}
+}
+
+// TestUpdateDLSSLargeBackupConfirmFlow: a pending backup over the consent
+// budget pauses the update with a size-naming confirmation (issue 023) —
+// declining leaves every byte untouched, accepting resumes the same op
+// to completion.
+func TestUpdateDLSSLargeBackupConfirmFlow(t *testing.T) {
+	e := newDLSSEnv(t, true)
+	row := scanOneDLSSRow(t, e)
+	orig := app.MaxBackupNoConfirm
+	app.MaxBackupNoConfirm = 1
+	t.Cleanup(func() { app.MaxBackupNoConfirm = orig })
+
+	e.sess.UpdateDLSS(row.InstallDir)
+	ev := waitEvent(t, e.sess, EvConfirm)
+	if !strings.Contains(ev.Text, "MB") {
+		t.Errorf("consent message %q does not name the size", ev.Text)
+	}
+	c := e.sess.Snapshot().Confirm
+	if c == nil || c.Kind != ConfirmLargeBackup || c.Op != OpDLSSUpdate {
+		t.Fatalf("confirm = %+v, want ConfirmLargeBackup/%s", c, OpDLSSUpdate)
+	}
+	e.sess.AnswerConfirm(false)
+	if got := dlssDLLVersion(t, e, dlss.Files[0]); got != "3.7.20.0" {
+		t.Errorf("%s changed on declined consent: %q", dlss.Files[0], got)
+	}
+	if snaps := e.sess.DLSSSnapshots(row.InstallDir); len(snaps) != 0 {
+		t.Errorf("declined consent wrote %d snapshots, want 0", len(snaps))
+	}
+
+	// Accepting the second attempt's gate resumes the same update.
+	e.sess.UpdateDLSS(row.InstallDir)
+	waitEvent(t, e.sess, EvConfirm)
+	e.sess.AnswerConfirm(true)
+	waitEvent(t, e.sess, EvOpDone)
+	if got := dlssDLLVersion(t, e, dlss.Files[0]); got != "310.5.3.0" {
+		t.Errorf("%s after consented update = %q, want 310.5.3.0", dlss.Files[0], got)
+	}
+	if snaps := e.sess.DLSSSnapshots(row.InstallDir); len(snaps) != 1 {
+		t.Errorf("consented update wrote %d snapshots, want 1", len(snaps))
 	}
 }
 

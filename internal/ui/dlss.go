@@ -19,9 +19,9 @@ import (
 // startup check's published commit is already in the download cache the
 // install runs with zero network; otherwise the missing members are fetched
 // into that cache and the install always serves from the cache dir.
-func (s *Session) UpdateDLSS(gameDir string) { go s.doUpdateDLSS(gameDir) }
+func (s *Session) UpdateDLSS(gameDir string) { go s.doUpdateDLSS(gameDir, false) }
 
-func (s *Session) doUpdateDLSS(gameDir string) {
+func (s *Session) doUpdateDLSS(gameDir string, allowLarge bool) {
 	hint := func() string {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -31,7 +31,17 @@ func (s *Session) doUpdateDLSS(gameDir string) {
 		return s.st.DLSSCachedCommit
 	}()
 	s.runDLSSOp(gameDir, "Updating NVIDIA DLSS…", func(ctx context.Context) error {
-		_, err := app.UpdateDLSS(ctx, s.deps.DLSS, s.deps.CacheDir, gameDir, hint)
+		_, err := app.UpdateDLSS(ctx, s.deps.DLSS, s.deps.CacheDir, gameDir, hint, allowLarge)
+		var lb *dlss.LargeBackupError
+		if errors.As(err, &lb) {
+			s.setConfirm(&Confirmation{
+				Kind:    ConfirmLargeBackup,
+				GameDir: gameDir,
+				Op:      OpDLSSUpdate,
+				Message: fmt.Sprintf("Backing up the current NVIDIA DLSS set needs ~%d MB in the game directory. Continue?", humanMB(lb.Bytes)),
+			})
+			return errOpPaused
+		}
 		return err
 	}, "Updated NVIDIA DLSS")
 }
@@ -119,11 +129,31 @@ func (s *Session) RestoreDLSS(gameDir, snapshotID string) {
 	s.toast("DLSS backup no longer exists", true)
 }
 
-func (s *Session) doRestoreDLSS(gameDir, snapshotID string) {
+func (s *Session) doRestoreDLSS(gameDir, snapshotID string, allowLarge bool) {
 	s.runDLSSOp(gameDir, "Restoring NVIDIA DLSS…", func(ctx context.Context) error {
-		_, err := app.RestoreDLSS(ctx, gameDir, snapshotID)
+		_, err := app.RestoreDLSS(ctx, gameDir, snapshotID, allowLarge)
+		var lb *dlss.LargeBackupError
+		if errors.As(err, &lb) {
+			s.setConfirm(&Confirmation{
+				Kind:       ConfirmLargeBackup,
+				GameDir:    gameDir,
+				Op:         OpDLSSRestore,
+				SnapshotID: snapshotID,
+				Message:    fmt.Sprintf("Backing up the current NVIDIA DLSS set needs ~%d MB in the game directory. Continue?", humanMB(lb.Bytes)),
+			})
+			return errOpPaused
+		}
 		return err
 	}, "Restored NVIDIA DLSS")
+}
+
+// errOpPaused settles an op shell quietly: a consent gate owns the
+// continuation (the large-backup pause, issue 023).
+var errOpPaused = errors.New("op paused for consent")
+
+// humanMB rounds a byte count up to whole megabytes for consent messages.
+func humanMB(b int64) int64 {
+	return (b + (1 << 20) - 1) / (1 << 20)
 }
 
 // runDLSSOp is the shared shell of the NVIDIA DLSS operations: register the
@@ -141,6 +171,8 @@ func (s *Session) runDLSSOp(gameDir, started string, run func(ctx context.Contex
 	s.finishOp(gameDir)
 	var already *dlss.AlreadyLatestError
 	switch {
+	case errors.Is(err, errOpPaused):
+		s.opAborted()
 	case errors.Is(err, context.Canceled):
 		s.opCancelled(gameDir, pre)
 	case errors.As(err, &already):

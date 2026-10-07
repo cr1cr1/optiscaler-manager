@@ -148,7 +148,7 @@ func (s *Session) doSwitchVersionChain(gameDir, version string, eacConsented boo
 		// files up SHA-verified first — nothing is uninstalled, and a
 		// failed adopt keeps the usual failed-manifest + manual-rollback
 		// semantics.
-		if err := s.runInstallVersion(gameDir, version, eacConsented, true); err != nil {
+		if err := s.runInstallVersion(gameDir, version, installConsent{eacOK: eacConsented, cachedOK: true}); err != nil {
 			return "switch failed: " + err.Error()
 		}
 		if s.restoreINI(gameDir, ini) == nil {
@@ -200,7 +200,7 @@ func (s *Session) doSwitchVersionChain(gameDir, version string, eacConsented boo
 	// cachedOK: the user pinned a concrete tag, so stale release metadata
 	// cannot resolve to the WRONG version the way a stale "latest" can —
 	// and the chosen bundle may legitimately come from the local cache.
-	err = s.runInstallVersion(gameDir, version, eacConsented, true)
+	err = s.runInstallVersion(gameDir, version, installConsent{eacOK: eacConsented, cachedOK: true})
 	switch {
 	case err == nil:
 		if s.restoreINI(gameDir, ini) == nil {
