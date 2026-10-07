@@ -3581,3 +3581,23 @@ opens the restore menu of local backup sets.
   `TestComponentVersionsDLSSLabelIsRawVersion` pins the mapping.
 - Verification: `go test ./...` (29 packages) exit 0, `go vet`/`gofmt`
   clean.
+
+## 2026-10-07 — issue 20: pill hover tooltips spell out abbreviations
+
+- Hovering a pill whose label leads with a known abbreviation floats its
+  full name next to the pill after a 500ms debounce: DLSS → NVIDIA Deep
+  Learning Super Sampling, DLSS-FG → NVIDIA DLSS Frame Generation, FSR →
+  AMD FidelityFX Super Resolution, XeSS → Intel Xe Super Sampling, EAC →
+  Easy Anti-Cheat. Plain names and unknown tokens get no tooltip.
+- shirei has no tooltip primitive: pills register the request during the
+  frame (`pillHoverTip`, wired into `badgePill` and the interactive DLSS
+  control) and `rootView` renders the overlay last, outside every Clip —
+  works on cards and in the scrolling detail pane. The debounce clock
+  survives across frames while the SAME pill stays hovered; leaving or
+  switching pills restarts it.
+- TDD red witnessed (undefined `pillTip`/`pillTipState`), then green.
+  Test note: isolated-run font shaping can shift the pill rect on the
+  first hover frames and legitimately restart the debounce clock — the
+  hover test warms up three frames before backdating `pillTip.since`.
+- Verification: `go test ./...` (29 packages) exit 0, `go vet`/`gofmt`
+  clean.

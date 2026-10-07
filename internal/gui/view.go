@@ -14,6 +14,10 @@ import (
 func (m *model) rootView() {
 	m.drain()
 	m.syncFilter()
+	// Frame-scoped pill tooltip re-arm: pills re-register on hover as they
+	// render; text/rect/since persist so the 500ms debounce clock survives.
+	pillTip.seen = false
+	pillTip.shown = false
 	Container(Attrs(Viewport, Row, BackgroundVec(bgApp)), func() {
 		m.sidebar()
 		Container(Attrs(Grow(1), Expand, Gap(0)), func() {
@@ -50,6 +54,8 @@ func (m *model) rootView() {
 		} else if m.state.Confirm != nil {
 			m.confirmModal()
 		}
+		// Last: the tooltip floats over everything else, outside every Clip.
+		m.pillTipOverlay()
 		m.handleGlobalKeys()
 	})
 }

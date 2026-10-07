@@ -90,6 +90,9 @@ func (m *model) dlssControl(e *ui.GameRow, label string) {
 	}
 	enterPick := false
 	Container(Attrs(Row, Gap(1), Corners(radiusS), BackgroundVec(toneColor(ui.ToneGreen))), func() {
+		// Same tooltip as the static pills — the control's label still
+		// leads with the DLSS abbreviation.
+		pillHoverTip(label)
 		Container(Attrs(Focusable, PointerHand, Row, CrossMid, Pad2(3, 3), Corners(radiusS)), func() {
 			FocusOnClick()
 			m.dlssUpdateID = CurrentId()

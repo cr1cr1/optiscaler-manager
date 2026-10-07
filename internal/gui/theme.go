@@ -137,5 +137,6 @@ func toneColor(t ui.Tone) Vec4 {
 func badgePill(label string, tone ui.Tone) {
 	Container(Attrs(Pad2(3, 6), Corners(radiusS), BackgroundVec(toneColor(tone))), func() {
 		Label(label, TextColor(0, 0, 96, 1), FontSize(11))
+		pillHoverTip(label)
 	})
 }
