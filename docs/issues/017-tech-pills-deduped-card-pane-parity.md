@@ -51,5 +51,4 @@ missing panel row reads zero, never the card's stale capture). Tests in
 internal/gui/techpills_test.go: dedupe unit cases incl. the DLSSG
 boundary, card skip on full duplication, panel parity. Verified with a
 before/after headless render (second duplicated pill row gone from the
-card) and full suite (29 packages) exit 0. Commit hash pinned in a
-follow-up commit.
+card) and full suite (29 packages) exit 0. Commit `7f2c090`.
