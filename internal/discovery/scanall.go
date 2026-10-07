@@ -22,10 +22,11 @@ type ScanOptions struct {
 }
 
 // ScanAll discovers games from every store the platform supports — Steam,
-// Epic, GOG, .app bundles (macOS), and manual recursive roots — and merges
-// them into one list deduplicated by canonical install directory. When the
-// same directory appears under several stores, the earlier store in probe
-// order (Steam, Epic, GOG, apps, manual) wins.
+// Epic, Heroic (Epic+GOG on Linux), GOG, .app bundles (macOS), and manual
+// recursive roots — and merges them into one list deduplicated by canonical
+// install directory. When the same directory appears under several stores,
+// the earlier store in probe order (Steam, Epic, Heroic, GOG, apps, manual)
+// wins.
 func ScanAll(ctx context.Context, opts ScanOptions) ([]domain.Game, error) {
 	var games []domain.Game
 	seen := map[string]bool{}
@@ -70,6 +71,7 @@ func ScanAll(ctx context.Context, opts ScanOptions) ([]domain.Game, error) {
 		return games, err
 	}
 	add(ScanEpic())
+	add(heroicGames())
 	add(gogGames())
 	add(storeApps())
 	resolver := opts.Resolver

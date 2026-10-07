@@ -51,7 +51,7 @@ type Settings struct {
 	TitleOverrides map[string]string `json:"title_overrides,omitempty"`
 	// CardSize selects the grid card width preset.
 	CardSize CardSize `json:"card_size,omitempty"`
-	// UmuEnabled toggles routing manual-store Windows binaries through
+	// UmuEnabled toggles routing manual / Heroic Epic/GOG Windows binaries through
 	// umu-launcher on Linux (umu-run + Proton). Defaults to false: the
 	// feature is opt-in. Decoded through a pointer in Load so legacy
 	// files written before the key existed read as false (the bool zero

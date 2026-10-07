@@ -3,6 +3,8 @@ package ui
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -337,5 +339,126 @@ func TestSessionLaunch_UmuFailureReportedAsLaunchFailed(t *testing.T) {
 	last := st.Toasts[len(st.Toasts)-1]
 	if !last.Warn || !strings.Contains(last.Text, "Launch failed:") {
 		t.Errorf("toast %+v, want warn \"Launch failed: …\"", last)
+	}
+}
+
+// TestSessionLaunch_HeroicEpicGameUsesUmuWhenEnabled: a Heroic-discovered
+// Epic row with an ExePath is umu-eligible on Linux — without it the
+// launch would fall to the best-effort xdg-open Epic URL.
+func TestSessionLaunch_HeroicEpicGameUsesUmuWhenEnabled(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.GOOS = "linux"
+	e.sess.deps.SettingsRoot = t.TempDir()
+
+	cap := &launchCapture{}
+	e.sess.deps.Launcher = launch.New(cap.runner(), "linux", noBinaries)
+	ucap := &umuCapture{}
+	e.sess.deps.UmuLauncher = ucap.hook()
+
+	dir := "/games/heroic/Fortnite"
+	exe := dir + "/FortniteGame/Binaries/Win64/Fortnite.exe"
+	addRow(e.sess, GameRow{Title: "Fortnite", InstallDir: dir, Store: domain.StoreEpic, AppName: "Fortnite", ExePath: exe})
+
+	e.sess.SetUmuEnabled(true)
+	e.sess.Launch(dir)
+	waitEvent(t, e.sess, EvOpDone)
+
+	if ucap.calls != 1 {
+		t.Fatalf("UmuLauncher.calls = %d, want 1 (heroic epic row is umu-eligible)", ucap.calls)
+	}
+	if ucap.row.ExePath != exe {
+		t.Errorf("UmuLauncher ExePath = %q, want %q", ucap.row.ExePath, exe)
+	}
+}
+
+// TestSessionLaunch_HeroicGOGGameUsesUmuWhenEnabled: same for GOG rows —
+// without umu the regular Launcher would try to exec a Windows PE
+// directly, which fails on Linux.
+func TestSessionLaunch_HeroicGOGGameUsesUmuWhenEnabled(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.GOOS = "linux"
+	e.sess.deps.SettingsRoot = t.TempDir()
+
+	cap := &launchCapture{}
+	e.sess.deps.Launcher = launch.New(cap.runner(), "linux", noBinaries)
+	ucap := &umuCapture{}
+	e.sess.deps.UmuLauncher = ucap.hook()
+
+	dir := "/games/heroic/Hades"
+	exe := dir + "/Hades.exe"
+	addRow(e.sess, GameRow{Title: "Hades", InstallDir: dir, Store: domain.StoreGOG, ExePath: exe})
+
+	e.sess.SetUmuEnabled(true)
+	e.sess.Launch(dir)
+	waitEvent(t, e.sess, EvOpDone)
+
+	if ucap.calls != 1 {
+		t.Fatalf("UmuLauncher.calls = %d, want 1 (heroic gog row is umu-eligible)", ucap.calls)
+	}
+}
+
+// TestSessionLaunch_HeroicRowWithoutExeStaysOnRegularLauncher: an
+// Epic/GOG row with no resolved exe is not umu-eligible; the regular
+// Launcher keeps its URL/direct-exe fallbacks.
+func TestSessionLaunch_HeroicRowWithoutExeStaysOnRegularLauncher(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.GOOS = "linux"
+	e.sess.deps.SettingsRoot = t.TempDir()
+
+	cap := &launchCapture{}
+	e.sess.deps.Launcher = launch.New(cap.runner(), "linux", noBinaries)
+	ucap := &umuCapture{}
+	e.sess.deps.UmuLauncher = ucap.hook()
+
+	// Real dirs: the regular launcher resolves a blank ExePath by
+	// scanning the install dir's PARENT, so the game lives one level
+	// below the temp root to keep that scan small.
+	root := t.TempDir()
+	dir := filepath.Join(root, "NoExe")
+	exe := filepath.Join(dir, "game.exe")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, []byte("MZ\x90\x00"), 0o755); err != nil { // 4+ bytes: isBinaryMagic ReadAt()s 4
+		t.Fatal(err)
+	}
+	addRow(e.sess, GameRow{Title: "No Exe Recorded", InstallDir: dir, Store: domain.StoreGOG})
+
+	e.sess.SetUmuEnabled(true)
+	e.sess.Launch(dir)
+	waitEvent(t, e.sess, EvOpDone)
+
+	if ucap.calls != 0 {
+		t.Errorf("UmuLauncher.calls = %d, want 0 (no exe)", ucap.calls)
+	}
+	if cap.calls != 1 {
+		t.Errorf("regular Launcher.calls = %d, want 1", cap.calls)
+	}
+}
+
+// TestSessionLaunch_HeroicRowIgnoresUmuOnWindows: natively on Windows the
+// Epic/GOG stores launch through their own verbs; umu is Linux-only.
+func TestSessionLaunch_HeroicRowIgnoresUmuOnWindows(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.GOOS = "windows"
+	e.sess.deps.SettingsRoot = t.TempDir()
+
+	cap := &launchCapture{}
+	e.sess.deps.Launcher = launch.New(cap.runner(), "windows", noBinaries)
+	ucap := &umuCapture{}
+	e.sess.deps.UmuLauncher = ucap.hook()
+
+	dir := `C:\Games\Hades`
+	addRow(e.sess, GameRow{Title: "Hades", InstallDir: dir, Store: domain.StoreGOG, ExePath: dir + `\Hades.exe`})
+
+	e.sess.SetUmuEnabled(true)
+	e.sess.Launch(dir)
+	waitEvent(t, e.sess, EvOpDone)
+
+	if ucap.calls != 0 {
+		t.Errorf("UmuLauncher.calls = %d, want 0 (windows)", ucap.calls)
+	}
+	if cap.calls != 1 {
+		t.Errorf("regular Launcher.calls = %d, want 1", cap.calls)
 	}
 }

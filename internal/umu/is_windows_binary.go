@@ -20,7 +20,7 @@ var windowsBinaryExtensions = []string{".exe", ".bat", ".cmd", ".msi"}
 //     PE/COFF "MZ" magic header.
 //  3. Files that don't exist and have no Windows extension return false.
 //
-// This is used to decide whether to route a manual-store launch through
+// This is used to decide whether to route a manual / Heroic-store launch through
 // umu-launcher on Linux: a Windows binary needs Proton, a native binary
 // doesn't.
 func IsWindowsBinary(path string) bool {

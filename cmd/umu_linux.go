@@ -13,7 +13,7 @@ import (
 )
 
 // newUmuLauncher returns the ui-layer hook that drives umu-run for
-// umu-eligible manual-store games. Returns nil when umu-run is not
+// umu-eligible manual and Heroic Epic/GOG games. Returns nil when umu-run is not
 // installed or its --version output is unparseable, in which case the
 // session transparently falls back to the regular Launcher.
 //

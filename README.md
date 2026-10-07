@@ -7,7 +7,8 @@ uninstalls cleanly when you're done. Available for **Linux and Windows** (amd64)
 
 ## Features
 
-- Scans Steam, Epic, GOG, and manually added folders to build your game library
+- Scans Steam, Epic, GOG (including Heroic Games Launcher installs on
+  Linux), and manually added folders to build your game library
 - Real game titles and cover art, plus ProtonDB compatibility tiers on Linux
 - One-click install, uninstall, and rollback, with SHA-verified backups of
   every file it touches
@@ -25,9 +26,9 @@ uninstalls cleanly when you're done. Available for **Linux and Windows** (amd64)
   renamed out of the way (`.disabled` or any backup suffix you chose)
   instead of removed, so the toggle back is a single rename
 - Launch games straight from the app (Steam, Epic, GOG, or a custom template;
-  on Linux, manually added Windows binaries can run through
-  [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher) when
-  installed)
+  on Linux, manually added or Heroic-installed Windows binaries can run
+  through [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher)
+  when installed)
 - Both a graphical interface and a terminal UI over the same core
 - Open a game's `OptiScaler.ini` for editing right from the app
 - Settings for default OptiScaler version, scan directories, launch template,
@@ -51,8 +52,11 @@ optiscaler-manager tui    # terminal UI
 
 ## Usage
 
-Scanning covers Steam, Epic, GOG (discovery is Windows-only), and manually
-added folders (recursive). A folder that is itself a game gets one row; a
+Scanning covers Steam, Epic, GOG, and manually
+added folders (recursive). Native Epic/GOG discovery is Windows-only; on
+Linux those games are found through Heroic Games Launcher's installed
+records (native and Flatpak installs). A folder that is itself a game gets
+one row; a
 container folder (a library root like `Games` or `Steam`) becomes a scan root
 and every game inside it surfaces as its own row. The grid shows each game's
 store, installed OptiScaler version, detected upscaler versions

@@ -3407,3 +3407,39 @@ opens the restore menu of local backup sets.
 - TDD: reds witnessed (warn toast absent from a captured log buffer,
   opFailed error text absent), then the three-line fix at the funnel.
   `go test ./...` green, `go vet`/`gofmt` clean.
+
+## 2026-10-07 — issue 12: Heroic Epic/GOG game scanning on Linux
+
+- The Epic and GOG storefront probes are stubbed on Linux, so games
+  installed through Heroic Games Launcher were invisible unless the user
+  hand-added install dirs as recursive roots. Heroic records every
+  installed game in plain JSON — `legendary/installed.json` (Epic) and
+  `gog_store/installed.json` (GOG) — under both its native
+  (`$XDG_CONFIG_HOME/heroic`) and Flatpak
+  (`~/.var/app/com.heroicgameslauncher.hgl/config/heroic`) config roots.
+  A new stdlib parser (`gid.ParseHeroicInstalled`, tolerant of
+  legendary's snake_case `app_name` vs the GOG store's camelCase
+  `appName`, map-key and title fallbacks, sorted output) feeds a
+  Linux-only `discovery.heroicGames` probe wired into `ScanAll` between
+  the Epic and GOG probes; the existing canonical-dir dedupe resolves
+  overlaps with recursive roots (the store row wins).
+- Records filter to Windows builds (empty platform counts as Windows —
+  older legendary files predate cross-platform installs) with existing
+  install dirs. ExePath comes from the record's `executable` (windows
+  separators normalized, `joinWithin` escape rejection), with the
+  existing goggame-*.info `GOGExePath` fallback for GOG records that
+  predate Heroic writing executables.
+- Launch: `shouldUseUmu` previously gated umu-run to manual-store rows,
+  so Heroic rows would have fallen to the best-effort xdg-open Epic URL
+  or a direct exec of a Windows PE. The gate now covers Epic/GOG rows
+  with a Windows-binary ExePath (still Linux-only, still behind
+  UmuEnabled + detected umu-run), making Heroic games launch exactly
+  like manual ones. Windows/macOS behavior is unchanged (native probes,
+  native store verbs, ProtonDB still Linux-gated).
+- TDD: reds witnessed at each step (undefined ParseHeroicInstalled,
+  undefined heroicGames, ScanAll merge missing the Heroic row,
+  umu not called for Epic/GOG rows), then the implementation. Test
+  fixtures use 4+ byte "MZ\x90\x00" magic because isBinaryMagic
+  ReadAt()s a full 4 bytes — a 2-byte file silently fails candidacy.
+  `go test ./...` green, `go vet`/`gofmt` clean, windows/darwin builds
+  green. ponytail-review: one note deleted, net -3 lines.

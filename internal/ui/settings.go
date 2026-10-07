@@ -94,7 +94,7 @@ func (s *Session) SetLaunchTemplate(tmpl string) {
 	}, "launch template: "+tmpl, "")
 }
 
-// SetUmuEnabled toggles routing manual-store Windows binaries through
+// SetUmuEnabled toggles routing manual / Heroic Epic/GOG Windows binaries through
 // umu-launcher (Linux only). Persisted atomically; toasts the result.
 func (s *Session) SetUmuEnabled(enabled bool) {
 	msg := "umu-launcher disabled"

@@ -33,7 +33,7 @@ func (s *Session) doLaunch(gameDir string) {
 
 	// umu-launcher short-circuit: when the feature is enabled AND an
 	// umu hook is wired (production: umu-run detected) AND the target
-	// is umu-eligible (Linux + manual store + Windows binary), bypass
+	// is umu-eligible (Linux + umu store + Windows binary), bypass
 	// the regular Launcher entirely. The hook owns env-var setup and
 	// stderr-scanning for umu's exit-0-on-fatal-error quirk.
 	if s.shouldUseUmu(row) {
@@ -60,7 +60,9 @@ func (s *Session) doLaunch(gameDir string) {
 
 // shouldUseUmu reports whether the umu-launcher path should be taken
 // for this launch. The checks are: the setting is on, a hook is wired,
-// we're on Linux, the row is a manual-store game, and its ExePath is a
+// we're on Linux, the row is a game the regular Launcher can only run
+// through Windows-store verbs (manual, or Heroic-discovered Epic/GOG —
+// their Linux store URLs are best-effort at best), and its ExePath is a
 // Windows binary (PE MZ header or .exe/.bat/.cmd/.msi extension).
 func (s *Session) shouldUseUmu(row *GameRow) bool {
 	if s.deps.UmuLauncher == nil {
@@ -76,7 +78,9 @@ func (s *Session) shouldUseUmu(row *GameRow) bool {
 	if !s.Settings().UmuEnabled {
 		return false
 	}
-	if row.Store != domain.StoreManual {
+	switch row.Store {
+	case domain.StoreManual, domain.StoreEpic, domain.StoreGOG:
+	default:
 		return false
 	}
 	return umu.IsWindowsBinary(row.ExePath)

@@ -160,8 +160,9 @@ type Deps struct {
 	SettingsRoot string
 	Launcher     *launch.Launcher // nil selects the platform detached-spawn default
 
-	// UmuLauncher, when non-nil, is invoked for umu-eligible manual-store
-	// games (Linux + Windows binary + UmuEnabled setting). It bypasses
+	// UmuLauncher, when non-nil, is invoked for umu-eligible manual and
+	// Heroic Epic/GOG games (Linux + Windows binary + UmuEnabled
+	// setting). It bypasses
 	// the regular Launcher entirely. Construction typically wraps
 	// umu.Detect + umu.Launch; nil on non-Linux or when umu-run is not
 	// on PATH, in which case umu-eligible games fall through to the
@@ -188,7 +189,8 @@ type Deps struct {
 	GOOS string
 }
 
-// UmuLauncherHook launches a manual-store Windows binary via umu-run.
+// UmuLauncherHook launches a manual or Heroic Epic/GOG Windows binary via
+// umu-run.
 // Returning nil means the launch was requested; a non-nil error is
 // surfaced as a launch failure (EvOpFailed + warn toast). The hook
 // must NOT fall back to the regular Launcher — that's the caller's job

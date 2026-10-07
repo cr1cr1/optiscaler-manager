@@ -41,11 +41,13 @@ internal/
               rolled_back) + 1 derived (external, scan-time only)
   store/      manifest + backup persistence (external root)
   discovery/  multi-store scan. OS-agnostic parsers (Steam VDF, Epic .item,
-              GOG goggame info, recursive roots, plist) test on every GOOS;
+              GOG goggame info, Heroic installed.json, recursive roots,
+              plist) test on every GOOS;
               build-tagged OS probes (Steam roots, Epic manifest dirs, GOG
-              registry via a registry-reader seam, macOS /Applications .app,
+              registry via a registry-reader seam, Heroic config dirs on
+              Linux, macOS /Applications .app,
               linux Proton compat prefix) compile per-GOOS. ScanAll merges
-              Steam → Epic → GOG → apps → manual, deduped by canonical
+              Steam → Epic → Heroic → GOG → apps → manual, deduped by canonical
               InstallDir; install-dir resolution; ClassifyGameDir sorts a
               directory into game / container / empty (bounded walks, no PE
               parsing — see the v0.7 section)
@@ -114,7 +116,8 @@ internal/
                Epic launcher URL, GOG direct exe, manual user template split
                without a shell. Never `proton run`; umu-run invocations
                live in internal/umu and are wired via Deps.UmuLauncher in
-               Session.doLaunch (manual-store Windows binaries on Linux)
+               Session.doLaunch (manual and Heroic Epic/GOG Windows
+               binaries on Linux)
   termopen/   open a text file in the user's terminal editor, detached
                (Linux): $EDITOR verbatim, $TERMINAL's basename picks the
                run-a-command convention, else the foot→konsole→
