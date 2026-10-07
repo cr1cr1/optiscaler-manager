@@ -62,6 +62,6 @@ and re-encoded (JPEG→JPEG q90, other formats→PNG; webp decode via
 `golang.org/x/image/webp`, which stays `// indirect` in go.mod —
 `go mod tidy && go mod vendor` would strip the vendored shirei patches
 and was deliberately not run). ATDD red witnessed on the two landscape
-tests before implementation. Commit: _pinned in the follow-up commit_.
+tests before implementation. Commit: `eb54a18`.
 Verification: `go test ./...` (30 packages) exit 0, `go vet`/`gofmt`
 clean, `GOOS=windows`/`darwin go build ./...` OK.
