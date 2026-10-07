@@ -3748,3 +3748,27 @@ issue, not individual titles.
   patches — deliberately not run.
 - Verification: `go test ./...` (30 packages) exit 0, `go vet`/`gofmt`
   clean, `GOOS=windows`/`darwin go build ./...` OK.
+
+## 2026-10-08 — issue 26: install filters markdown, scripts, and empty dirs
+
+User request: installing OptiScaler into a game dir should not extract
+everything — filter out empty directories, markdown files, and install
+scripts.
+
+- One plan-level filter: `filteredExts` (`.md`/`.markdown`,
+  `.bat`/`.cmd`/`.ps1`/`.sh`, case-insensitive) consulted by `buildPlan`
+  in `internal/installer/install.go`. Everything else still installs
+  verbatim per issue 010 (each fork's archive listing defines its file
+  set); the injector is still the only required file.
+- Empty dirs need no code: directory members were already skipped, and
+  parent dirs are created lazily per copied file, so a directory holding
+  only filtered files (e.g. docs-only `docs/`) never appears.
+- The filter is plan-level, so filtered members are also never tracked
+  in the manifest — uninstall and fork-switch relocation inherit it.
+- ATDD red witnessed: new `TestInstallFiltersMarkdownScriptsAndEmptyDirs`
+  / `TestBuildPlanFiltersMarkdownAndScripts` plus updated DLSSNR fixture
+  tests (now carrying realistic clutter) failed before the
+  implementation (clutter installed, `docs/` created, manifest-tracked).
+  The foreign-modified relocation probe moved from `README.md` (no
+  longer installed) to the tracked `OptiScaler/libxess.dll`.
+- Verification: `go test ./...` exit 0, `go vet`/`gofmt` clean.

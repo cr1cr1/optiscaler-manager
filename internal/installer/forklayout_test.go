@@ -46,7 +46,9 @@ func writeZip(t *testing.T, path string, files map[string]string) {
 // dlssnrShaped mirrors the real OptiScaler-NR (DLSSNR) zip layout: the
 // injector and its ini at the archive root, the support DLLs under an
 // OptiScaler/ subdir (paths the mod expects relative to the game dir),
-// docs at the root — and NO fakenvapi at all.
+// docs at the root — and NO fakenvapi at all. The markdown and script
+// members are realistic bundle clutter: issue 026 filters them out, so
+// every test using this fixture also guards that filter.
 func dlssnrShaped() map[string]string {
 	return map[string]string{
 		"OptiScaler.dll":                            "FORK-INJECTOR",
@@ -57,6 +59,8 @@ func dlssnrShaped() map[string]string {
 		"OptiScaler/D3D12_OptiScaler/D3D12Core.dll": "FORK-D3D12",
 		"README.md":                                 "FORK-README",
 		"docs/NR-VULKAN.md":                         "FORK-DOC-VULKAN",
+		"setup_windows.bat":                         "FORK-SETUP",
+		"Remove OptiScaler.bat":                     "FORK-REMOVE",
 	}
 }
 
@@ -93,8 +97,18 @@ func TestBuildPlanRequiresOnlyTheInjector(t *testing.T) {
 	if byDst[deep] != deep {
 		t.Errorf("deeply nested path not preserved verbatim: plan=%v", plan)
 	}
-	if byDst[filepath.Join("docs", "NR-VULKAN.md")] == "" {
-		t.Errorf("root-adjacent docs missing from plan: %v", plan)
+	// Clutter never enters the plan (issue 026): markdown and the
+	// distribution's own install/remove scripts are launcher-side files,
+	// not game files.
+	for _, filtered := range []string{
+		"README.md",
+		filepath.Join("docs", "NR-VULKAN.md"),
+		"setup_windows.bat",
+		"Remove OptiScaler.bat",
+	} {
+		if _, ok := byDst[filtered]; ok {
+			t.Errorf("filtered clutter %q present in plan: %v", filtered, plan)
+		}
 	}
 
 	// The injector is the one universal requirement.
@@ -104,8 +118,9 @@ func TestBuildPlanRequiresOnlyTheInjector(t *testing.T) {
 }
 
 // A DLSSNR-shaped bundle installs end to end: injector renamed at the
-// injection dir root, subdir support files verbatim, docs verbatim, and
-// the bundle ini replaced by the curated defaults.
+// injection dir root, subdir support files verbatim, bundle clutter
+// (markdown, scripts) filtered out, and the bundle ini replaced by the
+// curated defaults.
 func TestInstallDLSSNRShapedZip(t *testing.T) {
 	root, bin, st := newGame(t)
 	bundle := filepath.Join(t.TempDir(), "OptiScaler-NR-test.zip")
@@ -123,8 +138,6 @@ func TestInstallDLSSNRShapedZip(t *testing.T) {
 		"dxgi.dll": "FORK-INJECTOR",
 		filepath.Join("OptiScaler", "libxess.dll"):                       "FORK-XESS",
 		filepath.Join("OptiScaler", "D3D12_OptiScaler", "D3D12Core.dll"): "FORK-D3D12",
-		filepath.Join("docs", "NR-VULKAN.md"):                            "FORK-DOC-VULKAN",
-		"README.md":                                                      "FORK-README",
 	} {
 		data, err := os.ReadFile(filepath.Join(bin, rel))
 		if err != nil {
@@ -134,6 +147,16 @@ func TestInstallDLSSNRShapedZip(t *testing.T) {
 		if string(data) != want {
 			t.Errorf("installed %s = %q, want %q", rel, data, want)
 		}
+	}
+	// Markdown and install scripts are filtered (issue 026); a directory
+	// holding only filtered files is never even created.
+	for _, filtered := range []string{"README.md", "setup_windows.bat", "Remove OptiScaler.bat"} {
+		if _, err := os.Stat(filepath.Join(bin, filtered)); !os.IsNotExist(err) {
+			t.Errorf("filtered clutter %s reached the game dir", filtered)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(bin, "docs")); !os.IsNotExist(err) {
+		t.Error("docs/ (only markdown inside) should not exist in the game dir")
 	}
 	// The bundle ini is replaced by the curated defaults.
 	if data, err := os.ReadFile(filepath.Join(bin, "OptiScaler.ini")); err != nil || string(data) == "FORK-INI" {
@@ -199,7 +222,6 @@ func TestUninstallRelocateMovesMatchedFiles(t *testing.T) {
 	for rel, want := range map[string]string{
 		"dxgi.dll": "FORK-INJECTOR",
 		filepath.Join("OptiScaler", "libxess.dll"): "FORK-XESS",
-		"README.md": "FORK-README",
 	} {
 		data, err := os.ReadFile(filepath.Join(dated, rel))
 		if err != nil {
@@ -263,17 +285,17 @@ func TestUninstallRelocateRestoresOriginalAndRefusesForeign(t *testing.T) {
 	if _, err := Install(context.Background(), st2, req2); err != nil {
 		t.Fatalf("Install(2): %v", err)
 	}
-	writeFile(t, filepath.Join(bin2, "README.md"), "USER-EDITED")
+	writeFile(t, filepath.Join(bin2, "OptiScaler", "libxess.dll"), "USER-EDITED")
 	dated2 := filepath.Join(bin2, "old.261007")
 	err := UninstallWithOptions(context.Background(), st2, manifestID(t, bin2), UninstallOptions{RelocateDir: dated2})
 	var refused *RefusedError
 	if !errors.As(err, &refused) {
 		t.Fatalf("relocate over foreign-modified file = %v, want RefusedError", err)
 	}
-	if data, _ := os.ReadFile(filepath.Join(bin2, "README.md")); string(data) != "USER-EDITED" {
+	if data, _ := os.ReadFile(filepath.Join(bin2, "OptiScaler", "libxess.dll")); string(data) != "USER-EDITED" {
 		t.Error("foreign-modified file was moved or deleted")
 	}
-	if _, err := os.Stat(filepath.Join(dated2, "README.md")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dated2, "OptiScaler", "libxess.dll")); !os.IsNotExist(err) {
 		t.Error("foreign-modified file was relocated")
 	}
 }

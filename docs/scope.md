@@ -27,10 +27,13 @@ here are closed; reopen only with new evidence.
 - After extraction, the bundle is validated against the one universal
   requirement — the injector dll (`OptiScaler.dll`, renamed to `dxgi.dll`
   on install); anything else is the distribution's own business. Each
-  distribution's **archive listing is its exact install set** (v0.16):
-  forks lay files out differently (DLSSNR ships no fakenvapi and keeps
-  support DLLs under an `OptiScaler/` subdir), and members install
-  verbatim, nested paths preserved, never stripped.
+  distribution's **archive listing is its install set** (v0.16): forks lay
+  files out differently (DLSSNR ships no fakenvapi and keeps support DLLs
+  under an `OptiScaler/` subdir), and members install verbatim, nested
+  paths preserved, never stripped. Clutter is filtered (issue 026):
+  markdown documentation and install/remove scripts
+  (`.bat`/`.cmd`/`.ps1`/`.sh`) never reach the game dir, and no empty
+  directories are created.
 - The separate upstream downloads the reference C# client uses are stale:
   Nukem9/dlssg-to-fsr3 ≥ 0.130 has no GitHub assets (moved to Nexus Mods);
   OptiPatcher is a raw `.asi` and out of scope.

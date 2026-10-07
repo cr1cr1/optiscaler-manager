@@ -23,10 +23,12 @@ import (
 const injectionDLL = "dxgi.dll"
 
 // requiredBaseName is the one file every OptiScaler distribution ships:
-// the injector dll. Each distribution's archive listing is its own exact
-// install set (issue 10) — DLSSNR carries no fakenvapi and keeps support
-// DLLs under an OptiScaler/ subdir — so nothing else may be required and
-// no path may be stripped.
+// the injector dll. Each distribution's archive listing is its own install
+// set (issue 10) — DLSSNR carries no fakenvapi and keeps support DLLs
+// under an OptiScaler/ subdir — so nothing else may be required and no
+// path may be stripped. Clutter is still filtered (issue 026): markdown
+// docs and the distribution's own install/remove scripts never reach the
+// game dir.
 const requiredBaseName = "optiscaler.dll"
 
 // copyFileFn is the file-copy seam for fault-injection tests (white-box only).
@@ -408,12 +410,22 @@ func ManifestIDFor(installDir string) (string, error) {
 	return domain.ManifestID(c), nil
 }
 
+// filteredExts are bundle members that never reach the game dir (issue
+// 026): markdown documentation and the distribution's own install/remove
+// scripts are launcher-side clutter, not game files. The check is on the
+// lowercased extension, so case variants are covered.
+var filteredExts = map[string]bool{
+	".md": true, ".markdown": true,
+	".bat": true, ".cmd": true, ".ps1": true, ".sh": true,
+}
+
 // buildPlan validates raw archive member names and maps them to destinations.
-// Directory members are skipped; OptiScaler.dll is renamed to the injection
-// DLL; every other member installs verbatim, nested subdir paths included.
-// The only required file is the injector — the distribution's own listing
-// defines the rest of the set. This is the plan-time hostile-input gate
-// (safety invariant 1).
+// Directory members are skipped (a directory holding only filtered files is
+// therefore never created); markdown and install/remove scripts are filtered
+// (issue 026); OptiScaler.dll is renamed to the injection DLL; every other
+// member installs verbatim, nested subdir paths included. The only required
+// file is the injector — the distribution's own listing defines the rest of
+// the set. This is the plan-time hostile-input gate (safety invariant 1).
 func buildPlan(names []string) ([]filePlan, error) {
 	foundInjector := false
 	seen := map[string]bool{}
@@ -429,6 +441,9 @@ func buildPlan(names []string) ([]filePlan, error) {
 		}
 		dstRel := rel
 		base := strings.ToLower(filepath.Base(rel))
+		if filteredExts[filepath.Ext(base)] {
+			continue
+		}
 		if base == requiredBaseName {
 			foundInjector = true
 			dstRel = injectionDLL

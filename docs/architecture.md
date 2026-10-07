@@ -75,7 +75,8 @@ internal/
               the bundle's extension, with hostile-input defenses
   installer/  transaction core: stage → validate (injector-only; each
               distribution's archive listing defines its own file set,
-              nested paths verbatim) → backup → copy → manifest;
+              nested paths verbatim; markdown/scripts filtered, no empty
+              dirs, issue 026) → backup → copy → manifest;
               rollback; uninstall (delete or fork-switch relocate);
               EAC check; ctx cancel at phase boundaries
               (cleanup under context.WithoutCancel)
