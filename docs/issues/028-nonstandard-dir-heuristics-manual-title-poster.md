@@ -126,4 +126,4 @@ Implemented as specced.
   internal/settings/settings_test.go (a duplicated SGDB block) and the
   issue-27 "Open game folder" button in internal/gui/view.go were left
   intact; only this issue's hunks are staged.
-- Commit: TBD.
+- Commit: `202e5ea`.
