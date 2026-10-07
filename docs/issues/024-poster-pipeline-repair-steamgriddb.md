@@ -143,6 +143,6 @@ folder name (or a `title_overrides` pin, now documented in the README).
 
 ATDD reds witnessed per slice (Slice A: pcgw/gid compile red + covers
 fake-server failures; Slice B: sgdb/covers/settings compile red).
-Commit: _pinned in the follow-up commit_. Verification:
+Commit: `f378768`. Verification:
 `go test ./...` (30 packages) exit 0, `go vet`/`gofmt` clean,
 `GOOS=windows`/`darwin go build ./...` OK.
