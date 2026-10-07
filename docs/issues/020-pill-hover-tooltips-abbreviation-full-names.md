@@ -64,4 +64,4 @@ Deferred (ponytail): no keyboard-focus tooltip (hover-only, as requested);
 headless `RenderToPNG` evidence shot skipped — its 2x physical-pixel
 coordinate space mismatches logical-rect pre-seeding, and the behavior is
 covered by the state assertions. Full suite (29 packages) exit 0.
-Commit TBD.
+Commit `d64a9cc`.
