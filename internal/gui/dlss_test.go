@@ -393,7 +393,7 @@ func TestDLSSRestoreMenu_FullFlow(t *testing.T) {
 	m := newModel(Config{Session: sess})
 	headlessFrames(t, 400, 800)
 	GetInputState().MousePoint = Vec2{-50, -50}
-	row = sess.VisibleRows()[0] // Components refreshed to DLSS 4.5
+	row = sess.VisibleRows()[0] // Components refreshed to DLSS 310.5.3
 	view := cardView(m, row)
 	keyFrame(KeyCodeNone, 0, view)
 	keyFrame(KeyCodeNone, 0, view)
