@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/discovery"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
@@ -44,13 +43,7 @@ func TestGUISortControlChangesOrder(t *testing.T) {
 	}
 
 	sess.Scan(context.Background())
-	deadline := time.Now().Add(15 * time.Second)
-	for len(sess.VisibleRows()) < 1 && time.Now().Before(deadline) {
-		select {
-		case <-sess.Events():
-		case <-time.After(20 * time.Millisecond):
-		}
-	}
+	waitScanSettled(t, sess, 1)
 	sess.AddDirectory(alphaDir)
 
 	rows := sess.VisibleRows()

@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	. "go.hasen.dev/shirei"
 
@@ -53,14 +52,7 @@ func seedExternalPanelSession(t *testing.T) (*ui.Session, string) {
 		sess.AddDirectory(dir)
 	}
 	sess.Scan(context.Background())
-	deadline := time.Now().Add(15 * time.Second)
-	for len(sess.VisibleRows()) < 3 && time.Now().Before(deadline) {
-		select {
-		case <-sess.Events():
-		case <-time.After(20 * time.Millisecond):
-		}
-	}
-	for _, r := range sess.VisibleRows() {
+	for _, r := range waitScanSettled(t, sess, 3) {
 		if r.InstallDir == extDir {
 			if r.Status != domain.StatusExternal {
 				t.Fatalf("row %q status %q, want external (the marker must render the dropdown)", extDir, r.Status)

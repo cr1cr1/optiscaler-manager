@@ -11,22 +11,11 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
-// scanOneRow scans the fake library and waits for its single row.
+// scanOneRow scans the fake library and waits for its single settled row.
 func scanOneRow(t *testing.T, sess *ui.Session) ui.GameRow {
 	t.Helper()
 	sess.Scan(context.Background())
-	deadline := time.Now().Add(15 * time.Second)
-	for len(sess.VisibleRows()) == 0 && time.Now().Before(deadline) {
-		select {
-		case <-sess.Events():
-		case <-time.After(20 * time.Millisecond):
-		}
-	}
-	rows := sess.VisibleRows()
-	if len(rows) != 1 {
-		t.Fatalf("scanned rows %d, want 1", len(rows))
-	}
-	return rows[0]
+	return waitScanSettled(t, sess, 1)[0]
 }
 
 // cardView renders one card of the given row for click tests.

@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	. "go.hasen.dev/shirei"
 
@@ -31,17 +30,7 @@ func TestGUIArrowKeyNav(t *testing.T) {
 		sess.AddDirectory(dir)
 	}
 	sess.Scan(context.Background())
-	deadline := time.Now().Add(15 * time.Second)
-	for len(sess.VisibleRows()) < 3 && time.Now().Before(deadline) {
-		select {
-		case <-sess.Events():
-		case <-time.After(20 * time.Millisecond):
-		}
-	}
-	rows := sess.VisibleRows()
-	if len(rows) != 3 {
-		t.Fatalf("rows %d, want 3", len(rows))
-	}
+	rows := waitScanSettled(t, sess, 3)
 
 	headlessFrames(t, 800, 600)
 	keyFrame(KeyCodeNone, 0, m.rootView) // build; derives m.cols from live width
@@ -104,30 +93,9 @@ func seedNavSession(t *testing.T, n int) (*ui.Session, []ui.GameRow) {
 	}
 	sess.Scan(context.Background())
 	base := 1 // guiFakes pre-seeds the "Game One" Steam row
-	deadline := time.Now().Add(15 * time.Second)
-	for len(sess.VisibleRows()) < base+n && time.Now().Before(deadline) {
-		select {
-		case <-sess.Events():
-		case <-time.After(20 * time.Millisecond):
-		}
-	}
-	quiet := time.NewTimer(300 * time.Millisecond)
-	for {
-		select {
-		case <-sess.Events():
-			if !quiet.Stop() {
-				<-quiet.C
-			}
-			quiet.Reset(300 * time.Millisecond)
-		case <-quiet.C:
-			rows := sess.VisibleRows()
-			if len(rows) != base+n {
-				t.Fatalf("rows %d, want %d", len(rows), base+n)
-			}
-			sess.ToggleView() // grid → list
-			return sess, rows
-		}
-	}
+	rows := waitScanSettled(t, sess, base+n)
+	sess.ToggleView() // grid → list
+	return sess, rows
 }
 
 // TestListArrowKeyNav: in list mode Up/Down move the selection one row

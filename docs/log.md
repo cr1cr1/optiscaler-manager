@@ -3507,3 +3507,18 @@ opens the restore menu of local backup sets.
   `cardH = 514, want > 514`), then green. New tests in
   internal/gui/pillwrap_test.go.
 
+## 2026-10-07 — issue 16: GUI tests wait for scan settle (014 follow-up)
+
+- Issue 014's scan streaming made rows visible long before the settle;
+  GUI tests waiting for a row count raced it (proven pre-existing at
+  `6e9920f` with all 015 work stashed): `TestGUIArrowKeyNav` +
+  4×`TestPanelTab_*` deterministic, dropdown/DLSS tests flickering.
+- All row-count waits now go through `waitScanSettled`: `EvScanDone` (or
+  a dropped-terminal-event poll of `Busy`/`Progress`) plus a trailing
+  300ms quiet period absorbing the async AddDirectory enrichment
+  goroutines. Two `Select`-wait loops drain every tick now —
+  `Session.Select` emits no event; they only worked while leftover scan
+  events remained buffered.
+- Test-only change; the streamed-rows design of 014 is untouched.
+- Verification: three consecutive `internal/gui` runs green, full
+  `go test ./...` (29 packages) exit 0, `go vet`/`gofmt` clean.

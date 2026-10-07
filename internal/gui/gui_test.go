@@ -76,6 +76,72 @@ func writeGUIFile(t *testing.T, path, content string) {
 	}
 }
 
+// waitScanSettled drains session events until the scan's terminal event
+// plus a quiet period, and returns the settled rows, asserting the expected
+// count. Streaming scans (issue 014) upsert rows long before the settle —
+// cover-less, in discovery order, with placeholders from AddDirectory mixed
+// in — so waiting for a row COUNT races the settle: the final sort/
+// enrichment lands only at EvScanDone (or when the scan went quiet, if the
+// terminal event was dropped from a full event buffer). The trailing 300ms
+// of event silence absorbs the async AddDirectory enrichment goroutines,
+// which keep poking events after the scan's own settle.
+func waitScanSettled(t *testing.T, sess *ui.Session, want int) []ui.GameRow {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	sawStart, scanDone := false, false
+	var quiet *time.Timer
+	quietC := func() <-chan time.Time {
+		if quiet == nil {
+			return nil
+		}
+		return quiet.C
+	}
+	pokeQuiet := func() {
+		if quiet == nil {
+			quiet = time.NewTimer(300 * time.Millisecond)
+		} else {
+			quiet.Reset(300 * time.Millisecond)
+		}
+	}
+	for time.Now().Before(deadline) {
+		select {
+		case ev := <-sess.Events():
+			switch ev.Kind {
+			case ui.EvScanStarted:
+				sawStart = true
+			case ui.EvScanFailed:
+				t.Fatalf("scan failed: %s", ev.Text)
+			case ui.EvScanDone:
+				scanDone = true
+			}
+			if scanDone {
+				pokeQuiet()
+			}
+		case <-time.After(20 * time.Millisecond):
+			snap := sess.Snapshot()
+			if snap.Busy != "" || snap.Progress != nil {
+				sawStart = true
+			}
+			if sawStart && !scanDone && snap.Busy == "" && snap.Progress == nil {
+				scanDone = true
+				pokeQuiet()
+			}
+		case <-quietC():
+			return settledRows(t, sess, want)
+		}
+	}
+	return settledRows(t, sess, want) // deadline: fails with the row counts
+}
+
+func settledRows(t *testing.T, sess *ui.Session, want int) []ui.GameRow {
+	t.Helper()
+	rows := sess.VisibleRows()
+	if len(rows) != want {
+		t.Fatalf("rows %d after scan settle, want %d", len(rows), want)
+	}
+	return rows
+}
+
 func TestGUIBindsSessionState(t *testing.T) {
 	sess, _ := guiFakes(t)
 	m := newModel(Config{Session: sess})

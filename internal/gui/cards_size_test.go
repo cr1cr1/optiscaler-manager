@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	. "go.hasen.dev/shirei"
 
@@ -83,16 +82,7 @@ func TestListRows_DoNotOverlap(t *testing.T) {
 		sess.AddDirectory(dir)
 	}
 	sess.Scan(context.Background())
-	deadline := time.Now().Add(5 * time.Second)
-	for len(sess.VisibleRows()) < 5 && time.Now().Before(deadline) {
-		select {
-		case <-sess.Events():
-		case <-time.After(20 * time.Millisecond):
-		}
-	}
-	if len(sess.VisibleRows()) < 5 {
-		t.Fatalf("rows %d, want >=5", len(sess.VisibleRows()))
-	}
+	waitScanSettled(t, sess, 6) // 5 manual + the pre-seeded "Game One" Steam row
 
 	headlessFrames(t, 400, 800)
 	sess.ToggleView()

@@ -781,9 +781,10 @@ func TestVersionDropdown_EscClosesDropdownBeforePanel(t *testing.T) {
 	for m.state.Selected != row.InstallDir && time.Now().Before(deadline) {
 		select {
 		case <-sess.Events():
-			m.drain()
 		case <-time.After(20 * time.Millisecond):
 		}
+		// Select emits no event; drain on every tick, not just on events.
+		m.drain()
 	}
 	if m.state.Selected != row.InstallDir {
 		t.Fatalf("detail panel never opened for %q", row.InstallDir)
@@ -901,9 +902,10 @@ func TestVersionDropdown_DetailPanelWired(t *testing.T) {
 	for m.state.Selected != row.InstallDir && time.Now().Before(deadline) {
 		select {
 		case <-sess.Events():
-			m.drain()
 		case <-time.After(20 * time.Millisecond):
 		}
+		// Select emits no event; drain on every tick, not just on events.
+		m.drain()
 	}
 
 	headlessFrames(t, 1100, 1400)

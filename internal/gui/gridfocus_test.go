@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	. "go.hasen.dev/shirei"
 	. "go.hasen.dev/shirei/widgets"
@@ -98,13 +97,7 @@ func TestGrid_TabOrderCardThenInnerItems(t *testing.T) {
 		sess.AddDirectory(dir)
 	}
 	sess.Scan(context.Background())
-	deadline := time.Now().Add(15 * time.Second)
-	for len(sess.VisibleRows()) < 3 && time.Now().Before(deadline) {
-		select {
-		case <-sess.Events():
-		case <-time.After(20 * time.Millisecond):
-		}
-	}
+	waitScanSettled(t, sess, 3)
 	m := newModel(Config{Session: sess})
 
 	headlessFrames(t, 1200, 700)
