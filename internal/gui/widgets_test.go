@@ -294,6 +294,36 @@ func TestExitButtonFlushesSettings(t *testing.T) {
 	t.Logf("exit flushed settings (default version %q) before quit", flushedAtExit)
 }
 
+// TestOptiBadgeForkNamedPill: the OptiScaler pill leads with the
+// distribution name — "<ForkName> <version>" for a fork install, not
+// "OptiScaler <version> · <fork>". Upstream keeps the classic
+// "OptiScaler <version>" pill (its distribution name IS OptiScaler).
+func TestOptiBadgeForkNamedPill(t *testing.T) {
+	fork := versionPills(&ui.GameRow{
+		Status:            domain.StatusCommitted,
+		OptiScalerVersion: "0.8.92",
+		Fork:              "jlrouzies-fr/OptiScaler-DLSSNR-PreSR-Multipass",
+	})
+	if len(fork) == 0 || fork[0].Label != "✦ OptiScaler-DLSSNR-PreSR-Multipass 0.8.92" {
+		t.Fatalf("fork pill %v, want %q", fork, "✦ OptiScaler-DLSSNR-PreSR-Multipass 0.8.92")
+	}
+	if fork[0].Tone != ui.TonePurple {
+		t.Errorf("fork pill tone %v, want TonePurple", fork[0].Tone)
+	}
+
+	// Upstream rows ("" or the default fork slug) keep "OptiScaler <version>".
+	up := versionPills(&ui.GameRow{Status: domain.StatusCommitted, OptiScalerVersion: "0.9.4"})
+	if len(up) == 0 || up[0].Label != "✦ OptiScaler 0.9.4" {
+		t.Errorf("upstream pill %v, want %q", up, "✦ OptiScaler 0.9.4")
+	}
+
+	// A fork row without a detected version still names the fork.
+	plain := versionPills(&ui.GameRow{Status: domain.StatusCommitted, Fork: "someone/OptiScaler-fork"})
+	if len(plain) != 1 || plain[0].Label != "✦ OptiScaler-fork" {
+		t.Errorf("unversioned fork pill %v, want [%q]", plain, "✦ OptiScaler-fork")
+	}
+}
+
 func TestCardShowsVersionBadges(t *testing.T) {
 	e := &ui.GameRow{
 		Status:            domain.StatusCommitted,

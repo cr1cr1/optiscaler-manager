@@ -565,25 +565,27 @@ func shortenPath(p string, max int) string {
 	return "…" + string(r[len(r)-max+1:])
 }
 
-// optiBadge is the OptiScaler pill for a row: versioned when the installed
-// version is known, blue and external-marked for unmanaged on-disk
-// installs. ok=false for rows without an OptiScaler install — those render
-// no pill and no version dropdown.
+// optiBadge is the OptiScaler pill for a row, named after the installed
+// distribution: "<ForkName> <version>" for a fork, "OptiScaler <version>"
+// for upstream (its distribution name IS OptiScaler). Blue and
+// external-marked for unmanaged on-disk installs. ok=false for rows
+// without an OptiScaler install — those render no pill and no version
+// dropdown.
 func optiBadge(e *ui.GameRow) (ui.Badge, bool) {
 	external := e.Status == domain.StatusExternal
-	forkSuffix := ""
-	if l := e.ForkLabel(); l != "" {
-		forkSuffix = " · " + l
+	name := e.ForkLabel()
+	if name == "" {
+		name = "OptiScaler"
 	}
 	switch {
 	case e.OptiScalerVersion != "" && external:
-		return ui.Badge{Label: "✦ OptiScaler " + e.OptiScalerVersion + " · external", Tone: ui.ToneBlue}, true
+		return ui.Badge{Label: "✦ " + name + " " + e.OptiScalerVersion + " · external", Tone: ui.ToneBlue}, true
 	case e.OptiScalerVersion != "":
-		return ui.Badge{Label: "✦ OptiScaler " + e.OptiScalerVersion + forkSuffix, Tone: ui.TonePurple}, true
+		return ui.Badge{Label: "✦ " + name + " " + e.OptiScalerVersion, Tone: ui.TonePurple}, true
 	case external:
-		return ui.Badge{Label: "✦ OptiScaler · external", Tone: ui.ToneBlue}, true
+		return ui.Badge{Label: "✦ " + name + " · external", Tone: ui.ToneBlue}, true
 	case e.Status == domain.StatusCommitted:
-		return ui.Badge{Label: "✦ OptiScaler", Tone: ui.TonePurple}, true
+		return ui.Badge{Label: "✦ " + name, Tone: ui.TonePurple}, true
 	}
 	return ui.Badge{}, false
 }

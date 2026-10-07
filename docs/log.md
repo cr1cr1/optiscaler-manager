@@ -3443,3 +3443,16 @@ opens the restore menu of local backup sets.
   ReadAt()s a full 4 bytes — a 2-byte file silently fails candidacy.
   `go test ./...` green, `go vet`/`gofmt` clean, windows/darwin builds
   green. ponytail-review: one note deleted, net -3 lines.
+
+## 2026-10-07 — issue 13: OptiScaler pill leads with the fork name
+
+- The version pill read `✦ OptiScaler 0.8.92 · OptiScaler-DLSSNR-PreSR-Multipass`
+  for fork installs — the actual distribution was a suffix. `optiBadge`
+  now names the pill after the distribution: `ForkLabel()` (repo
+  segment) with an "OptiScaler" fallback for upstream/legacy/external,
+  so fork rows show `✦ <ForkName> <version>` and upstream keeps
+  `✦ OptiScaler 0.9.4`. Unversioned committed fork rows name the fork;
+  external rows keep the `· external` marker. The TUI detail `Version`
+  metadata line is unchanged (a field, not the pill).
+- TDD: red witnessed (old suffix format), then the fix. `go test ./...`
+  green (29 packages), `go vet`/`gofmt` clean.
