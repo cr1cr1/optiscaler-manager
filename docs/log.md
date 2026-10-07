@@ -3523,7 +3523,7 @@ opens the restore menu of local backup sets.
 - Verification: three consecutive `internal/gui` runs green, full
   `go test ./...` (29 packages) exit 0, `go vet`/`gofmt` clean.
 
-## 2026-10-07 — issue 17: DLSS update/restore proceeds when DLLs are missing
+## 2026-10-07 — issue 18: DLSS update/restore proceeds when DLLs are missing
 
 - Switching DLSS versions failed hard when any current NVIDIA DLL was
   absent: `dlss.Update`/`Restore` hard-gated on `requireFiles` and

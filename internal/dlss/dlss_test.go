@@ -318,7 +318,11 @@ func TestRestoreRestoresCompletePriorSnapshot(t *testing.T) {
 	}
 }
 
-func TestUpdateRefusesWhenAnyNVIDIADLLIsMissing(t *testing.T) {
+// TestUpdateInstallsWhenCurrentDLLsMissing: a partial (or absent) current
+// set must not block the update — the missing members are simply installed
+// with the rest. The incomplete set has no complete-set rollback value
+// (snapshots are all-or-nothing), so no backup is written.
+func TestUpdateInstallsWhenCurrentDLLsMissing(t *testing.T) {
 	root := t.TempDir()
 	game := filepath.Join(root, "game")
 	if err := os.MkdirAll(game, 0o755); err != nil {
@@ -327,8 +331,57 @@ func TestUpdateRefusesWhenAnyNVIDIADLLIsMissing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(game, Files[0]), testutil.FixedVersionPE(1, 0, 0, 0), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Update(context.Background(), nil, root, root, game, ""); err == nil || !strings.Contains(err.Error(), Files[1]) {
-		t.Fatalf("err %v, want missing %s", err, Files[1])
+	sha := strings.Repeat("d", 40)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/NVIDIA/DLSS/commits/main" {
+			_, _ = w.Write([]byte(`{"sha":"` + sha + `"}`))
+			return
+		}
+		_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
+	}))
+	defer server.Close()
+	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, root, game, "")
+	if err != nil {
+		t.Fatalf("Update with an incomplete current set: %v", err)
+	}
+	if snap.ID != "" {
+		t.Errorf("snapshot %q written for an incomplete current set; want no backup", snap.ID)
+	}
+	for _, name := range Files {
+		v, err := fileVersion(filepath.Join(game, name))
+		if err != nil || v != "310.9.1.0" {
+			t.Fatalf("%s version %q after update, want 310.9.1.0 (err=%v)", name, v, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "dlss-backups")); !os.IsNotExist(err) {
+		t.Errorf("backup tree created for an incomplete current set (stat err %v)", err)
+	}
+}
+
+// TestRestoreInstallsWhenCurrentDLLsMissing: restoring a complete snapshot
+// over a partial current set proceeds — the missing members come back with
+// the restore — and no backup of the incomplete set is written.
+func TestRestoreInstallsWhenCurrentDLLsMissing(t *testing.T) {
+	root, game, snap := updatedGame(t)
+	if err := os.Remove(filepath.Join(game, Files[1])); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Restore(context.Background(), root, game, snap.ID); err != nil {
+		t.Fatalf("Restore over an incomplete current set: %v", err)
+	}
+	for i, name := range Files {
+		v, err := fileVersion(filepath.Join(game, name))
+		want := "1.0." + string(rune('0'+i)) + ".0"
+		if err != nil || v != want {
+			t.Fatalf("restored %s version %q, want %q (err=%v)", name, v, want, err)
+		}
+	}
+	snaps, err := Snapshots(root, game)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snaps) != 1 {
+		t.Errorf("%d snapshots after backup-less restore, want the original 1", len(snaps))
 	}
 }
 

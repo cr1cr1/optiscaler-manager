@@ -9,9 +9,10 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
-// DLSSUpdateCmd updates the game's existing three-file NVIDIA runtime set
-// (DLSS, DLSSD, DLSS-G) through the shared session core — cache-first,
-// never adding a missing DLL.
+// DLSSUpdateCmd updates the game's three-file NVIDIA runtime set (DLSS,
+// DLSSD, DLSS-G) through the shared session core — cache-first. A partial
+// or absent current set only warns: the update proceeds and installs the
+// missing members too, without a rollback backup.
 type DLSSUpdateCmd struct {
 	Path    string        `arg:"" help:"Game root directory" type:"path"`
 	Timeout time.Duration `help:"Max wait for the operation"`

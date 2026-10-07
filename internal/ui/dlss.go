@@ -11,13 +11,14 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 )
 
-// UpdateDLSS starts an explicit update of the existing three-file NVIDIA
-// runtime set (DLSS, DLSSD, DLSS-G) from NVIDIA's official repository. It
-// never adds a missing DLL: every member must already exist in the game's
-// injection directory. The update is cache-first: when the startup check's
-// published commit is already in the download cache the install runs with
-// zero network; otherwise the missing members are fetched into that cache
-// and the install always serves from the cache dir.
+// UpdateDLSS starts an explicit update of the three-file NVIDIA runtime set
+// (DLSS, DLSSD, DLSS-G) from NVIDIA's official repository. A complete
+// current set is backed up first; a partial or absent current set only logs
+// a warning and the update proceeds without a rollback backup, installing
+// the missing members with the rest. The update is cache-first: when the
+// startup check's published commit is already in the download cache the
+// install runs with zero network; otherwise the missing members are fetched
+// into that cache and the install always serves from the cache dir.
 func (s *Session) UpdateDLSS(gameDir string) { go s.doUpdateDLSS(gameDir) }
 
 func (s *Session) doUpdateDLSS(gameDir string) {
@@ -109,7 +110,7 @@ func (s *Session) RestoreDLSS(gameDir, snapshotID string) {
 				Kind:       ConfirmDLSSRestore,
 				GameDir:    gameDir,
 				SnapshotID: snapshotID,
-				Message: fmt.Sprintf("Restore the NVIDIA DLSS set backed up %s? The current DLLs are backed up first.",
+				Message: fmt.Sprintf("Restore the NVIDIA DLSS set backed up %s? A complete current set is backed up first.",
 					snap.CreatedAt.Local().Format("2006-01-02 15:04")),
 			})
 			return

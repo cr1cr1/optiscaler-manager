@@ -137,9 +137,10 @@ func TestUpdateDLSSAndRestoreRoundTrip(t *testing.T) {
 	t.Log("update backed up originals, restore swapped the complete set back")
 }
 
-// TestUpdateDLSSMissingDLLRefused: an incomplete NVIDIA set is never
-// updated and never written to.
-func TestUpdateDLSSMissingDLLRefused(t *testing.T) {
+// TestUpdateDLSSMissingDLLProceeds: an incomplete NVIDIA set does not block
+// the update — it warns (log), installs the missing members with the rest,
+// and writes no rollback backup of the incomplete set.
+func TestUpdateDLSSMissingDLLProceeds(t *testing.T) {
 	e := newDLSSEnv(t, false)
 	row := scanOneDLSSRow(t, e)
 	if err := os.WriteFile(filepath.Join(e.bin, dlss.Files[0]), testutil.FixedVersionPE(3, 7, 20, 0), 0o644); err != nil {
@@ -147,18 +148,17 @@ func TestUpdateDLSSMissingDLLRefused(t *testing.T) {
 	}
 
 	e.sess.UpdateDLSS(row.InstallDir)
-	ev := waitEvent(t, e.sess, EvOpFailed)
-	if !strings.Contains(ev.Text, "missing") {
-		t.Errorf("failure text %q, want a missing-DLL refusal", ev.Text)
-	}
+	ev := waitEvent(t, e.sess, EvOpDone)
 	if ev.GameDir != row.InstallDir {
-		t.Errorf("failure event GameDir %q, want %q (frontends key refreshes on it)", ev.GameDir, row.InstallDir)
+		t.Errorf("done event GameDir %q, want %q (frontends key refreshes on it)", ev.GameDir, row.InstallDir)
 	}
-	if got := dlssDLLVersion(t, e, dlss.Files[0]); got != "3.7.20.0" {
-		t.Errorf("%s mutated by refused update: %q", dlss.Files[0], got)
+	for _, name := range dlss.Files {
+		if got := dlssDLLVersion(t, e, name); got != "310.5.3.0" {
+			t.Errorf("%s after update = %q, want 310.5.3.0", name, got)
+		}
 	}
 	if snaps := e.sess.DLSSSnapshots(row.InstallDir); len(snaps) != 0 {
-		t.Errorf("refused update created %d snapshots, want 0", len(snaps))
+		t.Errorf("backup-less update created %d snapshots, want 0", len(snaps))
 	}
 }
 

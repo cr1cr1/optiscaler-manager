@@ -370,13 +370,17 @@ published. The TUI mirrors the check with the same one-call policy; CLI
 surfaces remain deferred.
 
 `dlss.Update` is a three-file transaction, never a per-DLL picker: it
-requires the complete existing set (`nvngx_dlss.dll`, `nvngx_dlssd.dll`,
-`nvngx_dlssg.dll` must all be present — the updater updates, it never
-injects a component the game did not ship), fetches the three files from
+fetches the three files (`nvngx_dlss.dll`, `nvngx_dlssd.dll`,
+`nvngx_dlssg.dll`) from
 `lib/Windows_x86_64/rel` at ONE immutable commit (resolved via the
 GitHub API, never mutable `main` raw URLs), backs the current files up
-as a snapshot, then swaps them in. Any failure or cancellation restores
-the complete snapshot before returning; no partial set survives.
+as a snapshot when the current set is complete, then swaps them in. A
+partial or absent current set no longer blocks the update (issue 018):
+it logs a warning and proceeds WITHOUT a rollback backup — snapshots
+are all-or-nothing, so an incomplete set has no rollback value — and
+the missing members are installed with the rest. Any failure or
+cancellation restores the complete snapshot before returning when one
+exists; no partial set survives.
 Downloads validate as PE images before any game-dir write — and before
 the download cache records them.
 
@@ -395,7 +399,9 @@ known published commit skip even that resolve while the commit is
 complete in cache (the cache-first hint above). The
 cache holds only re-derivable downloads; snapshots stay under the state
 root. `dlss.Restore` backs the current set up
-first (so a restore is itself reversible), SHA-256 verifies every
+first when it is complete (so a restore is itself reversible; an
+incomplete current set warns and proceeds backup-less, issue 018),
+SHA-256 verifies every
 snapshot member BEFORE the first copy, and then swaps the whole set
 back.
 

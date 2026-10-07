@@ -88,15 +88,15 @@ type Latest struct {
 // cache: a commit hint whose cache dir is complete (the startup check's
 // published commit already fetched) is served with zero network; anything
 // else resolves main's head, fetches missing members into the cache, and
-// installs from that cache dir — never straight from the network. Backs up
-// the current complete set first; a failed replacement restores every
-// original before returning. Downloads are cached per commit under
-// cacheRoot (same layout as the OptiScaler bundle cache — fetch once per
-// version — plus a SHA-256 manifest).
+// installs from that cache dir — never straight from the network. The
+// current set is backed up first when it is complete; a partial or absent
+// current set only warns and the update proceeds WITHOUT a rollback
+// backup (snapshots are all-or-nothing, so an incomplete set has no
+// rollback value). A failed replacement restores every original when a
+// backup exists. Downloads are cached per commit under cacheRoot (same
+// layout as the OptiScaler bundle cache — fetch once per version — plus a
+// SHA-256 manifest).
 func Update(ctx context.Context, c *Client, cacheRoot, dataRoot, gameDir, commitHint string) (Snapshot, error) {
-	if err := requireFiles(gameDir); err != nil {
-		return Snapshot{}, err
-	}
 	if c == nil {
 		return Snapshot{}, fmt.Errorf("dlss: no download client")
 	}
@@ -133,7 +133,7 @@ func Update(ctx context.Context, c *Client, cacheRoot, dataRoot, gameDir, commit
 	if applied, err := pever.FileVersion(filepath.Join(gameDir, Files[0])); err == nil && version.Compare(applied, targetVersion) >= 0 {
 		return Snapshot{}, &AlreadyLatestError{Version: applied}
 	}
-	snap, err := backup(dataRoot, gameDir, commit)
+	snap, err := backupIfComplete(dataRoot, gameDir, commit)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -154,16 +154,15 @@ func Update(ctx context.Context, c *Client, cacheRoot, dataRoot, gameDir, commit
 	return snap, nil
 }
 
-// Restore backs up the current set first, then restores the chosen prior set.
+// Restore backs up the current set first when it is complete (a partial or
+// absent current set only warns and the restore proceeds without a rollback
+// backup), then restores the chosen prior set.
 func Restore(ctx context.Context, dataRoot, gameDir, id string) (Snapshot, error) {
-	if err := requireFiles(gameDir); err != nil {
-		return Snapshot{}, err
-	}
 	target, err := load(dataRoot, gameDir, id)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	current, err := backup(dataRoot, gameDir, "")
+	current, err := backupIfComplete(dataRoot, gameDir, "")
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -500,6 +499,22 @@ func sameSet(gameDir, cacheDir string) bool {
 		}
 	}
 	return true
+}
+
+// backupIfComplete backs up the current set only when every member exists.
+// A partial or absent current set downgrades to a warning and a zero
+// Snapshot: snapshots are all-or-nothing (load refuses partial records), so
+// an incomplete set has no rollback value and the caller proceeds WITHOUT a
+// backup — the operation still installs/restores the complete target set.
+// The zero Snapshot also neutralizes the caller's rollback-on-failure leg:
+// restoreFiles over zero files is a no-op.
+func backupIfComplete(dataRoot, gameDir, source string) (Snapshot, error) {
+	if err := requireFiles(gameDir); err != nil {
+		log.Warn().Err(err).Str("gameDir", gameDir).
+			Msg("dlss: current set incomplete; proceeding without a rollback backup")
+		return Snapshot{}, nil
+	}
+	return backup(dataRoot, gameDir, source)
 }
 
 func backup(dataRoot, gameDir, source string) (Snapshot, error) {

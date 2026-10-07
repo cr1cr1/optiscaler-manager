@@ -429,26 +429,27 @@ func TestTUIGamesKeyUpdateDLSS(t *testing.T) {
 	})
 }
 
-// TestTUIDetailUpdateDLSSRefusesMissing: without the complete set on disk
-// the update refuses with a warning toast and writes nothing.
-func TestTUIDetailUpdateDLSSRefusesMissing(t *testing.T) {
+// TestTUIDetailUpdateDLSSInstallsOverMissing: a partial current set does
+// not block the update — it warns (log), installs the missing members with
+// the rest, and writes no backup of the incomplete set.
+func TestTUIDetailUpdateDLSSInstallsOverMissing(t *testing.T) {
 	sess, root, bin := dlssEnv(t)
 	if err := os.Remove(filepath.Join(bin, "nvngx_dlssg.dll")); err != nil {
 		t.Fatal(err)
 	}
 	m := Model{sess: sess, screen: screenDetail, detailDir: gameDirOf(sess)}
 	_ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
-	pollUntil(t, "warning toast", func() bool {
-		snap := sess.Snapshot()
-		for _, to := range snap.Toasts {
-			if to.Warn && strings.Contains(to.Text, "nvngx_dlssg.dll is missing") {
-				return true
+	pollUntil(t, "updated NVIDIA set", func() bool {
+		for _, name := range dlss.Files {
+			v, err := fileVersion(filepath.Join(bin, name))
+			if err != nil || v != "310.9.1.0" {
+				return false
 			}
 		}
-		return false
+		return true
 	})
 	if _, err := os.Stat(filepath.Join(root, "settings", "dlss-backups")); !os.IsNotExist(err) {
-		t.Errorf("refused update must not create backups (stat err %v)", err)
+		t.Errorf("backup-less update must not create backups (stat err %v)", err)
 	}
 }
 

@@ -665,7 +665,8 @@ them as one-shot commands over the same session core:
   re-resolves at pick time (the v0.15 seam), and switching to the
   installed version reports "already at" without running an op.
 - `dlss-update <dir>` — update the game's NVIDIA DLSS runtime set
-  (cache-first, never adds a missing DLL).
+  (cache-first; a partial or absent current set warns and proceeds
+  without a rollback backup, installing the missing members too).
 - `dlss-restore <dir> [--snapshot <id>]` — restore a backed-up set;
   the empty id means the newest snapshot. Runs behind the restore
   consent gate.
