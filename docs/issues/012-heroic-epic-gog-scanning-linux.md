@@ -67,4 +67,4 @@ Epic/GOG rows with an ExePath so the games actually launch on Linux.
   (isBinaryMagic ReadAt()s 4 bytes).
 - `go test ./...` green, `go vet`/`gofmt` clean, GOOS=windows/darwin
   builds green. README + docs/architecture.md updated.
-  ponytail-review folded in (one note deleted).
+  ponytail-review folded in (one note deleted). (b171a97)
