@@ -38,4 +38,4 @@ Done. One filter table (`filteredExts`) in `internal/installer/install.go`
 consulted by `buildPlan`; no new required files, no config. The
 foreign-modified relocation test switched its probe file from `README.md`
 (no longer installed) to the tracked `OptiScaler/libxess.dll`. Full
-`go test ./...` green, `go vet`/`gofmt` clean. Commit: see git log.
+`go test ./...` green, `go vet`/`gofmt` clean. Commit: 00ee6ba.
