@@ -38,4 +38,4 @@ Done. `optiBadge` (internal/gui/widgets.go) builds the label as
 `TestOptiBadgeForkNamedPill` pins fork, upstream, and unversioned-fork
 pills; existing external-pill tests pass unchanged. TDD red witnessed
 (`✦ OptiScaler 0.8.92 · OptiScaler-DLSSNR-PreSR-Multipass` before the
-fix); full suite (29 packages), vet, gofmt green. Commit TBD.
+fix); full suite (29 packages), vet, gofmt green. Commit `15341aa`.
