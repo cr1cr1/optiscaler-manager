@@ -44,24 +44,167 @@ func cardSizeForPreset(size settings.CardSize) int {
 
 // Fixed card chrome below the cover: badge row, title, two pill rows, and
 // the button row, each one text line tall, plus gaps and padding. pillRowH
-// and badgeRowH track badgePill's vertical padding (see theme.go): a pill is
-// 3px top/bottom padding + ~16px text line. The title reserves TWO lines:
+// tracks badgePill's vertical padding (see theme.go): a pill is 3px
+// top/bottom padding + ~16px text line. The title reserves TWO lines:
 // titles soft-wrap at the card's inner width, and a 2-line title must not
 // push the pill/button rows past the fixed card height.
 const (
-	badgeRowH  = 22
 	textRowH   = 18
 	titleRowH  = 2 * textRowH
 	pillRowH   = 22
 	buttonRowH = 34 // focusableButton row height (v0.6.6 DefaultButtonLook: text + pad + push lip)
 )
 
-// cardContentH sizes a card so every element fits: badge row, cover,
-// two-line title, version pills, tech pills, and the button row, plus gaps.
+// cardContentH sizes a card so every element fits with each pill row on a
+// single line: badge row, cover, two-line title, version pills, tech pills,
+// and the button row, plus gaps.
 func cardContentH(cardW int) int {
+	return cardContentHLines(cardW, 1, 1, 1)
+}
+
+// cardContentHLines sizes a card for pill rows wrapped to the given line
+// counts (badge, version, tech): every wrapped line stacks pillRowH plus the
+// row's Gap between lines, matching shirei's wrap packing.
+func cardContentHLines(cardW, badgeLines, versionLines, techLines int) int {
 	coverH := int(float32(cardW-2*cardPad) * coverRatio)
-	chrome := badgeRowH + titleRowH + 2*pillRowH + buttonRowH + 6*cardGapV
+	chrome := pillBlockH(badgeLines) + titleRowH + pillBlockH(versionLines) + pillBlockH(techLines) + buttonRowH + 6*cardGapV
 	return coverH + chrome
+}
+
+// pillBlockH is the vertical space a pill row occupies when wrapped to the
+// given line count (minimum one reserved line, so pill-free cards keep the
+// long-standing card height).
+func pillBlockH(lines int) int {
+	if lines < 1 {
+		lines = 1
+	}
+	return lines*pillRowH + (lines-1)*cardGapH
+}
+
+// wrapLineCount mirrors shirei's greedy wrap packing (shirei.go
+// layoutContainer): walking children in order, a child wraps onto a new
+// line only when gap+child strictly exceeds the remaining line width; the
+// first child on a line never wraps, even when wider than the line.
+func wrapLineCount(widths []float32, availW, gap float32) int {
+	lines, inLine := 0, 0
+	var cur float32
+	for _, w := range widths {
+		g := float32(0)
+		if inLine > 0 {
+			g = gap
+		}
+		if inLine > 0 && cur+g+w > availW {
+			lines++
+			cur, g = 0, 0
+			inLine = 0
+		}
+		cur += g + w
+		inLine++
+	}
+	if inLine > 0 {
+		lines++
+	}
+	return lines
+}
+
+// Pill width estimates for wrap line counting, mirroring the rendered
+// geometry. Overestimates are safe (cards grow a little); underestimates
+// reintroduce the clipping this fixes.
+const (
+	pillPadX          = 12 // badgePill/trigger Pad2(3, 6) horizontal total
+	ddTriggerExtraW   = 18 // version dropdown trigger: Gap(sp4)=4 + TypArrowSortedDown icon ≈11 + slack
+	dlssControlExtraW = 32 // dlssControl: segment pads 6+10, Gap(1), arrow ≈11, slack
+	spinnerW          = 14 // spinnerGlyph label at FontSize 13 + slack
+)
+
+// pillLabelW estimates a badge pill's rendered width: Pad2(3, 6) around an
+// 11px label (badgePill, protonTierPill).
+func pillLabelW(label string) float32 {
+	return textWidthAt(label, 11) + pillPadX
+}
+
+// badgeRowWidths estimates the widths of the card's top badge row children,
+// mirroring gameCard's render conditions.
+func (m *model) badgeRowWidths(e *ui.GameRow) []float32 {
+	var ws []float32
+	if e.Platform != "" {
+		ws = append(ws, pillLabelW(e.Platform))
+	}
+	if e.EAC {
+		ws = append(ws, pillLabelW("EAC"))
+	}
+	if b, ok := statusPill(e); ok {
+		ws = append(ws, pillLabelW(b.Label))
+	}
+	if e.Disabled {
+		ws = append(ws, pillLabelW("disabled"))
+	}
+	if _, ok := tierPillStyle(e.ProtonTier); ok {
+		ws = append(ws, pillLabelW(e.ProtonTier))
+	}
+	if m.sess != nil && m.sess.OpBusy(e.InstallDir) {
+		ws = append(ws, spinnerW)
+	}
+	return ws
+}
+
+// versionPillWidths estimates the widths of the version pill row children,
+// mirroring gameCard: the OptiScaler pill is the version dropdown trigger
+// (wider than a bare pill when a session renders it) and the DLSS pill is
+// the two-segment update/restore control.
+func (m *model) versionPillWidths(e *ui.GameRow) []float32 {
+	pills := versionPills(e)
+	widths := make([]float32, 0, len(pills))
+	start := 0
+	if b, ok := optiBadge(e); ok {
+		w := pillLabelW(b.Label)
+		if m.sess != nil {
+			w += ddTriggerExtraW
+		}
+		widths = append(widths, w)
+		start = 1
+	}
+	for _, p := range pills[start:] {
+		widths = append(widths, m.componentPillW(e, p.Label))
+	}
+	return widths
+}
+
+// componentPillW estimates one component pill's width, mirroring
+// componentPill: the DLSS control renders "DLSS:" + version (+ update
+// target) in two segments; the fallback and all other pills are bare
+// badges.
+func (m *model) componentPillW(e *ui.GameRow, label string) float32 {
+	if isDLSSPill(label) && m.sess != nil && e.DLSSReady && !m.sess.OpBusy(e.InstallDir) {
+		version := strings.TrimSpace(strings.TrimPrefix(label, "DLSS"))
+		if target := dlssUpdateTarget(e, m.state.DLSSLatest.Version, m.state.DLSSCached); target != "" {
+			if version != "" {
+				version += " → "
+			}
+			version += target
+		}
+		return textWidthAt("DLSS:", 11) + textWidthAt(version, 11) + dlssControlExtraW
+	}
+	return pillLabelW(label)
+}
+
+// techBadgeWidths estimates the tech badge row's pill widths.
+func techBadgeWidths(e *ui.GameRow) []float32 {
+	ws := make([]float32, 0, len(e.TechBadges))
+	for _, b := range e.TechBadges {
+		ws = append(ws, pillLabelW(b.Label))
+	}
+	return ws
+}
+
+// cardPillLines estimates the wrapped line counts of a card's three pill
+// rows (badge, version, tech) at the given content width. Each count is at
+// least 1: the rows' lines stay reserved even when a card has no pills, so
+// card heights never shrink below the long-standing geometry.
+func (m *model) cardPillLines(e *ui.GameRow, availW float32) (badge, version, tech int) {
+	return max(1, wrapLineCount(m.badgeRowWidths(e), availW, cardGapH)),
+		max(1, wrapLineCount(m.versionPillWidths(e), availW, cardGapH)),
+		max(1, wrapLineCount(techBadgeWidths(e), availW, cardGapH))
 }
 
 // chunkRows groups rows into rows-of-cols for the virtualized grid. cols is
@@ -93,7 +236,7 @@ func (m *model) fitCards(w int) {
 	}
 	m.cols = cols
 	m.cardW = cardW
-	m.cardH = cardContentH(cardW)
+	m.cardH = cardContentHLines(cardW, m.gridBadgeLines, m.gridVersionLines, m.gridTechLines)
 }
 
 // gridItemCount adds a trailing spacer row to the chunk count so the last
@@ -117,6 +260,19 @@ func (m *model) gridView() {
 	if cols < 1 {
 		cols = 1
 	}
+	// Pill rows wrap (Wrap attr on the rows): one card's long fork pill must
+	// not clip, and every card shares the worst card's wrapped line counts so
+	// the grid stays uniform. Computed once per frame, before the virtual
+	// list's height callback and fitCards both consume them.
+	cardW := cardSizeForPreset(m.cardSize)
+	availW := float32(cardW - 2*cardPad)
+	m.gridBadgeLines, m.gridVersionLines, m.gridTechLines = 1, 1, 1
+	for i := range rows {
+		b, v, te := m.cardPillLines(&rows[i], availW)
+		m.gridBadgeLines = max(m.gridBadgeLines, b)
+		m.gridVersionLines = max(m.gridVersionLines, v)
+		m.gridTechLines = max(m.gridTechLines, te)
+	}
 	chunks := chunkRows(rows, cols)
 	m.cardIDs = make(map[string]ContainerId, len(rows))
 	m.cardDDTrigger = make(map[string]ContainerId, len(rows))
@@ -132,7 +288,7 @@ func (m *model) gridView() {
 			if i == len(chunks) {
 				return sp24
 			}
-			return float32(cardContentH(cardSizeForPreset(m.cardSize))) + 8
+			return float32(cardContentHLines(cardSizeForPreset(m.cardSize), m.gridBadgeLines, m.gridVersionLines, m.gridTechLines)) + 8
 		},
 		func(i int, w float32) {
 			if i == len(chunks) {
@@ -294,7 +450,7 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 				m.scrollCursorPending = true
 			}
 		}
-		Container(Attrs(Row, Gap(cardGapH)), func() {
+		Container(Attrs(Row, Wrap, Gap(cardGapH)), func() {
 			if e.Platform != "" {
 				badgePill(e.Platform, ui.ToneGray)
 			}
@@ -322,7 +478,8 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 			txt(e.Title)
 		})
 		if pills := versionPills(&e); len(pills) > 0 {
-			Container(Attrs(Row, Gap(cardGapH)), func() {
+			Container(Attrs(Row, Wrap, Gap(cardGapH)), func() {
+				m.versionPillRowRect = GetScreenRectOf(CurrentId())
 				start := 0
 				// The OptiScaler pill is the version dropdown; component and
 				// Proton pills stay static.
@@ -341,7 +498,7 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 			m.cardDDTrigger[e.InstallDir] = m.ddTriggerID
 		}
 		if len(e.TechBadges) > 0 {
-			Container(Attrs(Row, Gap(cardGapH)), func() {
+			Container(Attrs(Row, Wrap, Gap(cardGapH)), func() {
 				for _, b := range e.TechBadges {
 					badgePill(b.Label, b.Tone)
 				}

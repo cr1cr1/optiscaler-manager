@@ -54,6 +54,7 @@ type model struct {
 	hoveredDir          string                        // install dir of the card under the mouse, "" when none
 	cardRect            Rect                          // screen rect of the last rendered card (hover test seam)
 	cardBtnRect         Rect                          // screen rect of the card's first button (click routing test seam)
+	versionPillRowRect  Rect                          // screen rect of the last rendered version pill row, card or detail panel (pill wrap test seam)
 	dlssUpdateRect      Rect                          // screen rect of the DLSS update area (click routing test seam)
 	dlssArrowRect       Rect                          // screen rect of the DLSS restore-menu arrow (click routing test seam)
 	dlssUpdateID        ContainerId                   // container id of the DLSS update area (hover-exclusion seam)
@@ -96,6 +97,9 @@ type model struct {
 	cols                int                           // current grid columns, derived from live width
 	cardW               int                           // current card width in px, derived from live width
 	cardH               int                           // current card height in px
+	gridBadgeLines      int                           // wrapped line counts of the grid's worst card pill rows
+	gridVersionLines    int                           // (badge / version / tech); every card shares them so wrapped
+	gridTechLines       int                           // pills grow ALL cards uniformly instead of clipping one
 	coverExists         map[string]bool               // memoized cover-file existence (avoids a per-card os.Stat every frame; v0.6.6's loader is panic-safe on missing files but we still want the placeholder fallback)
 	exitNow             func(code int)                // quit seam: os.Exit in production, stubbed in tests
 	switchVersionFn     func(gameDir, version string) // version-switch dispatch seam: nil in production (Session.SwitchVersion), stubbed in tests

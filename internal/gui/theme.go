@@ -131,8 +131,9 @@ func toneColor(t ui.Tone) Vec4 {
 }
 
 // badgePill renders a small colored pill like the client's tech badges.
-// Vertical padding (3px top/bottom) is mirrored by badgeRowH/pillRowH in
-// grid.go so card chrome reserves the right pill-row height.
+// Vertical padding (3px top/bottom) is mirrored by pillRowH in grid.go so
+// card chrome reserves the right pill-row height; pillLabelW mirrors the
+// horizontal padding (6px/side) for the wrap line estimates.
 func badgePill(label string, tone ui.Tone) {
 	Container(Attrs(Pad2(3, 6), Corners(radiusS), BackgroundVec(toneColor(tone))), func() {
 		Label(label, TextColor(0, 0, 96, 1), FontSize(11))

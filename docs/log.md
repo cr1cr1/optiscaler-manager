@@ -3490,3 +3490,20 @@ opens the restore menu of local backup sets.
   (`pillwrap_test.go` references the not-yet-implemented `wrapLineCount`
   — foreign work, excluded from this commit); `go vet`/`gofmt` clean;
   windows/darwin builds green.
+
+## 2026-10-07 — issue 15: pill rows wrap; uniform card heights
+
+- Long/numerous pills no longer overflow: every pill row wraps (shirei
+  `Wrap`) — the card's badge, version, and tech rows plus the detail
+  panel's status and version rows. The list view's fixed-height rows are
+  untouched.
+- Cards keep a uniform height: `gridView` takes the grid-wide maximum of
+  each pill row's wrapped line count (`wrapLineCount` mirrors shirei's
+  greedy packing; widths mirror rendered pill geometry, erring wide) and
+  `cardContentHLines` prices it in — one wrapped card grows EVERY card
+  instead of clipping itself. No wrapping anywhere = byte-identical
+  geometry to before.
+- TDD: compile-red, then behavioral red (pill row 19.5px single-line,
+  `cardH = 514, want > 514`), then green. New tests in
+  internal/gui/pillwrap_test.go.
+

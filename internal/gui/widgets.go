@@ -259,8 +259,14 @@ func editKeys(buf *string, st *editState) {
 // shapedGlyphs shapes text exactly as the field's Label does (FontSize 13,
 // default family) and returns the flattened glyph run.
 func shapedGlyphs(text string) []Glyph {
+	return shapedGlyphsAt(text, 13)
+}
+
+// shapedGlyphsAt shapes text at the given font size (default family) and
+// returns the flattened glyph run.
+func shapedGlyphsAt(text string, size float32) []Glyph {
 	var ta TextStyleAttrs
-	FontSize(13)(&ta)
+	FontSize(size)(&ta)
 	shaped := ShapeText(text, ta)
 	var gs []Glyph
 	for _, line := range shaped.Lines {
@@ -273,8 +279,14 @@ func shapedGlyphs(text string) []Glyph {
 
 // textWidth is the shaped advance width of text in pixels.
 func textWidth(text string) float32 {
+	return textWidthAt(text, 13)
+}
+
+// textWidthAt is the shaped advance width of text in pixels at the given
+// font size.
+func textWidthAt(text string, size float32) float32 {
 	w := float32(0)
-	for _, g := range shapedGlyphs(text) {
+	for _, g := range shapedGlyphsAt(text, size) {
 		w += g.XAdvance
 	}
 	return w

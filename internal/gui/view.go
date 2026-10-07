@@ -417,7 +417,7 @@ func (m *model) detailPanel() {
 			coverW := panelW - 2*sp16
 			m.coverArt(*e, coverW, coverW*coverRatio)
 			muted(e.InstallDir)
-			Container(Attrs(Row, Gap(sp4), CrossMid), func() {
+			Container(Attrs(Row, Wrap, Gap(sp4), CrossMid), func() {
 				txt("Status:")
 				badgePill(statusLabel(e), statusTone(e))
 				if e.Disabled {
@@ -429,7 +429,8 @@ func (m *model) detailPanel() {
 				m.protonTierPill(e.ProtonTier)
 			})
 			if pills := versionPills(e); len(pills) > 0 {
-				Container(Attrs(Row, Gap(sp4)), func() {
+				Container(Attrs(Row, Wrap, Gap(sp4)), func() {
+					m.versionPillRowRect = GetScreenRectOf(CurrentId())
 					start := 0
 					// The OptiScaler pill is the version dropdown; component
 					// and Proton pills stay static — except DLSS, whose pill
