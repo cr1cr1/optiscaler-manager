@@ -101,8 +101,8 @@ func TestUpdateDLSSAndRestoreRoundTrip(t *testing.T) {
 		}
 	}
 	updated := e.sess.Snapshot().Rows[0]
-	if len(updated.Components) == 0 || updated.Components[0] != "DLSS 4.5" {
-		t.Errorf("components after update %v, want [DLSS 4.5]", updated.Components)
+	if len(updated.Components) == 0 || updated.Components[0] != "DLSS 310.5.3" {
+		t.Errorf("components after update %v, want [DLSS 310.5.3] (raw label)", updated.Components)
 	}
 
 	snaps := e.sess.DLSSSnapshots(row.InstallDir)

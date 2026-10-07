@@ -153,8 +153,10 @@ only with new evidence.
   registry, Epic manifest dirs, GOG Windows registry behind a reader seam,
   macOS plist parsing, linux Proton compat-prefix display).
 - **Version display**: `internal/pever` parses PE version resources directly
-  (no cgo, hostile-input safe) and maps raw versions to marketing names
-  (DLSS/FSR/XeSS tables); OptiScaler version resolved via a manifest → log →
+  (no cgo, hostile-input safe). Pill labels: DLSS shows the raw DLL version
+  in tag form (`DLSS 310.5.3` — marketing names cannot reflect a version
+  switch, issue 019); FSR/XeSS map raw versions to marketing names.
+  OptiScaler version resolved via a manifest → log →
   ini evidence chain. Enrichment only on managed installs (committed manifest
   or OptiScaler.dll present) — no PE parsing for unmanaged games.
 - **Game launching**: per-store per-OS command table in `internal/launch`.

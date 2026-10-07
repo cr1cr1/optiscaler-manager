@@ -53,7 +53,9 @@ internal/
               parsing — see the v0.7 section)
   classify/   upscaler kind+DLL detection (Dir, DirFiles)
   pever/      hostile-input PE version-resource parser (no cgo): FileVersion,
-              MarketingName (vendored DLSS/FSR/XeSS version→name maps),
+              MarketingName (vendored FSR/XeSS version→name maps; DLSS pills
+              show the raw dll version instead — NVIDIA reuses one marketing
+              name across dll versions, so switches were invisible, issue 019),
               OptiScalerVersion (manifest → log → ini evidence chain),
               DetectOptiScaler (external-install probe: injection-name
               candidates matched by PE version-info identity, bounded reads)

@@ -21,6 +21,10 @@ import (
 // Values are the reference's bare release numbers with the vendor prefix
 // prepended per this package's output convention ("3.1.4" → "FSR 3.1.4").
 var marketingMaps = map[Kind]map[string]string{
+	// DLSS pills no longer consume this map (issue 019): NVIDIA reuses one
+	// marketing name for many dll versions and this table lags the newest
+	// releases, so the pill shows the raw dll version. The entries stay as
+	// the lookup's test dataset (and for any future marketing display).
 	KindDLSS: {
 		"310.6.0":  "DLSS 4.5",
 		"310.5.3":  "DLSS 4.5",

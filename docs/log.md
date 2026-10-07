@@ -3561,3 +3561,23 @@ opens the restore menu of local backup sets.
   parity test renders at 900x800 to keep the tech row visible.
 - Verification: full `go test ./...` (29 packages) exit 0,
   `go vet`/`gofmt` clean; before/after headless renders eyeballed.
+
+## 2026-10-07 — issue 19: DLSS pill shows the raw dll version
+
+- Switching DLSS versions (e.g. restoring an older backup) was invisible
+  in the pill: the label was the vendored MARKETING name, and NVIDIA
+  reuses one marketing name across many dll versions (310.5.0/310.5.3/
+  310.6.0 are all "DLSS 4.5"; the vendored map tops at 310.6.0 while
+  current releases are 310.9.x+, so tier-4 nearest-below rendered every
+  modern dll "DLSS 4.5"). The refresh machinery was fine — the label
+  could not change.
+- `app.ComponentVersions` now labels DLSS with the raw dll version in tag
+  form (`dlssLabel`: one trailing ".0" trimmed) — the same language the
+  restore menu and the update target already speak. FSR/XeSS keep the
+  marketing maps; the DLSS map stays as the lookup's test dataset.
+- TDD red witnessed (`310.5.3.0` and `310.6.0.0` both rendered "DLSS
+  4.5"), then green; `TestUpdateDLSSAndRestoreRoundTrip` +
+  `TestTUIDetailUpdateDLSS` assertions updated to raw labels, new
+  `TestComponentVersionsDLSSLabelIsRawVersion` pins the mapping.
+- Verification: `go test ./...` (29 packages) exit 0, `go vet`/`gofmt`
+  clean.

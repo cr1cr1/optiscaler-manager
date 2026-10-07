@@ -161,6 +161,30 @@ func TestComponentVersionsBareLabelsAndRawDLSS(t *testing.T) {
 	}
 }
 
+// TestComponentVersionsDLSSLabelIsRawVersion: the DLSS pill label is the
+// DLL's raw version in NVIDIA's tag form, not the vendored marketing name.
+// NVIDIA reuses one marketing name for many DLL versions (310.5.0, 310.5.3
+// and 310.6.0 all map to "DLSS 4.5") and the vendored map lags the newest
+// releases, so a marketing label cannot reflect a version switch — the
+// restore menu and the update target already speak raw versions.
+func TestComponentVersionsDLSSLabelIsRawVersion(t *testing.T) {
+	for _, tc := range []struct {
+		maj, min, patch, build uint16
+		want                   string
+	}{
+		{310, 5, 3, 0, "DLSS 310.5.3"},
+		{310, 6, 0, 0, "DLSS 310.6.0"}, // same marketing bucket as 310.5.3
+		{3, 7, 20, 0, "DLSS 3.7.20"},
+	} {
+		dir := t.TempDir()
+		writeScanFile(t, filepath.Join(dir, "nvngx_dlss.dll"), testutil.FixedVersionPE(tc.maj, tc.min, tc.patch, tc.build))
+		versions, _ := ComponentVersions(dir)
+		if got := versions["dlss"]; got != tc.want {
+			t.Errorf("raw %d.%d.%d.%d: dlss label = %q, want %q", tc.maj, tc.min, tc.patch, tc.build, got, tc.want)
+		}
+	}
+}
+
 // TestLibraryEntryDLSSReadiness: the entry records the DLSS runtime's raw
 // version and whether the complete three-file set is present — the gates
 // that decide whether the DLSS pill is the interactive update control or a

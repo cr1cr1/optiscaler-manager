@@ -112,9 +112,9 @@ func TestTUIDetailUpdateDLSS(t *testing.T) {
 		t.Errorf("busy %q after update settled", snap.Busy)
 	}
 	row := findRow(sess.Snapshot().Rows, gameDirOf(sess))
-	// Rows carry the vendor marketing name (pever.MarketingName); 310.9.1
-	// is past the vendored table, so the nearest-below tier renders DLSS 4.5.
-	if row == nil || !strings.Contains(strings.Join(row.Components, ","), "DLSS 4.5") {
+	// Rows carry the raw dll version in tag form (dlssLabel): 310.9.1.0
+	// renders as "DLSS 310.9.1" — marketing names cannot reflect switches.
+	if row == nil || !strings.Contains(strings.Join(row.Components, ","), "DLSS 310.9.1") {
 		t.Errorf("components not refreshed: %v", row)
 	}
 }
