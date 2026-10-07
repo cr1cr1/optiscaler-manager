@@ -1,10 +1,12 @@
 package covers
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
@@ -679,5 +681,152 @@ func TestFetchSendsUserAgent(t *testing.T) {
 	}
 	if !strings.Contains(gotUA, "optiscaler-manager") {
 		t.Errorf("User-Agent = %q, want a descriptive optiscaler-manager UA (wiki policy)", gotUA)
+	}
+}
+
+// wideJPEG builds a 300×90 landscape image with a red left band, a green
+// center band, and a blue right band — the shape of a Steam hero banner,
+// with the center (where hero art puts the logo) clearly marked.
+func wideJPEG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 300, 90))
+	for y := 0; y < 90; y++ {
+		for x := 0; x < 300; x++ {
+			switch {
+			case x < 120:
+				img.Set(x, y, color.RGBA{200, 30, 30, 255})
+			case x < 180:
+				img.Set(x, y, color.RGBA{30, 200, 30, 255})
+			default:
+				img.Set(x, y, color.RGBA{30, 30, 200, 255})
+			}
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 95}); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// decodeImg reads and decodes a cached cover file (content-sniffed).
+func decodeImg(t *testing.T, path string) image.Image {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	img, _, err := image.Decode(f)
+	if err != nil {
+		t.Fatalf("decode %s: %v", path, err)
+	}
+	return img
+}
+
+// The aspect invariant (issue 025): a landscape hero fallback must be
+// cached as a 2:3 portrait image — center-cropped, never stretched by
+// the aspect-blind renderer downstream.
+func TestCoverHeroIsCenterCroppedToPortrait(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/steam/apps/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "library_hero.jpg") {
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(wideJPEG(t))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	mux.HandleFunc("/api/storesearch/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"items":[]}`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+
+	p, err := c.Cover(context.Background(), "3768760", "007 First Light")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	img := decodeImg(t, p)
+	w, h := img.Bounds().Dx(), img.Bounds().Dy()
+	if 3*w != 2*h {
+		t.Errorf("cached hero is %dx%d (aspect %.3f), want exact 2:3 portrait", w, h, float64(w)/float64(h))
+	}
+	// The 300-wide source crops to its center 60px — the green band;
+	// red (left) and blue (right) must be gone.
+	r, g, b, _ := img.At(img.Bounds().Dx()/2, img.Bounds().Dy()/2).RGBA()
+	if g < 0x8000 || r > 0x4000 || b > 0x4000 {
+		t.Errorf("center pixel = (%x,%x,%x), want the green center band (sides cropped)", r, g, b)
+	}
+}
+
+// Already-2:3 art passes through byte-identical: normalization must never
+// re-encode (and degrade) proper posters.
+func TestCoverPortraitArtPassesThroughUntouched(t *testing.T) {
+	f := newFakeCDN(t)
+	c := New(nil, t.TempDir())
+	c.cdnBase = f.srv.URL + "/steam/apps/%s/library_600x900.jpg"
+	c.searchBase = f.srv.URL + "/api/storesearch/"
+
+	p, err := c.Cover(context.Background(), "1091500", "Cyberpunk 2077")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, f.coverBytes) {
+		t.Errorf("2:3 art was re-encoded (%d → %d bytes), want byte-identical passthrough", len(f.coverBytes), len(data))
+	}
+}
+
+// A landscape image cached before the aspect invariant existed is
+// scrubbed in place on read: legacy art self-heals without a cache wipe.
+func TestCachedLegacyLandscapeScrubbedOnRead(t *testing.T) {
+	f := newFakeCDN(t)
+	cacheDir := t.TempDir()
+	c := New(nil, cacheDir)
+	c.cdnBase = f.srv.URL + "/steam/apps/%s/library_600x900.jpg"
+	c.searchBase = f.srv.URL + "/api/storesearch/"
+
+	cached := filepath.Join(cacheDir, "3768760.img")
+	if err := os.WriteFile(cached, wideJPEG(t), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := c.Cover(context.Background(), "3768760", "007 First Light")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	if p != cached {
+		t.Errorf("path = %q, want the cached file %q", p, cached)
+	}
+	img := decodeImg(t, cached)
+	if w, h := img.Bounds().Dx(), img.Bounds().Dy(); 3*w != 2*h {
+		t.Errorf("legacy file is %dx%d after read, want scrubbed to 2:3", w, h)
+	}
+}
+
+// Non-image bytes in a cached file are a graceful no-op: no panic, no
+// rewrite (the renderer already tolerates unloadable files).
+func TestCachedJunkFileIsLeftAlone(t *testing.T) {
+	f := newFakeCDN(t)
+	cacheDir := t.TempDir()
+	c := New(nil, cacheDir)
+	c.cdnBase = f.srv.URL + "/steam/apps/%s/library_600x900.jpg"
+	c.searchBase = f.srv.URL + "/api/storesearch/"
+
+	cached := filepath.Join(cacheDir, "3768760.img")
+	if err := os.WriteFile(cached, []byte("not an image"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := c.Cover(context.Background(), "3768760", "x")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	data, _ := os.ReadFile(p)
+	if string(data) != "not an image" {
+		t.Errorf("junk file rewritten to %q, want a graceful no-op", string(data))
 	}
 }

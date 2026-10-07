@@ -3717,3 +3717,34 @@ Live probing found three independent root causes:
   also caught the regex `\s` eating the next infobox line.
 - Verification: `go test ./...` (30 packages) exit 0, `go vet`/`gofmt`
   clean, `GOOS=windows`/`darwin go build ./...` OK.
+
+## 2026-10-07 — issue 25: 2:3 aspect invariant for cached covers (no more stretched posters)
+
+User report: posters stretched vertically (Aphelion, Resonance: A Plague
+Tale Legacy) — with the explicit constraint to fix the overarching
+issue, not individual titles.
+
+- Root cause: those games have no portrait art on Steam's CDN
+  (`library_600x900.jpg` 404 for 1966410/2713000), so the chain lands on
+  the landscape `library_hero.jpg` (1920×620, ≈3.1:1) and the GUI's
+  `ImageFill` (v0.14 vendor patch, deliberately aspect-blind) stretches
+  it into the 2:3 card. The pipeline had NO aspect invariant: any
+  non-portrait image from any source would stretch.
+- Fix (user picked center-crop over letterbox): the covers cache owns
+  the invariant. `normalizeCover` runs on every fetch (write path) and
+  on every cached hit (legacy scrub — pre-025 landscape images self-heal
+  on the next scan, no cache wipe). Art already at ~2:3 (1% tolerance)
+  passes through byte-identical; anything else is center-cropped (hero
+  banners are center-composed) and re-encoded — JPEG stays JPEG, other
+  formats (e.g. SGDB webp) become PNG. Undecodable bytes are a graceful
+  no-op. No vendor-patch changes; all frontends fixed at one seam.
+- ATDD red witnessed: `TestCoverHeroIsCenterCroppedToPortrait` and
+  `TestCachedLegacyLandscapeScrubbedOnRead` failed before the
+  implementation (aspect 3.33, no scrub); passthrough/junk tests are
+  regression guards that held throughout.
+- `golang.org/x/image` stays marked `// indirect` in go.mod (now
+  directly imported for webp decode): the marker is cosmetic metadata
+  and `go mod tidy && go mod vendor` would strip the vendored shirei
+  patches — deliberately not run.
+- Verification: `go test ./...` (30 packages) exit 0, `go vet`/`gofmt`
+  clean, `GOOS=windows`/`darwin go build ./...` OK.

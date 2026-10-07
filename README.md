@@ -75,7 +75,9 @@ Cover art comes from Steam's CDN first, then PCGamingWiki box art
 (keyless), then SteamGridDB when a key is configured. SteamGridDB covers
 games Steam has no art for (unreleased or asset-less appids) and resolves
 folder names that drop a subtitle ("The Witcher 3 Remastered" → The
-Witcher 3: Wild Hunt). To enable it, create a free API key at
+Witcher 3: Wild Hunt). Whatever the source — including landscape hero
+banners, the last-resort fallback — every cached cover is center-cropped
+to the 2:3 poster aspect, so cards never show stretched art. To enable it, create a free API key at
 [steamgriddb.com](https://www.steamgriddb.com/profile/preferences/api)
 and add it to `~/.local/share/optiscaler-manager/settings.json`:
 

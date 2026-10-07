@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
+	"image/jpeg"
 	"image/png"
 	"io"
 	"net/http"
@@ -18,6 +20,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	_ "golang.org/x/image/webp"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/gid"
 	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
@@ -93,6 +97,7 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 	if sanitized := sanitize(appID); sanitized != "" {
 		cached := filepath.Join(c.cacheDir, sanitized+".img")
 		if _, err := os.Stat(cached); err == nil {
+			normalizeCover(cached) // legacy scrub (issue 025)
 			return cached, nil
 		}
 		if !c.recentMiss(sanitized) {
@@ -244,7 +249,11 @@ func (c *Covers) fetch(ctx context.Context, url, dest string) error {
 		_ = os.Remove(tmp.Name())
 		return err
 	}
-	return os.Rename(tmp.Name(), dest)
+	if err := os.Rename(tmp.Name(), dest); err != nil {
+		return err
+	}
+	normalizeCover(dest) // aspect invariant (issue 025)
+	return nil
 }
 
 // placeholder writes (once) and returns a simple dark tile PNG.
@@ -403,4 +412,84 @@ func sgdbNameAccepts(cand, hit string) bool {
 		}
 	}
 	return true
+}
+
+// The card aspect is 2:3 portrait (Steam library_600x900, wiki box art,
+// SGDB grids). Every image the cache stores or returns must hold it:
+// the renderer (vendored ImageFill) is deliberately aspect-blind, so the
+// cache is the one place that can guarantee no art is ever stretched —
+// whatever any current or future source produces (issue 025).
+//
+// normalizeCover enforces the invariant on one cached file: art already
+// at ~2:3 passes through byte-identical (no re-encode quality loss);
+// anything else is center-cropped (hero banners are center-composed) and
+// re-encoded in place — JPEG stays JPEG, everything else becomes PNG
+// (webp has no stdlib encoder). Undecodable content is left alone: the
+// renderer already tolerates unloadable files. It runs on every fetch
+// (write path) and on every cached hit (legacy scrub), idempotently.
+func normalizeCover(path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	cfg, _, err := image.DecodeConfig(f)
+	_ = f.Close()
+	if err != nil || cfg.Width < 2 || cfg.Height < 2 {
+		return
+	}
+	// ~2:3 passthrough: |3w − 2h| within 1% of 3w.
+	if d := 3*cfg.Width - 2*cfg.Height; d > -cfg.Width/33 && d < cfg.Width/33 {
+		return
+	}
+	f, err = os.Open(path)
+	if err != nil {
+		return
+	}
+	src, format, err := image.Decode(f)
+	_ = f.Close()
+	if err != nil {
+		return
+	}
+	cropped := centerCrop23(src)
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".norm-*")
+	if err != nil {
+		return
+	}
+	enc := func() error {
+		if format == "jpeg" {
+			return jpeg.Encode(tmp, cropped, &jpeg.Options{Quality: 90})
+		}
+		return png.Encode(tmp, cropped)
+	}
+	if err := enc(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return
+	}
+	_ = os.Rename(tmp.Name(), path)
+}
+
+// centerCrop23 returns src center-cropped to exactly 2:3 portrait.
+func centerCrop23(src image.Image) image.Image {
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	var r image.Rectangle
+	if 3*w > 2*h {
+		// Too wide (hero banners): crop left and right equally.
+		nw := 2 * h / 3
+		x0 := b.Min.X + (w-nw)/2
+		r = image.Rect(x0, b.Min.Y, x0+nw, b.Max.Y)
+	} else {
+		// Too tall: crop top and bottom equally.
+		nh := 3 * w / 2
+		y0 := b.Min.Y + (h-nh)/2
+		r = image.Rect(b.Min.X, y0, b.Max.X, y0+nh)
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, r.Dx(), r.Dy()))
+	draw.Draw(dst, dst.Bounds(), src, r.Min, draw.Src)
+	return dst
 }

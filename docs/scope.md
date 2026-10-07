@@ -124,10 +124,12 @@ Added after v0.1, modeled on the reference client's main window:
   SteamGridDB grid (when `steamgriddb_key` is set in settings.json) →
   PCGamingWiki box art (keyless: opensearch + wikitext infobox) → Steam
   store search (name→appid, zero-key fallback) → generated placeholder.
-  Cached on disk by sanitized appid. (Ecosystem-verified keyless pattern:
-  Lutris and Heroic use the same Steam CDN primary; Bottles uses a private
-  SteamGridDB proxy, not copyable — we call SteamGridDB directly with the
-  user's own free API key, issue 024.)
+  Cached on disk by sanitized appid; every cached image is normalized to
+  the 2:3 card aspect (center-crop — landscape hero banners included,
+  legacy files scrubbed on read, issue 025). (Ecosystem-verified keyless
+  pattern: Lutris and Heroic use the same Steam CDN primary; Bottles uses
+  a private SteamGridDB proxy, not copyable — we call SteamGridDB
+  directly with the user's own free API key, issue 024.)
 - **Bundle cache**: OptiScaler bundles at
   `$XDG_CACHE_HOME/optiscaler-manager/optiscaler/<version>/` (default
   `~/.cache/...`), reused before any download (`OM_CACHE_DIR` overrides).

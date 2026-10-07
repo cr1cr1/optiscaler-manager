@@ -86,7 +86,11 @@ internal/
               cache plus a 7-day `.miss` negative marker that skips only
               the CDN retry, never the title search. The SGDB name search
               binds via a scoped subset rule (candidate tokens ⊆ hit, no
-              new numerals) — covers only, never identification
+              new numerals) — covers only, never identification. Every
+              cached image is normalized to the 2:3 card aspect
+              (center-crop on write AND on cached read — the renderer is
+              deliberately aspect-blind, so the cache owns the no-stretch
+              invariant; issue 025)
   steam/      title → appid lookup (steamcommunity.com SearchApps; 30d TTL
               disk cache, no auth)
   protondb/   appid → compatibility tier (protondb.com summaries API; 7d
