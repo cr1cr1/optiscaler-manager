@@ -85,6 +85,10 @@ func (m *model) pillTipOverlay() {
 		return
 	}
 	if time.Since(pillTip.since) < pillTipDelay {
+		// The backend renders on input alone; a resting cursor produces no
+		// frames, so the debounce would never elapse (issue 21). Keep frames
+		// coming until the tooltip is due — then go quiet again.
+		RequestNextFrame()
 		return
 	}
 	pillTip.shown = true

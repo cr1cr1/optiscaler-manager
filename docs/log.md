@@ -3601,3 +3601,16 @@ opens the restore menu of local backup sets.
   hover test warms up three frames before backdating `pillTip.since`.
 - Verification: `go test ./...` (29 packages) exit 0, `go vet`/`gofmt`
   clean.
+
+## 2026-10-07 — issue 21: tooltip debounce requests frames (resting cursor fix)
+
+- The 500ms pill-tooltip debounce (issue 20) was only evaluated when a
+  frame rendered, but the backend renders on input alone — a cursor
+  RESTING on a pill produced no frames, so the tooltip popped only when
+  the mouse next moved. `pillTipOverlay` now calls shirei's
+  `RequestNextFrame()` while the debounce is pending, and stops once the
+  tooltip shows (no idle spin).
+- TDD red witnessed (`TestPillTooltipRequestsFramesWhileDebouncing`:
+  "debounce pending but no next frame requested"), then green.
+- Verification: `go test ./...` (29 packages) exit 0, `go vet`/`gofmt`
+  clean.
