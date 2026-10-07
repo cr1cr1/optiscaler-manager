@@ -83,6 +83,6 @@ via `Confirmation.consent`, so a later gate never re-asks an earlier
 one; `app.MaxBackupNoConfirm` is the single policy owner
 (`installer.defaultMaxBackupNoConfirm` mirrors it for direct library
 callers). ATDD reds witnessed per slice (backup path + DirFiles leak at
-runtime; both gates via temporary disable). Commit: pinned below.
+runtime; both gates via temporary disable). Commit: `20ec774`.
 Verification: `go test ./...` (29 packages) exit 0, `go vet`/`gofmt`
 clean, `GOOS=windows`/`darwin go build ./...` OK.
