@@ -64,6 +64,12 @@ type Settings struct {
 	// containing toolmanifest.vdf; the umu package's FindRunners returns
 	// exactly such paths.
 	UmuProtonPath string `json:"umu_proton_path,omitempty"`
+	// SteamGridDBKey is the personal SteamGridDB API key enabling the
+	// SteamGridDB cover source (issue 024): grids for games Steam's CDN
+	// has no art for, and alias-aware name search. Empty (default)
+	// disables the source silently. JSON-edited only, the TitleOverrides
+	// precedent.
+	SteamGridDBKey string `json:"steamgriddb_key,omitempty"`
 	// Forks is the list of OptiScaler distribution sources; the upstream
 	// entry (DefaultForkSlug) is always present after Load. ActiveFork is
 	// the slug installs/switches download from; empty or unknown resolves
@@ -106,6 +112,7 @@ func Load(root string) (Settings, error) {
 		CardSize       CardSize          `json:"card_size,omitempty"`
 		UmuEnabled     *bool             `json:"umu_enabled"`
 		UmuProtonPath  string            `json:"umu_proton_path,omitempty"`
+		SteamGridDBKey string            `json:"steamgriddb_key,omitempty"`
 		Forks          []Fork            `json:"forks,omitempty"`
 		ActiveFork     string            `json:"active_fork,omitempty"`
 	}
@@ -121,6 +128,7 @@ func Load(root string) (Settings, error) {
 		CardSize:       raw.CardSize,
 		UmuEnabled:     false,
 		UmuProtonPath:  raw.UmuProtonPath,
+		SteamGridDBKey: raw.SteamGridDBKey,
 		Forks:          raw.Forks,
 		ActiveFork:     raw.ActiveFork,
 	}

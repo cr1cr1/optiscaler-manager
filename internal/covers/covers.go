@@ -21,6 +21,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/gid"
 	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
+	"github.com/cr1cr1/optiscaler-manager/internal/sgdb"
 )
 
 const (
@@ -38,6 +39,13 @@ type Covers struct {
 	// Steam at all). Wiki box art is poster-like; the Steam hero banner
 	// (landscape) is the last resort before the placeholder.
 	PCGW *pcgw.Client
+
+	// SGDB, when non-nil (a SteamGridDB API key is configured), supplies
+	// grid art for games Steam's CDN has no poster for (unreleased or
+	// asset-less appids) and for names Steam's own search cannot match.
+	// It sits between the Steam CDN and the wiki: official Steam art
+	// still wins, community grids beat the landscape hero.
+	SGDB *sgdb.Client
 
 	// UserAgent identifies every outbound request; the wiki's hosts
 	// reject requests without a descriptive UA (403), and Go's default
@@ -91,6 +99,9 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 			if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_600x900.jpg"), url.PathEscape(sanitized)), cached); err == nil {
 				return cached, nil
 			}
+			if p, ok := c.fromSGDB(ctx, sanitized, name); ok {
+				return p, nil
+			}
 			if p, ok := c.fromPCGW(ctx, sanitized, name); ok {
 				return p, nil
 			}
@@ -107,12 +118,17 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 			if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_600x900.jpg"), url.PathEscape(id)), cached); err == nil {
 				return cached, nil
 			}
+			if p, ok := c.fromSGDB(ctx, id, name); ok {
+				return p, nil
+			}
 			if p, ok := c.fromPCGW(ctx, id, name); ok {
 				return p, nil
 			}
 			if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_hero.jpg"), url.PathEscape(id)), cached); err == nil {
 				return cached, nil
 			}
+		} else if p, ok := c.fromSGDB(ctx, "", name); ok {
+			return p, nil
 		} else if p, ok := c.fromPCGW(ctx, "", name); ok {
 			return p, nil
 		}
@@ -283,24 +299,20 @@ func sanitize(appID string) string {
 	return b.String()
 }
 
-// fromPCGW resolves box art via PCGamingWiki: page by Steam appid when
-// known, else by title (scored against the candidate). Returns the cached
-// image path on success.
+// fromPCGW resolves box art via PCGamingWiki by title: every opensearch
+// hit is scored and the best accepted page wins (the wiki ranks loosely —
+// first is not always right). The appid only names the cache file; the
+// wiki's anonymous API has no appid reverse lookup since the Cargo module
+// was restricted (issue 024). Returns the cached image path on success.
 func (c *Covers) fromPCGW(ctx context.Context, appID, name string) (string, bool) {
-	if c.PCGW == nil {
+	if c.PCGW == nil || name == "" {
 		return "", false
 	}
-	page := ""
-	if appID != "" {
-		if t, _, err := c.PCGW.TitleBySteamAppID(ctx, appID); err == nil {
-			page = t
-		}
+	titles, _, err := c.PCGW.SearchTitles(ctx, name)
+	if err != nil {
+		return "", false
 	}
-	if page == "" && name != "" {
-		if t, _, err := c.PCGW.SearchTitle(ctx, name); err == nil && t != "" && gid.Accept(gid.Score(name, t, true), false) {
-			page = t
-		}
-	}
+	page := gid.BestAccepted(name, titles, true)
 	if page == "" {
 		return "", false
 	}
@@ -321,4 +333,74 @@ func (c *Covers) fromPCGW(ctx context.Context, appID, name string) (string, bool
 		return dest, true
 	}
 	return "", false
+}
+
+// fromSGDB resolves grid art via SteamGridDB: by Steam appid when known
+// (precise), else by the alias-aware autocomplete gated by
+// sgdbNameAccepts. Returns the cached image path on success.
+func (c *Covers) fromSGDB(ctx context.Context, appID, name string) (string, bool) {
+	if c.SGDB == nil {
+		return "", false
+	}
+	var id int64
+	if appID != "" {
+		if g, _, err := c.SGDB.GameBySteamAppID(ctx, appID); err == nil {
+			id = g.ID
+		}
+	}
+	if id == 0 && name != "" {
+		if g, _, err := c.SGDB.SearchGame(ctx, name); err == nil && sgdbNameAccepts(name, g.Name) {
+			id = g.ID
+		}
+	}
+	if id == 0 {
+		return "", false
+	}
+	u, _, err := c.SGDB.GridURL(ctx, id)
+	if err != nil || u == "" {
+		return "", false
+	}
+	dest := filepath.Join(c.cacheDir, appID+".img")
+	if appID == "" {
+		sum := sha256.Sum256([]byte(fmt.Sprintf("sgdb:%d", id)))
+		dest = filepath.Join(c.cacheDir, "sgdb_"+hex.EncodeToString(sum[:])[:16]+".img")
+	}
+	if err := c.fetch(ctx, u, dest); err == nil {
+		return dest, true
+	}
+	return "", false
+}
+
+// sgdbNameAccepts gates SGDB's alias-aware top autocomplete hit. The
+// strict scorer stands first (gid.Accept); otherwise a scoped subset
+// rule applies for cover picking only: every normalized candidate token
+// must appear in the hit, and the hit must not add numeral tokens —
+// "the witcher 3" ⊆ "the witcher 3 wild hunt" binds, "frostpunk" ⊄
+// "frostpunk 2" refuses. Identification (titles, appid binding) never
+// uses this rule: a wrong COVER is tolerable here, a wrong identity is
+// not (issue 024).
+func sgdbNameAccepts(cand, hit string) bool {
+	if gid.Accept(gid.Score(cand, hit, true), false) {
+		return true
+	}
+	c, h := gid.Normalize(cand), gid.Normalize(hit)
+	if c == "" || h == "" {
+		return false
+	}
+	extra := map[string]int{}
+	for _, t := range strings.Fields(h) {
+		extra[t]++
+	}
+	for _, t := range strings.Fields(c) {
+		if extra[t] == 0 {
+			return false
+		}
+		extra[t]--
+	}
+	for t, n := range extra {
+		if n > 0 && strings.ContainsAny(t, "0123456789") {
+			return false
+		}
+	}
+	return true
 }

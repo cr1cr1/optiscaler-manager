@@ -213,3 +213,18 @@ func Accept(score int, corroborated bool) bool {
 	}
 	return score >= 75 && corroborated
 }
+
+// BestAccepted returns the highest-scoring candidate that passes Accept
+// on its own, or "" when none do. Ties keep the earlier entry. Use it
+// whenever a search API ranks loosely (wiki opensearch): the first hit is
+// not always the right one, and an unacceptable first hit must not bury
+// an acceptable later one (issue 024).
+func BestAccepted(cand string, names []string, pc bool) string {
+	best, bestScore := "", -1
+	for _, n := range names {
+		if score := Score(cand, n, pc); score > bestScore && Accept(score, false) {
+			best, bestScore = n, score
+		}
+	}
+	return best
+}

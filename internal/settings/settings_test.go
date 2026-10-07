@@ -178,3 +178,37 @@ func TestSettings_LegacyJSONWithoutUmuKeys(t *testing.T) {
 		t.Errorf("UmuProtonPath = %q on legacy file, want empty", got.UmuProtonPath)
 	}
 }
+
+// The SteamGridDB key round-trips and defaults to empty (disabled) for
+// legacy files — JSON-edited only, the TitleOverrides precedent
+// (issue 024).
+func TestSettings_SteamGridDBKeyRoundTrip(t *testing.T) {
+	root := t.TempDir()
+	want := Defaults()
+	want.SteamGridDBKey = "sgdb-key-123"
+	if err := Save(root, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.SteamGridDBKey != want.SteamGridDBKey {
+		t.Errorf("SteamGridDBKey = %q, want %q", got.SteamGridDBKey, want.SteamGridDBKey)
+	}
+}
+
+func TestSettings_LegacyJSONWithoutSGDBKey(t *testing.T) {
+	root := t.TempDir()
+	legacy := `{"default_version":"v0.10.0","launch_template":"\"{exe}\" {args}"}`
+	if err := os.WriteFile(filepath.Join(root, "settings.json"), []byte(legacy), 0o600); err != nil {
+		t.Fatalf("write legacy: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load legacy: %v", err)
+	}
+	if got.SteamGridDBKey != "" {
+		t.Errorf("SteamGridDBKey = %q on legacy file, want empty (SGDB disabled)", got.SteamGridDBKey)
+	}
+}

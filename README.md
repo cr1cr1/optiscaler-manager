@@ -71,6 +71,24 @@ store, installed OptiScaler version, detected upscaler versions
 panel (GUI) or with `l` (TUI); launching is fire-and-forget. Busy installs and
 uninstalls can be cancelled per game and roll back to the pre-operation state.
 
+Cover art comes from Steam's CDN first, then PCGamingWiki box art
+(keyless), then SteamGridDB when a key is configured. SteamGridDB covers
+games Steam has no art for (unreleased or asset-less appids) and resolves
+folder names that drop a subtitle ("The Witcher 3 Remastered" → The
+Witcher 3: Wild Hunt). To enable it, create a free API key at
+[steamgriddb.com](https://www.steamgriddb.com/profile/preferences/api)
+and add it to `~/.local/share/optiscaler-manager/settings.json`:
+
+```json
+"steamgriddb_key": "your-key-here"
+```
+
+Without a key, a manually added game whose folder name doesn't match its
+store title can still be pinned: add its install dir to
+`"title_overrides"` in the same file (e.g.
+`"title_overrides": {"/games/witcher3": "The Witcher 3: Wild Hunt"}`)
+and rescan.
+
 Each installed game manages its own OptiScaler version: the version selector
 (a dropdown on the card and detail panel in the GUI, the `v` key in the TUI)
 offers the versions already downloaded in the bundle cache plus the default

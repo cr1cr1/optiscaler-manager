@@ -81,12 +81,14 @@ func (s *Session) identifyRow(ctx context.Context, row *GameRow, st *steam.Clien
 		// Steam found nothing: PCGamingWiki is the secondary canonical
 		// source (GOG/off-store games).
 		if s.deps.PCGW != nil {
-			title, reqLive, err := s.deps.PCGW.SearchTitle(ctx, cand)
+			titles, reqLive, err := s.deps.PCGW.SearchTitles(ctx, cand)
 			live = live || reqLive
-			if err == nil && title != "" && gid.Accept(gid.Score(cand, title, true), false) {
-				row.Title = title
-				row.TitleSource = string(domain.SourceFuzzy)
-				return live
+			if err == nil {
+				if best := gid.BestAccepted(cand, titles, true); best != "" {
+					row.Title = best
+					row.TitleSource = string(domain.SourceFuzzy)
+					return live
+				}
 			}
 		}
 	}

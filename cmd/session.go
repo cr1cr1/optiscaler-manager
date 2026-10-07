@@ -13,6 +13,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
 	"github.com/cr1cr1/optiscaler-manager/internal/protondb"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
+	"github.com/cr1cr1/optiscaler-manager/internal/sgdb"
 	"github.com/cr1cr1/optiscaler-manager/internal/steam"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
@@ -53,6 +54,11 @@ func newSession(d *Deps) *ui.Session {
 		coverClient = covers.New(httpClient, filepath.Join(d.CacheDir, "covers"))
 		coverClient.PCGW = pcgwClient
 		coverClient.UserAgent = "optiscaler-manager/" + d.Version + " (https://github.com/cr1cr1/optiscaler-manager)"
+	}
+	// SteamGridDB is opt-in via the settings API key; an injected test
+	// client keeps its own SGDB (nil = source disabled).
+	if key := prefs.SteamGridDBKey; key != "" && coverClient.SGDB == nil {
+		coverClient.SGDB = sgdb.New(httpClient, filepath.Join(d.CacheDir, "sgdb"), key, d.Version)
 	}
 	sess := ui.NewSession(ui.Deps{
 		Store:        d.Store,

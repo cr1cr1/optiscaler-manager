@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
+	"github.com/cr1cr1/optiscaler-manager/internal/sgdb"
 )
 
 // fakeCDN serves covers and store-search responses like Steam's services.
@@ -364,13 +365,11 @@ func TestCoverPCGWPreferredOverHero(t *testing.T) {
 	mux.HandleFunc("/w/api.php", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Query().Get("action") {
-		case "cargoquery":
-			if strings.Contains(r.URL.RawQuery, "HOLDS") {
-				_, _ = fmt.Fprint(w, `{"cargoquery":[{"title":{"Page":"From Dust"}}]}`)
+		case "query":
+			if r.URL.Query().Get("prop") == "revisions" {
+				_, _ = fmt.Fprint(w, `{"query":{"pages":[{"title":"From Dust","revisions":[{"slots":{"main":{"content":"{{Infobox game\n|cover = From_Dust_cover.png\n}}\n"}}}]}]}}`)
 				return
 			}
-			_, _ = fmt.Fprint(w, `{"cargoquery":[{"title":{"Page":"From Dust","Cover":"From_Dust_cover.png"}}]}`)
-		case "query":
 			fmt.Fprintf(w, `{"query":{"pages":{"1":{"imageinfo":[{"thumburl":%q,"thumbwidth":600}]}}}}`, srv.URL+"/thumb/from_dust.png")
 		default:
 			_, _ = fmt.Fprint(w, `["From Dust",["From Dust"],[""],["https://x"]]`)
@@ -406,9 +405,11 @@ func TestCoverPCGWByTitleWhenNoSteam(t *testing.T) {
 		switch r.URL.Query().Get("action") {
 		case "opensearch":
 			_, _ = fmt.Fprint(w, `["Alan Wake 2",["Alan Wake II"],[""],["https://x"]]`)
-		case "cargoquery":
-			_, _ = fmt.Fprint(w, `{"cargoquery":[{"title":{"Page":"Alan Wake II","Cover":"Alan_Wake_II_cover.jpg"}}]}`)
 		case "query":
+			if r.URL.Query().Get("prop") == "revisions" {
+				_, _ = fmt.Fprint(w, `{"query":{"pages":[{"title":"Alan Wake II","revisions":[{"slots":{"main":{"content":"{{Infobox game\n|cover = Alan_Wake_II_cover.jpg\n}}\n"}}}]}]}}`)
+				return
+			}
 			fmt.Fprintf(w, `{"query":{"pages":{"1":{"imageinfo":[{"thumburl":%q,"thumbwidth":600}]}}}}`, srv.URL+"/thumb/aw2.jpg")
 		}
 	})
@@ -433,6 +434,232 @@ func TestCoverPCGWByTitleWhenNoSteam(t *testing.T) {
 func pcgwForCoversTest(t *testing.T, srv *httptest.Server) *pcgw.Client {
 	t.Helper()
 	return pcgw.NewWithBaseURL(srv.Client(), t.TempDir(), srv.URL, "test")
+}
+
+// sgdbForCoversTest returns a SteamGridDB client against the fake server.
+func sgdbForCoversTest(t *testing.T, srv *httptest.Server) *sgdb.Client {
+	t.Helper()
+	return sgdb.NewWithBaseURL(srv.Client(), t.TempDir(), "test-key", srv.URL, "test")
+}
+
+// fakeSGDB wires the SGDB endpoints of a fake server: the steam-appid
+// mapping, autocomplete, and grid list for one known game.
+type fakeSGDB struct {
+	steamAppID       string
+	gameID           int64
+	gameName         string
+	gridHits         int
+	autocompleteHits int
+}
+
+func (f *fakeSGDB) handle(srv **httptest.Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/games/steam/"):
+			if strings.HasSuffix(r.URL.Path, "/"+f.steamAppID) {
+				fmt.Fprintf(w, `{"success":true,"data":{"id":%d,"name":%q}}`, f.gameID, f.gameName)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = fmt.Fprint(w, `{"success":false,"errors":["Not found"]}`)
+		case strings.HasPrefix(r.URL.Path, "/search/autocomplete/"):
+			f.autocompleteHits++
+			fmt.Fprintf(w, `{"success":true,"data":[{"id":%d,"name":%q}]}`, f.gameID, f.gameName)
+		case strings.HasPrefix(r.URL.Path, "/grids/game/"):
+			f.gridHits++
+			fmt.Fprintf(w, `{"success":true,"data":[{"id":1,"score":9,"url":%q}]}`, (*srv).URL+"/grid/x.png")
+		}
+	}
+}
+
+// SGDB grid art fills the gap when Steam's CDN has no art for the appid
+// (unreleased/asset-less games like WARDOGS) — and wins over the
+// landscape hero banner, which is the last resort (issue 024).
+func TestCoverSGDBWhenCDNHasNoArt(t *testing.T) {
+	mux := http.NewServeMux()
+	var srv *httptest.Server
+	f := fakeSGDB{steamAppID: "1867240", gameID: 55, gameName: "WARDOGS"}
+	mux.HandleFunc("/steam/apps/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "library_hero.jpg") {
+			_, _ = w.Write([]byte("HEROART"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	mux.HandleFunc("/games/steam/", f.handle(&srv))
+	mux.HandleFunc("/search/autocomplete/", f.handle(&srv))
+	mux.HandleFunc("/grids/game/", f.handle(&srv))
+	mux.HandleFunc("/grid/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("SGDBART"))
+	})
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+	c.SGDB = sgdbForCoversTest(t, srv)
+
+	p, err := c.Cover(context.Background(), "1867240", "WARDOGS")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	data, _ := os.ReadFile(p)
+	if string(data) != "SGDBART" {
+		t.Errorf("cover = %q, want the SGDB grid, not the hero banner", string(data))
+	}
+	if !strings.HasSuffix(p, "1867240.img") {
+		t.Errorf("path = %q, want the appid-keyed image", p)
+	}
+}
+
+// The SGDB name search is alias-aware: its top hit binds under a scoped
+// subset rule even when the strict scorer rejects it — a folder named
+// "The Witcher 3 Remastered" (no subtitle) resolves to The Witcher 3:
+// Wild Hunt's grid (issue 024).
+func TestCoverSGDBNameSubsetAccepts(t *testing.T) {
+	mux := http.NewServeMux()
+	var srv *httptest.Server
+	f := fakeSGDB{steamAppID: "0", gameID: 52, gameName: "The Witcher 3: Wild Hunt"}
+	mux.HandleFunc("/api/storesearch/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"items":[]}`)
+	})
+	mux.HandleFunc("/games/steam/", f.handle(&srv))
+	mux.HandleFunc("/search/autocomplete/", f.handle(&srv))
+	mux.HandleFunc("/grids/game/", f.handle(&srv))
+	mux.HandleFunc("/grid/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("SGDBART"))
+	})
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+	c.SGDB = sgdbForCoversTest(t, srv)
+
+	p, err := c.Cover(context.Background(), "", "The Witcher 3 Remastered")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	data, _ := os.ReadFile(p)
+	if string(data) != "SGDBART" {
+		t.Errorf("cover = %q, want the SGDB grid via the subset rule", string(data))
+	}
+}
+
+// The subset rule refuses when the hit adds a numeral: "Frostpunk" must
+// not pick up Frostpunk 2's art (the same guard as the strict scorer).
+func TestCoverSGDBNameRejectsNewNumeral(t *testing.T) {
+	mux := http.NewServeMux()
+	var srv *httptest.Server
+	f := fakeSGDB{steamAppID: "0", gameID: 77, gameName: "Frostpunk 2"}
+	mux.HandleFunc("/api/storesearch/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"items":[]}`)
+	})
+	mux.HandleFunc("/games/steam/", f.handle(&srv))
+	mux.HandleFunc("/search/autocomplete/", f.handle(&srv))
+	mux.HandleFunc("/grids/game/", f.handle(&srv))
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+	c.SGDB = sgdbForCoversTest(t, srv)
+
+	p, err := c.Cover(context.Background(), "", "Frostpunk")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	if !strings.HasSuffix(p, "_placeholder.png") {
+		t.Errorf("path = %q, want placeholder (Frostpunk must not bind Frostpunk 2's art)", p)
+	}
+	if f.gridHits != 0 {
+		t.Errorf("grids fetched %d times despite the numeral guard", f.gridHits)
+	}
+}
+
+// A configured-but-unknown appid falls through to the alias-aware name
+// search: SGDB has no /games/steam mapping (404) but autocomplete still
+// resolves the title (issue 024).
+func TestCoverSGDBAppIDUnknownFallsToName(t *testing.T) {
+	mux := http.NewServeMux()
+	var srv *httptest.Server
+	f := fakeSGDB{steamAppID: "0", gameID: 55, gameName: "WARDOGS"}
+	mux.HandleFunc("/steam/apps/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	mux.HandleFunc("/games/steam/", f.handle(&srv))
+	mux.HandleFunc("/search/autocomplete/", f.handle(&srv))
+	mux.HandleFunc("/grids/game/", f.handle(&srv))
+	mux.HandleFunc("/grid/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("SGDBART"))
+	})
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+	c.SGDB = sgdbForCoversTest(t, srv)
+
+	p, err := c.Cover(context.Background(), "999999", "WARDOGS")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	data, _ := os.ReadFile(p)
+	if string(data) != "SGDBART" {
+		t.Errorf("cover = %q, want the SGDB grid via the name fallback", string(data))
+	}
+	if f.autocompleteHits == 0 {
+		t.Error("autocomplete never ran behind the unknown appid")
+	}
+}
+
+// The wiki's opensearch ranks loosely: an unacceptable first hit must not
+// bury an exact-match later hit — every candidate is scored and the best
+// accepted one binds (issue 024).
+func TestCoverPCGWPicksBestScoredHit(t *testing.T) {
+	mux := http.NewServeMux()
+	var srv *httptest.Server
+	mux.HandleFunc("/api/storesearch/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"items":[]}`)
+	})
+	mux.HandleFunc("/steam/apps/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	mux.HandleFunc("/w/api.php", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("action") {
+		case "opensearch":
+			_, _ = fmt.Fprint(w, `["The Witcher 3 Remastered",["The Witcher 3: Wild Hunt: Remastered","The Witcher 3 Remastered"],["",""],["u1","u2"]]`)
+		case "query":
+			if r.URL.Query().Get("prop") == "revisions" {
+				switch r.URL.Query().Get("titles") {
+				case "The Witcher 3 Remastered":
+					_, _ = fmt.Fprint(w, `{"query":{"pages":[{"title":"The Witcher 3 Remastered","revisions":[{"slots":{"main":{"content":"{{Infobox game\n|cover = W3R_exact_cover.jpg\n}}\n"}}}]}]}}`)
+				default:
+					_, _ = fmt.Fprint(w, `{"query":{"pages":[{"title":"X","revisions":[{"slots":{"main":{"content":"{{Infobox game\n|cover = WRONG_cover.jpg\n}}\n"}}}]}]}}`)
+				}
+				return
+			}
+			if strings.Contains(r.URL.RawQuery, "W3R_exact_cover.jpg") {
+				fmt.Fprintf(w, `{"query":{"pages":{"1":{"imageinfo":[{"thumburl":%q,"thumbwidth":600}]}}}}`, srv.URL+"/thumb/w3r.jpg")
+				return
+			}
+			fmt.Fprintf(w, `{"query":{"pages":{"1":{"imageinfo":[{"thumburl":%q,"thumbwidth":600}]}}}}`, srv.URL+"/thumb/wrong.jpg")
+		}
+	})
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	mux.HandleFunc("/thumb/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "w3r") {
+			_, _ = w.Write([]byte("PCGWART"))
+			return
+		}
+		_, _ = w.Write([]byte("WRONGART"))
+	})
+	c := NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+	c.PCGW = pcgwForCoversTest(t, srv)
+
+	p, err := c.Cover(context.Background(), "", "The Witcher 3 Remastered")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	data, _ := os.ReadFile(p)
+	if string(data) != "PCGWART" {
+		t.Errorf("cover = %q, want the exact-match page's art, not the first hit's", string(data))
+	}
 }
 
 // The wiki's thumbnail host rejects requests without a descriptive

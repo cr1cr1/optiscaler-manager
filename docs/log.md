@@ -3673,3 +3673,47 @@ opens the restore menu of local backup sets.
   fails; all restored to green.
 - Verification: `go test ./...` (29 packages) exit 0, `go vet`/`gofmt`
   clean, `GOOS=windows`/`darwin go build ./...` OK.
+
+## 2026-10-07 — issue 24: poster pipeline repair + SteamGridDB art source
+
+User report: well-known games without posters — "The Witcher 3
+Remastered", "End of Abyss" (both manual scan-dir), "Wardogs" (Steam).
+Live probing found three independent root causes:
+
+- **PCGW's Cargo API is dead for anonymous clients** (HTTP 200 +
+  `permissiondenied` envelope) — and `get()` decoded that as "empty
+  results", caching it as a 30-day negative (~110 poisoned files on the
+  reporter's machine). Repair: `CoverFile` parses the infobox
+  `|cover = X` from page wikitext (`prop=revisions&formatversion=2`);
+  `get()` detects error envelopes and returns `ErrAPI` (live, never
+  cached); the cache-key hash gains a `v2:` prefix so every pre-fix
+  entry is orphaned (clean break, legacy files deletable by hand).
+  `TitleBySteamAppID` is deleted — the anonymous API has no appid
+  reverse lookup left (SMW retired 2022, `insource:` indexes nothing).
+- **`SearchTitle` → `SearchTitles`**: opensearch's first hit is not
+  always right; all hits are scored via the new `gid.BestAccepted`
+  (highest-scoring acceptable wins) in both `covers.fromPCGW` and
+  `ui.identifyRow`.
+- **New `internal/sgdb` client** (SteamGridDB API v2, Bearer key from
+  the new `steamgriddb_key` settings field — JSON-edited only, the
+  TitleOverrides precedent; empty = disabled). Chain positions in
+  `covers.Cover`: CDN 600x900 → SGDB by appid → PCGW → hero (appid
+  path); steam search → CDN → SGDB by name → PCGW (name path).
+  `success:false` bodies and non-200 statuses are `ErrAPI` (live, never
+  cached); 404/empty are cached negatives (30d).
+- **SGDB name acceptance (scoped subset rule)**: the alias-aware top
+  autocomplete hit binds when `gid.Accept` passes OR the candidate's
+  normalized tokens ⊆ the hit's with no new numeral tokens
+  ("the witcher 3" ⊆ "the witcher 3 wild hunt" ✓; "frostpunk" ⊄
+  "frostpunk 2" ✗). Covers only — identification and the global scorer
+  are untouched (a wrong cover is tolerable, a wrong identity is not).
+- Fixes per reported game: "End of Abyss" → PCGW repair (verified live
+  end to end: opensearch → wikitext cover → 600×900 JPEG downloads).
+  "Wardogs" (1867240, no art on ANY Steam CDN host) → SGDB grid.
+  "The Witcher 3 Remastered" → SGDB subset rule; without a key, the
+  documented `title_overrides` workaround.
+- ATDD reds witnessed: Slice A — pcgw/gid compile red + covers fake-server
+  failures; Slice B — sgdb/covers/settings compile red. Unit-level red
+  also caught the regex `\s` eating the next infobox line.
+- Verification: `go test ./...` (30 packages) exit 0, `go vet`/`gofmt`
+  clean, `GOOS=windows`/`darwin go build ./...` OK.

@@ -120,11 +120,14 @@ Added after v0.1, modeled on the reference client's main window:
 - **Cover-art card grid** (default view) with list view toggle. Cards:
   cover, platform pill, installed badge, EAC badge, status badges, tech
   pills, quick-install toggle.
-- **Covers**: Steam CDN `library_600x900.jpg` by appid (primary) → Steam
+- **Covers**: Steam CDN `library_600x900.jpg` by appid (primary) →
+  SteamGridDB grid (when `steamgriddb_key` is set in settings.json) →
+  PCGamingWiki box art (keyless: opensearch + wikitext infobox) → Steam
   store search (name→appid, zero-key fallback) → generated placeholder.
   Cached on disk by sanitized appid. (Ecosystem-verified keyless pattern:
   Lutris and Heroic use the same Steam CDN primary; Bottles uses a private
-  SteamGridDB proxy, not copyable.)
+  SteamGridDB proxy, not copyable — we call SteamGridDB directly with the
+  user's own free API key, issue 024.)
 - **Bundle cache**: OptiScaler bundles at
   `$XDG_CACHE_HOME/optiscaler-manager/optiscaler/<version>/` (default
   `~/.cache/...`), reused before any download (`OM_CACHE_DIR` overrides).

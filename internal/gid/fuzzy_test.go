@@ -86,3 +86,25 @@ func TestAccept(t *testing.T) {
 		}
 	}
 }
+
+// BestAccepted picks the highest-scoring acceptable candidate, not the
+// first: a loosely-ranked first hit ("The Witcher 3: Wild Hunt:
+// Remastered" for a "The Witcher 3 Remastered" query) must not bury the
+// exact-match later hit (issue 024).
+func TestBestAccepted(t *testing.T) {
+	cases := []struct {
+		cand  string
+		names []string
+		want  string
+	}{
+		{"The Witcher 3 Remastered", []string{"The Witcher 3: Wild Hunt: Remastered", "The Witcher 3 Remastered"}, "The Witcher 3 Remastered"},
+		{"pathologic", []string{"Pathologic 2", "Pathologic"}, "Pathologic"},
+		{"AC Shadows", []string{"Shadows on the Vatican - Act II: Wrath", "Incredible Dracula: Academy of Shadows"}, ""},
+		{"nothing acceptable", nil, ""},
+	}
+	for _, tc := range cases {
+		if got := BestAccepted(tc.cand, tc.names, true); got != tc.want {
+			t.Errorf("BestAccepted(%q, %v) = %q, want %q", tc.cand, tc.names, got, tc.want)
+		}
+	}
+}

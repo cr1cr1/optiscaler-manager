@@ -80,17 +80,27 @@ internal/
               EAC check; ctx cancel at phase boundaries
               (cleanup under context.WithoutCancel)
   profile/    curated OptiScaler.ini writer
-  covers/     cover art: Steam CDN by appid → PCGW → hero image → scored
-              title search (best candidate, PC tie-break) → placeholder;
-              disk cache plus a 7-day `.miss` negative marker that skips
-              only the CDN retry, never the title search
+  covers/     cover art: Steam CDN by appid → SGDB grid (when a key is
+              configured) → PCGW box art → hero image → scored title
+              search (best candidate, PC tie-break) → placeholder; disk
+              cache plus a 7-day `.miss` negative marker that skips only
+              the CDN retry, never the title search. The SGDB name search
+              binds via a scoped subset rule (candidate tokens ⊆ hit, no
+              new numerals) — covers only, never identification
   steam/      title → appid lookup (steamcommunity.com SearchApps; 30d TTL
               disk cache, no auth)
   protondb/   appid → compatibility tier (protondb.com summaries API; 7d
               TTL disk cache, 429 cooldown)
   pcgw/       PCGamingWiki secondary title source (keyless MediaWiki API:
-              opensearch + Cargo reverse lookup; 30 req/min pacing,
-              429/5xx cooldown, 30d disk cache with negatives)
+              opensearch title search, infobox cover from page wikitext,
+              imageinfo thumbnails; the anonymous-restricted Cargo API is
+              not used, and HTTP-200 error envelopes are live errors,
+              never cached; 30 req/min pacing, 429/5xx cooldown, 30d disk
+              cache with negatives, v2 cache namespace)
+  sgdb/       SteamGridDB grid art (API v2, Bearer key from settings):
+              steam-appid → game, alias-aware autocomplete, 600x900 grid
+              URL; 30d disk cache with negatives, success:false bodies are
+              live errors, never cached
   jsoncache/  shared JSON state-file helpers for the API client caches
               (generic Read/Write, 429/5xx cooldown markers); used by
               steam/, protondb/, and the steam store caches
