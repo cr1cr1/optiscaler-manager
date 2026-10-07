@@ -40,4 +40,4 @@ Done. TDD red witnessed as build failure on the new tests (undefined
 aside for the verification run — they are not part of this commit).
 Deferred: no TUI key binding (the request was a GUI button); no
 click-through GUI test (no headless click harness for panel buttons —
-same coverage level as OpenINI). Commit: see git log.
+same coverage level as OpenINI). Commit: 9e99e62.
