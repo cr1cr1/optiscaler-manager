@@ -55,6 +55,7 @@ type model struct {
 	cardRect            Rect                          // screen rect of the last rendered card (hover test seam)
 	cardBtnRect         Rect                          // screen rect of the card's first button (click routing test seam)
 	versionPillRowRect  Rect                          // screen rect of the last rendered version pill row, card or detail panel (pill wrap test seam)
+	techPillRowRect     Rect                          // screen rect of the last rendered tech badge row, card or detail panel (tech pill parity test seam)
 	dlssUpdateRect      Rect                          // screen rect of the DLSS update area (click routing test seam)
 	dlssArrowRect       Rect                          // screen rect of the DLSS restore-menu arrow (click routing test seam)
 	dlssUpdateID        ContainerId                   // container id of the DLSS update area (hover-exclusion seam)

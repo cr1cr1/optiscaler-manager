@@ -3522,3 +3522,42 @@ opens the restore menu of local backup sets.
 - Test-only change; the streamed-rows design of 014 is untouched.
 - Verification: three consecutive `internal/gui` runs green, full
   `go test ./...` (29 packages) exit 0, `go vet`/`gofmt` clean.
+
+## 2026-10-07 — issue 17: DLSS update/restore proceeds when DLLs are missing
+
+- Switching DLSS versions failed hard when any current NVIDIA DLL was
+  absent: `dlss.Update`/`Restore` hard-gated on `requireFiles` and
+  `backup` errored the same way. The current DLLs only feed the pre-op
+  rollback backup, and snapshots are all-or-nothing — so an incomplete
+  set now logs a warning and the op proceeds WITHOUT a backup,
+  installing/restoring the complete target set (missing members
+  included). Complete-set behavior is unchanged.
+- `backupIfComplete` (internal/dlss) centralizes the decision; the zero
+  `Snapshot` it returns neutralizes the rollback-on-failure leg.
+  `requireFiles` survives as the `Complete` pill gate.
+- TDD: red witnessed (`dlss: nvngx_dlssd.dll is missing` from both ops;
+  TUI timeout waiting for the update), then green. Flipped tests:
+  `TestUpdateInstallsWhenCurrentDLLsMissing`,
+  `TestRestoreInstallsWhenCurrentDLLsMissing`,
+  `TestUpdateDLSSMissingDLLProceeds`,
+  `TestTUIDetailUpdateDLSSInstallsOverMissing`.
+- Restore confirmation copy updated ("A complete current set is backed
+  up first"); stale "never adds a missing DLL" comments fixed in
+  internal/ui/dlss.go, cmd/dlss.go, docs/scope.md, docs/architecture.md.
+- Verification: `go test ./...` (29 packages) exit 0, `go vet`/`gofmt`
+  clean.
+
+## 2026-10-07 — issue 17: tech badge pills deduplicated; card/pane parity
+
+- After 015 made every pill row fully visible, the card's tech badge row
+  showed duplicates of the component pills (`DLSS` next to `DLSS 3.7.20`)
+  and the detail pane had no tech row at all.
+- Both surfaces now render `techPills`: tech badges minus the ones a
+  component pill already covers (prefix-with-space match; `DLSSG` does
+  not drop `DLSS`). The pane gained the tech badge row; the card-height
+  estimator uses the same filtered set.
+- TDD: red witnessed (undefined techPills/seam), then green. Gotcha
+  recorded: the virtualized panel culls rows below the fold, so the
+  parity test renders at 900x800 to keep the tech row visible.
+- Verification: full `go test ./...` (29 packages) exit 0,
+  `go vet`/`gofmt` clean; before/after headless renders eyeballed.

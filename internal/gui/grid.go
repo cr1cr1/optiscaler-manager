@@ -188,10 +188,12 @@ func (m *model) componentPillW(e *ui.GameRow, label string) float32 {
 	return pillLabelW(label)
 }
 
-// techBadgeWidths estimates the tech badge row's pill widths.
+// techBadgeWidths estimates the tech badge row's pill widths (the filtered,
+// deduplicated set the card actually renders).
 func techBadgeWidths(e *ui.GameRow) []float32 {
-	ws := make([]float32, 0, len(e.TechBadges))
-	for _, b := range e.TechBadges {
+	pills := techPills(e)
+	ws := make([]float32, 0, len(pills))
+	for _, b := range pills {
 		ws = append(ws, pillLabelW(b.Label))
 	}
 	return ws
@@ -354,6 +356,7 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 	cardW, cardH := m.cardW, m.cardH
 	coverW := float32(cardW - 2*cardPad)
 	m.tierPillRect = Rect{}
+	m.techPillRowRect = Rect{}
 	m.ddTriggerID = nil
 	m.ddFocusRing = false
 	m.cardRingOnDir = ""
@@ -497,9 +500,10 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 		if m.cardDDTrigger != nil && m.ddTriggerID != nil {
 			m.cardDDTrigger[e.InstallDir] = m.ddTriggerID
 		}
-		if len(e.TechBadges) > 0 {
+		if pills := techPills(&e); len(pills) > 0 {
 			Container(Attrs(Row, Wrap, Gap(cardGapH)), func() {
-				for _, b := range e.TechBadges {
+				m.techPillRowRect = GetScreenRectOf(CurrentId())
+				for _, b := range pills {
 					badgePill(b.Label, b.Tone)
 				}
 			})

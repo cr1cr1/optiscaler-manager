@@ -379,6 +379,9 @@ func (m *model) detailPanel() {
 	}
 	panelW := detailPanelWidth(GetHost().WindowSize[0])
 	m.openINIRect = Rect{}
+	// The grid rendered first and captured its own tech row; the panel owns
+	// the seam while open so a missing panel row reads as zero.
+	m.techPillRowRect = Rect{}
 	// Viewport on a Row child absorbs leftover main-axis space, defeating
 	// FixWidth — the scrollable column nests inside the fixed-width shell.
 	Container(Attrs(FixWidth(panelW), Expand, BackgroundVec(bgPanel)), func() {
@@ -441,6 +444,16 @@ func (m *model) detailPanel() {
 					}
 					for _, p := range pills[start:] {
 						m.componentPill(e, p)
+					}
+				})
+			}
+			// Tech badges mirror the card: the same deduplicated set
+			// (techPills), so card and detail pane always show identical pills.
+			if pills := techPills(e); len(pills) > 0 {
+				Container(Attrs(Row, Wrap, Gap(sp4)), func() {
+					m.techPillRowRect = GetScreenRectOf(CurrentId())
+					for _, b := range pills {
+						badgePill(b.Label, b.Tone)
 					}
 				})
 			}

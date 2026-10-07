@@ -620,6 +620,32 @@ func versionPills(e *ui.GameRow) []ui.Badge {
 	return out
 }
 
+// techPills returns the row's tech badges minus any that duplicate a
+// component pill: a component pill ("DLSS 3.7.20") already names the tech
+// AND its version, so the bare tech badge ("DLSS") adds nothing. Cards and
+// the detail panel both render this filtered set, keeping their pill rows
+// identical. Badges with no matching component stay — they are real
+// information (detected tech with no installed component).
+func techPills(e *ui.GameRow) []ui.Badge {
+	if len(e.TechBadges) == 0 {
+		return nil
+	}
+	out := make([]ui.Badge, 0, len(e.TechBadges))
+	for _, b := range e.TechBadges {
+		dup := false
+		for _, c := range e.Components {
+			if c == b.Label || strings.HasPrefix(c, b.Label+" ") {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
 // componentTone colors a versioned component pill like its tech badge.
 func componentTone(label string) ui.Tone {
 	switch {
