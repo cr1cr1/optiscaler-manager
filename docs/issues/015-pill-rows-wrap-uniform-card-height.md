@@ -59,4 +59,4 @@ TDD: compile-red witnessed (undefined helpers/seam), then behavioral red
 vet/gofmt clean. Development overlapped issue 014 (progressive scan
 rendering) landing in the same tree; 014's committed regressions in the
 GUI tests blocked this issue's green-gate commit and were fixed as issue
-016. Commit hash pinned in a follow-up commit.
+016. Commit `ba51a87`.

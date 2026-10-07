@@ -45,4 +45,4 @@ seedExternalPanelSession, TestGrid_TabOrderCardThenInnerItems,
 TestListRows_DoNotOverlap, the sort test); the two `Select`-wait loops in
 dropdown_test.go drain every tick. Verified: three consecutive
 `internal/gui` runs green, then full `go test ./...` (29 packages) exit 0;
-vet/gofmt clean. Commit hash pinned in a follow-up commit.
+vet/gofmt clean. Commit `6233e4f`.
