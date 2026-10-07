@@ -107,7 +107,7 @@ func TestDLSSRestoreCommandRestoresSnapshot(t *testing.T) {
 	if err := (&DLSSUpdateCmd{Path: gameRoot}).Run(d); err != nil {
 		t.Fatalf("update leg: %v", err)
 	}
-	snaps, serr := app.DLSSSnapshots(d.DataRoot, gameRoot)
+	snaps, serr := app.DLSSSnapshots(gameRoot)
 	if serr != nil {
 		t.Fatalf("list DLSS snapshots: %v", serr)
 	}
@@ -143,7 +143,7 @@ func TestDLSSRestoreCommandDeclinedNonInteractive(t *testing.T) {
 	if err := (&DLSSUpdateCmd{Path: gameRoot}).Run(d); err != nil {
 		t.Fatalf("update leg: %v", err)
 	}
-	snaps, serr := app.DLSSSnapshots(d.DataRoot, gameRoot)
+	snaps, serr := app.DLSSSnapshots(gameRoot)
 	if serr != nil {
 		t.Fatalf("list DLSS snapshots: %v", serr)
 	}

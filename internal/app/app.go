@@ -373,19 +373,16 @@ func ComponentVersions(dir string) (map[string]string, string) {
 }
 
 // dlssLabel is the DLSS pill text: the DLL's RAW version in NVIDIA's tag
-// form (one trailing ".0" trimmed), not the vendored marketing name.
+// form (one trailing ".0" trimmed — the rule lives in dlss.TagVersion),
+// not the vendored marketing name.
 // NVIDIA reuses one marketing name for many DLL versions (310.5.0, 310.5.3
 // and 310.6.0 are all "DLSS 4.5") and the vendored map lags the newest
 // releases, so a marketing label cannot reflect a version switch (issue
 // 019: restoring an older backup left the pill unchanged). The restore
 // menu and the update target already speak raw versions — now the pill
-// does too. The dot guard keeps a two-part raw ("3.7" — no trailer to
-// trim) from degenerating.
+// does too.
 func dlssLabel(raw string) string {
-	if t := strings.TrimSuffix(raw, ".0"); strings.Contains(t, ".") {
-		raw = t
-	}
-	return "DLSS " + raw
+	return "DLSS " + dlss.TagVersion(raw)
 }
 
 func peverKind(k domain.Kind) (pever.Kind, bool) {

@@ -565,8 +565,10 @@ decisions the per-version sections above do not cover.
   app versions are invalidated (schema 6) so the new row fields are
   always present.
 - **Snapshot backups + restore menu**: every update and restore first
-  persists a hash-verified snapshot of the current set under
-  `<data-root>/dlss-backups/`; the pill's shared dropdown arrow lists
+  persists a hash-verified snapshot of the current set inside the game
+  directory itself (`dlss-backups/<timestamp>_dlss-<version>/`, issue
+  022 — backups travel with the game folder and can be recovered by
+  hand); the pill's shared dropdown arrow lists
   them (newest first) through the same dropdown machinery as the version
   picker (v0.14i: the focused arrow trigger drives Down/Up/Enter
   highlight navigation, hover adopts on motion, Esc/click-outside

@@ -433,7 +433,7 @@ func TestTUIGamesKeyUpdateDLSS(t *testing.T) {
 // not block the update — it warns (log), installs the missing members with
 // the rest, and writes no backup of the incomplete set.
 func TestTUIDetailUpdateDLSSInstallsOverMissing(t *testing.T) {
-	sess, root, bin := dlssEnv(t)
+	sess, _, bin := dlssEnv(t)
 	if err := os.Remove(filepath.Join(bin, "nvngx_dlssg.dll")); err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +448,7 @@ func TestTUIDetailUpdateDLSSInstallsOverMissing(t *testing.T) {
 		}
 		return true
 	})
-	if _, err := os.Stat(filepath.Join(root, "settings", "dlss-backups")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(bin, "dlss-backups")); !os.IsNotExist(err) {
 		t.Errorf("backup-less update must not create backups (stat err %v)", err)
 	}
 }

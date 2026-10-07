@@ -85,7 +85,10 @@ func DirFiles(dir string) []File {
 			return nil
 		}
 		if d.IsDir() {
-			if d.Name() == ".git" {
+			// .git is noise; dlss-backups is optiscaler-manager's own
+			// in-game DLSS rollback store (issue 022) — its stale copies
+			// are not active game components.
+			if d.Name() == ".git" || d.Name() == "dlss-backups" {
 				return filepath.SkipDir
 			}
 			return nil

@@ -11,32 +11,33 @@ import (
 // resolved injection directory. It never installs a missing runtime DLL.
 // Downloads are cached per commit under cacheRoot; commitHint, when its
 // cache dir is complete (the startup check's published commit already
-// fetched), installs from the cache with zero network.
-func UpdateDLSS(ctx context.Context, client *dlss.Client, cacheRoot, dataRoot, gameRoot, commitHint string) (dlss.Snapshot, error) {
+// fetched), installs from the cache with zero network. Rollback backups
+// live in the game directory itself (dlss-backups/).
+func UpdateDLSS(ctx context.Context, client *dlss.Client, cacheRoot, gameRoot, commitHint string) (dlss.Snapshot, error) {
 	dir, err := resolveInjectionDir(gameRoot)
 	if err != nil {
 		return dlss.Snapshot{}, err
 	}
-	return dlss.Update(ctx, client, cacheRoot, dataRoot, dir, commitHint)
+	return dlss.Update(ctx, client, cacheRoot, dir, commitHint)
 }
 
 // RestoreDLSS restores a complete prior NVIDIA runtime set into a game's
 // resolved injection directory.
-func RestoreDLSS(ctx context.Context, dataRoot, gameRoot, snapshotID string) (dlss.Snapshot, error) {
+func RestoreDLSS(ctx context.Context, gameRoot, snapshotID string) (dlss.Snapshot, error) {
 	dir, err := resolveInjectionDir(gameRoot)
 	if err != nil {
 		return dlss.Snapshot{}, err
 	}
-	return dlss.Restore(ctx, dataRoot, dir, snapshotID)
+	return dlss.Restore(ctx, dir, snapshotID)
 }
 
 // DLSSSnapshots lists complete prior NVIDIA runtime sets for a game.
-func DLSSSnapshots(dataRoot, gameRoot string) ([]dlss.Snapshot, error) {
+func DLSSSnapshots(gameRoot string) ([]dlss.Snapshot, error) {
 	dir, err := resolveInjectionDir(gameRoot)
 	if err != nil {
 		return nil, err
 	}
-	return dlss.Snapshots(dataRoot, dir)
+	return dlss.Snapshots(dir)
 }
 
 // resolveInjectionDir canonicalizes a game root and resolves its injection

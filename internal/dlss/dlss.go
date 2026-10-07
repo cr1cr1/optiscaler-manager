@@ -48,7 +48,8 @@ func NewWithBaseURLs(httpClient *http.Client, apiBase, rawBase string) *Client {
 	return &Client{http: httpClient, apiBase: strings.TrimRight(apiBase, "/"), rawBase: strings.TrimRight(rawBase, "/")}
 }
 
-// Snapshot is one complete, externally stored set of old NVIDIA DLL bytes.
+// Snapshot is one complete set of old NVIDIA DLL bytes, stored inside the
+// game directory itself (dlss-backups/<id>/).
 type Snapshot struct {
 	ID           string    `json:"id"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -92,11 +93,13 @@ type Latest struct {
 // current set is backed up first when it is complete; a partial or absent
 // current set only warns and the update proceeds WITHOUT a rollback
 // backup (snapshots are all-or-nothing, so an incomplete set has no
-// rollback value). A failed replacement restores every original when a
-// backup exists. Downloads are cached per commit under cacheRoot (same
-// layout as the OptiScaler bundle cache — fetch once per version — plus a
-// SHA-256 manifest).
-func Update(ctx context.Context, c *Client, cacheRoot, dataRoot, gameDir, commitHint string) (Snapshot, error) {
+// rollback value). Backups live inside the game directory itself
+// (dlss-backups/<timestamp>_dlss-<version>/), next to the DLLs they
+// protect. A failed replacement restores every original when a backup
+// exists. Downloads are cached per commit under cacheRoot (same layout as
+// the OptiScaler bundle cache — fetch once per version — plus a SHA-256
+// manifest).
+func Update(ctx context.Context, c *Client, cacheRoot, gameDir, commitHint string) (Snapshot, error) {
 	if c == nil {
 		return Snapshot{}, fmt.Errorf("dlss: no download client")
 	}
@@ -133,19 +136,19 @@ func Update(ctx context.Context, c *Client, cacheRoot, dataRoot, gameDir, commit
 	if applied, err := pever.FileVersion(filepath.Join(gameDir, Files[0])); err == nil && version.Compare(applied, targetVersion) >= 0 {
 		return Snapshot{}, &AlreadyLatestError{Version: applied}
 	}
-	snap, err := backupIfComplete(dataRoot, gameDir, commit)
+	snap, err := backupIfComplete(gameDir, commit)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	for _, name := range Files {
 		if err := ctx.Err(); err != nil {
-			if rerr := restoreFiles(dataRoot, gameDir, snap); rerr != nil {
+			if rerr := restoreFiles(gameDir, snap); rerr != nil {
 				return Snapshot{}, errors.Join(err, rerr)
 			}
 			return Snapshot{}, err
 		}
 		if _, err := copyHashed(filepath.Join(cached, name), filepath.Join(gameDir, name)); err != nil {
-			if rerr := restoreFiles(dataRoot, gameDir, snap); rerr != nil {
+			if rerr := restoreFiles(gameDir, snap); rerr != nil {
 				return Snapshot{}, errors.Join(err, rerr)
 			}
 			return Snapshot{}, err
@@ -157,20 +160,20 @@ func Update(ctx context.Context, c *Client, cacheRoot, dataRoot, gameDir, commit
 // Restore backs up the current set first when it is complete (a partial or
 // absent current set only warns and the restore proceeds without a rollback
 // backup), then restores the chosen prior set.
-func Restore(ctx context.Context, dataRoot, gameDir, id string) (Snapshot, error) {
-	target, err := load(dataRoot, gameDir, id)
+func Restore(ctx context.Context, gameDir, id string) (Snapshot, error) {
+	target, err := load(gameDir, id)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	current, err := backupIfComplete(dataRoot, gameDir, "")
+	current, err := backupIfComplete(gameDir, "")
 	if err != nil {
 		return Snapshot{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return Snapshot{}, err
 	}
-	if err := restoreFiles(dataRoot, gameDir, target); err != nil {
-		if rerr := restoreFiles(dataRoot, gameDir, current); rerr != nil {
+	if err := restoreFiles(gameDir, target); err != nil {
+		if rerr := restoreFiles(gameDir, current); rerr != nil {
 			return Snapshot{}, errors.Join(err, rerr)
 		}
 		return Snapshot{}, err
@@ -179,8 +182,8 @@ func Restore(ctx context.Context, dataRoot, gameDir, id string) (Snapshot, error
 }
 
 // Snapshots returns prior sets newest first.
-func Snapshots(dataRoot, gameDir string) ([]Snapshot, error) {
-	dir := snapshotsDir(dataRoot, gameDir)
+func Snapshots(gameDir string) ([]Snapshot, error) {
+	dir := snapshotsDir(gameDir)
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -193,7 +196,7 @@ func Snapshots(dataRoot, gameDir string) ([]Snapshot, error) {
 		if !e.IsDir() {
 			continue
 		}
-		s, err := load(dataRoot, gameDir, e.Name())
+		s, err := load(gameDir, e.Name())
 		if err != nil {
 			// A partial backup (crash mid-copy) is never restorable; say so
 			// instead of silently dropping it.
@@ -508,16 +511,16 @@ func sameSet(gameDir, cacheDir string) bool {
 // backup — the operation still installs/restores the complete target set.
 // The zero Snapshot also neutralizes the caller's rollback-on-failure leg:
 // restoreFiles over zero files is a no-op.
-func backupIfComplete(dataRoot, gameDir, source string) (Snapshot, error) {
+func backupIfComplete(gameDir, source string) (Snapshot, error) {
 	if err := requireFiles(gameDir); err != nil {
 		log.Warn().Err(err).Str("gameDir", gameDir).
 			Msg("dlss: current set incomplete; proceeding without a rollback backup")
 		return Snapshot{}, nil
 	}
-	return backup(dataRoot, gameDir, source)
+	return backup(gameDir, source)
 }
 
-func backup(dataRoot, gameDir, source string) (Snapshot, error) {
+func backup(gameDir, source string) (Snapshot, error) {
 	// The current set is hashed first so a digest-identical prior snapshot
 	// can be reused untouched (update/restore ping-pong must not pile up
 	// duplicate ~115 MB dirs).
@@ -534,15 +537,15 @@ func backup(dataRoot, gameDir, source string) (Snapshot, error) {
 		}
 		current = append(current, File{Name: name, Version: v, SHA256: h})
 	}
-	if prior := identicalSnapshot(dataRoot, gameDir, current); prior.ID != "" {
+	if prior := identicalSnapshot(gameDir, current); prior.ID != "" {
 		return prior, nil
 	}
-	id := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
-	dir := filepath.Join(snapshotsDir(dataRoot, gameDir), id)
+	created := time.Now()
+	dir := snapshotDir(gameDir, current, created)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Snapshot{}, err
 	}
-	s := Snapshot{ID: id, CreatedAt: time.Now().UTC(), SourceCommit: source}
+	s := Snapshot{ID: filepath.Base(dir), CreatedAt: created.UTC(), SourceCommit: source}
 	for _, name := range Files {
 		path := filepath.Join(gameDir, name)
 		// ponytail: an unreadable version resource only degrades the menu
@@ -579,6 +582,44 @@ func backup(dataRoot, gameDir, source string) (Snapshot, error) {
 	return s, nil
 }
 
+// snapshotDir names a fresh snapshot directory for humans browsing the
+// game folder: local creation time plus the backed-up Super Resolution
+// version ("20261007-130914_dlss-310.9.1"), with a numeric suffix when the
+// same second already holds one. The version keeps the pill label's
+// trailing-".0" trim (issue 019); an unreadable version degrades to
+// "unknown" — the bytes are the backup, the name is only a label.
+func snapshotDir(gameDir string, current []File, now time.Time) string {
+	version := "unknown"
+	for _, f := range current {
+		if f.Name == Files[0] && f.Version != "" {
+			version = TagVersion(f.Version)
+			break
+		}
+	}
+	base := filepath.Join(snapshotsDir(gameDir),
+		now.Format("20060102-150405")+"_dlss-"+version)
+	dir := base
+	for n := 2; n < 100; n++ {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			return dir
+		}
+		dir = fmt.Sprintf("%s-%d", base, n)
+	}
+	return dir
+}
+
+// TagVersion renders a raw four-part PE version in tag form: a trailing
+// ".0" drops when a dotted remainder survives ("310.9.1.0" → "310.9.1";
+// the dot guard keeps a two-part raw like "3.7" from degenerating). This
+// is THE tag-form rule (issue 019) — the pill label and the snapshot
+// directory name both delegate here.
+func TagVersion(v string) string {
+	if t := strings.TrimSuffix(v, ".0"); strings.Contains(t, ".") {
+		return t
+	}
+	return v
+}
+
 // identicalSnapshot returns an existing snapshot whose members carry
 // exactly the current set's digests (zero value when none): update and
 // restore ping-pong reuses it instead of writing a duplicate backup. A
@@ -587,8 +628,8 @@ func backup(dataRoot, gameDir, source string) (Snapshot, error) {
 // ponytail: linear scan of the game's snapshot index per backup — the list
 // stays a handful of entries since dedup keeps it that way; index by
 // digest set if a user ever accumulates dozens.
-func identicalSnapshot(dataRoot, gameDir string, current []File) Snapshot {
-	prior, err := Snapshots(dataRoot, gameDir)
+func identicalSnapshot(gameDir string, current []File) Snapshot {
+	prior, err := Snapshots(gameDir)
 	if err != nil {
 		log.Warn().Err(err).Msg("dlss: snapshot index unreadable, writing a fresh backup")
 		return Snapshot{}
@@ -613,7 +654,7 @@ func identicalSnapshot(dataRoot, gameDir string, current []File) Snapshot {
 		}
 		usable := true
 		for _, f := range s.Files {
-			h, err := fileSHA256(filepath.Join(snapshotsDir(dataRoot, gameDir), s.ID, f.Name))
+			h, err := fileSHA256(filepath.Join(snapshotsDir(gameDir), s.ID, f.Name))
 			if err != nil || h != f.SHA256 {
 				usable = false
 				break
@@ -631,9 +672,9 @@ func identicalSnapshot(dataRoot, gameDir string, current []File) Snapshot {
 // SHA-verified against the snapshot record BEFORE the first copy, and a
 // record with a missing hash is refused: a tampered snapshot.json that
 // blanked its hashes must not bypass the gate.
-func restoreFiles(dataRoot, gameDir string, s Snapshot) error {
+func restoreFiles(gameDir string, s Snapshot) error {
 	for _, f := range s.Files {
-		path := filepath.Join(snapshotsDir(dataRoot, gameDir), s.ID, f.Name)
+		path := filepath.Join(snapshotsDir(gameDir), s.ID, f.Name)
 		h, err := fileSHA256(path)
 		if err != nil {
 			return err
@@ -643,7 +684,7 @@ func restoreFiles(dataRoot, gameDir string, s Snapshot) error {
 		}
 	}
 	for _, f := range s.Files {
-		if _, err := copyHashed(filepath.Join(snapshotsDir(dataRoot, gameDir), s.ID, f.Name), filepath.Join(gameDir, f.Name)); err != nil {
+		if _, err := copyHashed(filepath.Join(snapshotsDir(gameDir), s.ID, f.Name), filepath.Join(gameDir, f.Name)); err != nil {
 			return err
 		}
 	}
@@ -663,8 +704,8 @@ func fileSHA256(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func load(dataRoot, gameDir, id string) (Snapshot, error) {
-	data, err := os.ReadFile(filepath.Join(snapshotsDir(dataRoot, gameDir), id, "snapshot.json"))
+func load(gameDir, id string) (Snapshot, error) {
+	data, err := os.ReadFile(filepath.Join(snapshotsDir(gameDir), id, "snapshot.json"))
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("dlss: load snapshot: %w", err)
 	}
@@ -678,12 +719,11 @@ func load(dataRoot, gameDir, id string) (Snapshot, error) {
 	return s, nil
 }
 
-func snapshotsDir(dataRoot, gameDir string) string {
-	return filepath.Join(dataRoot, "dlss-backups", snapshotGameID(gameDir))
-}
-func snapshotGameID(gameDir string) string {
-	sum := sha256.Sum256([]byte(filepath.Clean(gameDir)))
-	return hex.EncodeToString(sum[:])[:16]
+// snapshotsDir is the game's own rollback store: the backup lives next to
+// the DLLs it protects, travels with the folder when the game moves, and
+// is visible to a user recovering files by hand (issue 022).
+func snapshotsDir(gameDir string) string {
+	return filepath.Join(gameDir, "dlss-backups")
 }
 
 func copyHashed(src, dest string) (string, error) {

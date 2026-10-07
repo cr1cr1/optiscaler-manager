@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -41,7 +42,7 @@ func TestUpdateBacksUpAndReplacesAllNVIDIADLLs(t *testing.T) {
 	}))
 	defer server.Close()
 
-	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, root, game, "")
+	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, game, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,10 +54,72 @@ func TestUpdateBacksUpAndReplacesAllNVIDIADLLs(t *testing.T) {
 		if err != nil || v != "310.9.1.0" {
 			t.Fatalf("%s version %q, err=%v", name, v, err)
 		}
-		v, err = fileVersion(filepath.Join(root, "dlss-backups", snapshotGameID(game), snap.ID, name))
+		v, err = fileVersion(filepath.Join(game, "dlss-backups", snap.ID, name))
 		if err != nil || !strings.HasPrefix(v, "1.0.") {
 			t.Fatalf("backup %s version %q, err=%v", name, v, err)
 		}
+	}
+}
+
+// TestUpdateBacksUpIntoGameDir: the rollback backup lives in the game
+// directory itself (issue 022) — next to the DLLs it protects, where a
+// user browsing the folder can recover it by hand — never in the app's
+// central data root.
+func TestUpdateBacksUpIntoGameDir(t *testing.T) {
+	root := t.TempDir()
+	dataRoot := filepath.Join(root, "data")
+	game := filepath.Join(root, "game")
+	if err := os.MkdirAll(game, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seedGame(t, game, 1, 0)
+
+	sha := strings.Repeat("a", 40)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/repos/NVIDIA/DLSS/commits/main":
+			_, _ = w.Write([]byte(`{"sha":"` + sha + `"}`))
+		case strings.Contains(r.URL.Path, "/"+sha+"/lib/Windows_x86_64/rel/"):
+			_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, game, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range Files {
+		if _, err := os.Stat(filepath.Join(game, "dlss-backups", snap.ID, name)); err != nil {
+			t.Fatalf("backup %s not in the game dir: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(game, "dlss-backups", snap.ID, "snapshot.json")); err != nil {
+		t.Fatalf("snapshot record not in the game dir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dataRoot, "dlss-backups")); !os.IsNotExist(err) {
+		t.Fatalf("backup written outside the game dir (stat err %v)", err)
+	}
+}
+
+// TestBackupSnapshotIDNamesVersionAndTime: snapshot directories are named
+// for humans browsing the game folder (issue 022): local creation time
+// plus the backed-up Super Resolution version, e.g.
+// "20261007-130914_dlss-1.0.0".
+func TestBackupSnapshotIDNamesVersionAndTime(t *testing.T) {
+	_, game, snap := updatedGame(t)
+	id := snap.ID
+	if !regexp.MustCompile(`^\d{8}-\d{6}_dlss-1\.0\.0$`).MatchString(id) {
+		t.Fatalf("snapshot ID %q, want <YYYYMMDD-HHMMSS>_dlss-1.0.0", id)
+	}
+	entries, err := os.ReadDir(filepath.Join(game, "dlss-backups"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != id {
+		t.Fatalf("snapshot dirs %v, want exactly %q", entries, id)
 	}
 }
 
@@ -91,7 +154,7 @@ func TestUpdateReusesCachedCommitWithoutSecondDownload(t *testing.T) {
 	defer server.Close()
 	client := NewWithBaseURLs(server.Client(), server.URL, server.URL)
 
-	first, err := Update(context.Background(), client, cache, root, game, "")
+	first, err := Update(context.Background(), client, cache, game, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +171,7 @@ func TestUpdateReusesCachedCommitWithoutSecondDownload(t *testing.T) {
 	// and the installed set already matches the target — a graceful no-op
 	// (no refetch, no reinstall, no duplicate backup).
 	refuse = true
-	_, err = Update(context.Background(), client, cache, root, game, "")
+	_, err = Update(context.Background(), client, cache, game, "")
 	var already *AlreadyLatestError
 	if !errors.As(err, &already) || already.Version != "310.9.1.0" {
 		t.Fatalf("cached update err = %v, want AlreadyLatestError{310.9.1.0}", err)
@@ -158,14 +221,14 @@ func TestUpdateFetchesNewCommitWhenMainMoves(t *testing.T) {
 	defer server.Close()
 	client := NewWithBaseURLs(server.Client(), server.URL, server.URL)
 
-	if _, err := Update(context.Background(), client, root, root, game, ""); err != nil {
+	if _, err := Update(context.Background(), client, root, game, ""); err != nil {
 		t.Fatal(err)
 	}
 	if raws != len(Files) {
 		t.Fatalf("first update fetched %d files, want %d", raws, len(Files))
 	}
 	moved = true
-	if _, err := Update(context.Background(), client, root, root, game, ""); err != nil {
+	if _, err := Update(context.Background(), client, root, game, ""); err != nil {
 		t.Fatal(err)
 	}
 	if raws != 2*len(Files) {
@@ -208,7 +271,7 @@ func TestUpdateRefetchesTamperedCacheEntry(t *testing.T) {
 	defer server.Close()
 	client := NewWithBaseURLs(server.Client(), server.URL, server.URL)
 
-	if _, err := Update(context.Background(), client, cache, root, game, ""); err != nil {
+	if _, err := Update(context.Background(), client, cache, game, ""); err != nil {
 		t.Fatal(err)
 	}
 	if raws != len(Files) {
@@ -221,7 +284,7 @@ func TestUpdateRefetchesTamperedCacheEntry(t *testing.T) {
 	// The hash gate refetches the tampered member (one extra download), and
 	// the installed set then already matches the repaired cache: the press
 	// settles as a graceful no-op with the game bytes untouched.
-	_, err := Update(context.Background(), client, cache, root, game, "")
+	_, err := Update(context.Background(), client, cache, game, "")
 	var already *AlreadyLatestError
 	if !errors.As(err, &already) || already.Version != "310.9.1.0" {
 		t.Fatalf("update with tampered cache entry: err = %v, want AlreadyLatestError{310.9.1.0}", err)
@@ -270,12 +333,12 @@ func TestUpdateRefetchesAfterRefusedDownload(t *testing.T) {
 	defer server.Close()
 	client := NewWithBaseURLs(server.Client(), server.URL, server.URL)
 
-	if _, err := Update(context.Background(), client, root, root, game, ""); err == nil {
+	if _, err := Update(context.Background(), client, root, game, ""); err == nil {
 		t.Fatal("lying download must fail the update")
 	}
 	assertGameUnchanged(t, game, "1.0.0.0")
 	lies = false
-	if _, err := Update(context.Background(), client, root, root, game, ""); err != nil {
+	if _, err := Update(context.Background(), client, root, game, ""); err != nil {
 		t.Fatalf("update after the source healed failed: %v", err)
 	}
 	for _, name := range Files {
@@ -302,11 +365,11 @@ func TestRestoreRestoresCompletePriorSnapshot(t *testing.T) {
 		_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
 	}))
 	defer server.Close()
-	first, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, root, game, "")
+	first, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, game, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Restore(context.Background(), root, game, first.ID); err != nil {
+	if _, err := Restore(context.Background(), game, first.ID); err != nil {
 		t.Fatal(err)
 	}
 	for i, name := range Files {
@@ -340,7 +403,7 @@ func TestUpdateInstallsWhenCurrentDLLsMissing(t *testing.T) {
 		_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
 	}))
 	defer server.Close()
-	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, root, game, "")
+	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, game, "")
 	if err != nil {
 		t.Fatalf("Update with an incomplete current set: %v", err)
 	}
@@ -353,7 +416,7 @@ func TestUpdateInstallsWhenCurrentDLLsMissing(t *testing.T) {
 			t.Fatalf("%s version %q after update, want 310.9.1.0 (err=%v)", name, v, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(root, "dlss-backups")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(game, "dlss-backups")); !os.IsNotExist(err) {
 		t.Errorf("backup tree created for an incomplete current set (stat err %v)", err)
 	}
 }
@@ -362,11 +425,11 @@ func TestUpdateInstallsWhenCurrentDLLsMissing(t *testing.T) {
 // over a partial current set proceeds — the missing members come back with
 // the restore — and no backup of the incomplete set is written.
 func TestRestoreInstallsWhenCurrentDLLsMissing(t *testing.T) {
-	root, game, snap := updatedGame(t)
+	_, game, snap := updatedGame(t)
 	if err := os.Remove(filepath.Join(game, Files[1])); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Restore(context.Background(), root, game, snap.ID); err != nil {
+	if _, err := Restore(context.Background(), game, snap.ID); err != nil {
 		t.Fatalf("Restore over an incomplete current set: %v", err)
 	}
 	for i, name := range Files {
@@ -376,7 +439,7 @@ func TestRestoreInstallsWhenCurrentDLLsMissing(t *testing.T) {
 			t.Fatalf("restored %s version %q, want %q (err=%v)", name, v, want, err)
 		}
 	}
-	snaps, err := Snapshots(root, game)
+	snaps, err := Snapshots(game)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,16 +466,16 @@ func TestRestoreRefusesTamperedBackup(t *testing.T) {
 		_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
 	}))
 	defer server.Close()
-	first, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, root, game, "")
+	first, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, game, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Tamper with one backed-up member after a successful update.
-	backupFile := filepath.Join(root, "dlss-backups", snapshotGameID(game), first.ID, Files[2])
+	backupFile := filepath.Join(game, "dlss-backups", first.ID, Files[2])
 	if err := os.WriteFile(backupFile, []byte("tampered"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Restore(context.Background(), root, game, first.ID); err == nil || !strings.Contains(err.Error(), "verification") {
+	if _, err := Restore(context.Background(), game, first.ID); err == nil || !strings.Contains(err.Error(), "verification") {
 		t.Fatalf("Restore err %v, want backup verification failure", err)
 	}
 	for _, name := range Files {
@@ -434,7 +497,7 @@ func TestUpdateCancelledLeavesFilesUntouched(t *testing.T) {
 	seedGame(t, game, 2, 0)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := Update(ctx, New(nil), root, root, game, ""); !errors.Is(err, context.Canceled) {
+	if _, err := Update(ctx, New(nil), root, game, ""); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err %v, want context.Canceled", err)
 	}
 	for i, name := range Files {
@@ -448,8 +511,8 @@ func TestUpdateCancelledLeavesFilesUntouched(t *testing.T) {
 // TestRestoreRefusesTamperedSnapshot: a snapshot file corrupted after the
 // backup must never reach the game directory.
 func TestRestoreRefusesTamperedSnapshot(t *testing.T) {
-	root, game, snap := updatedGame(t)
-	bak := filepath.Join(root, "dlss-backups", snapshotGameID(game), snap.ID, "nvngx_dlss.dll")
+	_, game, snap := updatedGame(t)
+	bak := filepath.Join(game, "dlss-backups", snap.ID, "nvngx_dlss.dll")
 	data, err := os.ReadFile(bak)
 	if err != nil {
 		t.Fatal(err)
@@ -457,7 +520,7 @@ func TestRestoreRefusesTamperedSnapshot(t *testing.T) {
 	if err := os.WriteFile(bak, append(data, 0xFF), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Restore(context.Background(), root, game, snap.ID); err == nil {
+	if _, err := Restore(context.Background(), game, snap.ID); err == nil {
 		t.Fatal("restore accepted a tampered snapshot")
 	}
 	assertGameUnchanged(t, game, "310.9.1.0")
@@ -466,8 +529,8 @@ func TestRestoreRefusesTamperedSnapshot(t *testing.T) {
 // TestRestoreRefusesBlankedHashes: a snapshot record whose hashes were
 // stripped must not bypass verification.
 func TestRestoreRefusesBlankedHashes(t *testing.T) {
-	root, game, snap := updatedGame(t)
-	dir := filepath.Join(root, "dlss-backups", snapshotGameID(game), snap.ID)
+	_, game, snap := updatedGame(t)
+	dir := filepath.Join(game, "dlss-backups", snap.ID)
 	// Blank only the record; the backup files on disk stay untouched, so
 	// the game dir must remain 310.9.1.0 after the refusal.
 	snap.Files = nil
@@ -481,7 +544,7 @@ func TestRestoreRefusesBlankedHashes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "snapshot.json"), record, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Restore(context.Background(), root, game, snap.ID); err == nil {
+	if _, err := Restore(context.Background(), game, snap.ID); err == nil {
 		t.Fatal("restore accepted a snapshot with blanked hashes")
 	}
 	assertGameUnchanged(t, game, "310.9.1.0")
@@ -506,7 +569,7 @@ func updatedGame(t *testing.T) (root, game string, snap Snapshot) {
 		_, _ = w.Write(testutil.FixedVersionPE(310, 9, 1, 0))
 	}))
 	defer server.Close()
-	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, root, game, "")
+	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), root, game, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -664,7 +727,7 @@ func TestUpdateUsesCommitHintWithoutNetwork(t *testing.T) {
 	}))
 	defer server.Close()
 
-	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), cache, root, game, hint)
+	snap, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), cache, game, hint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -690,7 +753,7 @@ func TestUpdateUsesCommitHintWithoutNetwork(t *testing.T) {
 		}
 	}))
 	defer server2.Close()
-	if _, err := Update(context.Background(), NewWithBaseURLs(server2.Client(), server2.URL, server2.URL), cache, root, game, missing); err != nil {
+	if _, err := Update(context.Background(), NewWithBaseURLs(server2.Client(), server2.URL, server2.URL), cache, game, missing); err != nil {
 		t.Fatal(err)
 	}
 	if rawsFallback == 0 {
@@ -746,7 +809,7 @@ func TestUpdateAlreadyLatestIsNoOp(t *testing.T) {
 			}))
 			defer server.Close()
 
-			_, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), cache, root, game, hint)
+			_, err := Update(context.Background(), NewWithBaseURLs(server.Client(), server.URL, server.URL), cache, game, hint)
 			var already *AlreadyLatestError
 			if !errors.As(err, &already) {
 				t.Fatalf("update err = %v, want AlreadyLatestError", err)
@@ -758,7 +821,7 @@ func TestUpdateAlreadyLatestIsNoOp(t *testing.T) {
 			if commits != 0 || raws != 0 {
 				t.Errorf("no-op press hit the network (commits %d, raws %d)", commits, raws)
 			}
-			if snaps, _ := Snapshots(root, game); len(snaps) != 0 {
+			if snaps, _ := Snapshots(game); len(snaps) != 0 {
 				t.Errorf("no-op press created %d snapshots", len(snaps))
 			}
 		})
@@ -793,13 +856,13 @@ func TestUpdateRestoreBackupsDeduplicated(t *testing.T) {
 
 	update := func(hint string) {
 		t.Helper()
-		if _, err := Update(context.Background(), client, cache, root, game, hint); err != nil {
+		if _, err := Update(context.Background(), client, cache, game, hint); err != nil {
 			t.Fatal(err)
 		}
 	}
 	updateAlreadyLatest := func(hint, want string) {
 		t.Helper()
-		_, err := Update(context.Background(), client, cache, root, game, hint)
+		_, err := Update(context.Background(), client, cache, game, hint)
 		var already *AlreadyLatestError
 		if !errors.As(err, &already) || already.Version != want {
 			t.Fatalf("update err = %v, want AlreadyLatestError{%s}", err, want)
@@ -807,13 +870,13 @@ func TestUpdateRestoreBackupsDeduplicated(t *testing.T) {
 	}
 	restore := func(id string) {
 		t.Helper()
-		if _, err := Restore(context.Background(), root, game, id); err != nil {
+		if _, err := Restore(context.Background(), game, id); err != nil {
 			t.Fatal(err)
 		}
 	}
 	snapAt := func(v string) string {
 		t.Helper()
-		snaps, err := Snapshots(root, game)
+		snaps, err := Snapshots(game)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -827,7 +890,7 @@ func TestUpdateRestoreBackupsDeduplicated(t *testing.T) {
 	}
 	assertSnapshots := func(want ...string) {
 		t.Helper()
-		snaps, err := Snapshots(root, game)
+		snaps, err := Snapshots(game)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -868,7 +931,7 @@ func TestUpdateRestoreBackupsDeduplicated(t *testing.T) {
 	// before reuse — the identical press writes a fresh, self-verified
 	// backup instead of aliasing corrupted bytes.
 	s3 := snapAt("310.7.0.0")
-	if err := os.WriteFile(filepath.Join(snapshotsDir(root, game), s3, Files[0]), []byte("tampered"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(snapshotsDir(game), s3, Files[0]), []byte("tampered"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	restore(snapAt("310.5.0.0")) // backs up current 310.7 fresh (S3 unusable), then restores S1
@@ -876,7 +939,7 @@ func TestUpdateRestoreBackupsDeduplicated(t *testing.T) {
 	update(strings.Repeat("a", 40)) // S1 (310.5, intact) is still reused; installs 310.6
 	assertGameVersion(t, game, "310.6.0.0")
 
-	snaps, err := Snapshots(root, game)
+	snaps, err := Snapshots(game)
 	if err != nil {
 		t.Fatal(err)
 	}

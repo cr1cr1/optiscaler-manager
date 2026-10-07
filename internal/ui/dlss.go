@@ -31,7 +31,7 @@ func (s *Session) doUpdateDLSS(gameDir string) {
 		return s.st.DLSSCachedCommit
 	}()
 	s.runDLSSOp(gameDir, "Updating NVIDIA DLSS…", func(ctx context.Context) error {
-		_, err := app.UpdateDLSS(ctx, s.deps.DLSS, s.deps.CacheDir, s.deps.SettingsRoot, gameDir, hint)
+		_, err := app.UpdateDLSS(ctx, s.deps.DLSS, s.deps.CacheDir, gameDir, hint)
 		return err
 	}, "Updated NVIDIA DLSS")
 }
@@ -94,7 +94,7 @@ func (s *Session) setDLSSCachedLocked(v, commit string) {
 // DLSSSnapshots returns the complete backed-up NVIDIA runtime sets that can
 // be restored, newest first.
 func (s *Session) DLSSSnapshots(gameDir string) []dlss.Snapshot {
-	snaps, err := app.DLSSSnapshots(s.deps.SettingsRoot, gameDir)
+	snaps, err := app.DLSSSnapshots(gameDir)
 	if err != nil {
 		return nil
 	}
@@ -121,7 +121,7 @@ func (s *Session) RestoreDLSS(gameDir, snapshotID string) {
 
 func (s *Session) doRestoreDLSS(gameDir, snapshotID string) {
 	s.runDLSSOp(gameDir, "Restoring NVIDIA DLSS…", func(ctx context.Context) error {
-		_, err := app.RestoreDLSS(ctx, s.deps.SettingsRoot, gameDir, snapshotID)
+		_, err := app.RestoreDLSS(ctx, gameDir, snapshotID)
 		return err
 	}, "Restored NVIDIA DLSS")
 }

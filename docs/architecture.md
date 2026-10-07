@@ -399,21 +399,25 @@ downloads, and a moved `main` resolves to a fresh commit dir whose
 bytes are fetched (a stale cache dir is never served). Presses with a
 known published commit skip even that resolve while the commit is
 complete in cache (the cache-first hint above). The
-cache holds only re-derivable downloads; snapshots stay under the state
-root. `dlss.Restore` backs the current set up
+cache holds only re-derivable downloads; snapshots live inside the game
+directory itself (issue 022). `dlss.Restore` backs the current set up
 first when it is complete (so a restore is itself reversible; an
 incomplete current set warns and proceeds backup-less, issue 018),
 SHA-256 verifies every
 snapshot member BEFORE the first copy, and then swaps the whole set
 back.
 
-Snapshots live at `<data-root>/dlss-backups/<sha256(installDir)[:16]>/<id>/`
+Snapshots live at `<gameDir>/dlss-backups/<YYYYMMDD-HHMMSS>_dlss-<version>/`
+— next to the DLLs they protect, named for humans browsing the folder,
+and travelling with the game when its directory moves —
 with one `snapshot.json` each (created-at, per-file version + SHA-256,
 source commit for update snapshots). A backup whose member digests an
 existing snapshot already holds is REUSED, not duplicated — the
 update/restore ping-pong cannot pile up identical ~115 MB dirs (the
 current set is hashed first; a digest match returns the prior snapshot
-untouched, on a miss the copy proceeds as before). They are deliberately
+untouched, on a miss the copy proceeds as before). Component scanning
+skips the `dlss-backups` tree (like `.git`) so stale copies never alias
+into version probing or injection-dir resolution. They are deliberately
 separate from the OptiScaler manifests: uninstalling or switching
 OptiScaler never touches the game's NVIDIA runtime, and the restore menu
 is the only downgrade path (no version picker, no update checks — the

@@ -18,7 +18,8 @@ uninstalls cleanly when you're done. Available for **Linux and Windows** (amd64)
   [NVIDIA/DLSS](https://github.com/NVIDIA/DLSS) repository on demand: press
   the DLSS version label (GUI) or `u` (TUI) to fetch `nvngx_dlss.dll`,
   `nvngx_dlssd.dll`, and `nvngx_dlssg.dll` from one pinned source commit,
-  with a hash-verified backup of your current set (skipped with a warning
+  with a hash-verified backup of your current set in the game directory
+  (skipped with a warning
   when that set is incomplete — the update still installs the missing
   DLLs) and a restore menu
   (`▼` in the GUI, `p` on the TUI detail screen) — the app ships no
@@ -102,7 +103,10 @@ set (or a newer one) is a graceful no-op — it reports the installed
 version and writes nothing. Backups deduplicate: a set whose files an
 existing backup already holds is reused instead of copied again.
 Every update and restore first writes a
-hash-verified backup of your current set; the ▼ button beside the label
+hash-verified backup of your current set into the game directory itself
+(`dlss-backups/<timestamp>_dlss-<version>/`, next to the DLLs it
+protects — it travels with the game folder and can be restored by hand);
+the ▼ button beside the label
 lists those backups, and restoring one asks for confirmation first.
 Downloaded NVIDIA files are subject to NVIDIA's RTX SDK license. Like the
 OptiScaler bundles, they are cached per source commit under the app's
@@ -120,9 +124,11 @@ Selecting a game (clicking a card or row, opening the TUI detail screen)
 re-checks its OptiScaler state on disk, so files added, removed, or renamed
 by hand between scans show up without a rescan.
 
-Your state (manifests, backups, settings, library cache) lives outside game
+Your state (manifests, OptiScaler backups, settings, library cache) lives outside game
 directories in `~/.local/share/optiscaler-manager`; downloaded bundles and
-cover art are cached in `~/.cache/optiscaler-manager`.
+cover art are cached in `~/.cache/optiscaler-manager`. DLSS rollback
+backups are the exception: they live in a `dlss-backups/` folder inside
+each game directory, next to the NVIDIA DLLs they protect.
 
 ### GUI
 

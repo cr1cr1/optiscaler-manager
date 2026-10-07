@@ -3614,3 +3614,28 @@ opens the restore menu of local backup sets.
   "debounce pending but no next frame requested"), then green.
 - Verification: `go test ./...` (29 packages) exit 0, `go vet`/`gofmt`
   clean.
+
+## 2026-10-07 — issue 22: DLSS backups live in the game directory
+
+- DLSS update/restore rollback snapshots moved from
+  `<data-root>/dlss-backups/<sha256(installDir)[:16]>/<unix-nanos>/` into
+  the game directory itself:
+  `<gameDir>/dlss-backups/<YYYYMMDD-HHMMSS>_dlss-<version>/` — visible
+  for manual recovery, travelling with the game folder when it moves
+  (the path-hash key used to orphan every backup on a library move).
+  `snapshot.json`, all-or-nothing records, verify-on-write and
+  verify-before-restore, digest dedup, and the issue-018 backup-less
+  path for incomplete sets are unchanged. Legacy central backups are
+  not migrated (user decision: clean break).
+- `dataRoot` is gone from `dlss.Update/Restore/Snapshots` and the `app`
+  wrappers; `classify.DirFiles` skips `dlss-backups` (like `.git`) so
+  stale backup copies never alias into version probing (the pill showed
+  the BACKUP's version after an update) or injection-dir resolution.
+- The tag-form version trim (issue 019) got one owner: `dlss.TagVersion`
+  serves both the pill label and the snapshot directory name.
+- ATDD reds witnessed: `TestUpdateBacksUpIntoGameDir` (backup landed in
+  the central root), `TestBackupSnapshotIDNamesVersionAndTime`
+  (unix-nanos id), `TestDirFilesSkipsDLSSBackups` (backup copy listed,
+  sorted FIRST), then green.
+- Verification: `go test ./...` (29 packages) exit 0, `go vet`/`gofmt`
+  clean, `GOOS=windows`/`darwin go build ./...` OK.
