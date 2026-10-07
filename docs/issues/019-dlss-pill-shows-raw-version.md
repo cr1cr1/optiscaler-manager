@@ -48,4 +48,4 @@ Implemented as designed.
   string. New: `TestComponentVersionsDLSSLabelIsRawVersion` (app).
 - `docs/scope.md`, `docs/architecture.md` version-display notes updated.
 
-Commit: TBD.
+Commit: 9e8f054.
