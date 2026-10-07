@@ -229,6 +229,9 @@ func (s *Session) runScan(ctx context.Context) {
 	// committed to state, so the final persistCache lands the enriched
 	// fields in one write.
 	s.enrichOnline(ctx, rows, snap)
+	// Snapshot the cover pins before the settle lock: refreshCovers runs
+	// under s.mu, so it cannot read settings itself (issue 028).
+	coverPins := s.Settings().CoverOverrides
 	s.mu.Lock()
 	// Directories added while this scan was in flight are not in the
 	// snapshot's ExtraDirs; keep their rows rather than wiping them.
@@ -251,7 +254,7 @@ func (s *Session) runScan(ctx context.Context) {
 	}
 	sortRows(rows)
 	disambiguateTitles(rows)
-	s.refreshCovers(ctx, rows)
+	s.refreshCovers(ctx, rows, coverPins)
 	s.st.Rows = rows
 	s.st.StatusLine = fmt.Sprintf("%d games", len(rows))
 	s.st.Busy = ""
@@ -446,6 +449,9 @@ func (s *Session) resolveCover(ctx context.Context, row *GameRow) {
 	if s.deps.Covers == nil {
 		return
 	}
+	if s.coverOverride(s.Settings().CoverOverrides, row) {
+		return // user-pinned poster beats the whole fetch chain (issue 028)
+	}
 	coverAppID := row.AppID
 	if row.SteamAppID != "" {
 		coverAppID = row.SteamAppID
@@ -458,6 +464,29 @@ func (s *Session) resolveCover(ctx context.Context, row *GameRow) {
 	}
 }
 
+// coverOverride binds the game's user-pinned poster
+// (settings.cover_overrides, issue 028) to the row and reports whether
+// one applied. User art beats the whole fetch chain; a pinned entry whose
+// cache file vanished falls through to the chain (self-healing). The
+// overrides map is passed in, never read through s.Settings(): the scan
+// settle calls refreshCovers while holding s.mu, and Settings would
+// self-deadlock.
+func (s *Session) coverOverride(overrides map[string]string, row *GameRow) bool {
+	if s.deps.Covers == nil {
+		return false
+	}
+	name := overrides[canonicalDir(row.InstallDir)]
+	if name == "" {
+		return false
+	}
+	p, ok := s.deps.Covers.OverridePath(name)
+	if !ok {
+		return false
+	}
+	row.CoverPath = p
+	return true
+}
+
 // refreshCovers rebinds cover art after the online identification phase
 // has finalized titles and appids: rows with a resolved Steam appid get
 // art for THAT appid (straight from the CDN), so a cover fetched for a
@@ -465,11 +494,14 @@ func (s *Session) resolveCover(ctx context.Context, row *GameRow) {
 // Rows whose identification produced a canonical title but no appid retry
 // the search with that resolved title — the raw pre-identification query
 // (folder or codename) is the weak one.
-func (s *Session) refreshCovers(ctx context.Context, rows []GameRow) {
+func (s *Session) refreshCovers(ctx context.Context, rows []GameRow, overrides map[string]string) {
 	if s.deps.Covers == nil {
 		return
 	}
 	for i := range rows {
+		if s.coverOverride(overrides, &rows[i]) {
+			continue // user-pinned poster beats the chain (issue 028)
+		}
 		if rows[i].SteamAppID == "" {
 			// No appid: retry by the resolved title when the row has no
 			// real art yet (.img files are real; the placeholder is not).

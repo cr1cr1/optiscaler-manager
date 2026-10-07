@@ -48,6 +48,7 @@ const (
 	fosPickFolders     uintptr = 0x20
 	fosForceFileSystem uintptr = 0x40
 	fosPathMustExist   uintptr = 0x800
+	fosFileMustExist   uintptr = 0x1000
 
 	sigdnFilesysPath uintptr = 0x80058000
 
@@ -110,6 +111,18 @@ type iShellItem struct{ vtbl *iShellItemVtbl }
 // Pick opens the OS folder dialog and returns the chosen path.
 // Cancelled dialogs return ("", nil).
 func Pick(ctx context.Context) (string, error) {
+	return pick(ctx, true, "Select game directory")
+}
+
+// PickFile opens the OS file dialog and returns the chosen path (the
+// poster-image picker, issue 028). Cancelled dialogs return ("", nil).
+func PickFile(ctx context.Context) (string, error) {
+	return pick(ctx, false, "Select poster image")
+}
+
+// pick drives the shared IFileOpenDialog: folder mode sets
+// FOS_PICKFOLDERS, file mode sets FOS_FILEMUSTEXIST instead.
+func pick(ctx context.Context, folders bool, title string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -139,13 +152,18 @@ func Pick(ctx context.Context) (string, error) {
 	defer func() { _, _, _ = syscall.SyscallN(dlg.vtbl.release, uintptr(unsafe.Pointer(dlg))) }()
 
 	curOpts, _, _ := syscall.SyscallN(dlg.vtbl.getOptions, uintptr(unsafe.Pointer(dlg)))
-	newOpts := curOpts | fosPickFolders | fosForceFileSystem | fosPathMustExist
+	newOpts := curOpts | fosForceFileSystem | fosPathMustExist
+	if folders {
+		newOpts |= fosPickFolders
+	} else {
+		newOpts |= fosFileMustExist
+	}
 	if hrRet, _, _ := syscall.SyscallN(dlg.vtbl.setOptions, uintptr(unsafe.Pointer(dlg)), newOpts); int32(hrRet) < 0 {
 		return "", syscall.Errno(hrRet)
 	}
 
-	title, _ := syscall.UTF16PtrFromString("Select game directory")
-	if hrRet, _, _ := syscall.SyscallN(dlg.vtbl.setTitle, uintptr(unsafe.Pointer(dlg)), uintptr(unsafe.Pointer(title))); int32(hrRet) < 0 {
+	titlePtr, _ := syscall.UTF16PtrFromString(title)
+	if hrRet, _, _ := syscall.SyscallN(dlg.vtbl.setTitle, uintptr(unsafe.Pointer(dlg)), uintptr(unsafe.Pointer(titlePtr))); int32(hrRet) < 0 {
 		return "", syscall.Errno(hrRet)
 	}
 

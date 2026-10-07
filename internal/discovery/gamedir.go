@@ -63,6 +63,11 @@ var engineFolderNames = map[string]bool{
 	"content": true, "data": true, "resources": true, "assets": true,
 	"vendor": true, "runtime": true, "runtimes": true, "retail": true,
 	"__installer": true, "_redist": true, "exe": true,
+	// UE packaged-build staging layouts: the shipping exe lives under
+	// <root>/IntermediateBuildDRM/WindowsNoEditor/<Game>/Binaries/Win64 —
+	// the staging dirs hold the parent game's own build output, never a
+	// separate game (issue 028: Bramble rowed as "WindowsNoEditor").
+	"windowsnoeditor": true, "windowsclient": true, "windowsserver": true,
 	// Emulators are tooling like Proton or Wine: the emulator dir inside a
 	// console-game dump is never itself the game (its exe belongs to the
 	// host game folder, so it stays walkable).
@@ -116,6 +121,11 @@ func plumbingWalkDir(name, parentBase string) bool {
 func engineFolderName(name string) bool {
 	name = strings.ToLower(name)
 	if engineFolderNames[name] {
+		return true
+	}
+	// IntermediateBuild* (IntermediateBuildDRM, …) is the UE staging
+	// prefix; versioned names cannot live in the static map.
+	if strings.HasPrefix(name, "intermediatebuild") {
 		return true
 	}
 	return platformToolName(name)

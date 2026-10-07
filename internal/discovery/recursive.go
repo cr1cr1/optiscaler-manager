@@ -124,13 +124,18 @@ var recursiveSkipTokens = []string{
 	"unins", "setup", "install", "redist", "vcredist", "dxsetup",
 	"crash", "handler", "launcher", "updater", "patcher", "helper",
 	"service", "report", "benchmark", "unrealcefsubprocess", "prerequisites",
+	// elevate.exe is the RSI/updater privilege helper: when every real
+	// binary of a launcher-only dir is skip-token'd ("RSI Launcher.exe"
+	// hits "launcher"), the helper must not win the row (issue 028).
+	"elevate",
 }
 
 // maxExeDepth is how many directory levels below a game directory the
-// recursive scan descends looking for the main executable. Four levels
-// cover the deepest real layout seen in the wild (Prey ships
-// Binaries/Danielle/x64-Epic/Release/Prey.exe).
-const maxExeDepth = 4
+// recursive scan descends looking for the main executable. Five levels
+// cover the deepest real layout seen in the wild (Bramble: The Mountain
+// King ships IntermediateBuildDRM/WindowsNoEditor/<Game>/Binaries/Win64/
+// game.exe, one past Prey's 4-level Binaries/Danielle/x64-Epic/Release).
+const maxExeDepth = 5
 
 // ScanRecursive resolves the games under root. When root itself is a game
 // (yields a main executable) it gets its own row; either way its children

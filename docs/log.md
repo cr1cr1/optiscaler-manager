@@ -3797,3 +3797,40 @@ OS-specific launch mechanism (default file explorer).
   (30 packages), `go vet`/`gofmt` clean. Deferred: no TUI key binding
   (the request was a GUI button); no click-through GUI test (same
   coverage level as OpenINI).
+
+## 2026-10-08 — issue 28: non-standard directory heuristics + manual title/poster overrides
+
+User report: games still not properly recognized because of non-standard
+directories. Ground truth from the user's games.json placeholder rows:
+Bramble rowed as `IntermediateBuildDRM/WindowsNoEditor` (UE
+packaged-build staging dirs not transparent; exe 5 levels deep >
+maxExeDepth 4), RSI Launcher rowed on `resources/elevate.exe` (the real
+launcher binary is skip-token'd, the helper won), plus unmatchable
+titles (GOG edition strings, PE junk "ControlLauncher", non-Steam
+games). All fixes general — no per-title hacks.
+
+- discovery: `windowsnoeditor`/`windowsclient`/`windowsserver` +
+  `intermediatebuild*` prefix are transparent engine folders;
+  `maxExeDepth` 4 → 5; `elevate` joins the exe skip tokens. Bramble now
+  rows at the real root; the launcher-only dir rows nothing.
+- Set title (GUI + TUI): `Session.SetTitleOverride` — UI for the
+  existing `title_overrides`; persists, renames the row (chain
+  re-derives on clear), cover re-resolves in the background. GUI:
+  detail-panel inline input with explicit Apply/Cancel; TUI: `t`,
+  pre-filled, empty clears.
+- Upload poster (GUI + TUI): new `cover_overrides` map (dir →
+  `override_<sha256(dir)[:16]>.img`). `covers.SetOverride` validates,
+  copies (source untouched — no 023 backup gate), 2:3-normalizes;
+  `pickdir.PickFile` adds the native image dialog (zenity/kdialog,
+  IFileOpenDialog file mode, osascript). Precedence in the session's
+  `coverOverride`, consulted by resolveCover AND refreshCovers — sticky
+  across rescans; `ClearCoverOverride` reverts to the chain (GUI "Reset
+  poster", TUI `A`).
+- Trap caught by the full suite: reading `s.Settings()` inside
+  coverOverride self-deadlocked (the scan settle calls refreshCovers
+  while holding s.mu) and hung every scan 10 minutes; fixed by
+  snapshotting the overrides map before the settle lock and passing it
+  down.
+- ATDD red witnessed (3 behavioral discovery failures + 5 compile
+  reds). Verification: `go test ./...` (30 packages) exit 0,
+  `go vet`/`gofmt` clean, `GOOS=windows`/`darwin go build ./...` OK.

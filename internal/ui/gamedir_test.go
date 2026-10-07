@@ -478,7 +478,7 @@ func TestRefreshCovers_RebindsAfterIdentify(t *testing.T) {
 		Title: "Black Myth: Wukong", InstallDir: "/games/Black Myth Wukong",
 		Store: domain.StoreManual, SteamAppID: "2358720", CoverPath: wrongPath,
 	}}
-	e.sess.refreshCovers(context.Background(), rows)
+	e.sess.refreshCovers(context.Background(), rows, nil)
 	if !strings.HasSuffix(rows[0].CoverPath, "2358720.img") {
 		t.Errorf("CoverPath = %q, want rebound to the correct appid", rows[0].CoverPath)
 	}

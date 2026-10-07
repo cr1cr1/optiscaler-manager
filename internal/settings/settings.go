@@ -46,9 +46,14 @@ type Settings struct {
 	// true) apart from an explicit false.
 	OnlineLookups bool `json:"online_lookups"`
 	// TitleOverrides pins display titles per canonical install dir; an
-	// override beats every identification rule (v0.8). JSON-edited only
-	// for now.
+	// override beats every identification rule (v0.8). Set from the
+	// detail pane (issue 028) or JSON-edited.
 	TitleOverrides map[string]string `json:"title_overrides,omitempty"`
+	// CoverOverrides pins user-uploaded poster art per canonical install
+	// dir (issue 028): dir → cover-cache filename (override_<hash>.img).
+	// A pinned poster beats the whole fetch chain and survives rescans;
+	// deleting the key restores the chain.
+	CoverOverrides map[string]string `json:"cover_overrides,omitempty"`
 	// CardSize selects the grid card width preset.
 	CardSize CardSize `json:"card_size,omitempty"`
 	// UmuEnabled toggles routing manual / Heroic Epic/GOG Windows binaries through
@@ -109,6 +114,7 @@ func Load(root string) (Settings, error) {
 		ExtraDirs      []string          `json:"extra_dirs,omitempty"`
 		OnlineLookups  *bool             `json:"online_lookups"`
 		TitleOverrides map[string]string `json:"title_overrides,omitempty"`
+		CoverOverrides map[string]string `json:"cover_overrides,omitempty"`
 		CardSize       CardSize          `json:"card_size,omitempty"`
 		UmuEnabled     *bool             `json:"umu_enabled"`
 		UmuProtonPath  string            `json:"umu_proton_path,omitempty"`
@@ -125,6 +131,7 @@ func Load(root string) (Settings, error) {
 		ExtraDirs:      raw.ExtraDirs,
 		OnlineLookups:  true,
 		TitleOverrides: raw.TitleOverrides,
+		CoverOverrides: raw.CoverOverrides,
 		CardSize:       raw.CardSize,
 		UmuEnabled:     false,
 		UmuProtonPath:  raw.UmuProtonPath,

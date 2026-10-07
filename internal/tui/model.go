@@ -43,6 +43,8 @@ const (
 	inputEditUmuProton
 	inputAddForkSlug
 	inputAddForkPattern
+	inputSetTitle
+	inputSetCover
 )
 
 // settingsFocus names the settings-screen list j/k/a/d act on: the scan
@@ -562,6 +564,21 @@ func (m Model) detailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if row := m.detailRow(); row != nil && row.CanOpenINI() {
 			return m, openINIEditor(m.sess, dir)
 		}
+	case "t":
+		// Manual title override (issue 028): pre-fill the current title;
+		// committing empty clears the pin.
+		title := ""
+		if row := m.detailRow(); row != nil {
+			title = row.Title
+		}
+		m.openInput(inputSetTitle, "title (empty clears): ", title)
+	case "a":
+		// Manual poster upload (issue 028): typed image path.
+		m.openInput(inputSetCover, "poster image path: ", "")
+	case "A":
+		if m.sess.CoverOverrideActive(dir) {
+			m.sess.ClearCoverOverride(dir)
+		}
 	}
 	return m, nil
 }
@@ -723,6 +740,13 @@ func (m *Model) commitInput() tea.Cmd {
 			_ = m.sess.AddFork(settings.Fork{Slug: m.pendingForkSlug, AssetPattern: v})
 		}
 		m.pendingForkSlug = ""
+	case inputSetTitle:
+		// Empty clears the override (the session toasts either way).
+		m.sess.SetTitleOverride(m.detailDir, v)
+	case inputSetCover:
+		if v != "" {
+			m.sess.SetCoverOverride(m.detailDir, v)
+		}
 	}
 	m.mode = inputNone
 	m.input.SetValue("")

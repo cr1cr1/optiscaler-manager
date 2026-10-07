@@ -508,6 +508,30 @@ func (m *model) detailPanel() {
 					m.sess.OpenGameFolder(e.InstallDir)
 				}
 			})
+			// Manual identification fixes (issue 028): pin the display
+			// title (explicit apply/cancel — a commit persists settings
+			// and kicks a cover re-resolution), upload poster art, or
+			// reset it to the fetch chain.
+			if m.titleEditDir == e.InstallDir {
+				themedInput(&m.titleBuf, "title (empty clears the override)", NoIcon,
+					MinSize(200, fieldH), MaxSizeVec(Vec2{panelW - 2*sp16, fieldH}))
+				Container(Attrs(Row, Gap(sp8)), func() {
+					if focusableButton(NoIcon, "Apply") {
+						m.applyTitleEdit()
+					}
+					if focusableButton(NoIcon, "Cancel") {
+						m.cancelTitleEdit()
+					}
+				})
+			} else if focusableButton(NoIcon, "Set title") {
+				m.startTitleEdit(*e)
+			}
+			if focusableButton(NoIcon, "Set poster…") {
+				m.sess.PickAndSetCover(m.ctx, e.InstallDir)
+			}
+			if m.sess.CoverOverrideActive(e.InstallDir) && focusableButton(NoIcon, "Reset poster") {
+				m.sess.ClearCoverOverride(e.InstallDir)
+			}
 			if e.CanOpenINI() {
 				Container(Attrs(Row), func() {
 					m.openINIRect = GetScreenRectOf(CurrentId())

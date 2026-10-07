@@ -122,7 +122,7 @@ func (s *Session) AddDirectory(dir string) {
 				s.enrichRow(ctx, &row, s.deps.Steam, s.deps.ProtonDB)
 			}
 			rw := []GameRow{row}
-			s.refreshCovers(ctx, rw)
+			s.refreshCovers(ctx, rw, s.Settings().CoverOverrides)
 			row = rw[0]
 		}
 		s.mu.Lock()

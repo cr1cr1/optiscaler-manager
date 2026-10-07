@@ -92,7 +92,7 @@ func TestRefreshCoversRetriesByResolvedTitle(t *testing.T) {
 		Store:      domain.StoreManual,
 		CoverPath:  "/nonexistent/_placeholder.png",
 	}}
-	s.refreshCovers(context.Background(), rows)
+	s.refreshCovers(context.Background(), rows, nil)
 
 	if !strings.HasSuffix(rows[0].CoverPath, f.knownAppID+".img") {
 		t.Errorf("CoverPath = %q, want art found via the resolved title", rows[0].CoverPath)
@@ -105,7 +105,7 @@ func TestRefreshCoversRetriesByResolvedTitle(t *testing.T) {
 	f.searches = nil
 	rows[0].CoverPath = "/cache/" + f.knownAppID + ".img"
 	rows[0].SteamAppID = ""
-	s.refreshCovers(context.Background(), rows)
+	s.refreshCovers(context.Background(), rows, nil)
 	if len(f.searches) != 0 {
 		t.Errorf("re-searched a row that already has art: %v", f.searches)
 	}

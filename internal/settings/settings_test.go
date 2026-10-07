@@ -212,3 +212,36 @@ func TestSettings_LegacyJSONWithoutSGDBKey(t *testing.T) {
 		t.Errorf("SteamGridDBKey = %q on legacy file, want empty (SGDB disabled)", got.SteamGridDBKey)
 	}
 }
+
+// The cover_overrides map round-trips and defaults to empty for legacy
+// files — the title_overrides precedent (issue 028).
+func TestSettings_CoverOverridesRoundTrip(t *testing.T) {
+	root := t.TempDir()
+	want := Defaults()
+	want.CoverOverrides = map[string]string{"/games/foo": "override_0123456789abcdef.img"}
+	if err := Save(root, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.CoverOverrides["/games/foo"] != want.CoverOverrides["/games/foo"] {
+		t.Errorf("CoverOverrides = %v, want %v", got.CoverOverrides, want.CoverOverrides)
+	}
+}
+
+func TestSettings_LegacyJSONWithoutCoverOverrides(t *testing.T) {
+	root := t.TempDir()
+	legacy := `{"default_version":"v0.10.0","launch_template":"\"{exe}\" {args}"}`
+	if err := os.WriteFile(filepath.Join(root, "settings.json"), []byte(legacy), 0o600); err != nil {
+		t.Fatalf("write legacy: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load legacy: %v", err)
+	}
+	if len(got.CoverOverrides) != 0 {
+		t.Errorf("CoverOverrides = %v on legacy file, want empty", got.CoverOverrides)
+	}
+}

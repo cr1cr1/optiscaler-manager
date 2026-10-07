@@ -213,7 +213,7 @@ func (m Model) footerView(w int) string {
 	var hints string
 	switch m.screen {
 	case screenDetail:
-		hints = "i install · v version · l launch · c cancel · r rollback · o open INI · esc back"
+		hints = "i install · v version · l launch · t title · a poster · c cancel · r rollback · o open INI · esc back"
 	case screenSettings:
 		hints = "e version · t template · a add · d remove · o online info · u umu · p umu proton · x clear cache"
 	case screenHelp, screenAbout:
@@ -535,6 +535,15 @@ func (m Model) detailView(w, contentH int) string {
 			openINI = styleDimmedAction.Render(openINI + " (installed games only)")
 		}
 		b.WriteString(openINI + "\n")
+		// Manual identification fixes (issue 028): pin the display title,
+		// pin user-supplied poster art, reset it back to the fetch chain.
+		b.WriteString("  t  set title (empty clears the override)\n")
+		b.WriteString("  a  set poster image\n")
+		resetPoster := "  A  reset poster to fetched art"
+		if m.sess == nil || !m.sess.CoverOverrideActive(row.InstallDir) {
+			resetPoster = styleDimmedAction.Render(resetPoster + " (no custom poster)")
+		}
+		b.WriteString(resetPoster + "\n")
 		b.WriteString(styleMuted.Render("  esc  back"))
 		content = b.String()
 	}

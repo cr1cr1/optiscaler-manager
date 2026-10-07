@@ -242,6 +242,7 @@ type Session struct {
 	openExternal func(path string) error
 	openFolder   func(path string) error
 	pickDir      func(ctx context.Context) (string, error)
+	pickFile     func(ctx context.Context) (string, error)
 	removeAll    func(path string) error
 
 	// resolveVersion is the test seam for resolving the configured default
@@ -307,6 +308,7 @@ func NewSession(deps Deps) *Session {
 		openExternal: openExternal,
 		openFolder:   openFolder,
 		pickDir:      pickdir.Pick,
+		pickFile:     pickdir.PickFile,
 		removeAll:    os.RemoveAll,
 	}
 }

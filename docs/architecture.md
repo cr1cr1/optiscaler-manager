@@ -50,7 +50,13 @@ internal/
               Steam → Epic → Heroic → GOG → apps → manual, deduped by canonical
               InstallDir; install-dir resolution; ClassifyGameDir sorts a
               directory into game / container / empty (bounded walks, no PE
-              parsing — see the v0.7 section)
+              parsing — see the v0.7 section). Engine-folder names (bin,
+              Binaries/Win64, UE packaged-build staging
+              windowsnoeditor/windowsclient/windowsserver +
+              intermediatebuild*, issue 028) are transparent: never rows,
+              never containers, their exes count as the parent's; the exe
+              search descends maxExeDepth 5 and skip-tokens
+              (unins/setup/launcher/elevate/…) never count as the game
   classify/   upscaler kind+DLL detection (Dir, DirFiles)
   pever/      hostile-input PE version-resource parser (no cgo): FileVersion,
               MarketingName (vendored FSR/XeSS version→name maps; DLSS pills
@@ -76,7 +82,7 @@ internal/
   installer/  transaction core: stage → validate (injector-only; each
               distribution's archive listing defines its own file set,
               nested paths verbatim; markdown/scripts filtered, no empty
-              dirs, issue 026) → backup → copy → manifest;
+              dirs, issue 028) → backup → copy → manifest;
               rollback; uninstall (delete or fork-switch relocate);
               EAC check; ctx cancel at phase boundaries
               (cleanup under context.WithoutCancel)
@@ -91,7 +97,11 @@ internal/
               cached image is normalized to the 2:3 card aspect
               (center-crop on write AND on cached read — the renderer is
               deliberately aspect-blind, so the cache owns the no-stretch
-              invariant; issue 025)
+              invariant; issue 025). User-uploaded posters
+              (settings.cover_overrides, issue 028) are validated, copied
+              in as override_<sha256(dir)[:16]>.img, normalized the same
+              way, and beat the whole chain in the session's resolveCover/
+              refreshCovers until cleared
   steam/      title → appid lookup (steamcommunity.com SearchApps; 30d TTL
               disk cache, no auth)
   protondb/   appid → compatibility tier (protondb.com summaries API; 7d
@@ -113,12 +123,16 @@ internal/
                default version, launch template, extra dirs, online
                lookups, card size (CardSize type with OrDefault()),
                distribution forks (Fork{Slug, AssetPattern} list, one
-               ActiveFork, upstream built-in always present)
+               ActiveFork, upstream built-in always present),
+               title_overrides (pinned display titles) and
+               cover_overrides (pinned user posters), both per canonical
+               install dir (issue 028)
   version/    OptiScaler version-string ordering for upgrade eligibility
               (leading-v normalized, numeric segments, pre-release older
               than release; deliberately not full semver)
-   pickdir/    OS directory dialog (zenity→kdialog on Linux,
-               PowerShell FolderBrowserDialog on Windows, osascript on macOS)
+   pickdir/    OS native dialogs: Pick (directory) and PickFile (image,
+               issue 028's poster upload) — zenity→kdialog on Linux,
+               IFileOpenDialog via COM on Windows, osascript on macOS
    umu/        umu-launcher integration (Linux only). Detect parses
                `umu-run --version`; FindRunners scans Steam
                compatibilitytools.d, Bottles runners/, and umu

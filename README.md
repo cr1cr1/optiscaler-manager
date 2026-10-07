@@ -85,11 +85,31 @@ and add it to `~/.local/share/optiscaler-manager/settings.json`:
 "steamgriddb_key": "your-key-here"
 ```
 
-Without a key, a manually added game whose folder name doesn't match its
-store title can still be pinned: add its install dir to
-`"title_overrides"` in the same file (e.g.
-`"title_overrides": {"/games/witcher3": "The Witcher 3: Wild Hunt"}`)
-and rescan.
+When automatic identification still misses — a GOG edition title Steam's
+search rejects, junk PE metadata ("ControlLauncher"), or a game that
+isn't on Steam at all — the detail panel has two manual fixes (GUI
+buttons; `t` / `a` / `A` keys in the TUI):
+
+- **Set title** pins the display title (persisted as
+  `"title_overrides"` in the same settings file); the cover re-resolves
+  against the new title immediately. An empty title clears the pin.
+- **Set poster** uploads your own image (native file dialog in the GUI,
+  typed path in the TUI). It is copied into the cover cache, cropped to
+  the 2:3 poster aspect like any fetched art, and beats every automatic
+  source — it survives rescans until **Reset poster** removes it
+  (persisted as `"cover_overrides"`).
+
+Games in unusual layouts are found without any manual help in most
+cases: engine/build folders (`bin`, `Binaries/Win64`, UE packaged-build
+staging like `IntermediateBuildDRM/WindowsNoEditor`) are transparent —
+their executables count as the parent game's, never as separate rows —
+the executable search descends five levels, and
+installer/updater/helper binaries (including launchers and `elevate.exe`
+shims) never count as the game.
+
+Both pins can also be JSON-edited directly, e.g.
+`"title_overrides": {"/games/witcher3": "The Witcher 3: Wild Hunt"}`,
+then rescan.
 
 Each installed game manages its own OptiScaler version: the version selector
 (a dropdown on the card and detail panel in the GUI, the `v` key in the TUI)

@@ -30,7 +30,7 @@ here are closed; reopen only with new evidence.
   distribution's **archive listing is its install set** (v0.16): forks lay
   files out differently (DLSSNR ships no fakenvapi and keeps support DLLs
   under an `OptiScaler/` subdir), and members install verbatim, nested
-  paths preserved, never stripped. Clutter is filtered (issue 026):
+  paths preserved, never stripped. Clutter is filtered (issue 028):
   markdown documentation and install/remove scripts
   (`.bat`/`.cmd`/`.ps1`/`.sh`) never reach the game dir, and no empty
   directories are created.
@@ -97,6 +97,15 @@ here are closed; reopen only with new evidence.
   `nvngx_dlss.dll`, DLSS-FG `nvngx_dlssg.dll`, FSR `amd_fidelityfx_*`/`ffx_*`,
   XeSS `libxess.dll`). **PE version display is cut**: `debug/pe` has no
   version-resource API; a hand-rolled `FEEF04BD` resource scan is deferred.
+- Non-standard layouts (issue 028): UE packaged-build staging dirs
+  (`IntermediateBuildDRM`/`WindowsNoEditor` et al.) are transparent
+  engine folders — the real game root rows, not the staging dir; the exe
+  search descends 5 levels; `elevate.exe`-style helpers join the skip
+  tokens so launcher-only tooling dirs produce no row.
+- Manual identification fixes (issue 028): per-game **set title**
+  (UI for `title_overrides`, cover re-resolves) and **set/reset poster**
+  (user-uploaded art in `cover_overrides` beats the fetch chain,
+  survives rescans) in both frontends.
 
 ## UX
 
@@ -127,7 +136,9 @@ Added after v0.1, modeled on the reference client's main window:
   SteamGridDB grid (when `steamgriddb_key` is set in settings.json) →
   PCGamingWiki box art (keyless: opensearch + wikitext infobox) → Steam
   store search (name→appid, zero-key fallback) → generated placeholder.
-  Cached on disk by sanitized appid; every cached image is normalized to
+  A user-uploaded poster (`cover_overrides`, issue 028) beats the whole
+  chain and survives rescans. Cached on disk by sanitized appid; every
+  cached image is normalized to
   the 2:3 card aspect (center-crop — landscape hero banners included,
   legacy files scrubbed on read, issue 025). (Ecosystem-verified keyless
   pattern: Lutris and Heroic use the same Steam CDN primary; Bottles uses
