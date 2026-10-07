@@ -41,4 +41,4 @@ Done. One-line change in `pillTipOverlay` (internal/gui/tooltip.go) plus
 frame is requested while pending, then — with `pillTip.since` backdated —
 the tooltip shows and `FrameRequested()` is false again. TDD red witnessed
 ("debounce pending but no next frame requested"), then green. Full suite
-(29 packages) exit 0. Commit TBD.
+(29 packages) exit 0. Commit `d249942`.
