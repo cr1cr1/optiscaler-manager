@@ -53,4 +53,4 @@ Implemented as designed.
   "never adds a missing DLL" contract is gone); `docs/scope.md` DLSS
   bullet updated.
 
-Commit: TBD.
+Commit: 014be06.
