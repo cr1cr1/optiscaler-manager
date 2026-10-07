@@ -56,6 +56,6 @@ Consequences:
 
 ## Outcome
 
-Implemented as above. Commit: see below (pinned after merge).
+Implemented as above. Commit: `d8c588f`.
 Verification: `go test ./...` (29 packages) exit 0, `go vet`/`gofmt`
 clean, `GOOS=windows`/`darwin go build ./...` OK.
