@@ -75,4 +75,4 @@ Implemented as designed.
   `pillwrap_test.go` — foreign, untouched); `go vet`, `gofmt`,
   `GOOS=windows`/`darwin` builds all clean.
 
-Commit: recorded in the follow-up hash-pin commit.
+Commit: db2b372.
