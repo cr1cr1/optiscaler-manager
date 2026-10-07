@@ -361,6 +361,9 @@ closed; reopen only with new evidence.
   manually"); no op is registered, no raw store sentinel leaks. After a
   managed uninstall, detection re-runs so a restored external install shows
   correctly. Open INI works on external installs (`GameRow.CanOpenINI`).
+  The detail panel also opens the game's binary dir in the OS file
+  manager (`Session.OpenGameFolder`, issue 027: `xdg-open` /
+  Finder / Explorer; not install-gated).
 
 ### v0.6 known limits
 

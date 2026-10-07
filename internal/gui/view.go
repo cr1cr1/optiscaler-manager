@@ -385,6 +385,7 @@ func (m *model) detailPanel() {
 	}
 	panelW := detailPanelWidth(GetHost().WindowSize[0])
 	m.openINIRect = Rect{}
+	m.openFolderRect = Rect{}
 	// The grid rendered first and captured its own tech row; the panel owns
 	// the seam while open so a missing panel row reads as zero.
 	m.techPillRowRect = Rect{}
@@ -499,6 +500,14 @@ func (m *model) detailPanel() {
 			if label, ok := e.DisableToggleLabel(); ok && focusableButton(NoIcon, label) {
 				m.sess.ToggleDisabled(e.InstallDir)
 			}
+			// The game folder exists regardless of install state — the
+			// button is always rendered (unlike OpenINI below).
+			Container(Attrs(Row), func() {
+				m.openFolderRect = GetScreenRectOf(CurrentId())
+				if focusableButton(SymFolder, "Open game folder") {
+					m.sess.OpenGameFolder(e.InstallDir)
+				}
+			})
 			if e.CanOpenINI() {
 				Container(Attrs(Row), func() {
 					m.openINIRect = GetScreenRectOf(CurrentId())

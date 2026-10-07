@@ -3772,3 +3772,28 @@ scripts.
   The foreign-modified relocation probe moved from `README.md` (no
   longer installed) to the tracked `OptiScaler/libxess.dll`.
 - Verification: `go test ./...` exit 0, `go vet`/`gofmt` clean.
+
+## 2026-10-08 — issue 27: Open-game-folder button in the detail panel
+
+User feature request: a button that opens the game binary dir with the
+OS-specific launch mechanism (default file explorer).
+
+- `Session.OpenGameFolder(gameDir)` (internal/ui/browse.go) opens the
+  injection dir when the row knows it — that is where the game exe and
+  the OptiScaler files live — else the game root; missing dir, unknown
+  game, and launcher failure surface as warn toasts. New `openFolder`
+  launcher next to `openExternal`, deliberately separate: openExternal
+  is a terminal-EDITOR path for files, not a file manager. Linux
+  `xdg-open`, darwin `open`, windows `explorer`. Session seam mirrors
+  `openExternal` so tests capture opens without spawning.
+- GUI: detail panel "Open game folder" button (SymFolder), NOT
+  install-gated (unlike OpenINI — the folder exists either way);
+  `openFolderRect` visibility seam mirrors `openINIRect`.
+- ATDD red witnessed as build failure on the new tests (undefined
+  `OpenGameFolder`/`openFolder`/`openFolderRect`), then green.
+- Concurrent-session hazard: the shared tree carried the other session's
+  in-progress red-phase files, so final verification ran in a clean HEAD
+  worktree with ONLY this issue's hunks applied: `go test ./...` exit 0
+  (30 packages), `go vet`/`gofmt` clean. Deferred: no TUI key binding
+  (the request was a GUI button); no click-through GUI test (same
+  coverage level as OpenINI).

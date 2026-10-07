@@ -79,6 +79,7 @@ type model struct {
 	listRowRects        []Rect                        // screen rects of rendered list rows by row index, rebuilt each list frame (row-click test seam)
 	listSelectedRect    Rect                          // screen rect of the session-selected list row's selection band (selected-highlight test seam)
 	openINIRect         Rect                          // screen rect of the detail panel's OpenINI button (visibility test seam)
+	openFolderRect      Rect                          // screen rect of the detail panel's Open-game-folder button (visibility test seam, issue 027)
 	searchID            ContainerId                   // the search field's container (`/` focuses it from anywhere)
 	listID              ContainerId                   // the list view's focusable wrapper (Tab focus nav test seam)
 	listFocusPending    bool                          // deferred row-click focus grab: consumed once by actionList with the wrapper's fresh identity

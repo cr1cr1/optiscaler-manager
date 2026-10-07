@@ -240,6 +240,7 @@ type Session struct {
 	scanPending bool       // a Scan landed mid-scan; the running scan re-runs once
 
 	openExternal func(path string) error
+	openFolder   func(path string) error
 	pickDir      func(ctx context.Context) (string, error)
 	removeAll    func(path string) error
 
@@ -304,6 +305,7 @@ func NewSession(deps Deps) *Session {
 		now:          time.Now,
 		opCancels:    map[string]context.CancelFunc{},
 		openExternal: openExternal,
+		openFolder:   openFolder,
 		pickDir:      pickdir.Pick,
 		removeAll:    os.RemoveAll,
 	}

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -21,6 +22,43 @@ func openExternal(path string) error {
 		return exec.Command("rundll32", "url.dll,FileProtocolHandler", path).Start()
 	default: // linux and the rest
 		return termopen.New("", nil, nil, nil).Open(path)
+	}
+}
+
+// openFolder opens dir in the platform's default file manager (issue 027).
+// Unlike openExternal — a terminal-editor path for FILES — this launches
+// the OS file explorer: Finder, Explorer, xdg-open's pick.
+func openFolder(dir string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", dir).Start()
+	case "windows":
+		return exec.Command("explorer", dir).Start()
+	default: // linux and the rest
+		return exec.Command("xdg-open", dir).Start()
+	}
+}
+
+// OpenGameFolder opens the game's binary dir in the OS file manager: the
+// injection dir when the row knows it (that is where the game exe and the
+// OptiScaler files live), else the game root. Install state is irrelevant
+// — the folder exists either way.
+func (s *Session) OpenGameFolder(gameDir string) {
+	row := s.findRow(gameDir)
+	if row == nil {
+		s.toast("game not found", true)
+		return
+	}
+	dir := row.InjectionDir
+	if dir == "" {
+		dir = row.InstallDir
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		s.toast("game folder not on disk: "+dir, true)
+		return
+	}
+	if err := s.openFolder(dir); err != nil {
+		s.toast("cannot open file manager: "+err.Error(), true)
 	}
 }
 
