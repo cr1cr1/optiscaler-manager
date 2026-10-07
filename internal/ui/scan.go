@@ -155,6 +155,12 @@ func (s *Session) runScan(ctx context.Context) {
 	resolver := discovery.ChainResolver(func(dir string) string {
 		return snap.TitleOverrides[canonicalDir(dir)]
 	})
+	// Rows stream into live state as entries are discovered (cover-less —
+	// art binds in the covers phase below): an existing row refreshes in
+	// place, a new row appends, and a throttled poke repaints frontends.
+	// The settle at the end still replaces the whole list (sorted,
+	// disambiguated, pruned) and persists the cache.
+	var rows []GameRow
 	entries, err := app.ScanAllLibraries(ctx, s.deps.Store, app.ScanAllOptions{
 		SteamRoot: s.deps.SteamRoot,
 		ExtraDirs: snap.ExtraDirs,
@@ -165,6 +171,12 @@ func (s *Session) runScan(ctx context.Context) {
 			s.scanProgress(phase, done, total)
 		},
 		Resolver: resolver,
+		OnEntry: func(e app.LibraryEntry) {
+			row := baseRow(e)
+			rows = append(rows, row)
+			s.upsertScanRow(row)
+			s.pokeScan(false)
+		},
 	})
 	if err != nil {
 		if errors.Is(err, app.ErrNoGames) {
@@ -197,8 +209,9 @@ func (s *Session) runScan(ctx context.Context) {
 		coversDone++
 		s.scanProgress(phaseCovers, coversDone, coversTotal)
 	}
-	rows := make([]GameRow, 0, len(entries))
-	for _, e := range entries {
+	// Covers phase: rows streamed in cover-less; resolve each row's art
+	// now and re-upsert so cards pop in as their art lands.
+	for i := range entries {
 		if err := ctx.Err(); err != nil {
 			s.clearProgress()
 			s.setBusy("")
@@ -207,7 +220,8 @@ func (s *Session) runScan(ctx context.Context) {
 			s.emit(Event{Kind: EvScanFailed, Text: err.Error()})
 			return
 		}
-		rows = append(rows, s.toRow(ctx, e))
+		s.resolveCover(ctx, &rows[i])
+		s.upsertScanRow(rows[i])
 		coversTick()
 	}
 	rows = s.mergeExtraDirs(ctx, rows, snap.ExtraDirs, scanOnlyRoots, coversTick, resolver)
@@ -255,8 +269,16 @@ func (s *Session) scanProgress(phase string, done, total int) {
 	changed := s.st.Progress == nil || s.st.Progress.Phase != phase
 	s.st.Progress = &ScanProgress{Phase: phase, Done: done, Total: total}
 	s.mu.Unlock()
+	s.pokeScan(changed)
+}
+
+// pokeScan emits an EvScanProgress poke at most every progressPokeInterval
+// (force bypasses the interval — scanProgress uses it on phase changes).
+// Row upserts ride on this: frontends repaint from the snapshot on any
+// event, so a poke is all a streamed card needs.
+func (s *Session) pokeScan(force bool) {
 	s.progressMu.Lock()
-	due := changed || time.Since(s.lastPoke) >= progressPokeInterval
+	due := force || time.Since(s.lastPoke) >= progressPokeInterval
 	if due {
 		s.lastPoke = time.Now()
 	}
@@ -264,6 +286,21 @@ func (s *Session) scanProgress(phase string, done, total int) {
 	if due {
 		s.emit(Event{Kind: EvScanProgress})
 	}
+}
+
+// upsertScanRow merges one scanned row into live state: an existing row
+// for the same install dir refreshes in place, a new row appends. Mid-scan
+// order is stable; the settle re-sorts, disambiguates, and prunes.
+func (s *Session) upsertScanRow(row GameRow) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.st.Rows {
+		if s.st.Rows[i].InstallDir == row.InstallDir {
+			s.st.Rows[i] = row
+			return
+		}
+	}
+	s.st.Rows = append(s.st.Rows, row)
 }
 
 // resetProgress arms the poke throttle for a new scan.
@@ -307,7 +344,10 @@ func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow, extraDirs 
 				}
 			}
 			if !dup {
-				rows = append(rows, s.toRow(ctx, entry))
+				row := s.toRow(ctx, entry)
+				rows = append(rows, row)
+				s.upsertScanRow(row)
+				s.pokeScan(false)
 			}
 		}
 		if tick != nil {
@@ -361,6 +401,15 @@ func disambiguateTitles(rows []GameRow) {
 
 // toRow enriches a library entry into display form, resolving cover art.
 func (s *Session) toRow(ctx context.Context, e app.LibraryEntry) GameRow {
+	row := baseRow(e)
+	s.resolveCover(ctx, &row)
+	return row
+}
+
+// baseRow enriches a library entry into display form WITHOUT cover art:
+// the streaming scan path renders the card immediately (OnEntry) and
+// binds art later in the covers phase (resolveCover).
+func baseRow(e app.LibraryEntry) GameRow {
 	row := GameRow{
 		Title:             e.Game.Name,
 		AppID:             e.Game.AppID,
@@ -387,22 +436,26 @@ func (s *Session) toRow(ctx context.Context, e app.LibraryEntry) GameRow {
 	for _, tech := range e.Tech {
 		row.TechBadges = append(row.TechBadges, badgeForTech(tech))
 	}
-	if s.deps.Covers != nil {
-		coverAppID := e.Game.AppID
-		if e.Game.SteamAppID != "" {
-			coverAppID = e.Game.SteamAppID
-		}
-		if !isNumericAppID(coverAppID) {
-			// "custom_<folder>" manual ids carry no Steam meaning; digits
-			// in a folder name ("Hades 2" → "2") would fetch a wrong
-			// game's art and poison the miss cache with a bogus key.
-			coverAppID = ""
-		}
-		if p, err := s.deps.Covers.Cover(ctx, coverAppID, e.Game.Name); err == nil {
-			row.CoverPath = p
-		}
-	}
 	return row
+}
+
+// resolveCover binds cover art onto a row. "custom_<folder>" manual ids
+// carry no Steam meaning; digits in a folder name ("Hades 2" → "2") would
+// fetch a wrong game's art and poison the miss cache with a bogus key.
+func (s *Session) resolveCover(ctx context.Context, row *GameRow) {
+	if s.deps.Covers == nil {
+		return
+	}
+	coverAppID := row.AppID
+	if row.SteamAppID != "" {
+		coverAppID = row.SteamAppID
+	}
+	if !isNumericAppID(coverAppID) {
+		coverAppID = ""
+	}
+	if p, err := s.deps.Covers.Cover(ctx, coverAppID, row.Title); err == nil {
+		row.CoverPath = p
+	}
 }
 
 // refreshCovers rebinds cover art after the online identification phase

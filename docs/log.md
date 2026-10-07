@@ -3456,3 +3456,37 @@ opens the restore menu of local backup sets.
   metadata line is unchanged (a field, not the pill).
 - TDD: red witnessed (old suffix format), then the fix. `go test ./...`
   green (29 packages), `go vet`/`gofmt` clean.
+
+## 2026-10-07 — issue 14: progressive scan rendering
+
+- Scan rows now stream into live state as they are discovered instead of
+  appearing only at settle: `discovery.ScanAll` gained an `OnGame`
+  callback (per accepted game, merge order, duplicates suppressed);
+  `app.ScanAllLibraries` loads store manifests first, enriches inline per
+  game, and forwards each entry via `OnEntry`; `ui.runScan` upserts the
+  cover-less row into `State.Rows` (`upsertScanRow`: an existing row
+  refreshes in place by install dir, a new row appends) under a throttled
+  `EvScanProgress` poke (`pokeScan` extracted from `scanProgress`).
+- `toRow` split into `baseRow` (no network) + `resolveCover`; the covers
+  phase runs after discovery with a known total, re-upserting each row as
+  its art lands. Manual extra-dir rows (`mergeExtraDirs`) upsert the same
+  way. The settle (sort, disambiguate, prune, persistCache, EvScanDone)
+  is unchanged; a cancelled scan leaves the partial streamed rows visible
+  (the next scan completes them).
+- The "enrich" progress phase disappeared — enrichment is inlined into
+  discovery; phases are discover → covers → lookup
+  (`TestScan_ProgressMonotonic` updated).
+- Scan concurrency was already correct and is untouched: async goroutine,
+  single-flight with pending-bit coalescing (`scanserial_test.go`).
+- TDD: red witnessed per layer (discovery/app compile red on unknown
+  OnGame/OnEntry; the ui gated-cover tests fail against the old
+  commit-at-settle code), then green. New tests:
+  `TestScanAll_OnGameStreamsAcceptedGames`,
+  `TestScanAllLibraries_OnEntryStreamsEnriched`,
+  `TestScanStream_RowsVisibleBeforeScanSettles`,
+  `TestScanStream_ExistingRowRefreshedInPlace`.
+- Verification: `go test` green for every package except `internal/gui`,
+  which a parallel session's in-flight red test blocks
+  (`pillwrap_test.go` references the not-yet-implemented `wrapLineCount`
+  — foreign work, excluded from this commit); `go vet`/`gofmt` clean;
+  windows/darwin builds green.

@@ -58,7 +58,9 @@ Linux those games are found through Heroic Games Launcher's installed
 records (native and Flatpak installs). A folder that is itself a game gets
 one row; a
 container folder (a library root like `Games` or `Steam`) becomes a scan root
-and every game inside it surfaces as its own row. The grid shows each game's
+and every game inside it surfaces as its own row. Cards render as they are
+discovered (the scan never blocks the UI, and only one scan runs at a time);
+cover art pops in as it resolves. The grid shows each game's
 store, installed OptiScaler version, detected upscaler versions
 (DLSS/FSR/XeSS), and ProtonDB tier. Launch a game from its card or detail
 panel (GUI) or with `l` (TUI); launching is fire-and-forget. Busy installs and

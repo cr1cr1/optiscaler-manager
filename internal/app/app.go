@@ -149,42 +149,29 @@ type LibraryEntry struct {
 // ScanAllOptions controls ScanAllLibraries. An empty SteamRoot means "probe
 // the platform's Steam roots"; ExtraDirs lists manual roots whose
 // subdirectories are individual games (settings.ExtraDirs). Progress, when
-// non-nil, receives ticks in pipeline order: "discover" per probed root,
-// then "enrich" per discovered game. Resolver, when non-nil, is the v0.8
-// identification chain for manual rows.
+// non-nil, receives "discover" ticks per probed root. Resolver, when
+// non-nil, is the v0.8 identification chain for manual rows. OnEntry, when
+// non-nil, receives each enriched entry as its game is discovered (scan
+// order, on the caller's goroutine), so callers can render rows while later
+// sources are still scanning.
 type ScanAllOptions struct {
 	SteamRoot string
 	ExtraDirs []string
 	Progress  func(phase string, done, total int)
 	Resolver  discovery.TitleResolver
+	OnEntry   func(LibraryEntry)
 }
 
 // ScanAllLibraries discovers games across every store the platform supports
 // (Steam, Epic, GOG, manual roots) via discovery.ScanAll and enriches them
 // with tech, EAC, install status, and versions. Games carry
-// Store/AppName/ExePath/CompatPrefix straight from discovery. An empty
+// Store/AppName/ExePath/CompatPrefix straight from discovery. Enrichment
+// runs inline as each game is accepted (streamed via OnEntry); an empty
 // result fails with ErrNoGames.
 func ScanAllLibraries(ctx context.Context, st *store.Store, opts ScanAllOptions) ([]LibraryEntry, error) {
-	var steamRoots []string
-	if opts.SteamRoot != "" {
-		steamRoots = []string{opts.SteamRoot}
-	}
-	games, err := discovery.ScanAll(ctx, discovery.ScanOptions{
-		SteamRoots:     steamRoots,
-		RecursiveRoots: opts.ExtraDirs,
-		Progress: func(done, total int) {
-			if opts.Progress != nil {
-				opts.Progress("discover", done, total)
-			}
-		},
-		Resolver: opts.Resolver,
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	var manifests []*domain.Manifest
 	if st != nil {
+		var err error
 		manifests, err = st.List()
 		if err != nil {
 			return nil, err
@@ -195,15 +182,30 @@ func ScanAllLibraries(ctx context.Context, st *store.Store, opts ScanAllOptions)
 		byInstallDir[m.InstallDir] = m
 	}
 
+	var steamRoots []string
+	if opts.SteamRoot != "" {
+		steamRoots = []string{opts.SteamRoot}
+	}
 	var out []LibraryEntry
-	for i, g := range games {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		out = append(out, enrich(g, byInstallDir))
-		if opts.Progress != nil {
-			opts.Progress("enrich", i+1, len(games))
-		}
+	_, err := discovery.ScanAll(ctx, discovery.ScanOptions{
+		SteamRoots:     steamRoots,
+		RecursiveRoots: opts.ExtraDirs,
+		Progress: func(done, total int) {
+			if opts.Progress != nil {
+				opts.Progress("discover", done, total)
+			}
+		},
+		Resolver: opts.Resolver,
+		OnGame: func(g domain.Game) {
+			e := enrich(g, byInstallDir)
+			out = append(out, e)
+			if opts.OnEntry != nil {
+				opts.OnEntry(e)
+			}
+		},
+	})
+	if err != nil {
+		return nil, err
 	}
 	if len(out) == 0 {
 		return nil, ErrNoGames

@@ -46,7 +46,8 @@ func TestScan_ProgressLifecycle_NilAfterDone(t *testing.T) {
 }
 
 // TestScan_ProgressMonotonic: within the pipeline, phases arrive in
-// discover→enrich→covers order and Done never decreases inside a phase.
+// discover→covers order (enrichment is inlined into discovery — issue 14)
+// and Done never decreases inside a phase.
 func TestScan_ProgressMonotonic(t *testing.T) {
 	e := newSlowCoversEnv(t, 100*time.Millisecond)
 	e.sess.deps.Settings.ExtraDirs = []string{progressFixture(t, 3)}
@@ -88,7 +89,7 @@ func TestScan_ProgressMonotonic(t *testing.T) {
 	if len(samples) == 0 {
 		t.Fatal("no progress sampled during scan")
 	}
-	order := map[string]int{"discover": 0, "enrich": 1, "covers": 2}
+	order := map[string]int{"discover": 0, "covers": 1}
 	lastPhase, lastDone := -1, 0
 	coversTicks := 0
 	for i, sm := range samples {
@@ -107,7 +108,7 @@ func TestScan_ProgressMonotonic(t *testing.T) {
 			coversTicks++
 		}
 	}
-	if lastPhase != 2 {
+	if lastPhase != 1 {
 		t.Fatalf("last observed phase = %d, want covers (samples: %v)", lastPhase, samples)
 	}
 	if coversTicks == 0 {

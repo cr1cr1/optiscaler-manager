@@ -593,3 +593,43 @@ func TestLibraryEntryOptiScalerVersionChain(t *testing.T) {
 		t.Errorf("Chain Committed status = %q, want committed", got)
 	}
 }
+
+// TestScanAllLibraries_OnEntryStreamsEnriched: OnEntry receives every
+// enriched entry, in scan order, before ScanAllLibraries returns — the
+// streamed entries carry the same enrichment (status probes included) as
+// the returned slice.
+func TestScanAllLibraries_OnEntryStreamsEnriched(t *testing.T) {
+	steamRoot := mkSteamRoot(t)
+	mkExternalGame(t, steamRoot, "100", "Streamed Game", "StreamedGame",
+		map[string]string{"ProductName": "OptiScaler"}, [4]uint16{})
+
+	var streamed []LibraryEntry
+	entries, err := ScanAllLibraries(context.Background(), nil, ScanAllOptions{
+		SteamRoot: steamRoot,
+		OnEntry:   func(e LibraryEntry) { streamed = append(streamed, e) },
+	})
+	if err != nil {
+		t.Fatalf("ScanAllLibraries: %v", err)
+	}
+	if len(streamed) != len(entries) {
+		t.Fatalf("OnEntry reported %d entries, ScanAllLibraries returned %d — every entry must stream exactly once",
+			len(streamed), len(entries))
+	}
+	for i := range entries {
+		if streamed[i].Game.Name != entries[i].Game.Name ||
+			streamed[i].Game.InstallDir != entries[i].Game.InstallDir {
+			t.Errorf("streamed[%d] = %q (%s), want %q (%s) — stream order must match scan order",
+				i, streamed[i].Game.Name, streamed[i].Game.InstallDir,
+				entries[i].Game.Name, entries[i].Game.InstallDir)
+		}
+	}
+	e, ok := entriesByName(streamed)["Streamed Game"]
+	if !ok {
+		t.Fatal("Streamed Game missing from streamed entries")
+	}
+	if e.Status != domain.StatusExternal {
+		t.Errorf("streamed entry Status = %q, want %q — enrichment must be applied at stream time",
+			e.Status, domain.StatusExternal)
+	}
+	t.Logf("%d entries streamed enriched, order preserved", len(streamed))
+}

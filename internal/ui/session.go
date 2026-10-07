@@ -61,11 +61,12 @@ const (
 	EvOpSettled
 )
 
-// Scan progress phases, in pipeline order. "covers" includes the manual
-// extra-dir rows merged after the discovered entries.
+// Scan progress phases, in pipeline order. Enrichment is inlined into
+// discovery (games stream enriched per source — issue 14), so the phases
+// are discover → covers → lookup; "covers" includes the manual extra-dir
+// rows merged after the discovered entries.
 const (
 	phaseDiscover = "discover"
-	phaseEnrich   = "enrich"
 	phaseCovers   = "covers"
 	phaseLookup   = "lookup"
 )

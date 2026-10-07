@@ -71,3 +71,50 @@ func TestScanAll_MergesStoresDedupes(t *testing.T) {
 		t.Errorf("manual game = %+v, want StoreManual with resolved exe", mg)
 	}
 }
+
+// TestScanAll_OnGameStreamsAcceptedGames: OnGame fires once per newly
+// accepted game, in merge order, before ScanAll returns — duplicates are
+// NOT reported (the earlier store's entry already streamed).
+func TestScanAll_OnGameStreamsAcceptedGames(t *testing.T) {
+	steamRoot := t.TempDir()
+	writeFile(t, filepath.Join(steamRoot, "steamapps", "libraryfolders.vdf"),
+		`"libraryfolders" { "0" { "path" "`+steamRoot+`" } }`)
+	writeFile(t, filepath.Join(steamRoot, "steamapps", "appmanifest_100.acf"),
+		`"AppState" { "appid" "100" "name" "Steam Game" "installdir" "SteamGame" }`)
+	steamGameDir := filepath.Join(steamRoot, "steamapps", "common", "SteamGame")
+	if err := os.MkdirAll(steamGameDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	manualRoot := t.TempDir()
+	mkGameBin(t, filepath.Join(manualRoot, "GameTwo", "gametwo"), 1<<20)
+	if runtime.GOOS != "windows" {
+		if err := os.Symlink(steamGameDir, filepath.Join(manualRoot, "SteamGameAlias")); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+	}
+
+	var streamed []domain.Game
+	games, err := ScanAll(context.Background(), ScanOptions{
+		SteamRoots:     []string{steamRoot},
+		RecursiveRoots: []string{manualRoot},
+		OnGame:         func(g domain.Game) { streamed = append(streamed, g) },
+	})
+	if err != nil {
+		t.Fatalf("ScanAll: %v", err)
+	}
+	if len(streamed) != len(games) {
+		t.Fatalf("OnGame reported %d games, ScanAll returned %d — every accepted game must stream exactly once",
+			len(streamed), len(games))
+	}
+	for i, g := range games {
+		if streamed[i].InstallDir != g.InstallDir || streamed[i].Name != g.Name {
+			t.Errorf("streamed[%d] = %q (%s), want %q (%s) — stream order must match merge order",
+				i, streamed[i].Name, streamed[i].InstallDir, g.Name, g.InstallDir)
+		}
+	}
+	if len(streamed) != 2 {
+		t.Fatalf("streamed %d games, want 2 (cross-store duplicate must not stream)", len(streamed))
+	}
+	t.Logf("streamed %d games in merge order, duplicate suppressed", len(streamed))
+}

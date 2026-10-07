@@ -270,9 +270,11 @@ evidence.
   Gated by `online_lookups` in settings.json (default **true**; GUI
   Settings toggle "Online game info (Steam/ProtonDB)", TUI settings `o`).
 - **Scan progress**: `State.Progress` reports the phase
-  (discover/enrich/covers/lookup) with Done/Total; the GUI renders a
+  (discover/covers/lookup) with Done/Total; the GUI renders a
   progress bar under the toolbar, the TUI a progress line with phase, bar,
-  and percent.
+  and percent. Rows stream into the grid as they are discovered — existing
+  cards refresh in place, new cards append, cover art pops in as it
+  resolves — and the settle re-sorts and prunes once at the end.
 - **Async ops**: `AddDirectory` and `ClearBundleCache` are non-blocking.
   AddDirectory shows a placeholder row instantly, then enriches it in a
   goroutine; a duplicate add while one is in flight is rejected.

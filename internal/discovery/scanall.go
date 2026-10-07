@@ -13,12 +13,16 @@ import (
 // subdirectories are individual games. Progress, when non-nil, is called
 // after each probed root with the number of roots done and the total root
 // count (steam + recursive). Resolver, when non-nil, is the identification
-// chain for manual rows (default ChainResolver without overrides).
+// chain for manual rows (default ChainResolver without overrides). OnGame,
+// when non-nil, is called with each newly accepted game as it is found
+// (merge order, duplicates not reported), on the caller's goroutine, so
+// consumers can render results while later sources are still scanning.
 type ScanOptions struct {
 	SteamRoots     []string
 	RecursiveRoots []string
 	Progress       func(done, total int)
 	Resolver       TitleResolver
+	OnGame         func(domain.Game)
 }
 
 // ScanAll discovers games from every store the platform supports — Steam,
@@ -39,6 +43,9 @@ func ScanAll(ctx context.Context, opts ScanOptions) ([]domain.Game, error) {
 			seen[key] = true
 			g.InstallDir = key
 			games = append(games, g)
+			if opts.OnGame != nil {
+				opts.OnGame(g)
+			}
 		}
 	}
 

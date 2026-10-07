@@ -577,10 +577,22 @@ The session consumes the classification in two places (T2):
 
 ## Scan phases, progress, and online lookups (v0.5)
 
-A scan runs as a pipeline of phases — discover → enrich → covers → lookup —
-and reports `State.Progress{Phase, Done, Total}` as it goes (`EvScanProgress`
+A scan runs as a pipeline of phases — discover → covers → lookup — and
+reports `State.Progress{Phase, Done, Total}` as it goes (`EvScanProgress`
 events); the GUI draws a progress bar under the toolbar, the TUI a progress
-line. The lookup phase is online and optional: `internal/steam` resolves a
+line. Rows stream into live state as they are discovered (issue 14):
+`discovery.ScanAll`'s `OnGame` callback reports each accepted game per
+source, `app.ScanAllLibraries` enriches inline and forwards it via
+`OnEntry`, and the session upserts the (cover-less) row into `State.Rows`
+under a throttled poke — cards render while later sources, covers, and
+lookups are still running, with existing rows refreshed in place by install
+dir. The covers phase then rebinds each row's art as it lands. The settle
+still replaces the whole list at once (sorted, disambiguated, pruned of
+stale rows) and persists the cache. Enrichment (classify/EAC/version
+probes) is inlined into discovery, so there is no separate enrich phase.
+Scans are asynchronous and single-flight: a `Scan` landing mid-scan sets a
+pending bit and the running scan re-runs once when it settles. The lookup
+phase is online and optional: `internal/steam` resolves a
 manual game's title to a Steam appid and `internal/protondb` resolves the
 appid to a compatibility tier (Steam-library rows skip the search and query
 the tier directly). It runs under a per-scan budget (8 rows), TTL disk
