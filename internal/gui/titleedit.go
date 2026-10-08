@@ -16,10 +16,14 @@ import (
 // both keys by default, so a post-render check never sees them).
 
 // startTitleEdit opens the inline title editor for row, pre-filled with
-// its current title.
+// its current title, and arms the deferred focus grab: the input does not
+// exist until the header renders it next frame, so the focus lands there
+// (issue 032; the cardFocusPending idiom).
 func (m *model) startTitleEdit(row ui.GameRow) {
 	m.titleEditDir = row.InstallDir
 	m.titleBuf = row.Title
+	m.titleEditOrig = row.Title
+	m.titleFocusPending = true
 	m.titleEditState = &editState{
 		cursor:   len([]rune(row.Title)),
 		anchor:   -1,
@@ -31,12 +35,15 @@ func (m *model) startTitleEdit(row ui.GameRow) {
 }
 
 // applyTitleEdit commits the edited title through the session (empty
-// clears the override) and closes the editor.
+// clears the override) and closes the editor. An unchanged title is never
+// written (issue 032): a no-op commit would still persist settings and
+// kick a cover re-resolution for nothing.
 func (m *model) applyTitleEdit() {
 	dir := m.titleEditDir
 	title := strings.TrimSpace(m.titleBuf)
+	unchanged := title == m.titleEditOrig
 	m.closeTitleEdit()
-	if m.sess == nil || dir == "" {
+	if m.sess == nil || dir == "" || unchanged {
 		return
 	}
 	m.sess.SetTitleOverride(dir, title)
@@ -51,5 +58,7 @@ func (m *model) cancelTitleEdit() {
 func (m *model) closeTitleEdit() {
 	m.titleEditDir = ""
 	m.titleBuf = ""
+	m.titleEditOrig = ""
+	m.titleFocusPending = false
 	m.titleEditState = nil
 }

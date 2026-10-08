@@ -51,6 +51,8 @@ type model struct {
 	forkPatternBuf      string                        // settings-modal add-fork asset-glob input
 	titleEditDir        string                        // detail panel: game whose title is being edited ("" = editor closed, issue 028)
 	titleBuf            string                        // detail panel: title editor buffer
+	titleEditOrig       string                        // detail panel: the title as the user saw it when the editor opened (issue 032: unchanged titles are never written)
+	titleFocusPending   bool                          // deferred focus grab: set by startTitleEdit, consumed once by the header editor with the input's fresh id (issue 032; mirrors cardFocusPending)
 	titleEditState      *editState                    // detail panel: title editor's own edit state (carries the Enter→apply / Esc→cancel hooks, issue 031); nil unless editing
 	titleInputID        ContainerId                   // detail panel: the title editor input's box (focus seam for Enter/Esc tests, issue 031)
 	cardSize            settings.CardSize             // current grid card preset, synced from session.Settings().CardSize in drain

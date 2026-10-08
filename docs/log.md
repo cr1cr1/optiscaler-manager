@@ -3918,3 +3918,25 @@ rescans re-served the miss without retrying.
   during green: the chain prefers the cleaned folder title over the exe
   stem when the stem echoes the folder (existing exeStemTitle rule) —
   a better outcome than the test first assumed.
+
+## 2026-10-08 — issue 32: title editor focus/cancel/no-op guards; header hand pointer
+
+User follow-up on the detail-header editor: focus the input on open,
+cancel the edit when the pane hides, never write an unchanged title,
+and give the header buttons the hand pointer.
+
+- Focus: `titleFocusPending` deferred grab (the `cardFocusPending`
+  idiom) — startTitleEdit arms it, the header editor consumes it with
+  the freshly captured `titleInputID`. Pinned by a real mouse
+  click/release test on the Set-title button.
+- Cancel on hide: rootView's panel-absent branch AND `detailPanel`
+  (selected row gone or different) call `cancelTitleEdit`. First attempt
+  only guarded detailPanel — but the panel is never called when nothing
+  is selected, so the rootView branch carries the hide case.
+- No-op guard: `applyTitleEdit` skips `SetTitleOverride` when the
+  trimmed buffer equals `titleEditOrig` — a no-op commit would still
+  persist settings and re-resolve the cover.
+- `panelHeaderButton` gained `PointerHand` (hover shape pinned for Set
+  title and Close).
+- Red witnessed on all four behaviors; full `go test ./...` exit 0 (31
+  packages), `go vet`/`gofmt` clean.

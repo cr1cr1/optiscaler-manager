@@ -6,6 +6,9 @@ import (
 	"time"
 
 	. "go.hasen.dev/shirei"
+
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
+	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
 
 // Issue 029: the detail panel header hosts the title AND its actions —
@@ -249,4 +252,95 @@ func TestPosterButtonTooltip(t *testing.T) {
 	if !pillTip.shown || pillTip.text != "Set Poster" {
 		t.Errorf("tooltip = (shown %v, text %q), want (true, %q)", pillTip.shown, pillTip.text, "Set Poster")
 	}
+}
+
+// Issue 032: Set title moves focus into the input; hiding the panel
+// cancels the edit; an unchanged title is never written; the header
+// buttons show the hand pointer.
+
+func TestSetTitleClickFocusesInput(t *testing.T) {
+	sess, _ := guiFakes(t)
+	row := scanOneRow(t, sess)
+	m := newModel(Config{Session: sess})
+	sess.Select(row.InstallDir)
+
+	headlessFrames(t, 1100, 1400)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	r := m.setTitleRect
+	if r.Size[0] == 0 {
+		t.Fatal("Set title button not rendered")
+	}
+	cx, cy := r.Origin[0]+r.Size[0]/2, r.Origin[1]+r.Size[1]/2
+	mouseFrame(cx, cy, MouseClick, m.rootView)
+	mouseFrame(cx, cy, MouseRelease, m.rootView)
+	if m.titleEditDir == "" {
+		t.Fatal("clicking Set title did not open the editor")
+	}
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if m.titleInputID == nil || !IdHasFocus(m.titleInputID) {
+		t.Error("opening the title editor did not move focus to the input")
+	}
+}
+
+func TestHidingPanelCancelsTitleEdit(t *testing.T) {
+	sess, _ := guiFakes(t)
+	row := scanOneRow(t, sess)
+	m := newModel(Config{Session: sess})
+	sess.Select(row.InstallDir)
+	m.startTitleEdit(row)
+	m.titleBuf = "Abandoned"
+
+	headlessFrames(t, 1100, 1400)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	sess.Select("") // hide the details pane
+	keyFrame(KeyCodeNone, 0, m.rootView)
+
+	if m.titleEditDir != "" || m.titleBuf != "" || m.titleEditState != nil {
+		t.Errorf("panel hide did not cancel the edit: dir=%q buf=%q state=%v",
+			m.titleEditDir, m.titleBuf, m.titleEditState != nil)
+	}
+	if got := sess.Snapshot().Rows[0].Title; got == "Abandoned" {
+		t.Error("abandoned edit was applied")
+	}
+}
+
+func TestApplySkipsUnchangedTitle(t *testing.T) {
+	settingsRoot := t.TempDir()
+	sess, _ := guiFakes(t, func(d *ui.Deps) { d.SettingsRoot = settingsRoot })
+	row := scanOneRow(t, sess)
+	m := newModel(Config{Session: sess})
+	sess.Select(row.InstallDir)
+
+	m.startTitleEdit(row)
+	m.applyTitleEdit() // buffer untouched: same as the current title
+
+	loaded, err := settings.Load(settingsRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.TitleOverrides) != 0 {
+		t.Errorf("unchanged title was written: TitleOverrides = %v", loaded.TitleOverrides)
+	}
+}
+
+func TestPanelHeaderButtonsPointerHand(t *testing.T) {
+	sess, _ := guiFakes(t)
+	row := scanOneRow(t, sess)
+	m := newModel(Config{Session: sess})
+	sess.Select(row.InstallDir)
+
+	headlessFrames(t, 1100, 1400)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	for name, r := range map[string]Rect{"Set title": m.setTitleRect, "Close": m.closeBtnRect} {
+		if r.Size[0] == 0 {
+			t.Fatalf("%s button not rendered", name)
+		}
+		pt := Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
+		if got := hoverShape(m.rootView, pt); got != CursorShapePointer {
+			t.Errorf("%s hover cursor = %d, want CursorShapePointer", name, got)
+		}
+	}
+	GetInputState().MousePoint = Vec2{-50, -50}
 }

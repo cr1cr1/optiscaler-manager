@@ -110,7 +110,10 @@ here are closed; reopen only with new evidence.
   Close, wrap-safe), Set poster is an icon-only button on the poster's
   own top-left corner; Reset poster stays in the action list. The title
   editor applies on Enter and cancels on Esc (issue 031); the poster
-  button is 30% larger than default and tooltips "Set Poster".
+  button is 30% larger than default and tooltips "Set Poster". Opening
+  the editor focuses the input, hiding the pane cancels the edit, and
+  unchanged titles are never written (issue 032); the header buttons
+  show the hand pointer.
 
 ## UX
 

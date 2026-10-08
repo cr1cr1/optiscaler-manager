@@ -39,6 +39,10 @@ func (m *model) rootView() {
 				// continuation seam so a stale id cannot steer a Tab on the
 				// first frame of a reopen into a detached node.
 				m.panelFirstID = nil
+				// Hiding the panel cancels an open title edit (issue 032).
+				if m.titleEditDir != "" {
+					m.cancelTitleEdit()
+				}
 				m.contentView()
 			}
 			// Bottom breathing room: rows clip at the list viewport edge,
@@ -377,6 +381,12 @@ func (m *model) detailPanel() {
 	// continuation works for clean games (no version dropdown) too.
 	m.panelFirstID = nil
 	e := m.selectedRow()
+	// Hiding the panel — or switching it to another game — cancels an open
+	// title edit (issue 032): the editor belongs to the visible context,
+	// and an abandoned buffer must never apply later.
+	if m.titleEditDir != "" && (e == nil || e.InstallDir != m.titleEditDir) {
+		m.cancelTitleEdit()
+	}
 	if e == nil {
 		if m.sess != nil {
 			m.sess.Select("")
@@ -418,6 +428,13 @@ func (m *model) detailPanel() {
 					themedInputState(&m.titleBuf, "title (empty clears the override)", NoIcon, m.titleEditState,
 						MinSize(140, fieldH), MaxSizeVec(Vec2{panelW - 2*sp16, fieldH}))
 					m.titleInputID = GetLastId()
+					// Deferred focus grab (issue 032): startTitleEdit armed
+					// it while the input did not exist yet; the id above is
+					// this frame's fresh registration.
+					if m.titleFocusPending {
+						m.titleFocusPending = false
+						FocusImmediateOn(m.titleInputID)
+					}
 					Container(Attrs(Row), func() {
 						m.titleApplyRect = GetScreenRectOf(CurrentId())
 						if m.panelHeaderButton(NoIcon, "Apply") {
@@ -604,7 +621,7 @@ func (m *model) detailPanel() {
 // wrapper's container id, which the continuation seam needs.
 func (m *model) panelHeaderButton(icon IconGlyph, label string) bool {
 	activated := false
-	Container(Attrs(Focusable, Corners(6)), func() {
+	Container(Attrs(Focusable, PointerHand, Corners(6)), func() {
 		FocusOnClick()
 		if m.panelFirstID == nil {
 			m.panelFirstID = CurrentId()
