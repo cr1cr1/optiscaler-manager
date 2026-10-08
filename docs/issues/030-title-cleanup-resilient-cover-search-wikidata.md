@@ -57,4 +57,4 @@ the cover chain's `searchAppID`; new keyless `internal/wikidata` client
 the cover chain after PCGW in both appid and name paths; duplicate-title
 disambiguation now uses short path tails instead of absolute paths.
 Diagnosis and live-API evidence are in docs/log.md (2026-10-08).
-Commit: pinned after the fact (see below).
+Commit: `5bc5e19`.
