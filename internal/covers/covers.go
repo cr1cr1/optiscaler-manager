@@ -80,6 +80,7 @@ func New(httpClient *http.Client, cacheDir string) *Covers {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
+	sharpenLegacyCache(cacheDir) // one-time migration (issue 039)
 	return &Covers{
 		http:       httpClient,
 		cacheDir:   cacheDir,
@@ -97,11 +98,6 @@ func NewWithBase(httpClient *http.Client, cacheDir, cdnBase, searchBase string) 
 	c.searchBase = searchBase
 	return c
 }
-
-// CacheDir returns the on-disk cache root (downloaded covers, override
-// posters, placeholder). The GUI scopes its decode-time cover sharpening
-// to this tree (issue 038).
-func (c *Covers) CacheDir() string { return c.cacheDir }
 
 // Cover returns the local path of the game's cover image, downloading and
 // caching it if needed. On any miss it returns the shared placeholder (never
@@ -424,6 +420,7 @@ func (c *Covers) fetch(ctx context.Context, url, dest string) error {
 		return err
 	}
 	normalizeCover(dest) // aspect invariant (issue 025)
+	sharpenCover(dest)   // sharpen once, at store time (issue 039)
 	return nil
 }
 

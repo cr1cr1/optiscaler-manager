@@ -105,7 +105,13 @@ internal/
               cached image is normalized to the 2:3 card aspect
               (center-crop on write AND on cached read — the renderer is
               deliberately aspect-blind, so the cache owns the no-stretch
-              invariant; issue 025). User-uploaded posters
+              invariant; issue 025) and sharpened with a 10% unsharp
+              mask once at store time — fetch and SetOverride both apply
+              it after normalize, a marker-gated (`_sharpened-v1`)
+              one-time sweep in New migrates legacy caches, and reads
+              never decode (issue 039; the issue-038 runtime decode
+              hook was ripped out — registry sweeps re-applied it).
+              User-uploaded posters
               (settings.cover_overrides, issue 028) are validated, copied
               in as override_<sha256(dir)[:16]>.img, normalized the same
               way, and beat the whole chain in the session's resolveCover/
@@ -194,11 +200,7 @@ internal/
               library cache (schema-versioned, atomic) behind
               Session.Start
   gui/        shirei binding over ui.Session (ALL shirei imports live here);
-              theme tokens, arrow-key grid nav, right-docked detail panel;
-              cover art decodes once per path through the vendored LoadImage
-              decode hook (vendor patch v0.18), which applies a 10% unsharp
-              mask to cover-cache images only — disk bytes untouched, no
-              per-frame cost (issue 038)
+              theme tokens, arrow-key grid nav, right-docked detail panel
   tui/        bubbletea binding over ui.Session (renders snapshots, forwards
               keys; no business logic beyond the in-process OptiScaler.ini
               editor for `o`); multi-screen styled layout on

@@ -6,6 +6,7 @@ package gui
 import (
 	"context"
 	"os"
+	"time"
 
 	shireiapp "go.hasen.dev/shirei/app"
 
@@ -137,11 +138,6 @@ type model struct {
 }
 
 func newModel(cfg Config) *model {
-	if cfg.Session != nil {
-		// Issue 038: sharpen covers once at image-decode time, scoped to
-		// the session's cover cache dir (idempotent; no-op without covers).
-		installCoverSharpen(cfg.Session.CoversCacheDir())
-	}
 	return &model{
 		cfg:       cfg,
 		sess:      cfg.Session,
@@ -161,9 +157,64 @@ func Run(ctx context.Context, cfg Config) error {
 	m := newModel(cfg)
 	m.ctx = ctx
 	m.boot(ctx)
+	if m.sess != nil {
+		// Background state changes (scan progress, toasts, async probes)
+		// must repaint without waiting for input: each session event
+		// requests a frame. drain() discards event values and re-snapshots,
+		// so sharing the channel with the frame-start drain is safe
+		// (issue 040).
+		go forwardSessionEvents(ctx, m.sess.Events())
+	}
+	// Time-driven widgets (caret blink, busy spinner) flag pulseWanted and
+	// ride this calm pulse instead of requesting a frame per frame — the
+	// backends present the whole canvas per produced frame, so per-frame
+	// requests showed as a whole-window flicker (issue 040).
+	go pulseFrames(ctx)
 	view := m.rootView
 	shireiapp.Run(view)
 	return nil
+}
+
+// forwardSessionEvents requests a frame for every session event until the
+// channel closes or ctx ends. Event VALUES are discarded: drain() only
+// uses events as a "state changed" signal before re-snapshotting.
+func forwardSessionEvents(ctx context.Context, events <-chan ui.Event) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, ok := <-events:
+			if !ok {
+				return
+			}
+			RequestNextFrame()
+		}
+	}
+}
+
+// pulseInterval is the wake cadence for time-driven widgets: fast enough
+// that the 500ms caret blink and the 150ms spinner step stay smooth, calm
+// enough that an idle-but-pulsing window produces 10 frames/s instead of
+// one per frame callback (issue 040).
+const pulseInterval = 100 * time.Millisecond
+
+// pulseFrames requests a frame each tick while a time-driven widget set
+// pulseWanted during the last rendered frame. Backends poll the
+// NextFrame flag from their dispatch loops, so the goroutine needs no
+// other synchronization.
+func pulseFrames(ctx context.Context) {
+	t := time.NewTicker(pulseInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if pulseWanted.Load() {
+				RequestNextFrame()
+			}
+		}
+	}
 }
 
 // boot kicks off the session's cache-first startup: a warm games cache shows

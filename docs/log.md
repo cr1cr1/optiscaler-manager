@@ -4133,3 +4133,37 @@ implemented.
   038" — a numbering collision with this issue; theirs predates or
   raced this doc. Number 038 belongs to this change as the doc was
   created first in docs/issues/; their entry should renumber.
+
+## 2026-10-08 — issue 39: sharpen covers once at store time, not at load
+
+User report: issue 038 made the whole app sluggish — the sharpening
+must not be applied non-stop. Root cause: 038's decode hook did run
+only at `LoadImage`, but shirei's image registry sweeps unused entries,
+so scrolling re-decoded and re-sharpened covers repeatedly, and the
+sub-500 KB path ran synchronously on the UI thread. Any runtime
+sharpening is the wrong trade — the result is deterministic, so it
+belongs in the on-disk cache.
+
+- `internal/covers/sharpen.go` (new): `sharpenRGBA` (the 038 math,
+  moved), `sharpenCover` (decode → 10% unsharp → re-encode same
+  format, atomic temp+rename, mirroring normalizeCover), and a
+  marker-gated (`_sharpened-v1`) one-time legacy-cache migration run
+  synchronously from `New` — before any scan goroutine, so it never
+  races a fetch (a double-sharpened poster is worse than a soft one).
+- Store seams: `Covers.fetch` (single download path for
+  CDN/SGDB/PCGW/GOG/Wikidata/hero) and `Covers.SetOverride` sharpen
+  right after `normalizeCover`. Cache-hit reads (`Cover` legacy scrub)
+  stay decode-free — the bytes on disk are final.
+- Runtime path ripped out: vendor patch v0.18 reverted from
+  `images.go` (byte-identical to upstream; vendor-patches.md marks the
+  section REMOVED), the GUI hook install/wiring and the
+  `CacheDir`/`CoversCacheDir` accessors deleted with it.
+- ATDD red witnessed (`tmp/test-red-039.log`): behavior reds
+  (store-time sharpen + migration) in internal/covers. Green: covers
+  and ui packages uncached; the gui package keeps failing ONLY on the
+  foreign session's in-flight issue-040 pulse-ticker reds/flakes
+  (caret/spinner churn + title-edit timing in files they are actively
+  editing) — my gui delta is byte-identical to the pre-038 state plus
+  file deletions; final verification ran in a clean worktree.
+- The foreign session's pulse-ticker work cites issue 040, resolving
+  the 038 numbering collision noted in the issue-38 entry.

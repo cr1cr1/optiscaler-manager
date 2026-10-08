@@ -377,6 +377,18 @@ import); the `cursorEnterSerial` assignment in `HandlePointerEnter`
 `drawFrame` before the early return. `TestVendorCSDPatchPresent` and the
 cursor tests fail while any part is missing.
 
+## shirei: image decode hook (v0.18) — REMOVED
+
+**Status.** Shipped in issue 038, ripped out in issue 039 the same day:
+the hook only ran at decode, but shirei's image registry sweeps unused
+entries, so scrolling re-decoded and re-sharpened covers repeatedly and
+the sub-500 KB path did it synchronously on the UI thread — the app felt
+sluggish. Sharpening moved to the covers store seam (cached bytes are
+sharpened once at fetch/override time, plus a marker-gated one-time
+migration in `covers.New`; see issue 039). Nothing is reapplied after
+`go mod vendor`; `images.go` is upstream-clean again. The history below
+is kept for the record.
+
 ## shirei: image decode hook (v0.18)
 
 - **File**: `vendor/go.hasen.dev/shirei/images.go` (`imageDecodeHook` var,

@@ -55,6 +55,7 @@ func (c *Covers) SetOverride(dir, srcPath string) (string, error) {
 		return "", err
 	}
 	normalizeCover(dst) // aspect invariant (issue 025)
+	sharpenCover(dst)   // sharpen once, at store time (issue 039)
 	return name, nil
 }
 

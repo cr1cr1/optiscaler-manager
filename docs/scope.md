@@ -160,9 +160,10 @@ Added after v0.1, modeled on the reference client's main window:
   chain and survives rescans. Cached on disk by sanitized appid; every
   cached image is normalized to
   the 2:3 card aspect (center-crop — landscape hero banners included,
-  legacy files scrubbed on read, issue 025) and rendered through a 10%
-  unsharp mask applied once at image decode (in-memory only — the cached
-  file stays pristine; vendor patch v0.18, issue 038). (Ecosystem-verified keyless
+  legacy files scrubbed on read, issue 025) and sharpened with a 10%
+  unsharp mask once when written to the cache — fetch and user-upload
+  alike, with a one-time migration sweep for pre-existing caches
+  (issue 039). (Ecosystem-verified keyless
   pattern: Lutris and Heroic use the same Steam CDN primary; Bottles uses
   a private SteamGridDB proxy, not copyable — we call SteamGridDB
   directly with the user's own free API key, issue 024.)

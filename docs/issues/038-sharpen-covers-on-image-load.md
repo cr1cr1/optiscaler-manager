@@ -84,3 +84,11 @@ sharpening went in at the decode seam:
 
 Commit: 1fc0da7
 
+**Superseded by issue 039 (same day).** The decode hook only ran once
+per `LoadImage`, but shirei's image registry sweeps unused entries, so
+scrolling re-decoded and re-sharpened covers — and the sub-500 KB path
+ran on the UI thread; the app felt sluggish. Issue 039 moved the same
+10% unsharp mask into the covers store seam (sharpened once into the
+cached bytes at fetch/override time + one-time migration), reverted
+vendor patch v0.18, and deleted the GUI hook machinery.
+
