@@ -171,7 +171,8 @@ internal/
                proton script) sorted newest-first; ResolveProtonPath
                returns the newest detected runner (Proton is always
                Auto); FindPrefixes detects wine prefixes (dirs with a
-               drive_c) in Heroic Prefixes/, Bottles bottles/, Steam
+               drive_c) in Heroic Prefixes/, Bottles bottles/ (plus the
+               custom_bottles_path root from Bottles' data.yml), Steam
                compatdata pfx/ (named from the appmanifest), Lutris
                per-game YAML prefix: paths, PlayOnLinux wineprefix/,
                CrossOver ~/.cxoffice, and ~/.wine; ResolvePrefix applies

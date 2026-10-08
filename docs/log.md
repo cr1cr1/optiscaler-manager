@@ -4481,3 +4481,22 @@ no such file or directory` — stranding the mod installed forever.
   load, `TestFindPrefixes_BottlesCustomPath` while a parallel session
   had `internal/umu` half-edited in the working tree.
 2026-10-09
+
+## 2026-10-09 — issue 53: umu prefix detection honors Bottles custom_bottles_path
+
+- Report: no Bottles prefixes in the picker at all. Root cause: the
+  user set a custom bottles directory in Bottles, which Bottles records
+  in `~/.local/share/bottles/data.yml` as
+  `custom_bottles_path: /mnt/linux1/bottles` — outside both probed
+  roots (XDG `bottles/bottles`, Flatpak variant). Confirmed against the
+  real file and layout (prefixes directly under the custom root).
+- Fix: `bottlesCustomPath` parses the `custom_bottles_path:` key from
+  the native and Flatpak `data.yml` (reusing `unquoteYAML`); a
+  non-empty value joins the `FindPrefixes` container list as source
+  `bottles`. Non-prefix children (e.g. `_users`) are filtered by the
+  existing `drive_c` check; missing files/keys are no-ops.
+- TDD: red (`TestFindPrefixes_BottlesCustomPath` missing the prefix),
+  then green; full suite green, `go vet` clean.
+- Docs: issue 053; detection lists updated in README, scope.md,
+  architecture.md.
+

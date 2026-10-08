@@ -58,6 +58,33 @@ func TestFindPrefixes_DetectsLauncherPrefixes(t *testing.T) {
 	}
 }
 
+func TestFindPrefixes_BottlesCustomPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	// Bottles with a user-set bottles directory: data.yml points at the
+	// root that holds the prefixes directly (issue 053).
+	custom := t.TempDir()
+	bottle := mkPrefix(t, filepath.Join(custom, "gaming"))
+	dataDir := filepath.Join(home, ".local", "share", "bottles")
+	mkdir(t, dataDir)
+	writeFile(t, filepath.Join(dataDir, "data.yml"),
+		"custom_bottles_path: "+custom+"\nfunding_dialog_dismissed: true\n")
+
+	got := FindPrefixes(context.Background())
+	for _, p := range got {
+		if p.Path == bottle {
+			if p.Source != "bottles" || p.Name != "gaming" {
+				t.Errorf("custom bottle = {Name:%q Source:%q}, want {gaming bottles}", p.Name, p.Source)
+			}
+			return
+		}
+	}
+	t.Errorf("FindPrefixes missing custom Bottles prefix %q (got %v)", bottle, got)
+}
+
 func TestFindPrefixes_FlatpakVariants(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

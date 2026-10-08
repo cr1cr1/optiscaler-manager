@@ -226,7 +226,8 @@ pins a prefix per game — per-game wins over the global default, and
 Bottles/Lutris/Heroic `drive_c` or an existing Heroic prefix) before
 falling back to a per-game prefix under
 `~/.local/share/optiscaler-manager/umu-prefixes/<slug>`. Detected
-prefixes come from Heroic `Prefixes/`, Bottles `bottles/`, Steam
+prefixes come from Heroic `Prefixes/`, Bottles `bottles/` (plus the
+`custom_bottles_path` root from Bottles' `data.yml`), Steam
 `compatdata/` (labeled with the game title from the appmanifest),
 Lutris per-game configs, PlayOnLinux `wineprefix/`, CrossOver
 `~/.cxoffice`, and `~/.wine`. Launch

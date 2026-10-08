@@ -22,7 +22,8 @@ type prefixContainer struct {
 // FindPrefixes scans the known prefix locations for existing wine
 // prefixes (directories containing a drive_c): Heroic's
 // ~/Games/Heroic/Prefixes (native and Flatpak), Bottles' bottles/
-// (XDG and Flatpak), every Steam root and extra library's
+// (XDG and Flatpak) plus the custom_bottles_path root named in
+// Bottles' data.yml (issue 053), every Steam root and extra library's
 // steamapps/compatdata (named from the sibling appmanifest when
 // present), PlayOnLinux's wineprefix/, CrossOver's ~/.cxoffice, the
 // per-game prefix: paths in Lutris's YAML configs (XDG config and
@@ -55,6 +56,17 @@ func FindPrefixes(_ context.Context) []Prefix {
 		containers = append(containers,
 			prefixContainer{filepath.Join(xdgData, "bottles", "bottles"), "bottles", false},
 		)
+	}
+	// Bottles with a user-chosen bottles directory: data.yml (next to the
+	// default bottles/ root, native or Flatpak) names it via
+	// custom_bottles_path, and prefixes live directly under it (issue 053).
+	for _, dataYML := range []string{
+		filepath.Join(xdgData, "bottles", "data.yml"),
+		filepath.Join(home, ".var", "app", "com.usebottles.bottles", "data", "bottles", "data.yml"),
+	} {
+		if root := bottlesCustomPath(dataYML); root != "" {
+			containers = append(containers, prefixContainer{root, "bottles", false})
+		}
 	}
 	for _, r := range steamLibraryRoots(home, xdgData) {
 		containers = append(containers,
@@ -174,6 +186,23 @@ func lutrisYAMLConfig(path string) (name, prefix string) {
 		}
 	}
 	return name, prefix
+}
+
+// bottlesCustomPath reads Bottles' data.yml and returns the
+// custom_bottles_path value (the user-chosen bottles root), or "" when
+// the file or key is absent.
+func bottlesCustomPath(dataYML string) string {
+	data, err := os.ReadFile(dataYML)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "custom_bottles_path:") {
+			return unquoteYAML(strings.TrimSpace(strings.TrimPrefix(trimmed, "custom_bottles_path:")))
+		}
+	}
+	return ""
 }
 
 // unquoteYAML strips one layer of matching single or double quotes.
