@@ -82,6 +82,12 @@ type model struct {
 	listSelectedRect    Rect                          // screen rect of the session-selected list row's selection band (selected-highlight test seam)
 	openINIRect         Rect                          // screen rect of the detail panel's OpenINI button (visibility test seam)
 	openFolderRect      Rect                          // screen rect of the detail panel's Open-game-folder button (visibility test seam, issue 027)
+	panelTitleRect      Rect                          // screen rect of the detail panel header's title label container (header wrap test seam, issue 029)
+	setTitleRect        Rect                          // screen rect of the detail panel header's Set-title button (placement test seam, issue 029)
+	titleApplyRect      Rect                          // screen rect of the header title editor's Apply button (placement test seam, issue 029)
+	closeBtnRect        Rect                          // screen rect of the detail panel header's Close button (placement test seam, issue 029)
+	posterRect          Rect                          // screen rect of the detail panel's poster box (overlay placement test seam, issue 029)
+	posterBtnRect       Rect                          // screen rect of the icon-only Set-poster overlay button on the poster (placement test seam, issue 029)
 	searchID            ContainerId                   // the search field's container (`/` focuses it from anywhere)
 	listID              ContainerId                   // the list view's focusable wrapper (Tab focus nav test seam)
 	listFocusPending    bool                          // deferred row-click focus grab: consumed once by actionList with the wrapper's fresh identity
@@ -112,7 +118,7 @@ type model struct {
 	versionDDItemsFor   string                        // install dir owning versionDDItems ("" = no dropdown open)
 	openDropdownDir     string                        // install dir of the single open version dropdown ("" = none)
 	ddTriggerID         ContainerId                   // container id of the card's version-dropdown trigger (click routing seam: the card must not steal its activation)
-	panelFirstID        ContainerId                   // container id of the detail panel's FIRST focusable in render order — its header Close button, rendered before the version pills/dropdown so every panel (clean games included) has a jump target — captured each panel frame by view.go's panelCloseButton and reset to nil whenever the panel is absent. With the panel open, Tab on the selected card jumps straight here instead of walking every remaining grid focusable; Shift+Tab here returns focus to the card.
+	panelFirstID        ContainerId                   // container id of the detail panel's FIRST focusable in render order — the header's Set-title button (Apply while the title editor is open; Close when the session is absent), rendered before the version pills/dropdown so every panel (clean games included) has a jump target — captured each panel frame by view.go's panelHeaderButton and reset to nil whenever the panel is absent. With the panel open, Tab on the selected card jumps straight here instead of walking every remaining grid focusable; Shift+Tab here returns focus to the card.
 	ddFocusRing         bool                          // whether the version-dropdown trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors listFocusRing)
 	sortTriggerID       ContainerId                   // container id of the toolbar sort-dropdown trigger (focus/click test seam, mirrors ddTriggerID)
 	sortFocusRing       bool                          // whether the sort trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors ddFocusRing)

@@ -3834,3 +3834,26 @@ games). All fixes general — no per-title hacks.
 - ATDD red witnessed (3 behavioral discovery failures + 5 compile
   reds). Verification: `go test ./...` (30 packages) exit 0,
   `go vet`/`gofmt` clean, `GOOS=windows`/`darwin go build ./...` OK.
+
+## 2026-10-08 — issue 29: detail header hosts title actions; poster overlay Set-poster
+
+User follow-up on issue 028's buttons: Set title belongs next to the
+title (left of Close), Set poster belongs ON the poster.
+
+- Header is now [title] [Set title] [Close] in a wrapping row; the title
+  caps at content width and soft-wraps (MaxSize cascade), so long titles
+  never push buttons out of the panel. The title editor opens in place,
+  replacing label + button. `panelCloseButton` generalized to
+  `panelHeaderButton`; the first header focusable captures
+  `m.panelFirstID` (Tab continuation intact — paneltab tests hold).
+- Set poster is an icon-only SymImage button floating at the poster's
+  top-left with the default sp8 margin (Float relative to the poster
+  box, scrolls with it; placeholder covers included). Reset poster stays
+  in the action list.
+- Test seams: `panelTitleRect`, `setTitleRect`, `titleApplyRect`,
+  `closeBtnRect`, `posterRect`, `posterBtnRect`. Red witnessed as build
+  failure on the new seams. Wrap test changes the title via
+  `SetTitleOverride` (`drain()` re-snapshots `m.state` every frame) and
+  accounts for title trimming.
+- Verification: `go test ./...` exit 0 (30 packages), `go vet`/`gofmt`
+  clean.

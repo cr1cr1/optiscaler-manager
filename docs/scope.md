@@ -105,7 +105,10 @@ here are closed; reopen only with new evidence.
 - Manual identification fixes (issue 028): per-game **set title**
   (UI for `title_overrides`, cover re-resolves) and **set/reset poster**
   (user-uploaded art in `cover_overrides` beats the fetch chain,
-  survives rescans) in both frontends.
+  survives rescans) in both frontends. GUI placement (issue 029): Set
+  title lives in the detail panel header next to the title (left of
+  Close, wrap-safe), Set poster is an icon-only button on the poster's
+  own top-left corner; Reset poster stays in the action list.
 
 ## UX
 

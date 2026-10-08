@@ -386,6 +386,12 @@ func (m *model) detailPanel() {
 	panelW := detailPanelWidth(GetHost().WindowSize[0])
 	m.openINIRect = Rect{}
 	m.openFolderRect = Rect{}
+	m.panelTitleRect = Rect{}
+	m.setTitleRect = Rect{}
+	m.titleApplyRect = Rect{}
+	m.closeBtnRect = Rect{}
+	m.posterRect = Rect{}
+	m.posterBtnRect = Rect{}
 	// The grid rendered first and captured its own tech row; the panel owns
 	// the seam while open so a missing panel row reads as zero.
 	m.techPillRowRect = Rect{}
@@ -395,15 +401,51 @@ func (m *model) detailPanel() {
 		m.detailPanelRect = GetScreenRectOf(CurrentId())
 		Container(Attrs(Grow(1), Expand, Pad(sp16), Gap(sp12), Viewport, Clip), func() {
 			ScrollOnInput()
-			Container(Attrs(Row, CrossMid, Gap(sp8)), func() {
-				Label(e.Title, FontSize(16), TextColorVec(txtMain), FontWeight(WeightBold))
-				Filler(1)
-				if m.sess != nil && m.panelCloseButton() {
-					m.sess.Select("")
+			// Header (issue 029): [title] [Set title] [Close] — the title
+			// owns up to the full content width and soft-wraps inside it
+			// (MaxSize cascade); the row itself wraps so the buttons never
+			// leave the visible area on narrow panels. While the title
+			// editor is open it replaces the label and the Set-title
+			// button in place.
+			Container(Attrs(Row, Wrap, CrossMid, Gap(sp8)), func() {
+				if m.sess != nil && m.titleEditDir == e.InstallDir {
+					themedInput(&m.titleBuf, "title (empty clears the override)", NoIcon,
+						MinSize(140, fieldH), MaxSizeVec(Vec2{panelW - 2*sp16, fieldH}))
+					Container(Attrs(Row), func() {
+						m.titleApplyRect = GetScreenRectOf(CurrentId())
+						if m.panelHeaderButton(NoIcon, "Apply") {
+							m.applyTitleEdit()
+						}
+					})
+					if m.panelHeaderButton(NoIcon, "Cancel") {
+						m.cancelTitleEdit()
+					}
+				} else {
+					Container(Attrs(MaxSizeVec(Vec2{panelW - 2*sp16, 0})), func() {
+						m.panelTitleRect = GetScreenRectOf(CurrentId())
+						Label(e.Title, FontSize(16), TextColorVec(txtMain), FontWeight(WeightBold))
+					})
+					if m.sess != nil {
+						Container(Attrs(Row), func() {
+							m.setTitleRect = GetScreenRectOf(CurrentId())
+							if m.panelHeaderButton(SymEdit, "Set title") {
+								m.startTitleEdit(*e)
+							}
+						})
+					}
 				}
-				// Shift+Tab on the panel's first focusable (the header Close
-				// button) reverses the continuation (grid.go): focus returns
-				// to the selected card. The panel renders after the grid, so
+				if m.sess != nil {
+					Container(Attrs(Row), func() {
+						m.closeBtnRect = GetScreenRectOf(CurrentId())
+						if m.panelHeaderButton(TypCancel, "Close") {
+							m.sess.Select("")
+						}
+					})
+				}
+				// Shift+Tab on the panel's first focusable (the header's
+				// Set-title button, or Apply while editing) reverses the
+				// continuation (grid.go): focus returns to the selected
+				// card. The panel renders after the grid, so
 				// the card's id in this frame's registry is fresh and
 				// resolves directly; a card scrolled out of the virtualized
 				// grid re-asserts via the deferred cardFocusPending on its
@@ -425,7 +467,23 @@ func (m *model) detailPanel() {
 			// and can push them past the fold; ScrollOnInput above makes
 			// the fold reachable instead of reordering the pane.
 			coverW := panelW - 2*sp16
-			m.coverArt(*e, coverW, coverW*coverRatio)
+			// The poster box carries the icon-only Set-poster button on its
+			// own top-left corner (issue 029): Float is relative to the
+			// poster, so the overlay scrolls with it; sp8 is the default
+			// margin. Placeholder covers get the button too — they are the
+			// ones that need it most.
+			Container(Attrs(FixSize(coverW, coverW*coverRatio)), func() {
+				m.posterRect = GetScreenRectOf(CurrentId())
+				m.coverArt(*e, coverW, coverW*coverRatio)
+				if m.sess != nil {
+					Container(Attrs(Float(sp8, sp8), Z(1)), func() {
+						m.posterBtnRect = GetScreenRectOf(CurrentId())
+						if focusableButton(SymImage, "") {
+							m.sess.PickAndSetCover(m.ctx, e.InstallDir)
+						}
+					})
+				}
+			})
 			muted(e.InstallDir)
 			Container(Attrs(Row, Wrap, Gap(sp4), CrossMid), func() {
 				txt("Status:")
@@ -508,27 +566,9 @@ func (m *model) detailPanel() {
 					m.sess.OpenGameFolder(e.InstallDir)
 				}
 			})
-			// Manual identification fixes (issue 028): pin the display
-			// title (explicit apply/cancel — a commit persists settings
-			// and kicks a cover re-resolution), upload poster art, or
-			// reset it to the fetch chain.
-			if m.titleEditDir == e.InstallDir {
-				themedInput(&m.titleBuf, "title (empty clears the override)", NoIcon,
-					MinSize(200, fieldH), MaxSizeVec(Vec2{panelW - 2*sp16, fieldH}))
-				Container(Attrs(Row, Gap(sp8)), func() {
-					if focusableButton(NoIcon, "Apply") {
-						m.applyTitleEdit()
-					}
-					if focusableButton(NoIcon, "Cancel") {
-						m.cancelTitleEdit()
-					}
-				})
-			} else if focusableButton(NoIcon, "Set title") {
-				m.startTitleEdit(*e)
-			}
-			if focusableButton(NoIcon, "Set poster…") {
-				m.sess.PickAndSetCover(m.ctx, e.InstallDir)
-			}
+			// Manual identification fixes (issue 028): the title pin and
+			// poster upload moved to the header and the poster itself
+			// (issue 029); only the poster reset stays in the action list.
 			if m.sess.CoverOverrideActive(e.InstallDir) && focusableButton(NoIcon, "Reset poster") {
 				m.sess.ClearCoverOverride(e.InstallDir)
 			}
@@ -545,18 +585,20 @@ func (m *model) detailPanel() {
 	})
 }
 
-// panelCloseButton renders the detail panel's header Close button as a
+// panelHeaderButton renders one of the detail panel header's buttons as a
 // focusable control (focusableButton's pattern) and captures its container
-// id in m.panelFirstID: the Close button is the panel's FIRST focusable in
-// render order — rendered before the version pills/dropdown — so the panel
-// Tab continuation (grid.go) jumps here, for clean games with no version
-// dropdown too. focusableButton cannot serve here: it does not expose its
+// id in m.panelFirstID when it is the header's FIRST focusable in render
+// order — the panel Tab continuation (grid.go) jumps there, so every panel
+// (clean games included) has a jump target before the version
+// pills/dropdown. focusableButton cannot serve here: it does not expose its
 // wrapper's container id, which the continuation seam needs.
-func (m *model) panelCloseButton() bool {
+func (m *model) panelHeaderButton(icon IconGlyph, label string) bool {
 	activated := false
 	Container(Attrs(Focusable, Corners(6)), func() {
 		FocusOnClick()
-		m.panelFirstID = CurrentId()
+		if m.panelFirstID == nil {
+			m.panelFirstID = CurrentId()
+		}
 		if HasFocus() {
 			ModAttrs(func(a *AttrSet) {
 				a.BorderWidth = 2
@@ -567,7 +609,7 @@ func (m *model) panelCloseButton() bool {
 				activated = true
 			}
 		}
-		if ButtonExt("Close", ButtonAttrs{Icon: TypCancel}, DefaultButtonLook()) {
+		if ButtonExt(label, ButtonAttrs{Icon: icon}, DefaultButtonLook()) {
 			activated = true
 		}
 	})
