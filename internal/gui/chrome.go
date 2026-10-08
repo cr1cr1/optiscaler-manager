@@ -674,10 +674,19 @@ func sortLabel(mode ui.SortMode) string {
 }
 
 // statusBar is the bottom strip with the current status line, the keyboard
-// shortcut hints, and the library size.
+// shortcut hints, and the library size. It stays one line tall: multi-line
+// status text (umu stderr tails) collapses to its first line and the full
+// output lives in the log panel behind the Log button (issue 052).
 func (m *model) statusBar() {
 	Container(Attrs(Expand, BackgroundVec(bgPanel), Pad2(sp8, sp12), Row, CrossMid, Gap(sp12)), func() {
-		muted(m.state.StatusLine)
+		m.statusBarRect = GetScreenRectOf(CurrentId())
+		Container(Attrs(Row), func() {
+			m.logBtnRect = GetScreenRectOf(CurrentId())
+			if focusableButton(NoIcon, "Log") {
+				m.toggleLogPanel()
+			}
+		})
+		muted(oneLineStatus(m.state.StatusLine))
 		Filler(1)
 		muted("Tab: focus · ←→↑↓: select · Enter: open · Esc: close")
 		muted(fmt.Sprintf("%d games", len(m.state.Rows)))

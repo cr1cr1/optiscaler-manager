@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +28,11 @@ import (
 
 // toastTTL is how long a toast stays visible.
 const toastTTL = 8 * time.Second
+
+// logRingCap bounds the status history kept for the GUI log panel
+// (issue 052): every setStatus text is appended (split into lines), the
+// oldest lines evicted past the cap.
+const logRingCap = 512
 
 // ViewMode selects the library presentation.
 type ViewMode int
@@ -250,6 +256,7 @@ type Session struct {
 	now       func() time.Time
 	opCancels map[string]context.CancelFunc // in-flight op per game dir
 	cacheMu   sync.Mutex                    // serializes games-cache writes
+	logLines  []string                      // capped status history for the GUI log panel (issue 052), guarded by mu
 
 	progressMu sync.Mutex // serializes progress poke throttling
 	lastPoke   time.Time
@@ -453,7 +460,35 @@ func (s *Session) setBusy(b string) {
 func (s *Session) setStatus(line string) {
 	s.mu.Lock()
 	s.st.StatusLine = line
+	s.appendLogLocked(line)
 	s.mu.Unlock()
+}
+
+// appendLogLocked records a status text in the log ring (issue 052):
+// multi-line text splits into lines, blank lines and consecutive
+// duplicates are skipped, and the oldest lines are evicted past the cap.
+func (s *Session) appendLogLocked(text string) {
+	for _, l := range strings.Split(text, "\n") {
+		l = strings.TrimRight(l, "\r")
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		if n := len(s.logLines); n > 0 && s.logLines[n-1] == l {
+			continue
+		}
+		s.logLines = append(s.logLines, l)
+	}
+	if len(s.logLines) > logRingCap {
+		s.logLines = append([]string(nil), s.logLines[len(s.logLines)-logRingCap:]...)
+	}
+}
+
+// LogLines returns a copy of the capped status history (issue 052): the
+// same console output the status bar shows, oldest first.
+func (s *Session) LogLines() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.logLines...)
 }
 
 func (s *Session) setConfirm(c *Confirmation) {

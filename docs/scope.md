@@ -186,7 +186,10 @@ Added after v0.1, modeled on the reference client's main window:
   `internal/pickdir`; added dirs persist and survive rescans.
 - **Chrome**: dark theme (incl. dark modal cards — upstream Modal is
   hardcoded white, so gui ships a local `modal()`), icon sidebar, toolbar
-  (scan/add/search/view toggle), toast overlay, status bar, About modal.
+  (scan/add/search/view toggle), toast overlay, single-line status bar
+  with a `Log` button sliding up a readonly, selectable log panel (the
+  session's status history, incl. umu stderr tails; issue 052), About
+  modal.
 - **`internal/ui` Session**: frontend-agnostic interactive core (state,
   commands, event stream, consent gating). The shirei GUI is a thin binding
   over it; a bubbletea TUI will bind to the same Session (decided, not yet
@@ -593,7 +596,8 @@ decisions the per-version sections above do not cover.
   runtime when nothing is found. The wine prefix resolves per game pin
   → global default → auto chain: `PrefixOverrides` pins a prefix per
   install dir (detail pane, issue 048), `UmuPrefixPath` sets the global
-  default (settings picker over detected Heroic/Bottles/Steam (named
+  default (settings picker over detected Heroic/Bottles (default roots
+  plus the custom_bottles_path from data.yml)/Steam (named
   from the appmanifest)/Lutris/PlayOnLinux/CrossOver/~/.wine
   prefixes), and with neither the launch reuses a prefix the game
   already lives in (an enclosing `drive_c`, or a Heroic prefix matching

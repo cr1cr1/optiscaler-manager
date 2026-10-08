@@ -11,6 +11,7 @@ import (
 	shireiapp "go.hasen.dev/shirei/app"
 
 	. "go.hasen.dev/shirei"
+	"go.hasen.dev/shirei/widgets"
 
 	"github.com/anthonynsimon/bild/transform"
 
@@ -33,118 +34,126 @@ type Config struct {
 // model is the shirei-side binding state: the latest session snapshot plus
 // widget-local buffers.
 type model struct {
-	cfg                 Config
-	sess                *ui.Session
-	ctx                 context.Context // boot/launch context; Background in tests
-	state               ui.State
-	filter              string
-	auditGrid           bool
-	about               bool
-	settingsOpen        bool
-	settingsTab         settingsTab                 // settings-modal active tab, reset to General on open
-	settingsTabRects    map[settingsTab]Rect        // screen rects of the settings tab buttons (click test seam)
-	settingsTabIDs      map[settingsTab]ContainerId // container ids of the settings tab buttons (focus test seam)
-	settingsContentRect Rect                        // screen rect of the settings tab content area (height test seam)
-	settingsContentMinH float32                     // tallest tab content height seen this open; keeps the modal height stable
-	versionBuf          string
-	templateBuf         string
-	onlineBuf           bool                          // settings-modal online-lookups toggle buffer, primed on open
-	umuEnabledBuf       bool                          // settings-modal umu-launcher toggle buffer, primed on open
-	umuPrefixBuf         string                       // settings-modal global default prefix buffer, primed on open
-	umuPrefixes          []umu.Prefix                 // detected wine prefixes, scanned once per settings open (picker I/O discipline)
-	umuPrefixTriggerRect Rect                         // screen rect of the prefix picker trigger (click test seam)
-	umuPrefixMenuItems   []umuPrefixMenuItem          // open prefix picker rows (menu test seam)
-	umuPrefixOpen        bool                         // prefix picker popup open this frame (modal dismiss guard)
-	prefixDDTriggerRect  Rect                         // screen rect of the detail panel's per-game prefix dropdown (click test seam)
-	prefixDDItems        []umuPrefixMenuItem          // open per-game prefix dropdown rows (menu test seam)
-	prefixDDPrefixes     []umu.Prefix                 // detected prefixes scanned on the dropdown's opening frame
-	forkSlugBuf         string                        // settings-modal add-fork slug input
-	forkPatternBuf      string                        // settings-modal add-fork asset-glob input
-	titleEditDir        string                        // detail panel: game whose title is being edited ("" = editor closed, issue 028)
-	titleBuf            string                        // detail panel: title editor buffer
-	titleEditOrig       string                        // detail panel: the title as the user saw it when the editor opened (issue 032: unchanged titles are never written)
-	titleFocusPending   bool                          // deferred focus grab: set by startTitleEdit, consumed once by the header editor with the input's fresh id (issue 032; mirrors cardFocusPending)
-	titleEditState      *editState                    // detail panel: title editor's own edit state (carries the Enter→apply / Esc→cancel hooks, issue 031); nil unless editing
-	titleInputID        ContainerId                   // detail panel: the title editor input's box (focus seam for Enter/Esc tests, issue 031)
-	cardSize            settings.CardSize             // current grid card preset, synced from session.Settings().CardSize in drain
-	selIdx              int                           // keyboard-driven selection index into visible rows
-	hoveredDir          string                        // install dir of the card under the mouse, "" when none
-	cardRect            Rect                          // screen rect of the last rendered card (hover test seam)
-	cardBtnRect         Rect                          // screen rect of the card's first button (click routing test seam)
-	versionPillRowRect  Rect                          // screen rect of the last rendered version pill row, card or detail panel (pill wrap test seam)
-	techPillRowRect     Rect                          // screen rect of the last rendered tech badge row, card or detail panel (tech pill parity test seam)
-	dlssUpdateRect      Rect                          // screen rect of the DLSS update area (click routing test seam)
-	dlssArrowRect       Rect                          // screen rect of the DLSS restore-menu arrow (click routing test seam)
-	dlssUpdateID        ContainerId                   // container id of the DLSS update area (hover-exclusion seam)
-	dlssArrowID         ContainerId                   // container id of the DLSS restore-menu arrow (hover-exclusion seam)
-	dlssMenuID          ContainerId                   // container id of the open DLSS restore menu (click-outside seam)
-	dlssSnapshotItems   []dlssSnapshotItem            // current DLSS restore-menu rows (menu test seam)
-	dlssSnaps           []dlss.Snapshot               // snapshot list captured when the menu opened
-	openDLSSDir         string                        // game whose DLSS restore menu is open ("" = none)
-	dlssUpdateFn        func(gameDir string)          // DLSS update dispatch seam: nil in production (Session.UpdateDLSS)
-	dlssRestoreFn       func(gameDir, snapID string)  // DLSS restore dispatch seam: nil in production (Session.RestoreDLSS)
-	titleRect           Rect                          // screen rect of the card's fixed two-line title slot (title sizing test seam)
-	bannerRect          Rect                          // screen rect of the interrupted-install banner (repair surface test seam)
-	sidebarRects        []Rect                        // screen rects of the sidebar nav items (uniformity test seam)
-	sidebarShellRect    Rect                          // screen rect of the sidebar shell (full-height test seam)
-	progressTrackRect   Rect                          // screen rect of the scan progress track (progress bar test seam)
-	progressFillRect    Rect                          // screen rect of the scan progress fill (progress bar test seam)
-	tierPillRect        Rect                          // screen rect of the card's ProtonDB tier pill (tier badge test seam)
-	detailPanelRect     Rect                          // screen rect of the detail panel shell (panel width test seam)
-	listSegRect         Rect                          // screen rect of the List view-switch segment (click test seam)
-	listSelRect         Rect                          // screen rect of the keyboard-selected list row (nav test seam)
-	listRowRects        []Rect                        // screen rects of rendered list rows by row index, rebuilt each list frame (row-click test seam)
-	listSelectedRect    Rect                          // screen rect of the session-selected list row's selection band (selected-highlight test seam)
-	openINIRect         Rect                          // screen rect of the detail panel's OpenINI button (visibility test seam)
-	openFolderRect      Rect                          // screen rect of the detail panel's Open-game-directory button (visibility test seam, issue 027)
-	panelTitleRect      Rect                          // screen rect of the detail panel header's title label container (header wrap test seam, issue 029)
-	setTitleRect        Rect                          // screen rect of the detail panel header's Set-title button (placement test seam, issue 029)
-	titleApplyRect      Rect                          // screen rect of the header title editor's Apply button (placement test seam, issue 029)
-	closeBtnRect        Rect                          // screen rect of the detail panel header's Close button (placement test seam, issue 029)
-	posterRect          Rect                          // screen rect of the detail panel's poster box (overlay placement test seam, issue 029)
-	posterBtnRect       Rect                          // screen rect of the icon-only Set-poster overlay button on the poster (placement test seam, issue 029)
-	quickBtnRect        Rect                          // screen rect of the detail panel's Install/Uninstall OptiScaler button (action-row wrap test seam, issue 033)
-	launchBtnRect       Rect                          // screen rect of the detail panel's Launch Game button (action-row wrap test seam, issue 033)
-	rescanBtnRect       Rect                          // screen rect of the detail panel's per-game Rescan button (visibility test seam, issue 035)
-	settingsApplyRect   Rect                          // screen rect of the settings modal's Apply button (same-row test seam, issue 033)
-	settingsCloseRect   Rect                          // screen rect of the settings modal's Close button (same-row test seam, issue 033)
-	searchID            ContainerId                   // the search field's container (`/` focuses it from anywhere)
-	listID              ContainerId                   // the list view's focusable wrapper (Tab focus nav test seam)
-	listFocusPending    bool                          // deferred row-click focus grab: consumed once by actionList with the wrapper's fresh identity
-	listFocusRing       bool                          // whether the list wrapper drew its focus ring on the last frame (focus ring test seam)
-	gridCursorRect      Rect                          // screen rect of the ringed grid card: the card whose subtree holds focus (contextual ring), or the keyboard-cursor card when none does (cursor chrome test seam, mirrors listSelRect)
-	cardRingOnDir       string                        // the card currently hosting the contextual focus ring (focus within its subtree); child controls suppress their own ring while set to their dir
-	cardFocusPending    string                        // deferred per-card focus grab: install dir of the card that re-asserts focus on its next render (the detail panel re-nests the grid, orphaning path-scoped ids; mirrors listFocusPending)
-	scrollCursorPending bool                          // deferred scroll-into-view: set by Enter when opening the panel, consumed once in gridView after fitCards recomputes cols
-	prevCursorID        ContainerId                   // the cursor card's identity node from LAST frame — gridView compares it with this frame's node to detect actual identity churn (pointer changed) vs intentional focus move (pointer same)
-	lastRenderedIdx     int                           // idx of the last card that rendered this frame (highest visible idx)
-	cardLastButtonID    ContainerId                   // id of the last focusable button inside the last visible card — handleGlobalKeys checks this to detect Tab past the virtualization boundary
-	cardIDs             map[string]ContainerId        // rendered card ids by install dir, rebuilt each grid frame: arrow moves retarget focus through it (a card's id is only known while it renders)
-	cardDDTrigger       map[string]ContainerId        // rendered version-dropdown trigger ids by install dir, rebuilt each grid frame (Tab-order test seam, mirrors cardIDs)
-	cardRingClip        Rect                          // chunk-row clip rect of the ringed card (ring-clearance test seam: the ring needs 1px of room inside the clip on every side)
-	gridRows            []ui.GameRow                  // the row set of the grid frame being built: the focused card's arrow/Enter handlers share it with moveGridSel/toggleListDetail
-	rowClipRect         Rect                          // chunk-row rect of the card row being built (transient: copied to cardRingClip on the ringed card)
-	cols                int                           // current grid columns, derived from live width
-	cardW               int                           // current card width in px, derived from live width
-	cardH               int                           // current card height in px
-	gridBadgeLines      int                           // wrapped line counts of the grid's worst card pill rows
-	gridVersionLines    int                           // (badge / version / tech); every card shares them so wrapped
-	gridTechLines       int                           // pills grow ALL cards uniformly instead of clipping one
-	coverExists         map[string]bool               // memoized cover-file existence (avoids a per-card os.Stat every frame; v0.6.6's loader is panic-safe on missing files but we still want the placeholder fallback)
-	exitNow             func(code int)                // quit seam: os.Exit in production, stubbed in tests
-	switchVersionFn     func(gameDir, version string) // version-switch dispatch seam: nil in production (Session.SwitchVersion), stubbed in tests
-	versionDDRects      map[string]Rect               // screen rects of rendered version-dropdown triggers by install dir (dropdown test seam)
-	versionDDItems      []versionDDItem               // rows of the currently open version dropdown (dropdown test seam)
-	versionDDItemsFor   string                        // install dir owning versionDDItems ("" = no dropdown open)
-	openDropdownDir     string                        // install dir of the single open version dropdown ("" = none)
-	ddTriggerID         ContainerId                   // container id of the card's version-dropdown trigger (click routing seam: the card must not steal its activation)
-	panelFirstID        ContainerId                   // container id of the detail panel's FIRST focusable in render order — the header's Set-title button (Apply while the title editor is open; Close when the session is absent), rendered before the version pills/dropdown so every panel (clean games included) has a jump target — captured each panel frame by view.go's panelHeaderButton and reset to nil whenever the panel is absent. With the panel open, Tab on the selected card jumps straight here instead of walking every remaining grid focusable; Shift+Tab here returns focus to the card.
-	ddFocusRing         bool                          // whether the version-dropdown trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors listFocusRing)
-	sortTriggerID       ContainerId                   // container id of the toolbar sort-dropdown trigger (focus/click test seam, mirrors ddTriggerID)
-	sortFocusRing       bool                          // whether the sort trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors ddFocusRing)
-	sortMenuItems       []sortMenuItem                // rows of the currently open sort dropdown, rebuilt each popup frame and emptied while closed (sort dropdown test seam, mirrors versionDDItems)
-	viewSwitchID        ContainerId                   // container id of the view switch's outer wrapper (focus/click test seam, mirrors sortTriggerID)
-	viewSwitchFocusRing bool                          // whether the view-switch wrapper drew its focus ring on the last frame (keyboard focus test seam, mirrors sortFocusRing)
+	cfg                  Config
+	sess                 *ui.Session
+	ctx                  context.Context // boot/launch context; Background in tests
+	state                ui.State
+	filter               string
+	auditGrid            bool
+	about                bool
+	settingsOpen         bool
+	settingsTab          settingsTab                 // settings-modal active tab, reset to General on open
+	settingsTabRects     map[settingsTab]Rect        // screen rects of the settings tab buttons (click test seam)
+	settingsTabIDs       map[settingsTab]ContainerId // container ids of the settings tab buttons (focus test seam)
+	settingsContentRect  Rect                        // screen rect of the settings tab content area (height test seam)
+	settingsContentMinH  float32                     // tallest tab content height seen this open; keeps the modal height stable
+	logOpen              bool                        // slide-up log panel visible (issue 052)
+	logAnimStart         time.Time                   // log panel tween start (issue 052); tests backdate it to jump to the end
+	logRing              *widgets.TextRing           // mirror of Session.LogLines for the LogView (issue 052)
+	logSynced            int                         // session log lines already mirrored into logRing
+	logSyncedLast        string                      // last mirrored line; drift means the session ring evicted -> rebuild
+	statusBarRect        Rect                        // screen rect of the status bar shell (single-line height test seam, issue 052)
+	logBtnRect           Rect                        // screen rect of the status bar's Log button (toggle test seam, issue 052)
+	logPanelRect         Rect                        // screen rect of the log panel shell (slide-up test seam, issue 052)
+	versionBuf           string
+	templateBuf          string
+	onlineBuf            bool                          // settings-modal online-lookups toggle buffer, primed on open
+	umuEnabledBuf        bool                          // settings-modal umu-launcher toggle buffer, primed on open
+	umuPrefixBuf         string                        // settings-modal global default prefix buffer, primed on open
+	umuPrefixes          []umu.Prefix                  // detected wine prefixes, scanned once per settings open (picker I/O discipline)
+	umuPrefixTriggerRect Rect                          // screen rect of the prefix picker trigger (click test seam)
+	umuPrefixMenuItems   []umuPrefixMenuItem           // open prefix picker rows (menu test seam)
+	umuPrefixOpen        bool                          // prefix picker popup open this frame (modal dismiss guard)
+	prefixDDTriggerRect  Rect                          // screen rect of the detail panel's per-game prefix dropdown (click test seam)
+	prefixDDItems        []umuPrefixMenuItem           // open per-game prefix dropdown rows (menu test seam)
+	prefixDDPrefixes     []umu.Prefix                  // detected prefixes scanned on the dropdown's opening frame
+	forkSlugBuf          string                        // settings-modal add-fork slug input
+	forkPatternBuf       string                        // settings-modal add-fork asset-glob input
+	titleEditDir         string                        // detail panel: game whose title is being edited ("" = editor closed, issue 028)
+	titleBuf             string                        // detail panel: title editor buffer
+	titleEditOrig        string                        // detail panel: the title as the user saw it when the editor opened (issue 032: unchanged titles are never written)
+	titleFocusPending    bool                          // deferred focus grab: set by startTitleEdit, consumed once by the header editor with the input's fresh id (issue 032; mirrors cardFocusPending)
+	titleEditState       *editState                    // detail panel: title editor's own edit state (carries the Enter→apply / Esc→cancel hooks, issue 031); nil unless editing
+	titleInputID         ContainerId                   // detail panel: the title editor input's box (focus seam for Enter/Esc tests, issue 031)
+	cardSize             settings.CardSize             // current grid card preset, synced from session.Settings().CardSize in drain
+	selIdx               int                           // keyboard-driven selection index into visible rows
+	hoveredDir           string                        // install dir of the card under the mouse, "" when none
+	cardRect             Rect                          // screen rect of the last rendered card (hover test seam)
+	cardBtnRect          Rect                          // screen rect of the card's first button (click routing test seam)
+	versionPillRowRect   Rect                          // screen rect of the last rendered version pill row, card or detail panel (pill wrap test seam)
+	techPillRowRect      Rect                          // screen rect of the last rendered tech badge row, card or detail panel (tech pill parity test seam)
+	dlssUpdateRect       Rect                          // screen rect of the DLSS update area (click routing test seam)
+	dlssArrowRect        Rect                          // screen rect of the DLSS restore-menu arrow (click routing test seam)
+	dlssUpdateID         ContainerId                   // container id of the DLSS update area (hover-exclusion seam)
+	dlssArrowID          ContainerId                   // container id of the DLSS restore-menu arrow (hover-exclusion seam)
+	dlssMenuID           ContainerId                   // container id of the open DLSS restore menu (click-outside seam)
+	dlssSnapshotItems    []dlssSnapshotItem            // current DLSS restore-menu rows (menu test seam)
+	dlssSnaps            []dlss.Snapshot               // snapshot list captured when the menu opened
+	openDLSSDir          string                        // game whose DLSS restore menu is open ("" = none)
+	dlssUpdateFn         func(gameDir string)          // DLSS update dispatch seam: nil in production (Session.UpdateDLSS)
+	dlssRestoreFn        func(gameDir, snapID string)  // DLSS restore dispatch seam: nil in production (Session.RestoreDLSS)
+	titleRect            Rect                          // screen rect of the card's fixed two-line title slot (title sizing test seam)
+	bannerRect           Rect                          // screen rect of the interrupted-install banner (repair surface test seam)
+	sidebarRects         []Rect                        // screen rects of the sidebar nav items (uniformity test seam)
+	sidebarShellRect     Rect                          // screen rect of the sidebar shell (full-height test seam)
+	progressTrackRect    Rect                          // screen rect of the scan progress track (progress bar test seam)
+	progressFillRect     Rect                          // screen rect of the scan progress fill (progress bar test seam)
+	tierPillRect         Rect                          // screen rect of the card's ProtonDB tier pill (tier badge test seam)
+	detailPanelRect      Rect                          // screen rect of the detail panel shell (panel width test seam)
+	listSegRect          Rect                          // screen rect of the List view-switch segment (click test seam)
+	listSelRect          Rect                          // screen rect of the keyboard-selected list row (nav test seam)
+	listRowRects         []Rect                        // screen rects of rendered list rows by row index, rebuilt each list frame (row-click test seam)
+	listSelectedRect     Rect                          // screen rect of the session-selected list row's selection band (selected-highlight test seam)
+	openINIRect          Rect                          // screen rect of the detail panel's OpenINI button (visibility test seam)
+	openFolderRect       Rect                          // screen rect of the detail panel's Open-game-directory button (visibility test seam, issue 027)
+	panelTitleRect       Rect                          // screen rect of the detail panel header's title label container (header wrap test seam, issue 029)
+	setTitleRect         Rect                          // screen rect of the detail panel header's Set-title button (placement test seam, issue 029)
+	titleApplyRect       Rect                          // screen rect of the header title editor's Apply button (placement test seam, issue 029)
+	closeBtnRect         Rect                          // screen rect of the detail panel header's Close button (placement test seam, issue 029)
+	posterRect           Rect                          // screen rect of the detail panel's poster box (overlay placement test seam, issue 029)
+	posterBtnRect        Rect                          // screen rect of the icon-only Set-poster overlay button on the poster (placement test seam, issue 029)
+	quickBtnRect         Rect                          // screen rect of the detail panel's Install/Uninstall OptiScaler button (action-row wrap test seam, issue 033)
+	launchBtnRect        Rect                          // screen rect of the detail panel's Launch Game button (action-row wrap test seam, issue 033)
+	rescanBtnRect        Rect                          // screen rect of the detail panel's per-game Rescan button (visibility test seam, issue 035)
+	settingsApplyRect    Rect                          // screen rect of the settings modal's Apply button (same-row test seam, issue 033)
+	settingsCloseRect    Rect                          // screen rect of the settings modal's Close button (same-row test seam, issue 033)
+	searchID             ContainerId                   // the search field's container (`/` focuses it from anywhere)
+	listID               ContainerId                   // the list view's focusable wrapper (Tab focus nav test seam)
+	listFocusPending     bool                          // deferred row-click focus grab: consumed once by actionList with the wrapper's fresh identity
+	listFocusRing        bool                          // whether the list wrapper drew its focus ring on the last frame (focus ring test seam)
+	gridCursorRect       Rect                          // screen rect of the ringed grid card: the card whose subtree holds focus (contextual ring), or the keyboard-cursor card when none does (cursor chrome test seam, mirrors listSelRect)
+	cardRingOnDir        string                        // the card currently hosting the contextual focus ring (focus within its subtree); child controls suppress their own ring while set to their dir
+	cardFocusPending     string                        // deferred per-card focus grab: install dir of the card that re-asserts focus on its next render (the detail panel re-nests the grid, orphaning path-scoped ids; mirrors listFocusPending)
+	scrollCursorPending  bool                          // deferred scroll-into-view: set by Enter when opening the panel, consumed once in gridView after fitCards recomputes cols
+	prevCursorID         ContainerId                   // the cursor card's identity node from LAST frame — gridView compares it with this frame's node to detect actual identity churn (pointer changed) vs intentional focus move (pointer same)
+	lastRenderedIdx      int                           // idx of the last card that rendered this frame (highest visible idx)
+	cardLastButtonID     ContainerId                   // id of the last focusable button inside the last visible card — handleGlobalKeys checks this to detect Tab past the virtualization boundary
+	cardIDs              map[string]ContainerId        // rendered card ids by install dir, rebuilt each grid frame: arrow moves retarget focus through it (a card's id is only known while it renders)
+	cardDDTrigger        map[string]ContainerId        // rendered version-dropdown trigger ids by install dir, rebuilt each grid frame (Tab-order test seam, mirrors cardIDs)
+	cardRingClip         Rect                          // chunk-row clip rect of the ringed card (ring-clearance test seam: the ring needs 1px of room inside the clip on every side)
+	gridRows             []ui.GameRow                  // the row set of the grid frame being built: the focused card's arrow/Enter handlers share it with moveGridSel/toggleListDetail
+	rowClipRect          Rect                          // chunk-row rect of the card row being built (transient: copied to cardRingClip on the ringed card)
+	cols                 int                           // current grid columns, derived from live width
+	cardW                int                           // current card width in px, derived from live width
+	cardH                int                           // current card height in px
+	gridBadgeLines       int                           // wrapped line counts of the grid's worst card pill rows
+	gridVersionLines     int                           // (badge / version / tech); every card shares them so wrapped
+	gridTechLines        int                           // pills grow ALL cards uniformly instead of clipping one
+	coverExists          map[string]bool               // memoized cover-file existence (avoids a per-card os.Stat every frame; v0.6.6's loader is panic-safe on missing files but we still want the placeholder fallback)
+	exitNow              func(code int)                // quit seam: os.Exit in production, stubbed in tests
+	switchVersionFn      func(gameDir, version string) // version-switch dispatch seam: nil in production (Session.SwitchVersion), stubbed in tests
+	versionDDRects       map[string]Rect               // screen rects of rendered version-dropdown triggers by install dir (dropdown test seam)
+	versionDDItems       []versionDDItem               // rows of the currently open version dropdown (dropdown test seam)
+	versionDDItemsFor    string                        // install dir owning versionDDItems ("" = no dropdown open)
+	openDropdownDir      string                        // install dir of the single open version dropdown ("" = none)
+	ddTriggerID          ContainerId                   // container id of the card's version-dropdown trigger (click routing seam: the card must not steal its activation)
+	panelFirstID         ContainerId                   // container id of the detail panel's FIRST focusable in render order — the header's Set-title button (Apply while the title editor is open; Close when the session is absent), rendered before the version pills/dropdown so every panel (clean games included) has a jump target — captured each panel frame by view.go's panelHeaderButton and reset to nil whenever the panel is absent. With the panel open, Tab on the selected card jumps straight here instead of walking every remaining grid focusable; Shift+Tab here returns focus to the card.
+	ddFocusRing          bool                          // whether the version-dropdown trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors listFocusRing)
+	sortTriggerID        ContainerId                   // container id of the toolbar sort-dropdown trigger (focus/click test seam, mirrors ddTriggerID)
+	sortFocusRing        bool                          // whether the sort trigger drew its focus ring on the last frame (keyboard focus test seam, mirrors ddFocusRing)
+	sortMenuItems        []sortMenuItem                // rows of the currently open sort dropdown, rebuilt each popup frame and emptied while closed (sort dropdown test seam, mirrors versionDDItems)
+	viewSwitchID         ContainerId                   // container id of the view switch's outer wrapper (focus/click test seam, mirrors sortTriggerID)
+	viewSwitchFocusRing  bool                          // whether the view-switch wrapper drew its focus ring on the last frame (keyboard focus test seam, mirrors sortFocusRing)
 }
 
 func newModel(cfg Config) *model {
@@ -255,6 +264,7 @@ func (m *model) drain() {
 		default:
 			m.state = m.sess.Snapshot()
 			m.cardSize = m.sess.Settings().CardSize
+			m.syncLogLines(m.sess.LogLines())
 			return
 		}
 	}

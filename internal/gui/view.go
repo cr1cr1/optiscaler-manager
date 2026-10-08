@@ -52,6 +52,7 @@ func (m *model) rootView() {
 			// Bottom breathing room: rows clip at the list viewport edge,
 			// so the last visible row must not sit flush against the bar.
 			Element(Attrs(FixHeight(sp8)))
+			m.logPanel()
 			m.statusBar()
 		})
 		m.toastOverlay()
@@ -252,7 +253,11 @@ func (m *model) handleGlobalKeys() {
 	case KeyEnter:
 		m.toggleListDetail(rows)
 	case KeyEscape:
-		if m.state.Selected != "" {
+		// The log panel closes first (issue 052); only then does Esc
+		// collapse the detail panel.
+		if m.logOpen {
+			m.toggleLogPanel()
+		} else if m.state.Selected != "" {
 			m.sess.Select("")
 		}
 	default:

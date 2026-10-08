@@ -4452,3 +4452,32 @@ no such file or directory` — stranding the mod installed forever.
 - Numbering: drafted as 049, renumbered to 051 — parallel sessions
   claimed 049 and 050 mid-flight.
 2026-10-08
+
+## 2026-10-09 — issue 52: log panel behind a status-bar Log button
+
+- Symptom: launch failures put umu's multi-line stderr tail into
+  `State.StatusLine`, and the bottom status bar grew vertically with it,
+  squeezing the grid.
+- Fix, two layers: `ui.Session` now keeps an append-only, capped (512)
+  ring of status lines (`LogLines()`; multi-line split, blank/consecutive
+  duplicates skipped), and the GUI renders the bar single-line
+  (`oneLineStatus` first line + " …") with a `Log` button on its left
+  that slides up a panel (`internal/gui/logpanel.go`) wrapping shirei's
+  `widgets.LogView` — readonly, drag-select across lines, Ctrl/Cmd+C
+  copy, bottom-pinned auto-scroll.
+- Slide-up: manual ease-out-cubic tween (160ms) on the panel's
+  `FixHeight`, `NoAnimate` on the shell so shirei's layout easing does
+  not double-animate; `RequestNextFrame` while the tween runs; Esc
+  closes the log panel before the detail panel.
+- GUI mirror: `syncLogLines` appends only unseen session lines into a
+  `widgets.TextRing`; a shrink or last-line drift (session eviction)
+  triggers a full rebuild.
+- TDD: red witnessed as build failures on the new seam names
+  (`LogLines`, `logRingCap`, `statusBarRect`, `toggleLogPanel`, …),
+  then green across ui + gui (append/split/dedupe/cap, single-line bar
+  height, toggle, Esc ordering, session-line visibility, sync rebuild).
+- Flakes observed during verification (both unrelated, both green on
+  re-run): `TestWarmBootResolvesDefault` under full-suite `-count=1`
+  load, `TestFindPrefixes_BottlesCustomPath` while a parallel session
+  had `internal/umu` half-edited in the working tree.
+2026-10-09
