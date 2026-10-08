@@ -1,6 +1,7 @@
 ---
 title: umu-launcher runtime and prefix autodetection
 description: Launching via umu must work with the Proton path setting left empty, by auto-detecting Proton runners and existing wine prefixes from Steam, Bottles, Lutris, Heroic, and well-known umu locations.
+status: done
 ---
 
 # 047 — umu-launcher runtime and prefix autodetection
@@ -38,5 +39,19 @@ prefix. Nothing is created or migrated inside launcher directories.
 
 ## Outcome
 
-Filled in when the issue closes: what actually happened, the commit
-hash, anything left open.
+Implemented as designed, commit `cb548ae`. `RunnerRoots` covers Steam
+(native/Flatpak/Snap/extra libraries via `libraryfolders.vdf`), Bottles,
+Lutris, Heroic, and umu roots; runner validity accepts
+`toolmanifest.vdf` or a top-level `proton` script. `ResolveProtonPath`
+pins-then-auto-selects (newest first); `PrefixForGame` reuses an
+existing enclosing `drive_c` prefix or Heroic prefix before falling
+back to the app-managed prefix. Both settings frontends replaced the
+free-text path with a detected-runner picker composed once in
+`ui.UmuPickerRows` (new `Deps.UmuRunners` seam; `Runner` moved
+cross-platform with `runners_other.go` stubs). End-to-end coverage via
+a fake `umu-run` on PATH (`cmd/umu_linux_test.go`). `go test ./...`
+passes except the pre-existing `tmp/gpuprobe` failure, which needs
+`/dev/dri` and fails identically on the parent commit; `go vet ./...`
+clean. Open follow-up: Heroic prefixes set to a custom location in
+Heroic's per-game config (`GamesConfig/*.json` `winePrefix`) are not
+read — only the default prefix roots are probed.
