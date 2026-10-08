@@ -109,30 +109,76 @@ func (s *Session) SetUmuEnabled(enabled bool) {
 	}, msg, "")
 }
 
-// UmuRunners returns the Proton-compatible runners the settings picker
-// offers, from the injected deps provider or the production disk scan.
-func (s *Session) UmuRunners() []umu.Runner {
+// UmuPrefixes returns the detected wine prefixes the prefix pickers
+// offer, from the injected deps provider or the production disk scan.
+func (s *Session) UmuPrefixes() []umu.Prefix {
 	s.mu.Lock()
-	fn := s.deps.UmuRunners
+	fn := s.deps.UmuPrefixes
 	s.mu.Unlock()
 	if fn != nil {
 		return fn()
 	}
-	return umu.FindRunners(context.Background(), umu.RunnerRoots())
+	return umu.FindPrefixes(context.Background())
 }
 
-// SetUmuProtonPath pins the Proton build umu-run uses. An empty value
-// means Auto: the newest runner detected across the Steam / Bottles /
-// Lutris / Heroic / umu roots is used at launch. Persisted.
-func (s *Session) SetUmuProtonPath(path string) {
-	msg := "umu Proton: auto"
+// SetUmuPrefixPath sets the global default wine prefix umu-run launches
+// into. An empty value means Auto: per-game pins and the detection
+// chain decide. Persisted.
+func (s *Session) SetUmuPrefixPath(path string) {
+	msg := "umu prefix: auto"
 	if path != "" {
-		msg = "umu Proton: " + path
+		msg = "umu prefix: " + path
 	}
 	s.updateSettings(func(st *settings.Settings) bool {
-		st.UmuProtonPath = path
+		st.UmuPrefixPath = path
 		return true
 	}, msg, "")
+}
+
+// SetUmuPrefixOverride pins the wine prefix for one game (keyed by
+// canonical install dir, the TitleOverrides precedent). A per-game pin
+// beats the global UmuPrefixPath default and the auto chain; an empty
+// prefix clears the pin. Persisted.
+func (s *Session) SetUmuPrefixOverride(gameDir, prefix string) {
+	dir := canonicalDir(gameDir)
+	if s.findRow(dir) == nil {
+		s.toast("unknown game: "+gameDir, true)
+		return
+	}
+	s.updateSettings(func(st *settings.Settings) bool {
+		if prefix == "" {
+			delete(st.PrefixOverrides, dir)
+		} else {
+			if st.PrefixOverrides == nil {
+				st.PrefixOverrides = map[string]string{}
+			}
+			st.PrefixOverrides[dir] = prefix
+		}
+		return true
+	}, "", "")
+	msg := "umu prefix cleared: " + s.findRow(dir).Title
+	if prefix != "" {
+		msg = "umu prefix: " + prefix
+	}
+	s.toast(msg, false)
+}
+
+// UmuPrefixPin returns the per-game pinned prefix for dir ("" when the
+// game has no override — the per-game picker's current value).
+func (s *Session) UmuPrefixPin(gameDir string) string {
+	return s.Settings().PrefixOverrides[canonicalDir(gameDir)]
+}
+
+// UmuPrefixFor returns the effective pinned prefix for a game: the
+// per-game override when set, else the global UmuPrefixPath default,
+// else "" (the launch hook runs the auto chain). The launch hook reads
+// this at launch time so pins changed mid-session apply immediately.
+func (s *Session) UmuPrefixFor(gameDir string) string {
+	st := s.Settings()
+	if p := st.PrefixOverrides[canonicalDir(gameDir)]; p != "" {
+		return p
+	}
+	return st.UmuPrefixPath
 }
 
 // SetActiveFork selects the OptiScaler distribution source installs and

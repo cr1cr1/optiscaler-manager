@@ -102,8 +102,8 @@ func (m Model) View() string {
 		body = lipgloss.Place(w, contentH, lipgloss.Center, lipgloss.Center, confirmBox(snap.Confirm))
 	} else if m.restore != nil {
 		body = lipgloss.Place(w, contentH, lipgloss.Center, lipgloss.Center, restoreBox(m.restore))
-	} else if m.proton != nil {
-		body = lipgloss.Place(w, contentH, lipgloss.Center, lipgloss.Center, protonBox(m.proton))
+	} else if m.prefix != nil {
+		body = lipgloss.Place(w, contentH, lipgloss.Center, lipgloss.Center, prefixBox(m.prefix))
 	} else {
 		switch m.screen {
 		case screenDetail:
@@ -215,9 +215,9 @@ func (m Model) footerView(w int) string {
 	var hints string
 	switch m.screen {
 	case screenDetail:
-		hints = "i install · v version · l launch · t title · a poster · c cancel · r rollback · o open INI · esc back"
+		hints = "i install · v version · l launch · w prefix · t title · a poster · c cancel · r rollback · o open INI · esc back"
 	case screenSettings:
-		hints = "e version · t template · a add · d remove · o online info · u umu · p umu proton · x clear cache"
+		hints = "e version · t template · a add · d remove · o online info · u umu · p umu prefix · x clear cache"
 	case screenHelp, screenAbout:
 		hints = "q quit"
 	default:
@@ -249,13 +249,13 @@ func restoreBox(p *restorePick) string {
 	return pickerBox("Restore NVIDIA DLSS backup", labels, p.sel, "up/down select · enter restore · esc close")
 }
 
-// protonBox renders the open umu Proton picker as a centered modal.
-func protonBox(p *protonPick) string {
+// prefixBox renders the open umu prefix picker as a centered modal.
+func prefixBox(p *prefixPick) string {
 	labels := make([]string, len(p.items))
 	for i, item := range p.items {
 		labels[i] = item.Label
 	}
-	return pickerBox("umu Proton runner", labels, p.sel, "up/down select · enter pick · esc close")
+	return pickerBox("umu wine prefix", labels, p.sel, "up/down select · enter pick · esc close")
 }
 
 // pickerBox renders a centered selection modal: title line, one row per
@@ -595,11 +595,11 @@ func (m Model) settingsView(w, contentH int) string {
 		umu = "on"
 	}
 	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("umu-launcher (Windows games via Proton):"), umu)
-	protonPath := s.UmuProtonPath
-	if protonPath == "" {
-		protonPath = styleMuted.Render("auto")
+	prefix := s.UmuPrefixPath
+	if prefix == "" {
+		prefix = styleMuted.Render("auto")
 	}
-	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("umu Proton path:"), trunc(protonPath, w-20))
+	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("umu default prefix:"), trunc(prefix, w-20))
 
 	b.WriteString("\n" + styleHeader.Render("OptiScaler sources"))
 	b.WriteString("\n" + styleMuted.Render("  tab: switch list · enter: use · a: add · d: remove") + "\n")
@@ -658,7 +658,7 @@ func helpView() string {
 		"          / filter · R rescan · s sort",
 		"Detail    i install · v switch version · u update NVIDIA DLSS · p restore DLSS backup · l launch · c cancel · r rollback · o open INI · d disable/enable · esc back",
 		"Settings  e edit version · t edit template · tab sources/dirs · a add dir/fork · d remove dir/fork · enter use fork",
-		"          o toggle online game info · u toggle umu-launcher · p edit umu Proton path · x clear bundle cache",
+		"          o toggle online game info · u toggle umu-launcher · p pick umu default prefix · x clear bundle cache",
 		"Confirm   y proceed · n cancel",
 	}, "\n")
 }

@@ -9,6 +9,28 @@ import (
 	"strings"
 )
 
+// Prefix represents a locally-installed wine prefix found on disk. Path
+// points at the prefix root (the directory containing drive_c); Source
+// is one of "steam", "bottles", "heroic", "wine" ("other" when
+// unrecognized). Cross-platform so the settings frontends can render
+// the picker everywhere (off-Linux the scan stubs return nothing).
+type Prefix struct {
+	Name   string
+	Path   string
+	Source string
+}
+
+// ResolvePrefix returns the WINEPREFIX a launch should use: the pinned
+// prefix verbatim when set (the caller resolves the precedence —
+// per-game pin first, then the global default), otherwise the auto
+// chain of PrefixForGame.
+func ResolvePrefix(pinned, installDir, exePath, appName string) (string, error) {
+	if pinned != "" {
+		return pinned, nil
+	}
+	return PrefixForGame(installDir, exePath, appName)
+}
+
 // PrefixForGame resolves the WINEPREFIX a launch should use, preferring
 // prefixes that already exist on disk over the app-managed one:
 //

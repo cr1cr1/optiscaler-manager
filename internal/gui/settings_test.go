@@ -226,9 +226,9 @@ func TestGUISettingsThemedInputs(t *testing.T) {
 	t.Logf("themed settings inputs edited and persisted: version cleared on Esc, template %q", s.LaunchTemplate)
 }
 
-// TestGUISettingsUmuSection: the umu-launcher toggle and Proton path
-// input are primed from the session and applySettings persists edits
-// through SetUmuEnabled / SetUmuProtonPath.
+// TestGUISettingsUmuSection: the umu-launcher toggle and the global
+// default prefix buffer are primed from the session and applySettings
+// persists edits through SetUmuEnabled / SetUmuPrefixPath.
 func TestGUISettingsUmuSection(t *testing.T) {
 	sess, root := guiFakesWithDirs(t)
 	m := newModel(Config{Session: sess})
@@ -237,19 +237,19 @@ func TestGUISettingsUmuSection(t *testing.T) {
 	if m.umuEnabledBuf {
 		t.Errorf("umu toggle primed true, want false (default)")
 	}
-	if m.umuProtonBuf != "" {
-		t.Errorf("umu Proton path primed %q, want empty", m.umuProtonBuf)
+	if m.umuPrefixBuf != "" {
+		t.Errorf("umu default prefix primed %q, want empty", m.umuPrefixBuf)
 	}
 
 	m.umuEnabledBuf = true
-	m.umuProtonBuf = "/runners/GE-Proton9-3"
+	m.umuPrefixBuf = "/prefixes/mybottle"
 	m.applySettings()
 
 	if !sess.Settings().UmuEnabled {
 		t.Errorf("session UmuEnabled = false after apply, want true")
 	}
-	if got := sess.Settings().UmuProtonPath; got != "/runners/GE-Proton9-3" {
-		t.Errorf("session UmuProtonPath = %q, want /runners/GE-Proton9-3", got)
+	if got := sess.Settings().UmuPrefixPath; got != "/prefixes/mybottle" {
+		t.Errorf("session UmuPrefixPath = %q, want /prefixes/mybottle", got)
 	}
 
 	s, err := settings.Load(root)
@@ -259,66 +259,66 @@ func TestGUISettingsUmuSection(t *testing.T) {
 	if !s.UmuEnabled {
 		t.Errorf("persisted UmuEnabled = false, want true")
 	}
-	if s.UmuProtonPath != "/runners/GE-Proton9-3" {
-		t.Errorf("persisted UmuProtonPath = %q, want /runners/GE-Proton9-3", s.UmuProtonPath)
+	if s.UmuPrefixPath != "/prefixes/mybottle" {
+		t.Errorf("persisted UmuPrefixPath = %q, want /prefixes/mybottle", s.UmuPrefixPath)
 	}
-	t.Logf("umu-launcher settings persisted: enabled=%v proton=%q", s.UmuEnabled, s.UmuProtonPath)
+	t.Logf("umu-launcher settings persisted: enabled=%v prefix=%q", s.UmuEnabled, s.UmuPrefixPath)
 }
 
-// TestGUISettingsUmuProtonPicker: the Proton setting is a picker over
-// the session's detected runners; picking a runner buffers its path and
-// applySettings persists it.
-func TestGUISettingsUmuProtonPicker(t *testing.T) {
-	runners := []umu.Runner{
-		{Name: "GE-Proton10-1", Path: "/runners/GE-Proton10-1", Source: "heroic", Version: "10.1"},
-		{Name: "GE-Proton9-3", Path: "/runners/GE-Proton9-3", Source: "steam", Version: "9.3"},
+// TestGUISettingsUmuPrefixPicker: the global default prefix is a picker
+// over the session's detected wine prefixes; picking one buffers its
+// path and applySettings persists it.
+func TestGUISettingsUmuPrefixPicker(t *testing.T) {
+	prefixes := []umu.Prefix{
+		{Name: "SomeApp", Path: "/home/me/Games/Heroic/Prefixes/SomeApp", Source: "heroic"},
+		{Name: "mybottle", Path: "/home/me/.local/share/bottles/bottles/mybottle", Source: "bottles"},
 	}
 	root := t.TempDir()
 	sess, _ := guiFakes(t, func(d *ui.Deps) {
 		d.SettingsRoot = root
 		d.Settings = settings.Defaults()
-		d.UmuRunners = func() []umu.Runner { return runners }
+		d.UmuPrefixes = func() []umu.Prefix { return prefixes }
 	})
 	m := newModel(Config{Session: sess})
 	m.openSettings()
 
-	if got := ui.UmuPickerLabel(m.umuProtonBuf, m.umuRunners); got != "Auto (newest detected)" {
-		t.Fatalf("picker label %q, want %q", got, "Auto (newest detected)")
+	if got := ui.UmuPickerLabel("Auto (detected)", m.umuPrefixBuf, m.umuPrefixes); got != "Auto (detected)" {
+		t.Fatalf("picker label %q, want %q", got, "Auto (detected)")
 	}
 
 	headlessFrames(t, 1000, 700)
 	keyFrame(KeyCodeNone, 0, m.rootView) // build + register focusables
 	keyFrame(KeyCodeNone, 0, m.rootView) // capture the trigger rect
-	if m.umuProtonTriggerRect.Size[0] == 0 {
-		t.Fatalf("picker trigger rect not recorded: %+v", m.umuProtonTriggerRect)
+	if m.umuPrefixTriggerRect.Size[0] == 0 {
+		t.Fatalf("picker trigger rect not recorded: %+v", m.umuPrefixTriggerRect)
 	}
-	clickRect(m.umuProtonTriggerRect, m.rootView) // open the popup
+	clickRect(m.umuPrefixTriggerRect, m.rootView) // open the popup
 	keyFrame(KeyCodeNone, 0, m.rootView)          // render popup, record rows
 
-	items := m.umuProtonMenuItems
+	items := m.umuPrefixMenuItems
 	if len(items) != 3 {
-		t.Fatalf("picker rows = %d, want 3 (Auto + 2 runners): %+v", len(items), items)
+		t.Fatalf("picker rows = %d, want 3 (Auto + 2 prefixes): %+v", len(items), items)
 	}
-	wantLabels := []string{"Auto (newest detected)", "GE-Proton10-1 (heroic)", "GE-Proton9-3 (steam)"}
+	wantLabels := []string{"Auto (detected)", "SomeApp (heroic)", "mybottle (bottles)"}
 	for i, w := range wantLabels {
 		if items[i].label != w {
 			t.Errorf("items[%d].label = %q, want %q", i, items[i].label, w)
 		}
 	}
 
-	clickRect(items[1].rect, m.rootView) // pick the heroic runner
-	if m.umuProtonBuf != "/runners/GE-Proton10-1" {
-		t.Fatalf("umuProtonBuf = %q after pick, want /runners/GE-Proton10-1", m.umuProtonBuf)
+	clickRect(items[1].rect, m.rootView) // pick the heroic prefix
+	if m.umuPrefixBuf != "/home/me/Games/Heroic/Prefixes/SomeApp" {
+		t.Fatalf("umuPrefixBuf = %q after pick, want the heroic prefix", m.umuPrefixBuf)
 	}
 	m.applySettings()
 	s, err := settings.Load(root)
 	if err != nil {
 		t.Fatalf("settings unreadable after apply: %v", err)
 	}
-	if s.UmuProtonPath != "/runners/GE-Proton10-1" {
-		t.Errorf("persisted UmuProtonPath = %q, want /runners/GE-Proton10-1", s.UmuProtonPath)
+	if s.UmuPrefixPath != "/home/me/Games/Heroic/Prefixes/SomeApp" {
+		t.Errorf("persisted UmuPrefixPath = %q, want the heroic prefix", s.UmuPrefixPath)
 	}
-	t.Logf("umu Proton picker persisted %q", s.UmuProtonPath)
+	t.Logf("umu prefix picker persisted %q", s.UmuPrefixPath)
 }
 
 // TestGUISettingsUmuToggleFlipsViaKeyboard: the umu toggle enters the

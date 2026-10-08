@@ -58,6 +58,17 @@ func (s *Session) doLaunch(gameDir string) {
 	s.emit(Event{Kind: EvOpDone, Text: what, GameDir: gameDir})
 }
 
+// UmuPlatform reports whether the umu-launcher integration applies on
+// this platform (Linux only): the frontends gate the prefix pickers on
+// it so Windows/macOS users never see wine-prefix controls.
+func (s *Session) UmuPlatform() bool {
+	goos := s.deps.GOOS
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	return goos == "linux"
+}
+
 // shouldUseUmu reports whether the umu-launcher path should be taken
 // for this launch. The checks are: the setting is on, a hook is wired,
 // we're on Linux, the row is a game the regular Launcher can only run
@@ -68,11 +79,7 @@ func (s *Session) shouldUseUmu(row *GameRow) bool {
 	if s.deps.UmuLauncher == nil {
 		return false
 	}
-	goos := s.deps.GOOS
-	if goos == "" {
-		goos = runtime.GOOS
-	}
-	if goos != "linux" {
+	if !s.UmuPlatform() {
 		return false
 	}
 	if !s.Settings().UmuEnabled {

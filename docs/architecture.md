@@ -169,16 +169,23 @@ internal/
                Heroic, and umu compatibilitytools; FindRunners scans
                them for Proton builds (toolmanifest.vdf OR a top-level
                proton script) sorted newest-first; ResolveProtonPath
-               picks the pinned setting or the newest detected runner;
-               Launch wraps the exec with the
-               GAMEID/WINEPREFIX/PROTONPATH/STORE env and scans stderr
-               for umu's exit-0-on-fatal-error quirk; PrefixForGame
-               reuses an existing enclosing drive_c prefix or Heroic
-               prefix when present, else derives a per-game prefix under
-               <state-root>/umu-prefixes/<sha1[:12]> (PrefixFor);
-               IsWindowsBinary detects PE MZ binaries for eligibility.
-               The frontends' Proton picker rows are composed once in
-               ui.UmuPickerRows and fed by Deps.UmuRunners.
+               returns the newest detected runner (Proton is always
+               Auto); FindPrefixes detects wine prefixes (dirs with a
+               drive_c) in Heroic Prefixes/, Bottles bottles/, Steam
+               compatdata pfx/, and ~/.wine; ResolvePrefix applies the
+               pin precedence (per-game PrefixOverrides, then the
+               global UmuPrefixPath) before the PrefixForGame auto
+               chain (existing enclosing drive_c or Heroic prefix, else
+               a derived per-game prefix under
+               <state-root>/umu-prefixes/<sha1[:12]>); Launch wraps the
+               exec with the GAMEID/WINEPREFIX/PROTONPATH/STORE env,
+               scans stderr for umu's exit-0-on-fatal-error quirk, and
+               wraps failures with the stderr tail; the cmd hook logs
+               game/exe/prefix/proton on failure. IsWindowsBinary
+               detects PE MZ binaries for eligibility. The frontends'
+               prefix picker rows are composed once in
+               ui.UmuPickerRows and fed by Deps.UmuPrefixes (global
+               default in settings, per-game pin in the detail views).
    launch/     per-store per-OS command table (pure Command fn) + detached
                spawn (build-tagged spawners; Start + Process.Release, never
                Wait). Steam steam://rungameid (Proton is Steam's business),

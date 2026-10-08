@@ -50,11 +50,14 @@ type model struct {
 	templateBuf         string
 	onlineBuf           bool                          // settings-modal online-lookups toggle buffer, primed on open
 	umuEnabledBuf       bool                          // settings-modal umu-launcher toggle buffer, primed on open
-	umuProtonBuf        string                        // settings-modal umu-launcher Proton path buffer, primed on open
-	umuRunners          []umu.Runner                  // detected Proton runners, scanned once per settings open (picker I/O discipline)
-	umuProtonTriggerRect Rect                         // screen rect of the Proton picker trigger (click test seam)
-	umuProtonMenuItems  []umuProtonMenuItem           // open Proton picker rows (menu test seam)
-	umuProtonOpen       bool                          // Proton picker popup open this frame (modal dismiss guard)
+	umuPrefixBuf         string                       // settings-modal global default prefix buffer, primed on open
+	umuPrefixes          []umu.Prefix                 // detected wine prefixes, scanned once per settings open (picker I/O discipline)
+	umuPrefixTriggerRect Rect                         // screen rect of the prefix picker trigger (click test seam)
+	umuPrefixMenuItems   []umuPrefixMenuItem          // open prefix picker rows (menu test seam)
+	umuPrefixOpen        bool                         // prefix picker popup open this frame (modal dismiss guard)
+	prefixDDTriggerRect  Rect                         // screen rect of the detail panel's per-game prefix dropdown (click test seam)
+	prefixDDItems        []umuPrefixMenuItem          // open per-game prefix dropdown rows (menu test seam)
+	prefixDDPrefixes     []umu.Prefix                 // detected prefixes scanned on the dropdown's opening frame
 	forkSlugBuf         string                        // settings-modal add-fork slug input
 	forkPatternBuf      string                        // settings-modal add-fork asset-glob input
 	titleEditDir        string                        // detail panel: game whose title is being edited ("" = editor closed, issue 028)
@@ -312,7 +315,7 @@ func (m *model) applySettings() {
 	m.sess.SetDefaultVersion(m.versionBuf)
 	m.sess.SetLaunchTemplate(m.templateBuf)
 	m.sess.SetUmuEnabled(m.umuEnabledBuf)
-	m.sess.SetUmuProtonPath(m.umuProtonBuf)
+	m.sess.SetUmuPrefixPath(m.umuPrefixBuf)
 }
 
 // exit flushes a pending settings-modal edit through the session's

@@ -4,17 +4,20 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/umu"
 )
 
-// TestUmuPickerRowsComposition: the shared picker rows are Auto first,
-// then the detected runners in scan order, plus a Custom row when the
-// pinned path matches no detected runner.
+var testPrefixes = []umu.Prefix{
+	{Name: "SomeApp", Path: "/home/me/Games/Heroic/Prefixes/SomeApp", Source: "heroic"},
+	{Name: "mybottle", Path: "/home/me/.local/share/bottles/bottles/mybottle", Source: "bottles"},
+}
+
+// TestUmuPickerRowsComposition: the shared picker rows are the Auto row
+// first (with the caller's label), then the detected prefixes in scan
+// order, plus a Custom row when the pinned path matches no detected
+// prefix.
 func TestUmuPickerRowsComposition(t *testing.T) {
-	runners := []umu.Runner{
-		{Name: "GE-Proton10-1", Path: "/runners/GE-Proton10-1", Source: "heroic", Version: "10.1"},
-		{Name: "GE-Proton9-3", Path: "/runners/GE-Proton9-3", Source: "steam", Version: "9.3"},
-	}
 	labels := func(rows []UmuPickerOption) []string {
 		out := make([]string, len(rows))
 		for i, r := range rows {
@@ -23,66 +26,149 @@ func TestUmuPickerRowsComposition(t *testing.T) {
 		return out
 	}
 
-	auto := UmuPickerRows("", runners)
-	if got, want := labels(auto), []string{"Auto (newest detected)", "GE-Proton10-1 (heroic)", "GE-Proton9-3 (steam)"}; !slices.Equal(got, want) {
+	auto := UmuPickerRows("Auto (detected)", "", testPrefixes)
+	if got, want := labels(auto), []string{"Auto (detected)", "SomeApp (heroic)", "mybottle (bottles)"}; !slices.Equal(got, want) {
 		t.Errorf("rows(empty) = %v, want %v", got, want)
 	}
 	if auto[0].Value != "" {
 		t.Errorf("Auto row value = %q, want empty", auto[0].Value)
 	}
 
-	known := UmuPickerRows("/runners/GE-Proton9-3", runners)
+	known := UmuPickerRows("Auto (detected)", testPrefixes[1].Path, testPrefixes)
 	if len(known) != 3 {
 		t.Errorf("rows(known pin) = %d rows, want 3 (no Custom row)", len(known))
 	}
 
-	custom := UmuPickerRows("/elsewhere/proton", runners)
+	custom := UmuPickerRows("Auto (inherit)", "/elsewhere/prefix", testPrefixes)
 	last := custom[len(custom)-1]
-	if last.Value != "/elsewhere/proton" || last.Label != "Custom: /elsewhere/proton" {
-		t.Errorf("Custom row = %+v, want value/label for /elsewhere/proton", last)
+	if last.Value != "/elsewhere/prefix" || last.Label != "Custom: /elsewhere/prefix" {
+		t.Errorf("Custom row = %+v, want value/label for /elsewhere/prefix", last)
+	}
+	if custom[0].Label != "Auto (inherit)" {
+		t.Errorf("Auto row label = %q, want the caller's %q", custom[0].Label, "Auto (inherit)")
 	}
 
-	if got := UmuPickerLabel("", runners); got != "Auto (newest detected)" {
-		t.Errorf("label(empty) = %q, want Auto (newest detected)", got)
+	if got := UmuPickerLabel("Auto (detected)", "", testPrefixes); got != "Auto (detected)" {
+		t.Errorf("label(empty) = %q, want Auto (detected)", got)
 	}
-	if got := UmuPickerLabel("/runners/GE-Proton10-1", runners); got != "GE-Proton10-1 (heroic)" {
-		t.Errorf("label(known) = %q, want GE-Proton10-1 (heroic)", got)
+	if got := UmuPickerLabel("Auto (detected)", testPrefixes[0].Path, testPrefixes); got != "SomeApp (heroic)" {
+		t.Errorf("label(known) = %q, want SomeApp (heroic)", got)
 	}
-	if got := UmuPickerLabel("/elsewhere/proton", runners); got != "Custom: /elsewhere/proton" {
-		t.Errorf("label(unknown) = %q, want Custom: /elsewhere/proton", got)
+	if got := UmuPickerLabel("Auto (detected)", "/elsewhere/prefix", testPrefixes); got != "Custom: /elsewhere/prefix" {
+		t.Errorf("label(unknown) = %q, want Custom: /elsewhere/prefix", got)
 	}
 }
 
-// TestSessionUmuRunners_UsesInjectedProvider: the settings frontends
+// TestSessionUmuPrefixes_UsesInjectedProvider: the settings frontends
 // read the picker entries from the injected deps provider verbatim.
-func TestSessionUmuRunners_UsesInjectedProvider(t *testing.T) {
+func TestSessionUmuPrefixes_UsesInjectedProvider(t *testing.T) {
 	e := newTestEnv(t)
-	want := []umu.Runner{
-		{Name: "GE-Proton10-1", Path: "/runners/GE-Proton10-1", Source: "heroic", Version: "10.1"},
-		{Name: "GE-Proton9-3", Path: "/runners/GE-Proton9-3", Source: "steam", Version: "9.3"},
-	}
-	e.sess.deps.UmuRunners = func() []umu.Runner { return want }
+	e.sess.deps.UmuPrefixes = func() []umu.Prefix { return testPrefixes }
 
-	got := e.sess.UmuRunners()
-	if len(got) != len(want) {
-		t.Fatalf("len(UmuRunners()) = %d, want %d", len(got), len(want))
+	got := e.sess.UmuPrefixes()
+	if len(got) != len(testPrefixes) {
+		t.Fatalf("len(UmuPrefixes()) = %d, want %d", len(got), len(testPrefixes))
 	}
-	for i, r := range want {
-		if got[i] != r {
-			t.Errorf("UmuRunners()[%d] = %+v, want %+v", i, got[i], r)
+	for i, p := range testPrefixes {
+		if got[i] != p {
+			t.Errorf("UmuPrefixes()[%d] = %+v, want %+v", i, got[i], p)
 		}
 	}
 }
 
-// TestSessionUmuRunners_NilProviderFallsBackToScan: without an injected
+// TestSessionUmuPrefixes_NilProviderFallsBackToScan: without an injected
 // provider the production scan runs; on an empty HOME it finds nothing.
-func TestSessionUmuRunners_NilProviderFallsBackToScan(t *testing.T) {
+func TestSessionUmuPrefixes_NilProviderFallsBackToScan(t *testing.T) {
 	e := newTestEnv(t)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_DATA_HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
 
-	if got := e.sess.UmuRunners(); len(got) != 0 {
-		t.Errorf("UmuRunners() = %v, want none on an empty HOME", got)
+	if got := e.sess.UmuPrefixes(); len(got) != 0 {
+		t.Errorf("UmuPrefixes() = %v, want none on an empty HOME", got)
+	}
+}
+
+// TestSessionSetUmuPrefixPath: the global default prefix persists and
+// an empty value returns to Auto.
+func TestSessionSetUmuPrefixPath(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	e.sess.SetUmuPrefixPath(testPrefixes[0].Path)
+	if got := e.sess.Settings().UmuPrefixPath; got != testPrefixes[0].Path {
+		t.Errorf("UmuPrefixPath = %q, want %q", got, testPrefixes[0].Path)
+	}
+	s, err := settings.Load(e.sess.deps.SettingsRoot)
+	if err != nil {
+		t.Fatalf("settings unreadable: %v", err)
+	}
+	if s.UmuPrefixPath != testPrefixes[0].Path {
+		t.Errorf("persisted UmuPrefixPath = %q, want %q", s.UmuPrefixPath, testPrefixes[0].Path)
+	}
+
+	e.sess.SetUmuPrefixPath("")
+	if got := e.sess.Settings().UmuPrefixPath; got != "" {
+		t.Errorf("UmuPrefixPath = %q after clear, want empty (Auto)", got)
+	}
+}
+
+// TestSessionUmuPrefixOverride: a per-game pin persists in
+// PrefixOverrides (canonical dir key), wins over the global default in
+// UmuPrefixFor, and an empty value clears it.
+func TestSessionUmuPrefixOverride(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	e.sess.Scan(t.Context())
+	waitScanDone(t, e.sess)
+	dir := e.gameRoot
+	e.sess.SetUmuPrefixPath("/global/prefix")
+
+	e.sess.SetUmuPrefixOverride(dir, testPrefixes[1].Path)
+	if got := e.sess.Settings().PrefixOverrides[canonicalDir(dir)]; got != testPrefixes[1].Path {
+		t.Errorf("PrefixOverrides[%s] = %q, want %q", canonicalDir(dir), got, testPrefixes[1].Path)
+	}
+	if got := e.sess.UmuPrefixFor(dir); got != testPrefixes[1].Path {
+		t.Errorf("UmuPrefixFor = %q, want per-game pin %q", got, testPrefixes[1].Path)
+	}
+	if got := e.sess.UmuPrefixPin(dir); got != testPrefixes[1].Path {
+		t.Errorf("UmuPrefixPin = %q, want %q", got, testPrefixes[1].Path)
+	}
+	s, err := settings.Load(e.sess.deps.SettingsRoot)
+	if err != nil {
+		t.Fatalf("settings unreadable: %v", err)
+	}
+	if s.PrefixOverrides[canonicalDir(dir)] != testPrefixes[1].Path {
+		t.Errorf("persisted PrefixOverrides = %v, want the pin", s.PrefixOverrides)
+	}
+
+	// Clearing the pin falls back to the global default.
+	e.sess.SetUmuPrefixOverride(dir, "")
+	if got := e.sess.UmuPrefixFor(dir); got != "/global/prefix" {
+		t.Errorf("UmuPrefixFor after clear = %q, want global default /global/prefix", got)
+	}
+	if _, ok := e.sess.Settings().PrefixOverrides[canonicalDir(dir)]; ok {
+		t.Errorf("PrefixOverrides still holds %s after clear", canonicalDir(dir))
+	}
+}
+
+// TestSessionUmuPrefixFor_NoPins: with neither pin set the effective
+// prefix is empty (the launch hook runs the auto chain).
+func TestSessionUmuPrefixFor_NoPins(t *testing.T) {
+	e := newTestEnv(t)
+	if got := e.sess.UmuPrefixFor(e.gameRoot); got != "" {
+		t.Errorf("UmuPrefixFor = %q, want empty with no pins", got)
+	}
+	if got := e.sess.UmuPrefixPin(e.gameRoot); got != "" {
+		t.Errorf("UmuPrefixPin = %q, want empty with no per-game pin", got)
+	}
+}
+
+// TestSessionUmuPrefixOverride_UnknownGame: pinning for a dir the
+// session does not know toasts a warning and persists nothing.
+func TestSessionUmuPrefixOverride_UnknownGame(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.SetUmuPrefixOverride("/no/such/game", testPrefixes[0].Path)
+	if len(e.sess.Settings().PrefixOverrides) != 0 {
+		t.Errorf("PrefixOverrides = %v for unknown game, want nothing persisted", e.sess.Settings().PrefixOverrides)
 	}
 }

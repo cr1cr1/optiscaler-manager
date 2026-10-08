@@ -56,11 +56,33 @@ const (
 	settingsFocusForks
 )
 
-// protonPick is the open umu Proton picker modal: the composed rows and
-// the highlighted entry.
-type protonPick struct {
+// prefixPick is the open umu prefix picker modal: the composed rows,
+// the highlighted entry, and the target — dir "" pins the global
+// default (settings screen), otherwise the per-game override.
+type prefixPick struct {
+	dir   string
 	items []ui.UmuPickerOption
 	sel   int
+}
+
+// openPrefixPick builds the prefix picker with the cursor on the
+// current value: the global default (perGame=false) or a game's pin.
+func openPrefixPick(sess *ui.Session, dir string, perGame bool) *prefixPick {
+	autoLabel := "Auto (detected)"
+	current := sess.Settings().UmuPrefixPath
+	if perGame {
+		autoLabel = "Auto (inherit)"
+		current = sess.UmuPrefixPin(dir)
+	}
+	items := ui.UmuPickerRows(autoLabel, current, sess.UmuPrefixes())
+	sel := 0
+	for i, it := range items {
+		if it.Value == current {
+			sel = i
+			break
+		}
+	}
+	return &prefixPick{dir: dir, items: items, sel: sel}
 }
 
 // Model is the bubbletea model bound to one ui.Session: one flat model with
@@ -89,7 +111,7 @@ type Model struct {
 	cycle           *stagedCycle
 	backups         []stagedItem // detail dir's DLSS backups (menu + modal)
 	restore         *restorePick // open restore-backup modal
-	proton          *protonPick  // open umu Proton picker modal
+	prefix          *prefixPick  // open umu prefix picker modal
 }
 
 // restorePick is the open restore-backup modal: the detail dir, its cached
@@ -413,24 +435,28 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	// The umu Proton picker is modal (same discipline as the restore
+	// The umu prefix picker is modal (same discipline as the restore
 	// picker): only its navigation keys are accepted until it closes.
-	if m.proton != nil {
+	if m.prefix != nil {
 		switch msg.String() {
 		case "j", "down":
-			if m.proton.sel < len(m.proton.items)-1 {
-				m.proton.sel++
+			if m.prefix.sel < len(m.prefix.items)-1 {
+				m.prefix.sel++
 			}
 		case "k", "up":
-			if m.proton.sel > 0 {
-				m.proton.sel--
+			if m.prefix.sel > 0 {
+				m.prefix.sel--
 			}
 		case "enter":
-			pick := m.proton
-			m.proton = nil
-			m.sess.SetUmuProtonPath(pick.items[pick.sel].Value)
+			pick := m.prefix
+			m.prefix = nil
+			if pick.dir == "" {
+				m.sess.SetUmuPrefixPath(pick.items[pick.sel].Value)
+			} else {
+				m.sess.SetUmuPrefixOverride(pick.dir, pick.items[pick.sel].Value)
+			}
 		case "esc":
-			m.proton = nil
+			m.prefix = nil
 		}
 		return m, nil
 	}
@@ -608,6 +634,11 @@ func (m Model) detailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "a":
 		// Manual poster upload (issue 028): typed image path.
 		m.openInput(inputSetCover, "poster image path: ", "")
+	case "w":
+		// Per-game umu wine-prefix pin (issue 048), Linux only.
+		if m.sess.UmuPlatform() {
+			m.prefix = openPrefixPick(m.sess, dir, true)
+		}
 	case "A":
 		if m.sess.CoverOverrideActive(dir) {
 			m.sess.ClearCoverOverride(dir)
@@ -704,16 +735,8 @@ func (m Model) settingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "u":
 		m.sess.SetUmuEnabled(!m.sess.Settings().UmuEnabled)
 	case "p":
-		// Open the runner picker with the cursor on the current pick.
-		items := ui.UmuPickerRows(m.sess.Settings().UmuProtonPath, m.sess.UmuRunners())
-		sel := 0
-		for i, it := range items {
-			if it.Value == m.sess.Settings().UmuProtonPath {
-				sel = i
-				break
-			}
-		}
-		m.proton = &protonPick{items: items, sel: sel}
+		// Global default prefix picker (issue 048), cursor on current.
+		m.prefix = openPrefixPick(m.sess, "", false)
 	case "x":
 		m.sess.ClearBundleCache()
 	}

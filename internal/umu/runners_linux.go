@@ -18,12 +18,19 @@ import (
 // Heroic, and umu's own compatibilitytools. Missing dirs are skipped,
 // and entries that resolve to the same directory through symlinks are
 // deduplicated. XDG_DATA_HOME / XDG_CONFIG_HOME overrides are honored.
-func RunnerRoots() []string {
-	home := os.Getenv("HOME")
-	xdgData := os.Getenv("XDG_DATA_HOME")
+// homeAndXDGData returns HOME and the effective XDG data home
+// (XDG_DATA_HOME, defaulting to ~/.local/share).
+func homeAndXDGData() (home, xdgData string) {
+	home = os.Getenv("HOME")
+	xdgData = os.Getenv("XDG_DATA_HOME")
 	if xdgData == "" && home != "" {
 		xdgData = filepath.Join(home, ".local", "share")
 	}
+	return home, xdgData
+}
+
+func RunnerRoots() []string {
+	home, xdgData := homeAndXDGData()
 	xdgConfig := os.Getenv("XDG_CONFIG_HOME")
 	if xdgConfig == "" && home != "" {
 		xdgConfig = filepath.Join(home, ".config")
@@ -77,11 +84,11 @@ func RunnerRoots() []string {
 	return roots
 }
 
-// steamLibraryCompatTools returns <library>/compatibilitytools.d for
-// every extra Steam library folder recorded in each known Steam root's
-// steamapps/libraryfolders.vdf. Roots and files that don't exist are
-// skipped silently.
-func steamLibraryCompatTools(home, xdgData string) []string {
+// steamLibraryRoots returns the Steam root directory candidates
+// (native, Flatpak, Snap, XDG data) plus every extra library folder
+// recorded in each root's steamapps/libraryfolders.vdf. Candidates are
+// not filtered for existence; callers stat what they need.
+func steamLibraryRoots(home, xdgData string) []string {
 	var steamDirs []string
 	if home != "" {
 		steamDirs = append(steamDirs,
@@ -93,15 +100,23 @@ func steamLibraryCompatTools(home, xdgData string) []string {
 	if xdgData != "" {
 		steamDirs = append(steamDirs, filepath.Join(xdgData, "Steam"))
 	}
-	var out []string
+	out := append([]string{}, steamDirs...)
 	for _, dir := range steamDirs {
 		data, err := os.ReadFile(filepath.Join(dir, "steamapps", "libraryfolders.vdf"))
 		if err != nil {
 			continue
 		}
-		for _, lib := range libraryFolderPaths(string(data)) {
-			out = append(out, filepath.Join(lib, "compatibilitytools.d"))
-		}
+		out = append(out, libraryFolderPaths(string(data))...)
+	}
+	return out
+}
+
+// steamLibraryCompatTools returns <root-or-library>/compatibilitytools.d
+// for every Steam root candidate and extra library folder.
+func steamLibraryCompatTools(home, xdgData string) []string {
+	var out []string
+	for _, r := range steamLibraryRoots(home, xdgData) {
+		out = append(out, filepath.Join(r, "compatibilitytools.d"))
 	}
 	return out
 }
@@ -259,4 +274,3 @@ func versionLess(a, b string) bool {
 	}
 	return false
 }
-

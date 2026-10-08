@@ -4365,3 +4365,37 @@ only the generic filler, and per-game rescans did NOT bring them back.
   duplicated picker-row composition into `internal/ui`, and shared the
   TUI modal renderer between the restore and Proton pickers.
 2026-10-08
+
+## 2026-10-08 — issue 48: per-game umu prefix pinning + launch failure diagnostics
+
+- The runner picker was the wrong knob: what users pin is the wine
+  *prefix*. `umu.FindPrefixes` detects prefixes (dirs with a `drive_c`)
+  in Heroic `~/Games/Heroic/Prefixes` (native + Flatpak), Bottles
+  `bottles/` (XDG + Flatpak), every Steam root/library's
+  `steamapps/compatdata/<appid>/pfx`, and the `~/.wine` singleton;
+  Lutris prefixes stay covered by the enclosing-`drive_c` auto rule
+  (no canonical root exists). Steam root/library enumeration was
+  factored into `steamLibraryRoots`, shared with the runner scan.
+- Pin precedence at launch: per-game `PrefixOverrides[installDir]` →
+  global `UmuPrefixPath` → issue-47 auto chain (`ResolvePrefix`). The
+  launch hook reads the pin through a late-bound `sess.UmuPrefixFor`
+  resolver, so mid-session pin changes apply without a restart.
+  Proton is now always Auto (`ResolveProtonPath(ctx, "")`); the
+  `umu_proton_path` setting and runner picker are retired — legacy
+  JSON keys load ignored.
+- UI: settings picker (GUI dropdown, TUI `p`) sets the global default
+  ("Auto (detected)"); per-game pins live in the GUI detail panel
+  (prefix dropdown, zero-I/O closed trigger, scan on open) and the TUI
+  detail screen (`w`, "Auto (inherit)"). Both pickers share
+  `ui.UmuPickerRows` (now parameterized with the Auto label) fed by
+  the `Deps.UmuPrefixes` seam; `Session.UmuPlatform()` gates the
+  per-game controls off-Linux.
+- Diagnostics: `umu.Launch` wraps failures with the last ≤10 non-empty
+  stderr lines (≤1 KiB) — umu's real reason stops vanishing — and the
+  hook logs `game`/`exe`/`prefix`/`proton` with the error.
+- TDD: reds witnessed per increment (FindPrefixes undefined; pin not
+  persisted; old-signature hook calls). Settings tests needed an
+  explicit SettingsRoot (empty root silently skips Save).
+- Ponytail pass: `strings.Join` over a hand-rolled helper, shared
+  `homeAndXDGData` across the runner/prefix scans.
+2026-10-08

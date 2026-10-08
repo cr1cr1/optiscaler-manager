@@ -62,6 +62,41 @@ func itoa(n int) string {
 	return sign + string(digits)
 }
 
+// TestLaunch_FailureCarriesStderrTail: a failing run with diagnostics
+// on stderr returns an error that contains the tail, so the reason
+// survives into logs and toasts.
+func TestLaunch_FailureCarriesStderrTail(t *testing.T) {
+	rec := &fakeLauncher{exitCode: 1, stderr: "some noise\nProton: prefix is broken\n"}
+	err := Launch(context.Background(), rec.run, LaunchOpts{
+		ExePath:    "/games/Foo/foo.exe",
+		WinePrefix: "/pfx",
+		UmuRunPath: "/usr/bin/umu-run",
+	})
+	if err == nil {
+		t.Fatal("Launch with exit 1 returned nil error")
+	}
+	if !strings.Contains(err.Error(), "Proton: prefix is broken") {
+		t.Errorf("error %q lacks the stderr tail", err)
+	}
+	if !strings.Contains(err.Error(), "exit status 1") {
+		t.Errorf("error %q lacks the underlying exit error", err)
+	}
+}
+
+// TestLaunch_SuccessKeepsCleanError: a clean run with chatter on stderr
+// (umu logs progress there) still returns nil.
+func TestLaunch_SuccessKeepsCleanError(t *testing.T) {
+	rec := &fakeLauncher{exitCode: 0, stderr: "umu: setting up prefix\n"}
+	err := Launch(context.Background(), rec.run, LaunchOpts{
+		ExePath:    "/games/Foo/foo.exe",
+		WinePrefix: "/pfx",
+		UmuRunPath: "/usr/bin/umu-run",
+	})
+	if err != nil {
+		t.Errorf("Launch with clean exit returned %v, want nil", err)
+	}
+}
+
 func TestLaunch_SetsRequiredEnvAndArgv(t *testing.T) {
 	rec := &fakeLauncher{}
 	opts := LaunchOpts{

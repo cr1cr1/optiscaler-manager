@@ -611,6 +611,10 @@ func (m *model) detailPanel() {
 						m.sess.RescanGame(e.InstallDir)
 					}
 				})
+				// Per-game umu wine-prefix pin (issue 048), Linux only.
+				if m.sess.UmuPlatform() {
+					m.prefixDropdown(e)
+				}
 				// Manual identification fixes (issue 028): the title pin and
 				// poster upload moved to the header and the poster itself
 				// (issue 029); only the poster reset stays in the action list.

@@ -213,15 +213,21 @@ turning it off gives you a fully offline scan. On Linux, the Settings
 window also exposes the umu-launcher integration: enable it to launch
 manually-added Windows binaries (`.exe`, `.bat`, `.cmd`, `.msi`) via
 [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher) when
-`umu-run` is installed. The Proton runner setting is a picker over the
-builds detected on your system — Steam (native, Flatpak, Snap, and extra
-library folders), Bottles, Lutris, Heroic, and umu's own
-`compatibilitytools` — with **Auto (newest detected)** as the default
-(falling through to umu's `UMU-Latest` when nothing is detected). Games
-already living in a launcher prefix (a Bottles/Lutris/Heroic `drive_c`)
-or with an existing Heroic prefix are launched in that prefix; every
-other game gets its own Proton prefix under
-`~/.local/share/optiscaler-manager/umu-prefixes/<slug>`.
+`umu-run` is installed. Launches pick the newest Proton build detected
+on your system automatically (Steam — native, Flatpak, Snap, extra
+library folders — Bottles, Lutris, Heroic, and umu's own
+`compatibilitytools`, falling through to umu's `UMU-Latest` when
+nothing is detected). What you control is the wine **prefix**: the
+Settings picker sets the global default from the prefixes detected in
+Heroic `Prefixes/`, Bottles `bottles/`, Steam `compatdata/`, and
+`~/.wine`, and the detail pane (GUI) or `w` on the detail screen (TUI)
+pins a prefix per game — per-game wins over the global default, and
+**Auto** reuses a prefix the game already lives in (a
+Bottles/Lutris/Heroic `drive_c` or an existing Heroic prefix) before
+falling back to a per-game prefix under
+`~/.local/share/optiscaler-manager/umu-prefixes/<slug>`. Launch
+failures log the game, binary, prefix, runner, and umu's stderr tail
+to the console.
 
 ### TUI keymap
 
@@ -239,8 +245,8 @@ other game gets its own Proton prefix under
 | `/` | Filter, live as you type (`esc` clears) |
 | `s` | Toggle sort (default / name) |
 | `R` | Rescan the library |
-| Detail: `i` `v` `u` `p` `l` `c` `R` `r` `o` `d` | Install / switch version / update the NVIDIA DLSS set / restore a DLSS backup (`p` opens the backup list, `enter` picks, then `y` confirm) / launch / cancel / rescan this game / rollback / open OptiScaler.ini / disable-enable the OptiScaler hook |
-| Settings: `tab` `enter` `e` `t` `a` `d` `x` `o` `u` `p` | Switch sources/dirs list / use fork / edit version / edit launch template / add dir or fork / remove dir or fork (`y`/`n`) / clear bundle cache / toggle online game info / toggle umu-launcher / pick umu Proton runner (`enter` picks, `esc` closes) |
+| Detail: `i` `v` `u` `p` `l` `w` `c` `R` `r` `o` `d` | Install / switch version / update the NVIDIA DLSS set / restore a DLSS backup (`p` opens the backup list, `enter` picks, then `y` confirm) / launch / pin per-game umu wine prefix (Linux) / cancel / rescan this game / rollback / open OptiScaler.ini / disable-enable the OptiScaler hook |
+| Settings: `tab` `enter` `e` `t` `a` `d` `x` `o` `u` `p` | Switch sources/dirs list / use fork / edit version / edit launch template / add dir or fork / remove dir or fork (`y`/`n`) / clear bundle cache / toggle online game info / toggle umu-launcher / pick umu default prefix (`enter` picks, `esc` closes) |
 | Confirm modal | `y` proceed, `n` cancel |
 
 ### Command line

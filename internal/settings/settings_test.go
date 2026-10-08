@@ -120,28 +120,32 @@ func TestSettings_TitleOverridesRoundtrip(t *testing.T) {
 	}
 }
 
-// umu-launcher integration defaults: opt-in (off), no Proton path pin
-// (let umu fall back to UMU-Latest).
+// umu-launcher integration defaults: opt-in (off), no prefix pins
+// (auto resolution everywhere).
 func TestSettings_UmuDefaults(t *testing.T) {
 	s := Defaults()
 	if s.UmuEnabled {
 		t.Errorf("Defaults().UmuEnabled = true, want false (opt-in)")
 	}
-	if s.UmuProtonPath != "" {
-		t.Errorf("Defaults().UmuProtonPath = %q, want empty", s.UmuProtonPath)
+	if s.UmuPrefixPath != "" {
+		t.Errorf("Defaults().UmuPrefixPath = %q, want empty", s.UmuPrefixPath)
+	}
+	if s.PrefixOverrides != nil {
+		t.Errorf("Defaults().PrefixOverrides = %v, want nil", s.PrefixOverrides)
 	}
 }
 
-// Umu fields survive a save/load round-trip with both the enabled flag
-// and a pinned Proton path intact.
+// Umu fields survive a save/load round-trip with the enabled flag, the
+// global prefix default, and the per-game prefix pins intact.
 func TestSettings_UmuRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	want := Settings{
-		DefaultVersion: "latest",
-		LaunchTemplate: DefaultLaunchTemplate,
-		OnlineLookups:  true,
-		UmuEnabled:     true,
-		UmuProtonPath:  "/runners/GE-Proton9-3",
+		DefaultVersion:  "latest",
+		LaunchTemplate:  DefaultLaunchTemplate,
+		OnlineLookups:   true,
+		UmuEnabled:      true,
+		UmuPrefixPath:   "/home/me/.local/share/bottles/bottles/default",
+		PrefixOverrides: map[string]string{"/games/foo": "/home/me/Games/Heroic/Prefixes/Foo"},
 	}
 	if err := Save(root, want); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -153,13 +157,16 @@ func TestSettings_UmuRoundTrip(t *testing.T) {
 	if got.UmuEnabled != want.UmuEnabled {
 		t.Errorf("UmuEnabled = %v, want %v", got.UmuEnabled, want.UmuEnabled)
 	}
-	if got.UmuProtonPath != want.UmuProtonPath {
-		t.Errorf("UmuProtonPath = %q, want %q", got.UmuProtonPath, want.UmuProtonPath)
+	if got.UmuPrefixPath != want.UmuPrefixPath {
+		t.Errorf("UmuPrefixPath = %q, want %q", got.UmuPrefixPath, want.UmuPrefixPath)
+	}
+	if got.PrefixOverrides["/games/foo"] != "/home/me/Games/Heroic/Prefixes/Foo" {
+		t.Errorf("PrefixOverrides = %v, want the per-game pin", got.PrefixOverrides)
 	}
 }
 
 // A legacy settings.json written before umu-launcher support existed
-// must load with the safe defaults: UmuEnabled=false, UmuProtonPath="".
+// must load with the safe defaults: UmuEnabled=false, no prefix pins.
 // This protects users upgrading from older releases.
 func TestSettings_LegacyJSONWithoutUmuKeys(t *testing.T) {
 	root := t.TempDir()
@@ -174,8 +181,29 @@ func TestSettings_LegacyJSONWithoutUmuKeys(t *testing.T) {
 	if got.UmuEnabled {
 		t.Errorf("UmuEnabled = true on legacy file, want false (opt-in default)")
 	}
-	if got.UmuProtonPath != "" {
-		t.Errorf("UmuProtonPath = %q on legacy file, want empty", got.UmuProtonPath)
+	if got.UmuPrefixPath != "" {
+		t.Errorf("UmuPrefixPath = %q on legacy file, want empty", got.UmuPrefixPath)
+	}
+}
+
+// A settings.json written when the Proton-runner pin existed loads
+// cleanly: the retired umu_proton_path key is ignored, everything else
+// survives.
+func TestSettings_RetiredProtonPathKeyIgnored(t *testing.T) {
+	root := t.TempDir()
+	legacy := `{"default_version":"latest","launch_template":"\"{exe}\" {args}","umu_enabled":true,"umu_proton_path":"/runners/GE-Proton9-3"}`
+	if err := os.WriteFile(filepath.Join(root, "settings.json"), []byte(legacy), 0o600); err != nil {
+		t.Fatalf("write legacy: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !got.UmuEnabled {
+		t.Errorf("UmuEnabled = false, want true (key must survive)")
+	}
+	if got.UmuPrefixPath != "" {
+		t.Errorf("UmuPrefixPath = %q, want empty (no migration from the Proton pin)", got.UmuPrefixPath)
 	}
 }
 

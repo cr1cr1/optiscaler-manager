@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -75,13 +76,54 @@ func Launch(ctx context.Context, launcher Launcher, opts LaunchOpts) error {
 
 	runErr := launcher(ctx, cmd)
 
+	tail := stderrTail(stderr.String())
 	if isFatalUmuFailure(stderr.String()) {
 		if runErr == nil {
 			runErr = errors.New("umu: fatal stderr detected with clean exit")
 		}
-		return errors.Join(ErrUmuSetupFailed, runErr)
+		return errors.Join(ErrUmuSetupFailed, withStderrTail(runErr, tail))
+	}
+	if runErr != nil && tail != "" {
+		return withStderrTail(runErr, tail)
 	}
 	return runErr
+}
+
+// withStderrTail wraps err with umu's stderr tail so the real failure
+// reason (missing Proton, bad PROTONPATH, Python traceback) survives
+// into logs and toasts instead of vanishing with the child. The tail is
+// empty for clean runs, leaving err untouched.
+func withStderrTail(err error, tail string) error {
+	if tail == "" {
+		return err
+	}
+	return fmt.Errorf("%w\numu stderr tail:\n%s", err, tail)
+}
+
+const (
+	// stderrTailLines bounds how many trailing stderr lines diagnostics
+	// keep; stderrTailCap bounds the total size.
+	stderrTailLines = 10
+	stderrTailCap   = 1024
+)
+
+// stderrTail returns the last stderrTailLines non-empty lines of s,
+// capped at stderrTailCap bytes (truncated from the front).
+func stderrTail(s string) string {
+	var lines []string
+	for _, l := range strings.Split(s, "\n") {
+		if strings.TrimSpace(l) != "" {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) > stderrTailLines {
+		lines = lines[len(lines)-stderrTailLines:]
+	}
+	out := strings.Join(lines, "\n")
+	if len(out) > stderrTailCap {
+		out = out[len(out)-stderrTailCap:]
+	}
+	return out
 }
 
 // fatalMarkers are substrings that reliably indicate an umu setup

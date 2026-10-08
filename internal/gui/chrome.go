@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"path/filepath"
 
 	. "go.hasen.dev/shirei"
 	. "go.hasen.dev/shirei/widgets"
@@ -89,15 +90,15 @@ func (m *model) openSettings() {
 		m.templateBuf = s.LaunchTemplate
 		m.onlineBuf = s.OnlineLookups
 		m.umuEnabledBuf = s.UmuEnabled
-		m.umuProtonBuf = s.UmuProtonPath
-		// Scanned once per open (not per frame): FindRunners walks the
-		// launcher roots on disk. A runner installed while the modal is
+		m.umuPrefixBuf = s.UmuPrefixPath
+		// Scanned once per open (not per frame): FindPrefixes walks the
+		// launcher roots on disk. A prefix created while the modal is
 		// open appears on the next open.
-		m.umuRunners = m.sess.UmuRunners()
+		m.umuPrefixes = m.sess.UmuPrefixes()
 	}
 	m.settingsTab = settingsTabGeneral
 	m.settingsContentMinH = 0 // re-measure the tallest tab on each open
-	m.umuProtonOpen = false
+	m.umuPrefixOpen = false
 	m.settingsOpen = true
 }
 
@@ -120,7 +121,7 @@ func (m *model) settingsModal() {
 		// While the umu Proton picker's popup is open it owns outside
 		// clicks (it floats outside the modal card at root scope);
 		// closing the modal from under it would strand the gesture.
-		if m.umuProtonOpen {
+		if m.umuPrefixOpen {
 			return
 		}
 		m.settingsOpen = false
@@ -256,39 +257,39 @@ func (m *model) settingsGeneralTab() {
 			if m.umuEnabledBuf != m.sess.Settings().UmuEnabled {
 				m.sess.SetUmuEnabled(m.umuEnabledBuf)
 			}
-			muted("Proton runner (Auto = newest detected from Steam / Bottles / Lutris / Heroic / umu)")
-			m.umuProtonPicker()
+			muted("Default wine prefix (Auto = reuse detected prefixes from Steam / Bottles / Heroic)")
+			m.umuPrefixPicker()
 		}
 	})
 }
 
-// umuProtonMenuItem is the picker's observability seam (mirrors
+// umuPrefixMenuItem is the picker's observability seam (mirrors
 // sortMenuItem): one entry per rendered popup row.
-type umuProtonMenuItem struct {
+type umuPrefixMenuItem struct {
 	value string
 	label string
 	rect  Rect
 	hl    bool
 }
 
-// umuProtonPicker replaces the old free-text Proton path input with a
-// dropdown over the runners detected at settings-open: a trigger labeled
+// umuPrefixPicker is the global-default prefix selector: a dropdown
+// over the wine prefixes detected at settings-open — a trigger labeled
 // with the current selection and a shared-machinery popup of
-// ui.UmuPickerRows. A pick only updates umuProtonBuf; Apply persists
+// ui.UmuPickerRows. A pick only updates umuPrefixBuf; Apply persists
 // (same discipline as the other General-tab buffers).
-func (m *model) umuProtonPicker() {
+func (m *model) umuPrefixPicker() {
 	st := Use[dropdownState]("umu-proton-picker")
 	// Published for the modal's dismiss guard (read after this renders,
 	// same frame) and reset on openSettings.
-	m.umuProtonOpen = st.open
+	m.umuPrefixOpen = st.open
 	if !st.open {
-		m.umuProtonMenuItems = nil
+		m.umuPrefixMenuItems = nil
 	}
 	enterPick := false
 	Container(Attrs(Focusable, PointerHand, Row, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(radiusS), BackgroundVec(bgCard), MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH})), func() {
 		FocusOnClick()
 		st.btnID = CurrentId()
-		m.umuProtonTriggerRect = GetScreenRectOf(CurrentId())
+		m.umuPrefixTriggerRect = GetScreenRectOf(CurrentId())
 		activated := false
 		if HasFocus() {
 			ModAttrs(func(a *AttrSet) {
@@ -299,7 +300,7 @@ func (m *model) umuProtonPicker() {
 				// The trigger owns menu navigation while open (shared
 				// dropdown keys; all consumed).
 				var spaceToggle bool
-				enterPick, spaceToggle = dropdownMenuKeys(st, len(m.umuProtonMenuItems))
+				enterPick, spaceToggle = dropdownMenuKeys(st, len(m.umuPrefixMenuItems))
 				if spaceToggle {
 					activated = true
 				}
@@ -308,7 +309,7 @@ func (m *model) umuProtonPicker() {
 				activated = true
 			}
 		}
-		Label(ui.UmuPickerLabel(m.umuProtonBuf, m.umuRunners), FontSize(12), TextColorVec(txtMain))
+		Label(ui.UmuPickerLabel("Auto (detected)", m.umuPrefixBuf, m.umuPrefixes), FontSize(12), TextColorVec(txtMain))
 		dropdownArrow()
 		if PressAction() {
 			activated = true
@@ -321,23 +322,23 @@ func (m *model) umuProtonPicker() {
 		}
 	})
 	if st.open {
-		rows := ui.UmuPickerRows(m.umuProtonBuf, m.umuRunners)
+		rows := ui.UmuPickerRows("Auto (detected)", m.umuPrefixBuf, m.umuPrefixes)
 		dropdownPopup(st, 0, 460, func(mouseMoved bool) {
 			if st.hl < 0 {
 				// Open-time init: the highlight starts on the ticked
 				// (current selection) row, 0 when nothing is ticked.
 				st.hl = 0
 				for i, r := range rows {
-					if r.Value == m.umuProtonBuf {
+					if r.Value == m.umuPrefixBuf {
 						st.hl = i
 						break
 					}
 				}
 			}
-			m.umuProtonMenuItems = m.umuProtonMenuItems[:0]
+			m.umuPrefixMenuItems = m.umuPrefixMenuItems[:0]
 			for i, r := range rows {
 				r := r
-				ticked := r.Value == m.umuProtonBuf
+				ticked := r.Value == m.umuPrefixBuf
 				dropdownRow(st, i, enterPick, mouseMoved,
 					func(hl bool) {
 						// Fixed-width tick column keeps labels aligned.
@@ -347,10 +348,10 @@ func (m *model) umuProtonPicker() {
 						}
 						Label(tick, FontSize(12), TextColorVec(txtMain))
 						Label(r.Label, FontSize(12), TextColorVec(txtMain))
-						m.umuProtonMenuItems = append(m.umuProtonMenuItems, umuProtonMenuItem{value: r.Value, label: r.Label, rect: GetScreenRectOf(CurrentId()), hl: hl})
+						m.umuPrefixMenuItems = append(m.umuPrefixMenuItems, umuPrefixMenuItem{value: r.Value, label: r.Label, rect: GetScreenRectOf(CurrentId()), hl: hl})
 					},
 					func(keyboard bool) {
-						m.umuProtonBuf = r.Value
+						m.umuPrefixBuf = r.Value
 						if keyboard {
 							FocusImmediateOn(st.btnID)
 						}
@@ -361,6 +362,107 @@ func (m *model) umuProtonPicker() {
 	// Dismissal AFTER the popup rendered (shared ordering): Esc consumed
 	// so the modal's own Esc handler cannot also close the settings.
 	dropdownDismiss(st, nil)
+}
+
+// prefixDropdown is the detail panel's per-game prefix selector (Linux
+// only, gated by the caller): a compact trigger showing the game's
+// pinned prefix (basename, zero I/O while closed) and a shared-machinery
+// popup of Auto (inherit) + the detected prefixes, scanned on the
+// opening frame. A pick persists immediately through
+// SetUmuPrefixOverride — detail-panel actions are direct session calls,
+// not buffered like the settings modal. Coordinates with the version
+// dropdown via m.openDropdownDir (one popup per game at a time).
+func (m *model) prefixDropdown(e *ui.GameRow) {
+	st := Use[dropdownState]("detail-prefix-picker")
+	if st.open && m.openDropdownDir != e.InstallDir {
+		st.open = false
+	}
+	if !st.open {
+		m.prefixDDItems = nil
+	}
+	enterPick := false
+	pin := m.sess.UmuPrefixPin(e.InstallDir)
+	trigger := "Prefix: Auto"
+	if pin != "" {
+		trigger = "Prefix: " + filepath.Base(pin)
+	}
+	Container(Attrs(Focusable, PointerHand, Row, CrossMid, Gap(sp4), Pad2(3, 6), Corners(radiusS), BackgroundVec(bgCard)), func() {
+		FocusOnClick()
+		st.btnID = CurrentId()
+		m.prefixDDTriggerRect = GetScreenRectOf(CurrentId())
+		activated := false
+		if HasFocus() {
+			ModAttrs(func(a *AttrSet) {
+				a.BorderWidth = 2
+				a.BorderColor = focusBorder
+			})
+			if st.open {
+				var spaceToggle bool
+				enterPick, spaceToggle = dropdownMenuKeys(st, len(m.prefixDDItems))
+				if spaceToggle {
+					activated = true
+				}
+			} else if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
+				GetFrameInput().Key = KeyCodeNone
+				activated = true
+			}
+		}
+		Label(trigger, FontSize(11), TextColorVec(txtMain))
+		dropdownArrow()
+		if PressAction() {
+			activated = true
+		}
+		if activated {
+			st.open = !st.open
+			if st.open {
+				m.openDropdownDir = e.InstallDir
+				m.prefixDDPrefixes = m.sess.UmuPrefixes() // scan on the opening frame only
+				st.hl = -1
+			} else if m.openDropdownDir == e.InstallDir {
+				m.openDropdownDir = ""
+			}
+		}
+	})
+	if st.open {
+		dir := e.InstallDir
+		rows := ui.UmuPickerRows("Auto (inherit)", pin, m.prefixDDPrefixes)
+		dropdownPopup(st, 0, 360, func(mouseMoved bool) {
+			if st.hl < 0 {
+				// Open-time init: the highlight starts on the ticked
+				// (current pin) row, 0 when nothing is pinned.
+				st.hl = 0
+				for i, r := range rows {
+					if r.Value == pin {
+						st.hl = i
+						break
+					}
+				}
+			}
+			m.prefixDDItems = m.prefixDDItems[:0]
+			for i, r := range rows {
+				r := r
+				ticked := r.Value == pin
+				dropdownRow(st, i, enterPick, mouseMoved,
+					func(hl bool) {
+						tick := " "
+						if ticked {
+							tick = "✓"
+						}
+						Label(tick, FontSize(12), TextColorVec(txtMain))
+						Label(r.Label, FontSize(12), TextColorVec(txtMain))
+						m.prefixDDItems = append(m.prefixDDItems, umuPrefixMenuItem{value: r.Value, label: r.Label, rect: GetScreenRectOf(CurrentId()), hl: hl})
+					},
+					func(keyboard bool) {
+						m.sess.SetUmuPrefixOverride(dir, r.Value)
+						m.openDropdownDir = ""
+						if keyboard {
+							FocusImmediateOn(st.btnID)
+						}
+					})
+			}
+		})
+	}
+	dropdownDismiss(st, func() { m.openDropdownDir = "" })
 }
 
 // settingsOptiscalerTab: everything OptiScaler-specific — the default

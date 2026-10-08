@@ -196,11 +196,12 @@ type Deps struct {
 	// Proton, but the failure is honest).
 	UmuLauncher UmuLauncherHook
 
-	// UmuRunners lists the locally installed Proton-compatible runners
-	// the settings frontends offer in the umu Proton picker; nil selects
-	// the production scan (umu.FindRunners over umu.RunnerRoots), which
-	// finds nothing off-Linux. Tests inject fixtures.
-	UmuRunners func() []umu.Runner
+	// UmuPrefixes lists the wine prefixes detected on disk that the
+	// prefix pickers offer (global default in settings, per-game pin in
+	// the detail views); nil selects the production scan
+	// (umu.FindPrefixes), which finds nothing off-Linux. Tests inject
+	// fixtures.
+	UmuPrefixes func() []umu.Prefix
 
 	// Steam and ProtonDB feed the online lookup phase of Scan; either nil
 	// skips enrichment entirely.

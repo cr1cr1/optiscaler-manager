@@ -592,18 +592,13 @@ func TestTUISettingsToggleUmuEnabled(t *testing.T) {
 	})
 }
 
-// TestTUISettingsUmuProtonPicker: p opens the detected-runner picker;
-// j/k navigates, enter persists the highlighted runner's path via
-// SetUmuProtonPath. Reopening puts the cursor on the current pick;
-// choosing Auto clears the pin.
-func TestTUISettingsUmuProtonPicker(t *testing.T) {
+// TestTUISettingsUmuPrefixPicker: p opens the detected-prefix picker;
+// j/k navigates, enter persists the highlighted prefix as the global
+// default via SetUmuPrefixPath. Reopening puts the cursor on the
+// current pick; choosing Auto clears the default.
+func TestTUISettingsUmuPrefixPicker(t *testing.T) {
 	e := newTestEnv(t, func(d *ui.Deps) {
-		d.UmuRunners = func() []umu.Runner {
-			return []umu.Runner{
-				{Name: "GE-Proton10-1", Path: "/runners/GE-Proton10-1", Source: "heroic", Version: "10.1"},
-				{Name: "GE-Proton9-3", Path: "/runners/GE-Proton9-3", Source: "steam", Version: "9.3"},
-			}
-		}
+		d.UmuPrefixes = func() []umu.Prefix { return tuiTestPrefixes }
 	})
 	tm := startTUI(t, e.sess)
 
@@ -613,48 +608,44 @@ func TestTUISettingsUmuProtonPicker(t *testing.T) {
 	tm.Type("p")
 	// One marker per frame state: teatest's WaitFor consumes the output
 	// stream, so two waits on the same frame cannot both match.
-	waitFrame(t, tm, "GE-Proton10-1 (heroic)")
+	waitFrame(t, tm, "SomeApp (heroic)")
 
-	// Row 0 is Auto; one down highlights the heroic runner.
+	// Row 0 is Auto; one down highlights the heroic prefix.
 	tm.Type("j")
 	sendKey(tm, tea.KeyEnter)
-	pollUntil(t, "UmuProtonPath to update", func() bool {
-		return e.sess.Settings().UmuProtonPath == "/runners/GE-Proton10-1"
+	pollUntil(t, "UmuPrefixPath to update", func() bool {
+		return e.sess.Settings().UmuPrefixPath == "/home/me/Games/Heroic/Prefixes/SomeApp"
 	})
 	// The settings mutation is visible to pollUntil BEFORE the runtime
 	// applies the update that closes the picker; wait for the pick's
 	// toast frame so the reopen keypress is not swallowed by the
 	// still-open modal.
-	waitFrame(t, tm, "umu Proton: /runners/GE-Proton10-1")
+	waitFrame(t, tm, "umu prefix: /home/me/Games/Heroic/Prefixes/SomeApp")
 
 	// Reopen: the cursor starts on the current pick; up to Auto, enter
-	// clears the pin.
+	// clears the default.
 	tm.Type("p")
-	waitFrame(t, tm, "GE-Proton10-1 (heroic)")
+	waitFrame(t, tm, "SomeApp (heroic)")
 	tm.Type("k")
 	sendKey(tm, tea.KeyEnter)
-	pollUntil(t, "UmuProtonPath to clear", func() bool {
-		return e.sess.Settings().UmuProtonPath == ""
+	pollUntil(t, "UmuPrefixPath to clear", func() bool {
+		return e.sess.Settings().UmuPrefixPath == ""
 	})
 
 	_ = tm.Quit()
 	frame := finalFrame(t, tm)
-	if !strings.Contains(frame, "umu Proton") {
-		t.Errorf("umu Proton line not rendered in settings frame:\n%s", frame)
+	if !strings.Contains(frame, "umu default prefix") {
+		t.Errorf("umu prefix line not rendered in settings frame:\n%s", frame)
 	}
 }
 
-// TestTUISettingsUmuProtonPickerCustomPath: a pinned path that matches
-// no detected runner appears as a Custom row so it stays visible and
-// re-pickable.
-func TestTUISettingsUmuProtonPickerCustomPath(t *testing.T) {
+// TestTUISettingsUmuPrefixPickerCustomPath: a default prefix that
+// matches no detected prefix appears as a Custom row so it stays
+// visible and re-pickable.
+func TestTUISettingsUmuPrefixPickerCustomPath(t *testing.T) {
 	e := newTestEnv(t, func(d *ui.Deps) {
-		d.Settings.UmuProtonPath = "/elsewhere/proton"
-		d.UmuRunners = func() []umu.Runner {
-			return []umu.Runner{
-				{Name: "GE-Proton10-1", Path: "/runners/GE-Proton10-1", Source: "heroic", Version: "10.1"},
-			}
-		}
+		d.Settings.UmuPrefixPath = "/elsewhere/prefix"
+		d.UmuPrefixes = func() []umu.Prefix { return tuiTestPrefixes }
 	})
 	tm := startTUI(t, e.sess)
 
@@ -662,7 +653,44 @@ func TestTUISettingsUmuProtonPickerCustomPath(t *testing.T) {
 	tm.Type("2")
 	waitFrame(t, tm, "Scan directories")
 	tm.Type("p")
-	waitFrame(t, tm, "Custom: /elsewhere/proton")
+	waitFrame(t, tm, "Custom: /elsewhere/prefix")
+	_ = tm.Quit()
+}
+
+// TestTUIDetailPerGamePrefixPin: w on the detail screen opens the
+// per-game prefix picker; enter pins the highlighted prefix for this
+// game only (the global default stays empty), and Auto clears the pin.
+func TestTUIDetailPerGamePrefixPin(t *testing.T) {
+	e := newTestEnv(t, func(d *ui.Deps) {
+		d.UmuPrefixes = func() []umu.Prefix { return tuiTestPrefixes }
+	})
+	tm := startTUI(t, e.sess)
+
+	waitFrame(t, tm, "Game One")
+	sendKey(tm, tea.KeyEnter) // detail screen
+	waitFrame(t, tm, "Status:")
+	tm.Type("w")
+	waitFrame(t, tm, "Auto (inherit)")
+
+	// Row 0 is Auto (inherit); one down highlights the heroic prefix.
+	tm.Type("j")
+	sendKey(tm, tea.KeyEnter)
+	pollUntil(t, "per-game pin to persist", func() bool {
+		return e.sess.UmuPrefixPin(e.gameRoot) == "/home/me/Games/Heroic/Prefixes/SomeApp"
+	})
+	if got := e.sess.Settings().UmuPrefixPath; got != "" {
+		t.Errorf("UmuPrefixPath = %q after per-game pin, want empty (untouched)", got)
+	}
+	waitFrame(t, tm, "umu prefix: /home/me/Games/Heroic/Prefixes/SomeApp")
+
+	// Reopen: cursor on the pin; up to Auto, enter clears it.
+	tm.Type("w")
+	waitFrame(t, tm, "SomeApp (heroic)")
+	tm.Type("k")
+	sendKey(tm, tea.KeyEnter)
+	pollUntil(t, "per-game pin to clear", func() bool {
+		return e.sess.UmuPrefixPin(e.gameRoot) == ""
+	})
 	_ = tm.Quit()
 }
 

@@ -65,6 +65,10 @@ func newSession(d *Deps) *ui.Session {
 	if key := prefs.SteamGridDBKey; key != "" && coverClient.SGDB == nil {
 		coverClient.SGDB = sgdb.New(httpClient, filepath.Join(d.CacheDir, "sgdb"), key, d.Version)
 	}
+	// The umu hook reads the effective prefix pin (per-game, else the
+	// global default) at launch time; the indirection lets the session
+	// (constructed below) become the resolver once it exists.
+	pinPrefix := func(string) string { return "" }
 	sess := ui.NewSession(ui.Deps{
 		Store:        d.Store,
 		GH:           d.GH,
@@ -80,8 +84,9 @@ func newSession(d *Deps) *ui.Session {
 		PCGW:         pcgwClient,
 		GOG:          gogClient,
 		Launcher:     d.Launcher, // nil selects the platform default
-		UmuLauncher:  newUmuLauncher(prefs),
+		UmuLauncher:  newUmuLauncher(func(dir string) string { return pinPrefix(dir) }),
 	})
+	pinPrefix = sess.UmuPrefixFor
 	return sess
 }
 

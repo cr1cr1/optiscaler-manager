@@ -583,16 +583,20 @@ decisions the per-version sections above do not cover.
 - **umu-launcher integration** (v0.12, Linux only, opt-in): when
   `UmuEnabled` is on and `umu-run` is on PATH, manual-store games whose
   ExePath is a Windows binary launch through umu instead of the direct
-  exe path. The Proton build is picked from a detected-runner picker
-  (`UmuProtonPath` pins one; empty = Auto, the newest runner detected
-  across Steam — native/Flatpak/Snap/extra libraries — Bottles, Lutris,
+  exe path. Proton is always Auto: the newest runner detected across
+  Steam — native/Flatpak/Snap/extra libraries — Bottles, Lutris,
   Heroic, and umu `compatibilitytools`, falling through to umu's own
-  runtime when nothing is found). The prefix reuses an existing
-  launcher prefix when the game already lives in one (an enclosing
-  `drive_c`, or a Heroic prefix matching the game's AppName); otherwise
-  each game gets a deterministic Proton prefix at
-  `<state-root>/umu-prefixes/<sha1(installDir)[:12]>`. Launcher
-  directories are only read, never created into or migrated.
+  runtime when nothing is found. The wine prefix resolves per game pin
+  → global default → auto chain: `PrefixOverrides` pins a prefix per
+  install dir (detail pane, issue 048), `UmuPrefixPath` sets the global
+  default (settings picker over detected Heroic/Bottles/Steam/~/.wine
+  prefixes), and with neither the launch reuses a prefix the game
+  already lives in (an enclosing `drive_c`, or a Heroic prefix matching
+  the game's AppName) before deriving a deterministic per-game prefix
+  at `<state-root>/umu-prefixes/<sha1(installDir)[:12]>`. Launcher
+  directories are only read, never created into or migrated. Launch
+  failures carry umu's stderr tail and are logged with the game, exe,
+  prefix, and runner.
 - **Hook disable/enable toggle** (v0.13): installed games get a
   Disable/Enable affordance (GUI button in the detail panel, "disabled"
   pill on the card; TUI `d` on the detail screen) that renames the injection hook
