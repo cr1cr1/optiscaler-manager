@@ -49,4 +49,26 @@ The fork-switch chain keeps failing loudly (no consent prompt mid-chain).
 
 ## Outcome
 
-Commit: TBD.
+Implemented as planned. `installer.MissingBackupError` collects every
+missing backup (fail-fast deleted); `UninstallOptions.AllowMissingBackup`
+drops the unrestorable installed bytes and completes teardown; an
+installed file AND backup both gone is a no-op even without consent.
+`app.Uninstall`/`UninstallRelocating` collapsed into a single
+`app.UninstallWithOptions` (ponytail-review: three wrappers over a
+positional bool/string list was the smell). UI: `ConfirmMissingBackup`
+gate on the standalone path only — the fork-switch chain surfaces the
+typed error. CLI: `uninstall --force` with a hint, mirroring
+`install --force`. GUI/TUI needed zero changes (generic confirm modal).
+Ponytail-review applied: -22 lines of wrapper/indirection removed.
+
+Renumbered 049 → 050 mid-flight: the parallel session claimed 049 (then
+renumbered their own to 051 after the same collision).
+
+Attribution anomaly: a staging race with the parallel session split the
+change across two commits — the code, tests, issue doc and scope.md
+landed in 39807fe (foreign message "umu: ... (issue 51)"), the log.md
+entry in 4d0bd6e ("uninstall: consent gate ... (issue 50)"). Content is
+intact at HEAD; history left unrewritten because the foreign session was
+actively committing.
+
+Commits: 39807fe (code+docs), 4d0bd6e (log). Pin: TBD.
