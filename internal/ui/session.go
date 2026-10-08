@@ -325,6 +325,16 @@ func (s *Session) Events() <-chan Event {
 	return s.events
 }
 
+// CoversCacheDir reports the cover cache root ("" when covers are
+// disabled). The GUI scopes its decode-time cover sharpening to this tree
+// (issue 038).
+func (s *Session) CoversCacheDir() string {
+	if s.deps.Covers == nil {
+		return ""
+	}
+	return s.deps.Covers.CacheDir()
+}
+
 // Snapshot returns the current renderable state, pruning expired toasts.
 func (s *Session) Snapshot() State {
 	s.mu.Lock()

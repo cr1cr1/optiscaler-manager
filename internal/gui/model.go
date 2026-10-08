@@ -137,6 +137,11 @@ type model struct {
 }
 
 func newModel(cfg Config) *model {
+	if cfg.Session != nil {
+		// Issue 038: sharpen covers once at image-decode time, scoped to
+		// the session's cover cache dir (idempotent; no-op without covers).
+		installCoverSharpen(cfg.Session.CoversCacheDir())
+	}
 	return &model{
 		cfg:       cfg,
 		sess:      cfg.Session,

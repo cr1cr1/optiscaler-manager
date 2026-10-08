@@ -222,6 +222,28 @@ func LoadImageConfig(fpath string) image.Config {
 	return cfg
 }
 
+// PATCHED by optiscaler-manager (v0.18): image decode hook — the app may
+// transform decoded pixels once at load (10% cover sharpening, issue 038).
+// Applied at both LoadImage decode sites (sync and the >500KB async path);
+// a nil hook return keeps the original pixels. Reapply after
+// `go mod vendor` (see docs/vendor-patches.md).
+var imageDecodeHook func(fpath string, rgba *image.RGBA) *image.RGBA
+
+// SetImageDecodeHook registers the decode-time pixel transform (v0.18).
+func SetImageDecodeHook(fn func(fpath string, rgba *image.RGBA) *image.RGBA) {
+	imageDecodeHook = fn
+}
+
+func applyImageDecodeHook(fpath string, rgba *image.RGBA) *image.RGBA {
+	if imageDecodeHook == nil || rgba == nil {
+		return rgba
+	}
+	if out := imageDecodeHook(fpath, rgba); out != nil {
+		return out
+	}
+	return rgba
+}
+
 func LoadImage(fpath string) *ImageData {
 	const cacheType = "image"
 
@@ -251,7 +273,7 @@ func LoadImage(fpath string) *ImageData {
 	if len(content) < threshold {
 		// small enough size; load immediately
 		decoded, _, _ := image.Decode(bytes.NewReader(content))
-		rgba := imageToRGBA(decoded)
+		rgba := applyImageDecodeHook(fpath, imageToRGBA(decoded)) // PATCHED by optiscaler-manager (v0.18)
 		if rgba != nil {
 			img.RGBA = *rgba
 			img.Generation = nextImageGeneration()
@@ -260,7 +282,7 @@ func LoadImage(fpath string) *ImageData {
 		// defer loading to background
 		go func() {
 			decoded, _, _ := image.Decode(bytes.NewReader(content))
-			rgba := imageToRGBA(decoded)
+			rgba := applyImageDecodeHook(fpath, imageToRGBA(decoded)) // PATCHED by optiscaler-manager (v0.18)
 			if rgba != nil {
 				WithFrameLock(func() {
 					// Entry may have been reclaimed while we decoded; only

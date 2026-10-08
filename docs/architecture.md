@@ -194,7 +194,11 @@ internal/
               library cache (schema-versioned, atomic) behind
               Session.Start
   gui/        shirei binding over ui.Session (ALL shirei imports live here);
-              theme tokens, arrow-key grid nav, right-docked detail panel
+              theme tokens, arrow-key grid nav, right-docked detail panel;
+              cover art decodes once per path through the vendored LoadImage
+              decode hook (vendor patch v0.18), which applies a 10% unsharp
+              mask to cover-cache images only — disk bytes untouched, no
+              per-frame cost (issue 038)
   tui/        bubbletea binding over ui.Session (renders snapshots, forwards
               keys; no business logic beyond the in-process OptiScaler.ini
               editor for `o`); multi-screen styled layout on

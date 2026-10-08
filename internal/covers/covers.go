@@ -98,6 +98,11 @@ func NewWithBase(httpClient *http.Client, cacheDir, cdnBase, searchBase string) 
 	return c
 }
 
+// CacheDir returns the on-disk cache root (downloaded covers, override
+// posters, placeholder). The GUI scopes its decode-time cover sharpening
+// to this tree (issue 038).
+func (c *Covers) CacheDir() string { return c.cacheDir }
+
 // Cover returns the local path of the game's cover image, downloading and
 // caching it if needed. On any miss it returns the shared placeholder (never
 // an error for a missing cover — art is decorative). The appid path goes

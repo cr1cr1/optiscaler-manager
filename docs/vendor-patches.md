@@ -376,3 +376,31 @@ import); the `cursorEnterSerial` assignment in `HandlePointerEnter`
 (`waylandinput_linux.go`); the post-frame `applyPointerCursor()` call in
 `drawFrame` before the early return. `TestVendorCSDPatchPresent` and the
 cursor tests fail while any part is missing.
+
+## shirei: image decode hook (v0.18)
+
+- **File**: `vendor/go.hasen.dev/shirei/images.go` (`imageDecodeHook` var,
+  `SetImageDecodeHook`, `applyImageDecodeHook`, invoked at both `LoadImage`
+  decode sites).
+- **Markers**: `// PATCHED by optiscaler-manager (v0.18)` (header block on
+  the vars; trailing on the two `applyImageDecodeHook` call sites).
+- **Guard**: `internal/gui/sharpen_test.go` (`TestVendorImageDecodeHookPatch`
+  checks the marker and `func SetImageDecodeHook(`) plus the behavior tests
+  beside it (sharpened pixels in the registry, sync and async paths).
+
+**What.** Covers are stored on disk at full resolution and scaled live at
+render from the RGBA that `LoadImage` decodes once per path into the image
+registry. To counter downscale softness the app sharpens that decoded image
+once at load — never per frame, never on disk (issue 038). The patch adds a
+single decode-time hook: after `imageToRGBA` at both the synchronous small
+file site and the >500 KB async goroutine site, `applyImageDecodeHook` lets
+the registered function replace the pixels (nil return keeps the original).
+The GUI installs it from `newModel` (`installCoverSharpen`), scoped to the
+session's covers cache dir, applying a 10% unsharp mask (3x3 box blur,
+alpha untouched); icons and all other images pass through unchanged.
+
+**Reapplying after `go mod vendor`.** Re-add the `imageDecodeHook` var,
+`SetImageDecodeHook`, and `applyImageDecodeHook` before `LoadImage`, and
+wrap both `imageToRGBA(decoded)` call sites in `LoadImage` with
+`applyImageDecodeHook(fpath, …)`. `TestVendorImageDecodeHookPatch` fails
+while the marker is missing.

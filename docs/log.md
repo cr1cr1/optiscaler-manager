@@ -4096,3 +4096,40 @@ not just the global toolbar Scan — same methods and logic, one game.
 - Mid-flight note: the parallel session's issue-036 action-row rework
   landed during implementation; the Rescan button was placed inside
   their new row-1 (game actions) grouping.
+
+## 2026-10-08 — issue 38: sharpen cover posters 10% once at image-load
+
+User request: if posters are resized when stored, sharpen after that
+resize; otherwise sharpen the in-memory cached image once on load, not
+every render. Investigation settled which branch applies: covers are
+never resized on disk (`covers.fetch` stores bytes as-is;
+`normalizeCover` only center-crops to 2:3), and the GUI scales them
+live at render from the RGBA that vendored shirei `LoadImage` decodes
+once per path into the image registry. So the in-memory branch was
+implemented.
+
+- Vendor patch v0.18 (`vendor/go.hasen.dev/shirei/images.go`): a decode
+  hook (`SetImageDecodeHook` + `applyImageDecodeHook`) invoked at both
+  `LoadImage` decode sites — the sync small-file path and the >500 KB
+  async goroutine; a nil hook return keeps the original pixels.
+  Documented in docs/vendor-patches.md, guarded by
+  `TestVendorImageDecodeHookPatch`.
+- `internal/gui/sharpen.go` (new): `sharpenRGBA` — 10% unsharp mask
+  (3x3 edge-replicated box blur, RGB only, alpha untouched, fresh
+  buffer, flat fields exact no-ops) — and `installCoverSharpen`, which
+  registers the session's covers cache dir and installs the hook once.
+  Only paths under a registered covers dir are sharpened; icons and
+  other images pass through pixel-identical.
+- Wiring: `covers.Covers.CacheDir()` and `ui.Session.CoversCacheDir()`
+  accessors; `newModel` installs the hook (idempotent, nil-safe).
+- ATDD red witnessed (`tmp/test-red-038.log`): compile red in
+  internal/gui. Green: all six new tests pass (flat no-op, exact edge
+  math 100/160 → 98/162, alpha + source preservation, cover-only
+  routing, second-load cache hit, async path, vendor guard);
+  `go test ./...` green except the foreign session's in-flight red
+  `caret_churn_test.go` (untracked, image-unrelated; package green with
+  it set aside), vet/gofmt clean, GOOS=windows/darwin builds OK.
+- Note: the foreign session's caret-churn test comment cites "issue
+  038" — a numbering collision with this issue; theirs predates or
+  raced this doc. Number 038 belongs to this change as the doc was
+  created first in docs/issues/; their entry should renumber.
