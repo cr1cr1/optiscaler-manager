@@ -26,6 +26,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/gid"
 	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
 	"github.com/cr1cr1/optiscaler-manager/internal/sgdb"
+	"github.com/cr1cr1/optiscaler-manager/internal/wikidata"
 )
 
 const (
@@ -50,6 +51,12 @@ type Covers struct {
 	// It sits between the Steam CDN and the wiki: official Steam art
 	// still wins, community grids beat the landscape hero.
 	SGDB *sgdb.Client
+
+	// Wikidata, when non-nil, is the keyless last structured source:
+	// entity search → P18 box art from Wikimedia Commons, for games with
+	// no Steam or PCGW presence at all (console titles via emulator)
+	// (issue 030).
+	Wikidata *wikidata.Client
 
 	// UserAgent identifies every outbound request; the wiki's hosts
 	// reject requests without a descriptive UA (403), and Go's default
@@ -110,6 +117,9 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 			if p, ok := c.fromPCGW(ctx, sanitized, name); ok {
 				return p, nil
 			}
+			if p, ok := c.fromWikidata(ctx, sanitized, name); ok {
+				return p, nil
+			}
 			if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_hero.jpg"), url.PathEscape(sanitized)), cached); err == nil {
 				return cached, nil
 			}
@@ -129,12 +139,17 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 			if p, ok := c.fromPCGW(ctx, id, name); ok {
 				return p, nil
 			}
+			if p, ok := c.fromWikidata(ctx, id, name); ok {
+				return p, nil
+			}
 			if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_hero.jpg"), url.PathEscape(id)), cached); err == nil {
 				return cached, nil
 			}
 		} else if p, ok := c.fromSGDB(ctx, "", name); ok {
 			return p, nil
 		} else if p, ok := c.fromPCGW(ctx, "", name); ok {
+			return p, nil
+		} else if p, ok := c.fromWikidata(ctx, "", name); ok {
 			return p, nil
 		}
 	}
@@ -173,12 +188,56 @@ func (c *Covers) markMiss(appid string) {
 	}
 }
 
-// searchAppID resolves a game name to a Steam appid via the store search API.
-// Candidates are scored (normalized exact or near-equal, PC bonus, edition
-// penalty) and the BEST score above the acceptance threshold binds — not the
-// first acceptable hit; anything weaker means no cover rather than the wrong
-// one.
+// searchAppID resolves a game name to a Steam appid via the store search
+// API. Steam substring-matches the WHOLE query term, so one junk token
+// ("Spelunky HD", "… PROPER", "Riven - The sequel to Myst") answers zero
+// items: the lookup walks query variants — raw, gid-normalized (edition
+// tokens stripped), then progressive right-truncation — until one binds
+// (issue 030). Candidates are scored (normalized exact or near-equal, PC
+// bonus, edition penalty) and the BEST score above the acceptance
+// threshold binds — not the first acceptable hit; anything weaker means
+// no cover rather than the wrong one.
 func (c *Covers) searchAppID(ctx context.Context, name string) (string, error) {
+	for _, q := range queryVariants(name) {
+		id, err := c.searchAppIDOnce(ctx, q)
+		if err != nil {
+			return "", err
+		}
+		if id != "" {
+			return id, nil
+		}
+	}
+	return "", nil
+}
+
+// queryVariants expands a display title into storesearch queries: the raw
+// title first (best fidelity), then the gid-normalized form, then
+// token-by-token right-truncation. Variants shorter than 4 characters are
+// never queried ("the" must not hit the store); duplicates are skipped.
+func queryVariants(name string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(q string) {
+		q = strings.Join(strings.Fields(q), " ")
+		if len(q) < 4 || seen[strings.ToLower(q)] {
+			return
+		}
+		seen[strings.ToLower(q)] = true
+		out = append(out, q)
+	}
+	add(name)
+	norm := gid.Normalize(name)
+	add(norm)
+	for toks := strings.Fields(norm); len(toks) > 1; {
+		toks = toks[:len(toks)-1]
+		add(strings.Join(toks, " "))
+	}
+	return out
+}
+
+// searchAppIDOnce runs one storesearch query and binds its best-scored
+// acceptable item.
+func (c *Covers) searchAppIDOnce(ctx context.Context, name string) (string, error) {
 	u := c.searchBase + "?term=" + url.QueryEscape(name) + "&cc=us&l=en"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
@@ -375,6 +434,29 @@ func (c *Covers) fromSGDB(ctx context.Context, appID, name string) (string, bool
 		dest = filepath.Join(c.cacheDir, "sgdb_"+hex.EncodeToString(sum[:])[:16]+".img")
 	}
 	if err := c.fetch(ctx, u, dest); err == nil {
+		return dest, true
+	}
+	return "", false
+}
+
+// fromWikidata resolves box art via Wikidata/Commons by title — the
+// keyless last structured source for games with no Steam or PCGW
+// presence. The appid only names the cache file. Returns the cached
+// image path on success (issue 030).
+func (c *Covers) fromWikidata(ctx context.Context, appID, name string) (string, bool) {
+	if c.Wikidata == nil || name == "" {
+		return "", false
+	}
+	file, _, err := c.Wikidata.SearchCoverFile(ctx, name)
+	if err != nil || file == "" {
+		return "", false
+	}
+	dest := filepath.Join(c.cacheDir, appID+".img")
+	if appID == "" {
+		sum := sha256.Sum256([]byte("wd:" + strings.ToLower(file)))
+		dest = filepath.Join(c.cacheDir, "wd_"+hex.EncodeToString(sum[:])[:16]+".img")
+	}
+	if err := c.fetch(ctx, c.Wikidata.FileURL(file, 600), dest); err == nil {
 		return dest, true
 	}
 	return "", false

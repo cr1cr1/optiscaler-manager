@@ -55,6 +55,21 @@ func (s *Session) identifyRow(ctx context.Context, row *GameRow, st *steam.Clien
 	if base := filepath.Base(row.InstallDir); base != row.Title {
 		candidates = append(candidates, base)
 	}
+	// Normalized variants ride behind the raw candidates: storesearch
+	// substring-matches the WHOLE query, so junk tokens in a repack folder
+	// name ("Control Ultimate Edition PROPER") or a launcher-shim PE title
+	// ("ControlLauncher") answer zero items where the normalized form
+	// ("control") binds the canonical app (issue 030).
+	seen := map[string]bool{}
+	for _, cand := range candidates {
+		seen[strings.ToLower(cand)] = true
+	}
+	for _, raw := range []string{row.Title, filepath.Base(row.InstallDir)} {
+		if n := gid.Normalize(raw); n != "" && !seen[n] {
+			seen[n] = true
+			candidates = append(candidates, n)
+		}
+	}
 	for _, cand := range candidates {
 		if len(gid.Normalize(cand)) < 4 {
 			// Too ambiguous to query: a codename this short can

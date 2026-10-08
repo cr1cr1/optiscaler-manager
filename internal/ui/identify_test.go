@@ -307,3 +307,18 @@ func TestIdentify_UnityCodenameGoesFuzzy(t *testing.T) {
 		t.Errorf("row = %+v, want the canonical title via fuzzy", row)
 	}
 }
+
+// Junk titles ("ControlLauncher" from a launcher-shim PE) canonicalize
+// via the gid-normalized variant of the folder name: Steam's storesearch
+// answers zero items for the raw repack folder, but the normalized form
+// ("control") binds the canonical app (issue 030).
+func TestIdentify_NormalizedVariantResolvesJunkTitle(t *testing.T) {
+	f := newIdentifyFixture(t)
+	f.search["control"] = `{"total":1,"items":[{"type":"app","name":"CONTROL Ultimate Edition","id":870780,"platforms":{"windows":true}}]}`
+	row := GameRow{Title: "ControlLauncher", InstallDir: "/games/Control Ultimate Edition PROPER", Store: domain.StoreManual, TitleSource: "pe"}
+
+	f.sess.identifyRow(context.Background(), &row, f.sess.deps.Steam)
+	if row.Title != "CONTROL Ultimate Edition" || row.SteamAppID != "870780" || row.TitleSource != "fuzzy" {
+		t.Errorf("row = %+v, want canonical via the normalized folder variant", row)
+	}
+}

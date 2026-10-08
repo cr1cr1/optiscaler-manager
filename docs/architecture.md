@@ -88,10 +88,15 @@ internal/
               (cleanup under context.WithoutCancel)
   profile/    curated OptiScaler.ini writer
   covers/     cover art: Steam CDN by appid → SGDB grid (when a key is
-              configured) → PCGW box art → hero image → scored title
+              configured) → PCGW box art → Wikidata/Commons P18 box art
+              (keyless; issue 030) → hero image → scored title
               search (best candidate, PC tie-break) → placeholder; disk
               cache plus a 7-day `.miss` negative marker that skips only
-              the CDN retry, never the title search. The SGDB name search
+              the CDN retry, never the title search. Title search walks
+              query variants (raw → gid-normalized → right-truncated,
+              ≥4 chars) because storesearch substring-matches the whole
+              term — one junk token answers zero items (issue 030).
+              The SGDB name search
               binds via a scoped subset rule (candidate tokens ⊆ hit, no
               new numerals) — covers only, never identification. Every
               cached image is normalized to the 2:3 card aspect
@@ -112,6 +117,11 @@ internal/
               not used, and HTTP-200 error envelopes are live errors,
               never cached; 30 req/min pacing, 429/5xx cooldown, 30d disk
               cache with negatives, v2 cache namespace)
+  wikidata/   Wikidata/Commons last-resort cover source (keyless;
+              issue 030): wbsearchentities scored with the gid matcher,
+              best-accepted entity's P18 image via Commons
+              Special:FilePath; 30d disk cache with negatives, 429/5xx
+              cooldown
   sgdb/       SteamGridDB grid art (API v2, Bearer key from settings):
               steam-appid → game, alias-aware autocomplete, 600x900 grid
               URL; 30d disk cache with negatives, success:false bodies are
@@ -692,9 +702,13 @@ there with thin aliases left in discovery.
 
 Row creation resolves titles through `discovery.ChainResolver`:
 settings override → gid offline hits → PE → exe stem → folder, always
-recording a detected Steam appid. The online half lives in the lookup
+recording a detected Steam appid. Launcher-shim PE strings
+("ControlLauncher") fall through, and scene tags/version runs are
+stripped from the result (issue 030). The online half lives in the lookup
 phase (`ui/identify.go`): appid rows upgrade to canonical store names
-(appdetails), the rest try the fuzzy store match (storesearch, with
+(appdetails), the rest try the fuzzy store match (storesearch on the raw
+title/folder plus their gid-normalized variants — the store
+substring-matches whole queries, so junk tokens answer zero items;
 SearchApps → ProtonDB behind it), all under the existing budget,
 pacing, cooldown, and disk caches.
 

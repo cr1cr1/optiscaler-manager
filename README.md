@@ -72,7 +72,11 @@ panel (GUI) or with `l` (TUI); launching is fire-and-forget. Busy installs and
 uninstalls can be cancelled per game and roll back to the pre-operation state.
 
 Cover art comes from Steam's CDN first, then PCGamingWiki box art
-(keyless), then SteamGridDB when a key is configured. SteamGridDB covers
+(keyless), then Wikidata/Commons box art (keyless — the only automatic
+source for console titles with no PC store page), then SteamGridDB when
+a key is configured. Name-based lookups are junk-tolerant: repack tags
+and edition suffixes in folder names ("Spelunky HD", "… PROPER") are
+stripped or truncated away until the store answers. SteamGridDB covers
 games Steam has no art for (unreleased or asset-less appids) and resolves
 folder names that drop a subtitle ("The Witcher 3 Remastered" → The
 Witcher 3: Wild Hunt). Whatever the source — including landscape hero

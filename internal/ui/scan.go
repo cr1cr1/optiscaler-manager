@@ -364,8 +364,9 @@ func (s *Session) mergeExtraDirs(ctx context.Context, rows []GameRow, extraDirs 
 // title, so games whose exes carry identical metadata titles (both
 // "TOI") stay distinguishable in the library. When the folder name is
 // the title itself, the parent directory disambiguates ("Red Dead
-// Redemption 2 (Games)" vs "(common)"); the full install dir is the
-// last resort.
+// Redemption 2 (Games)" vs "(common)"); deeper collisions use a short
+// two/three-segment tail — never the absolute path, which used to leak
+// into the library as "WARDOGS (/mnt/linux3/...)" (issue 030).
 func disambiguateTitles(rows []GameRow) {
 	squeeze := func(s string) string {
 		return strings.Map(func(r rune) rune {
@@ -385,21 +386,33 @@ func disambiguateTitles(rows []GameRow) {
 		}
 		seen := map[string]bool{}
 		for _, i := range idxs {
-			suffix := filepath.Base(rows[i].InstallDir)
+			dir := rows[i].InstallDir
+			suffix := filepath.Base(dir)
 			if squeeze(suffix) == squeeze(rows[i].Title) {
-				if parent := filepath.Base(filepath.Dir(rows[i].InstallDir)); parent != "" && squeeze(parent) != squeeze(rows[i].Title) {
+				if parent := filepath.Base(filepath.Dir(dir)); parent != "" && squeeze(parent) != squeeze(rows[i].Title) {
 					suffix = parent
 				} else {
-					suffix = rows[i].InstallDir
+					suffix = shortTail(dir, 2)
 				}
 			}
-			for seen[suffix] {
-				suffix = rows[i].InstallDir
+			for n := 3; seen[suffix]; n++ {
+				suffix = shortTail(dir, n)
 			}
 			seen[suffix] = true
 			rows[i].Title += " (" + suffix + ")"
 		}
 	}
+}
+
+// shortTail returns the last n path segments of dir ("Wardogs/Wardogs"),
+// or the whole (separator-stripped) dir when it has fewer. Colliding
+// callers raise n, so duplicates still resolve to distinct suffixes.
+func shortTail(dir string, n int) string {
+	parts := strings.FieldsFunc(dir, func(r rune) bool { return r == '/' || r == '\\' })
+	if len(parts) > n {
+		parts = parts[len(parts)-n:]
+	}
+	return strings.Join(parts, "/")
 }
 
 // toRow enriches a library entry into display form, resolving cover art.

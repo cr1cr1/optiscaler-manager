@@ -3880,3 +3880,41 @@ Poster" tooltip.
   `go test ./...` exit 0 (30 packages), `go vet`/`gofmt` clean.
 - Numbering: planned as 030, renumbered to 031 — the concurrent session
   claimed 030 (title cleanup / resilient cover search) first.
+
+## 2026-10-08 — issue 30: title cleanup, resilient cover search, Wikidata fallback
+
+User report: after the issue-028 rescan, "literally nothing changed".
+Diagnosis against the live library proved the discovery heuristics DID
+land (Bramble re-rowed at its real root, RSI Launcher vanished) but two
+deeper mechanisms hid it: junk titles are re-derived from the same junk
+sources every scan (Remedy's `Control.exe` launcher shim reports PE
+"ControlLauncher"), and Steam's storesearch substring-matches the WHOLE
+query — verified live: "Spelunky HD", "Control Ultimate Edition PROPER",
+"Riven - The sequel to Myst" all answer ZERO items, and each empty
+answer was negative-cached for 30 days (21 poisoned search entries), so
+rescans re-served the miss without retrying.
+
+- `discovery.cleanTitle` strips scene tags (PROPER, REPACK, MULTiNN)
+  and trailing version runs ("v1 0 10 0") from resolver output;
+  launcher-shim PE titles (`launcherShimTitle`, suffix + mandatory
+  prefix) fall through to the next source — Control resolves to the
+  cleaned folder title, which identify then canonicalizes.
+- `ui/identify.go` queries gid-normalized variants behind the raw
+  candidates (new cache keys bypass the poisoned negatives); the cover
+  chain's `searchAppID` walks raw → normalized → right-truncated
+  variants (≥4 chars). "Spelunky HD" binds Spelunky (239350) over
+  Spelunky 2 via the existing best-score rule.
+- New `internal/wikidata` client: keyless wbsearchentities scored with
+  the gid matcher → best entity's P18 image via Commons
+  Special:FilePath, 30d cache with negatives. Wired into the cover
+  chain after PCGW in both appid and name paths — the only automatic
+  source for console titles (the user's Cemu-hosted Zelda BotW).
+- Duplicate-title disambiguation no longer leaks absolute paths
+  ("WARDOGS (/mnt/…)" → "WARDOGS (Wardogs/Wardogs)").
+- Red witnessed (compile reds on the new seams + behavioral reds on the
+  identify/disambiguate tests; log `tmp/test-red-030.log`), full
+  `go test ./...` exit 0 (30 packages), `go vet`/`gofmt` clean,
+  GOOS=windows/darwin builds OK. One test expectation was corrected
+  during green: the chain prefers the cleaned folder title over the exe
+  stem when the stem echoes the folder (existing exeStemTitle rule) —
+  a better outcome than the test first assumed.

@@ -483,3 +483,21 @@ func TestRefreshCovers_RebindsAfterIdentify(t *testing.T) {
 		t.Errorf("CoverPath = %q, want rebound to the correct appid", rows[0].CoverPath)
 	}
 }
+
+// The duplicate-title last resort must stay short: a two-segment tail,
+// never the absolute install path (issue 030).
+func TestDisambiguateTitles_NoAbsolutePathSuffix(t *testing.T) {
+	rows := []GameRow{
+		{Title: "WARDOGS", InstallDir: "/mnt/games/Wardogs"},
+		{Title: "WARDOGS", InstallDir: "/mnt/games/Wardogs/Wardogs"},
+	}
+	disambiguateTitles(rows)
+	for _, r := range rows {
+		if strings.Contains(r.Title, "/mnt/") {
+			t.Errorf("title %q leaks an absolute path", r.Title)
+		}
+	}
+	if rows[1].Title != "WARDOGS (Wardogs/Wardogs)" {
+		t.Errorf("nested row title = %q, want a two-segment tail suffix", rows[1].Title)
+	}
+}

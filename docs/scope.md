@@ -139,8 +139,11 @@ Added after v0.1, modeled on the reference client's main window:
   pills, quick-install toggle.
 - **Covers**: Steam CDN `library_600x900.jpg` by appid (primary) →
   SteamGridDB grid (when `steamgriddb_key` is set in settings.json) →
-  PCGamingWiki box art (keyless: opensearch + wikitext infobox) → Steam
-  store search (name→appid, zero-key fallback) → generated placeholder.
+  PCGamingWiki box art (keyless: opensearch + wikitext infobox) →
+  Wikidata/Commons box art (keyless: entity search → P18 image, the only
+  source for console titles; issue 030) → Steam
+  store search (name→appid, zero-key fallback; junk-tolerant query
+  variants, issue 030) → generated placeholder.
   A user-uploaded poster (`cover_overrides`, issue 028) beats the whole
   chain and survives rescans. Cached on disk by sanitized appid; every
   cached image is normalized to

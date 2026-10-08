@@ -16,6 +16,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/sgdb"
 	"github.com/cr1cr1/optiscaler-manager/internal/steam"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
+	"github.com/cr1cr1/optiscaler-manager/internal/wikidata"
 )
 
 // cmdContext is the one-shot command context: no deadline of its own — the
@@ -53,6 +54,7 @@ func newSession(d *Deps) *ui.Session {
 	if coverClient == nil {
 		coverClient = covers.New(httpClient, filepath.Join(d.CacheDir, "covers"))
 		coverClient.PCGW = pcgwClient
+		coverClient.Wikidata = wikidata.New(httpClient, filepath.Join(d.CacheDir, "wikidata"), d.Version)
 		coverClient.UserAgent = "optiscaler-manager/" + d.Version + " (https://github.com/cr1cr1/optiscaler-manager)"
 	}
 	// SteamGridDB is opt-in via the settings API key; an injected test
