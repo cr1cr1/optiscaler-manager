@@ -1,6 +1,7 @@
 ---
 title: Per-game umu wine-prefix pinning and launch failure diagnostics
 description: The settings runner picker is replaced by prefix detection/pinning (global default plus per-game pins), and umu launch failures log full context (game, binary, prefix, runner, stderr tail).
+status: done
 ---
 
 # 048 — per-game umu wine-prefix pinning + launch failure diagnostics
@@ -37,5 +38,20 @@ logs game title, exe path, prefix, and runner on failure.
 
 ## Outcome
 
-Filled in when the issue closes: what actually happened, the commit
-hash, anything left open.
+Implemented as designed, commit `20a18a5`. `umu.FindPrefixes` detects
+prefixes across Heroic (native + Flatpak), Bottles (XDG + Flatpak),
+Steam compatdata `pfx` (all roots and extra libraries), and `~/.wine`;
+Lutris prefixes remain covered by the enclosing-`drive_c` auto rule.
+Launch-time precedence: per-game `PrefixOverrides` → global
+`UmuPrefixPath` → auto chain, read live via a late-bound
+`sess.UmuPrefixFor` resolver in the launch hook. Proton is always Auto;
+`umu_proton_path` is retired (legacy JSON loads ignored). GUI settings
+picker + detail-panel prefix dropdown (Linux-gated via
+`Session.UmuPlatform`), TUI `p` (global) and `w` (per-game) pickers,
+rows composed once in `ui.UmuPickerRows` fed by `Deps.UmuPrefixes`.
+Failures carry umu's stderr tail (last ≤10 non-empty lines, ≤1 KiB) and
+the hook logs game/exe/prefix/proton. `go test ./...` passes except the
+pre-existing `tmp/gpuprobe` failure (needs `/dev/dri`, fails identically
+on the parent commit); `go vet ./...` clean; darwin/windows
+cross-compile OK. Open follow-up: Lutris prefixes could be listed by
+parsing per-game YAML configs if users ask for it.
