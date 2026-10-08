@@ -137,6 +137,70 @@ func (s *Session) scanIdle() bool {
 	return !s.scanning && !s.scanPending
 }
 
+// RescanGame re-runs the scan pipeline for ONE library game — the same
+// stages runScan and AddDirectory run, scoped to a single row: rediscovery
+// through the game's own source (app.ScanGame), the covers phase, the
+// online identification/enrichment phase, and the cover rebind — then
+// settles like a scan (upsert, sort, disambiguate, persist) and toasts.
+// It registers on the per-game op registry, so frontends show the
+// Working…/Cancel affordance and installs/adds on the same game serialize
+// against it. A game no source resolves anymore (deleted, store-removed)
+// keeps its row — pruning is the global scan's job — and the rescan says
+// so. Cancellation keeps the old row.
+func (s *Session) RescanGame(dir string) {
+	ctx, ok := s.registerOp(dir)
+	if !ok {
+		s.toast("operation already in progress for this game", true)
+		return
+	}
+	go func() {
+		defer s.finishOp(dir)
+		snap := s.Settings()
+		resolver := discovery.ChainResolver(func(d string) string {
+			return snap.TitleOverrides[canonicalDir(d)]
+		})
+		entry, err := app.ScanGame(ctx, s.deps.Store, dir, app.ScanGameOptions{
+			SteamRoot: s.deps.SteamRoot,
+			ExtraDirs: snap.ExtraDirs,
+			Resolver:  resolver,
+		})
+		if err != nil {
+			if errors.Is(err, app.ErrGameNotFound) {
+				s.toast(filepath.Base(dir)+" no longer found — row left as-is", true)
+			} else {
+				log.Warn().Err(err).Str("dir", dir).Msg("per-game rescan failed")
+				s.toast("rescan failed: "+err.Error(), true)
+			}
+			return
+		}
+		row := baseRow(entry)
+		s.resolveCover(ctx, &row)
+		// The same online enrichment a scan (and a manual add) runs:
+		// canonical title, appid, proton tier, and the cover rebind for
+		// the identified appid.
+		if snap.OnlineLookups && s.deps.Steam != nil {
+			s.identifyRow(ctx, &row, s.deps.Steam)
+			if s.deps.ProtonDB != nil {
+				s.enrichRow(ctx, &row, s.deps.Steam, s.deps.ProtonDB)
+			}
+			rw := []GameRow{row}
+			s.refreshCovers(ctx, rw, s.Settings().CoverOverrides)
+			row = rw[0]
+		}
+		if ctx.Err() != nil {
+			return // cancelled mid-rescan: the old row stays
+		}
+		s.upsertScanRow(row)
+		s.mu.Lock()
+		sortRows(s.st.Rows)
+		disambiguateTitles(s.st.Rows)
+		s.mu.Unlock()
+		s.persistCache()
+		s.toast("rescanned "+row.Title, false)
+		s.emit(Event{Kind: EvScanDone, Text: "rescanned " + row.Title})
+	}()
+}
+
 // runScan performs one scan pass, emitting EvScanStarted up front and
 // EvScanDone/EvScanFailed on settle.
 func (s *Session) runScan(ctx context.Context) {

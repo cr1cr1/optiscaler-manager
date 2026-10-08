@@ -119,6 +119,13 @@ Both pins can also be JSON-edited directly, e.g.
 `"title_overrides": {"/games/witcher3": "The Witcher 3: Wild Hunt"}`,
 then rescan.
 
+A full-library rescan is not needed to refresh one game: the detail
+panel's **Rescan** button (TUI: `R` on the detail screen) re-runs the
+whole pipeline — rediscovery, cover fetch, online identification — for
+that game only, through the same sources and heuristics as the toolbar
+Scan. A game that no longer resolves anywhere (deleted, or removed from
+its store) keeps its row; the next full scan prunes it.
+
 Each installed game manages its own OptiScaler version: the version selector
 (a dropdown on the card and detail panel in the GUI, the `v` key in the TUI)
 offers the versions already downloaded in the bundle cache plus the default
@@ -228,7 +235,7 @@ build in Settings, or leave it blank to auto-detect from Steam
 | `/` | Filter, live as you type (`esc` clears) |
 | `s` | Toggle sort (default / name) |
 | `R` | Rescan the library |
-| Detail: `i` `v` `u` `p` `l` `c` `r` `o` `d` | Install / switch version / update the NVIDIA DLSS set / restore a DLSS backup (`p` opens the backup list, `enter` picks, then `y` confirm) / launch / cancel / rollback / open OptiScaler.ini / disable-enable the OptiScaler hook |
+| Detail: `i` `v` `u` `p` `l` `c` `R` `r` `o` `d` | Install / switch version / update the NVIDIA DLSS set / restore a DLSS backup (`p` opens the backup list, `enter` picks, then `y` confirm) / launch / cancel / rescan this game / rollback / open OptiScaler.ini / disable-enable the OptiScaler hook |
 | Settings: `tab` `enter` `e` `t` `a` `d` `x` `o` `u` `p` | Switch sources/dirs list / use fork / edit version / edit launch template / add dir or fork / remove dir or fork (`y`/`n`) / clear bundle cache / toggle online game info / toggle umu-launcher / edit umu Proton path |
 | Confirm modal | `y` proceed, `n` cancel |
 

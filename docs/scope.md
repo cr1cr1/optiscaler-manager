@@ -269,6 +269,16 @@ evidence.
   (best-effort, serialized, never fails the caller) after scans,
   Add/RemoveDirectory, and op settles. Explicit rescan stays
   user-initiated: GUI Scan button, TUI `R`.
+- **Per-game rescan** (issue 035): the GUI detail panel's **Rescan**
+  button and the TUI detail screen's `R` key re-run the scan pipeline
+  for the selected game only — `app.ScanGame` re-discovers it through
+  its own source (Steam appmanifest / launcher config matched by install
+  dir, recursive scan for scan-root children, `ManualEntryWithResolver`
+  for self-row dirs, in the global scan's precedence), then the session
+  runs the same covers and online-identification stages and settles the
+  row (upsert, sort, disambiguate, persist) on the per-game op registry
+  (Working…/Cancel affordance). A game no source resolves keeps its
+  row — pruning stays the global scan's job.
 - **GUI polish**: theme tokens (spacing, radii, elevation, expanded
   palette), card/row hover states, deterministic gradient cover
   placeholders (glyph + title initial, FNV-hashed hue) replacing the tiny

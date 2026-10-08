@@ -174,7 +174,9 @@ internal/
   app/        shared orchestration: ScanAllLibraries (version
               enrichment via classify+pever on managed installs;
               probeInstallState adds the on-disk external/disabled probe
-              for unmanaged rows), Install, Uninstall, Rollback,
+              for unmanaged rows), ScanGame (the same discovery fan-out
+              scoped to one install dir, for the per-game rescan;
+              issue 035), Install, Uninstall, Rollback,
               UpdateDLSS/RestoreDLSS/DLSSSnapshots (NVIDIA runtime set),
               ManualEntry (+WithResolver), CachedVersions, versioned
               bundle cache, ops.go (Op, RunOps: errgroup, first error
@@ -664,6 +666,26 @@ persists settings, and inserts a placeholder row synchronously, then a
 goroutine walks, classifies, covers, and online-enriches the directory and
 replaces the placeholder. A duplicate add while one is in flight is
 rejected. `ClearBundleCache` likewise runs off the frame goroutine.
+
+`RescanGame` (issue 035) is the same pipeline scoped to one game — the
+GUI detail panel's Rescan button and the TUI detail screen's `R` key both
+call it. `app.ScanGame` re-discovers the game by canonical install dir
+through the same source-specific paths `ScanAllLibraries` fans out to, in
+the same precedence: store sources first (the `discovery.ScanAll` steam +
+launcher fan-out with no recursive roots, matched by dir), then the manual
+paths — a scan-root child re-rows through `ScanRecursiveWithResolver` on
+its own dir, a dir that is itself an added game dir re-rows through
+`ManualEntryWithResolver` (mirroring `mergeExtraDirs`, so its `custom_`
+appid stays stable). The session then runs the identical stages as the
+global scan and `AddDirectory`: `baseRow` → `resolveCover` → online
+`identifyRow`/`enrichRow`/`refreshCovers` (gated on `online_lookups`) →
+upsert → sort/disambiguate → `persistCache`, and toasts
+`rescanned <title>`. The rescan registers on the per-game op registry
+(the detail panel shows the existing Working…/Cancel affordance and
+installs/adds on the same game serialize against it); cancellation keeps
+the old row, and a game no source resolves (`app.ErrGameNotFound`) keeps
+its row with a warning toast — pruning stale rows stays the global
+scan's job.
 
 ## Data flow
 

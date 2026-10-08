@@ -94,6 +94,7 @@ type model struct {
 	posterBtnRect       Rect                          // screen rect of the icon-only Set-poster overlay button on the poster (placement test seam, issue 029)
 	quickBtnRect        Rect                          // screen rect of the detail panel's Install/Uninstall OptiScaler button (action-row wrap test seam, issue 033)
 	launchBtnRect       Rect                          // screen rect of the detail panel's Launch Game button (action-row wrap test seam, issue 033)
+	rescanBtnRect       Rect                          // screen rect of the detail panel's per-game Rescan button (visibility test seam, issue 035)
 	settingsApplyRect   Rect                          // screen rect of the settings modal's Apply button (same-row test seam, issue 033)
 	settingsCloseRect   Rect                          // screen rect of the settings modal's Close button (same-row test seam, issue 033)
 	searchID            ContainerId                   // the search field's container (`/` focuses it from anywhere)

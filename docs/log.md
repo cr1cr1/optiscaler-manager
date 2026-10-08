@@ -4061,3 +4061,38 @@ Enter does not.
   issue-035 rescan tests in `internal/tui` (their red phase, untouched).
 - Deferred probe: the list view's row click has the same Select-without-
   restore shape; not reported, needs a very long library to manifest.
+
+## 2026-10-08 — issue 35: per-game rescan from the detail pane
+
+User request: a Rescan button on the detail pane for the current game,
+not just the global toolbar Scan — same methods and logic, one game.
+
+- `app.ScanGame` (new, `internal/app/scangame.go`) re-discovers and
+  enriches one game by canonical install dir through the same
+  source-specific paths `ScanAllLibraries` fans out to, same precedence:
+  store sources first (`discovery.ScanAll` steam + launcher fan-out with
+  no recursive roots, matched by dir), then the manual paths — scan-root
+  child via `ScanRecursiveWithResolver(dir)` (keeps the `manual_`
+  appid), self-row extra dir via `ManualEntryWithResolver` (keeps
+  `custom_`). No source resolving yields `app.ErrGameNotFound`.
+- `Session.RescanGame(dir)` runs the identical stages as `runScan` /
+  `AddDirectory`: `baseRow` → `resolveCover` → online
+  `identifyRow`/`enrichRow`/`refreshCovers` (gated on `online_lookups`)
+  → upsert → `sortRows`/`disambiguateTitles` → `persistCache`, toasts
+  `rescanned <title>`, emits `EvScanDone`. It registers on the per-game
+  op registry, so the detail pane shows the existing Working…/Cancel
+  affordance and installs/adds on the same game serialize against it;
+  cancellation and `ErrGameNotFound` both keep the old row (pruning
+  stays the global scan's job), the latter with a warning toast.
+- Frontends: GUI detail panel action row 1 gains a Rescan button
+  (refresh icon, after Open game directory, rect seam `rescanBtnRect`);
+  the TUI detail view lists and handles `R` (matching the games
+  screen's library-wide `R`).
+- ATDD red witnessed (`tmp/test-red-035.log`): compile reds in app/ui/
+  gui, behavior red in tui; green run `tmp/test-green-035.log`.
+  Verification: `go test ./...` exit 0 (32 packages, plus uncached
+  reruns of the four touched packages), `go vet`/`gofmt` clean,
+  GOOS=windows/darwin builds OK.
+- Mid-flight note: the parallel session's issue-036 action-row rework
+  landed during implementation; the Rescan button was placed inside
+  their new row-1 (game actions) grouping.

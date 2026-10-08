@@ -545,6 +545,10 @@ func (m Model) detailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sess.Launch(dir)
 	case "c":
 		m.sess.CancelOp(dir)
+	case "R":
+		// Per-game rescan (issue 035): the global scan's pipeline scoped
+		// to the detail row — rediscovery, covers, online identification.
+		m.sess.RescanGame(dir)
 	case "r":
 		if row := m.detailRow(); row != nil && row.Actionable {
 			m.sess.Rollback(dir)

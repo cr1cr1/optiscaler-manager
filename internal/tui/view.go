@@ -517,6 +517,7 @@ func (m Model) detailView(w, contentH int) string {
 		b.WriteString(dlssRestore + "\n")
 		b.WriteString("  l  launch game\n")
 		b.WriteString("  c  cancel operation\n")
+		b.WriteString("  R  rescan game (rediscover + refresh art)\n")
 		rollback := "  r  rollback"
 		if !row.Actionable {
 			rollback = styleDimmedAction.Render(rollback + " (interrupted installs only)")

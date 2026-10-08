@@ -404,6 +404,7 @@ func (m *model) detailPanel() {
 	m.posterBtnRect = Rect{}
 	m.quickBtnRect = Rect{}
 	m.launchBtnRect = Rect{}
+	m.rescanBtnRect = Rect{}
 	m.titleInputID = nil
 	// The grid rendered first and captured its own tech row; the panel owns
 	// the seam while open so a missing panel row reads as zero.
@@ -576,7 +577,7 @@ func (m *model) detailPanel() {
 				return
 			}
 			// Two action rows (issue 036): row 1 the game actions (Launch
-			// Game, Open game directory, Reset poster), row 2 the
+			// Game, Open game directory, Rescan, Reset poster), row 2 the
 			// OptiScaler actions. Each row wraps within itself on narrow
 			// panes but the groups never interleave.
 			Container(Attrs(Row, Wrap, Gap(sp8), CrossMid), func() {
@@ -594,6 +595,16 @@ func (m *model) detailPanel() {
 					m.openFolderRect = GetScreenRectOf(CurrentId())
 					if focusableButton(SymFolder, "Open game directory") {
 						m.sess.OpenGameFolder(e.InstallDir)
+					}
+				})
+				// Per-game rescan (issue 035): the toolbar Scan's pipeline
+				// scoped to this game — rediscovery, covers, and online
+				// identification. Always rendered like Open-game-directory;
+				// while it runs the OpBusy branch above shows Working….
+				Container(Attrs(Row), func() {
+					m.rescanBtnRect = GetScreenRectOf(CurrentId())
+					if focusableButton(SymRefresh, "Rescan") {
+						m.sess.RescanGame(e.InstallDir)
 					}
 				})
 				// Manual identification fixes (issue 028): the title pin and
