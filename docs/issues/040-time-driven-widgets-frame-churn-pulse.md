@@ -59,4 +59,7 @@ TDD red witnessed for all three tests before the fix. `internal/gui`
 plus the whole suite green after. The visible confirmation (artifact
 gone in the real compositor) is the user's call; if any residue
 remains, `SHIREI_TRACE_FRAME=1` prints per-second frame-wake reasons to
-stderr for the next round. Commit: TBD.
+stderr for the next round. Commit: 5f806d7 (widgets, pulse seam, tests,
+docs). Note: the Run-side wiring (`pulseFrames`, `forwardSessionEvents`
+in model.go) was swept into the foreign session's d6bf0d0 mid-flight —
+content intact, attribution recorded here.
