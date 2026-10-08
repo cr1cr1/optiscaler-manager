@@ -41,4 +41,4 @@ Done. TDD red witnessed (undefined seams; old-label assertions failing).
 One test first failed "install button not rendered" at 1600×1000 — the
 2:3 cover pushes the action row past the fold and shirei culls clipped
 Viewport children; tall windows (1400) as usual. Full `go test ./...`
-exit 0 (31 packages), `go vet`/`gofmt` clean. Commit: see git log.
+exit 0 (31 packages), `go vet`/`gofmt` clean. Commit: f58fb3a.
