@@ -35,4 +35,4 @@ rects, clicks, and dismissal behave exactly like an uncapped menu.
 Knob found by test: the trigger's `dropdownMenuKeys` needs the TOTAL
 row count, not the rendered window's, or the highlight wraps early.
 TUI: `pickerWindowRows` 8 → 20 (shared by the restore modal).
-Commit: THIS_COMMIT.
+Commit: f21a7b0.
