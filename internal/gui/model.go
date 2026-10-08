@@ -63,6 +63,10 @@ type model struct {
 	logProbe              widgets.LogViewProbe        // per-frame scroll/pin readback of the log view (search test seam, issue 054)
 	logSearchBtnRect      Rect                        // screen rect of the lupe search button (header order test seam, issue 054)
 	logCloseRect          Rect                        // screen rect of the panel's Close button (right-most test seam, issue 054)
+	logSearchQuery        string                      // applied highlight query, promoted from the buffer after a 300ms typing pause (issue 055)
+	logSearchPrevBuf      string                      // buffer seen last frame; a change re-arms the debounce (issue 055)
+	logSearchPending      bool                        // debounce armed: promotion due once the pause elapses (issue 055)
+	logSearchDirtyAt      time.Time                   // last buffer change (issue 055); tests backdate it to expire the pause
 	versionBuf            string
 	templateBuf           string
 	onlineBuf             bool                          // settings-modal online-lookups toggle buffer, primed on open

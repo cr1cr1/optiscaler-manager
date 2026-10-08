@@ -188,8 +188,9 @@ Added after v0.1, modeled on the reference client's main window:
   hardcoded white, so gui ships a local `modal()`), icon sidebar, toolbar
   (scan/add/search/view toggle), toast overlay, single-line status bar
   with a `Log` button sliding up a bordered, monospace, readonly and
-  selectable log panel with term search + hit highlight (the session's
-  status history, incl. umu stderr tails; issues 052, 054), About modal.
+  selectable log panel with 300ms-debounced term search + hit highlight
+  (the session's status history, incl. umu stderr tails; issues 052,
+  054, 055), About modal.
 - **`internal/ui` Session**: frontend-agnostic interactive core (state,
   commands, event stream, consent gating). The shirei GUI is a thin binding
   over it; a bubbletea TUI will bind to the same Session (decided, not yet

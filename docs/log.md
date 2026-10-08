@@ -4525,3 +4525,43 @@ no such file or directory` — stranding the mod installed forever.
   broken in the shared tree twice); verification ran in an isolated
   `tmp/verify-054` worktree with only this issue's files: 32/32 green.
 2026-10-09
+
+## 2026-10-09 — issue 56: prefix picker menus cap at 20 rows and scroll
+
+- Ask: prefix menus must show at most 20 entries, the rest scroll.
+- GUI: `dropdownPopupCapped` windows the row list
+  (`dropdownState.top`) inside the shared popup — body renders
+  `rows[start:end]`, the wheel moves the window while the popup is
+  hovered (scroll consumed), and the window clamps the highlight into
+  view. First tried a real Viewport+ScrollOnInput: abandoned — Viewport
+  sizes extrinsically and collapses inside the intrinsically-sized
+  popup panel (rows rendered 0-height, panel height ping-ponged across
+  frames), and clipped rows report zero/stale rects for the click
+  seams. Windowed rendering keeps the panel intrinsic; clicks, rects,
+  and dismissal behave exactly like an uncapped menu.
+- Knob found by test: the trigger's `dropdownMenuKeys` must get the
+  TOTAL row count, not the rendered window's, or the highlight wraps
+  after 20 (test reached row 6 after 26 Downs — modulo the window).
+- TUI: `pickerWindowRows` 8 → 20 (restore modal shares pickerBox).
+- Mid-flight collision: the parallel session claimed issues 054/055
+  while mine was drafted as 054; renumbered to 056. A broad sed also
+  touched their files; they recovered from their own buffers — lesson:
+  scope seds to exactly the owned files.
+- Docs: issue 056; README/architecture picker mentions updated.
+
+## 2026-10-09 — issue 55: debounce log search typing by 300ms
+
+- The 054 highlight followed the field buffer on every keystroke. Now
+  the buffer promotes to the applied query (`logSearchQuery`) only after
+  a 300ms typing pause; `syncLogSearchQuery` re-arms on each change and
+  keeps the pulse ticker awake while armed. Enter/lupe flushes
+  immediately (`logSearchNext`), so an explicit search never waits.
+- Red witnessed as build failures on the new seams; green via
+  `TestLogSearchDebounce300ms` (no apply on keystroke, re-arm on more
+  typing, promote after the pause) and `TestLogSearchNextFlushesDebounce`.
+- Parallel-session race: mid-flight foreign edits reverted my
+  uncommitted `logpanel.go`/`logpanel_test.go` changes and blanket-renamed
+  my committed "issue 054" model.go comments to "issue 056" (their
+  dropdown work drafted as 054, renumbered). Comments restored; files
+  re-applied; verification in `tmp/verify-055` worktree: 32/32 + vet.
+2026-10-09

@@ -250,3 +250,66 @@ func TestLogPanelBorderPainted(t *testing.T) {
 		t.Errorf("no visible border at panel top edge: above %v, inside %v, seam rows all match one of them", above, inside)
 	}
 }
+
+// Issue 055: typing in the search field is debounced 300ms before the
+// highlight query applies; Enter/lupe flushes immediately.
+
+func TestLogSearchDebounce300ms(t *testing.T) {
+	headlessFrames(t, 1100, 700)
+	m := newModel(Config{})
+	m.syncLogLines([]string{"alpha needle", "beta"})
+	m.logOpen = true
+	m.logAnimStart = time.Now().Add(-time.Second)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if m.logSearchQuery != "" {
+		t.Fatalf("query applied before any typing: %q", m.logSearchQuery)
+	}
+
+	// A keystroke (buffer change) must NOT apply immediately.
+	m.logSearchBuf = "needle"
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if m.logSearchQuery != "" {
+		t.Fatalf("query applied without the debounce pause: %q", m.logSearchQuery)
+	}
+	if !m.logSearchPending {
+		t.Fatal("debounce not pending after a buffer change")
+	}
+
+	// More typing inside the window re-arms the clock.
+	m.logSearchBuf = "needles"
+	m.logSearchDirtyAt = time.Now()
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if m.logSearchQuery != "" {
+		t.Fatalf("query applied during continuous typing: %q", m.logSearchQuery)
+	}
+
+	// 300ms of quiet: the query promotes.
+	m.logSearchDirtyAt = time.Now().Add(-400 * time.Millisecond)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if m.logSearchQuery != "needles" {
+		t.Fatalf("query after the debounce pause = %q, want %q", m.logSearchQuery, "needles")
+	}
+	if m.logSearchPending {
+		t.Error("debounce still pending after promotion")
+	}
+}
+
+func TestLogSearchNextFlushesDebounce(t *testing.T) {
+	headlessFrames(t, 1100, 700)
+	m := newModel(Config{})
+	m.syncLogLines([]string{"alpha needle", "beta"})
+	m.logOpen = true
+	m.logAnimStart = time.Now().Add(-time.Second)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+
+	m.logSearchBuf = "needle"
+	m.logSearchNext() // explicit search: no waiting for the 300ms pause
+	if m.logSearchQuery != "needle" {
+		t.Fatalf("explicit search did not flush the debounce: query %q", m.logSearchQuery)
+	}
+	if m.logSearchHitLine != 0 {
+		t.Fatalf("hit line = %d, want 0", m.logSearchHitLine)
+	}
+}

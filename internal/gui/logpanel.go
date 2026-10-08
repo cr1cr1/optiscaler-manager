@@ -111,11 +111,40 @@ func (m *model) logSearchFind(query string, start int) int {
 	return -1
 }
 
+// logSearchDebounce is the typing pause before the field buffer becomes
+// the applied highlight query (issue 055).
+const logSearchDebounce = 300 * time.Millisecond
+
+// syncLogSearchQuery promotes the search buffer to the applied query once
+// 300ms pass without further typing; while armed it keeps the pulse
+// ticker awake so the promotion frame lands on time (issue 040
+// mechanism). Explicit search flushes immediately via logSearchNext.
+func (m *model) syncLogSearchQuery() {
+	if m.logSearchBuf != m.logSearchPrevBuf {
+		m.logSearchPrevBuf = m.logSearchBuf
+		m.logSearchDirtyAt = time.Now()
+		m.logSearchPending = true
+	}
+	if !m.logSearchPending {
+		return
+	}
+	if time.Since(m.logSearchDirtyAt) >= logSearchDebounce {
+		m.logSearchQuery = m.logSearchBuf
+		m.logSearchPending = false
+		return
+	}
+	pulseWanted.Store(true)
+}
+
 // logSearchNext jumps the log view to the next line matching the search
 // buffer: an unchanged query advances past the current hit and wraps
-// (issue 054). The highlight follows the live buffer, no submit needed.
+// (issue 054). The explicit submit flushes the typing debounce, so the
+// highlight applies without waiting (issue 055).
 func (m *model) logSearchNext() {
-	q := m.logSearchBuf
+	m.logSearchQuery = m.logSearchBuf
+	m.logSearchPrevBuf = m.logSearchBuf
+	m.logSearchPending = false
+	q := m.logSearchQuery
 	start := 0
 	if q == m.logSearchLast && m.logSearchHitLine >= 0 {
 		start = m.logSearchHitLine + 1
@@ -164,6 +193,7 @@ func (m *model) logPanel() {
 				m.logSearchFocusPending = false
 				FocusImmediateOn(GetLastId())
 			}
+			m.syncLogSearchQuery()
 			Container(Attrs(Row), func() {
 				m.logSearchBtnRect = GetScreenRectOf(CurrentId())
 				if focusableButton(TypZoom, "") {
@@ -186,8 +216,8 @@ func (m *model) logPanel() {
 			// LogView is readonly by construction: drag-selects across
 			// lines, copies with Ctrl/Cmd+C, pins to the newest line.
 			// LogViewSearch (vendor v0.22) highlights every occurrence of
-			// the live search buffer.
-			LogViewSearch(m.logRing, logTextStyle(), logListKey, &m.logProbe, m.logSearchBuf, searchHitBg)
+			// the applied query — debounced 300ms from typing (issue 055).
+			LogViewSearch(m.logRing, logTextStyle(), logListKey, &m.logProbe, m.logSearchQuery, searchHitBg)
 		})
 	})
 }
