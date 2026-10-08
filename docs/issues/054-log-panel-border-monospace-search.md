@@ -61,7 +61,7 @@ right-most — that jumps to the matching line and highlights the term.
 
 ## Outcome
 
-Done. Panel shell gained `BorderWidth(1)`+`border`; log text uses
+Done in commit f6bc444. Panel shell gained `BorderWidth(1)`+`border`; log text uses
 shirei's `Monospace` stack; the header is `[Log] [Filler] [search]
 [lupe] [Close]` with focus-on-open in the search field (Esc layering
 mirrors the title editor: first Esc clears/blurs the field, second
