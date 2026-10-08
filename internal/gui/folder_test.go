@@ -25,7 +25,7 @@ func TestDetailOpenFolderButton(t *testing.T) {
 	keyFrame(KeyCodeNone, 0, m.rootView) // build
 	keyFrame(KeyCodeNone, 0, m.rootView) // capture rects from the previous frame
 	if m.openFolderRect.Size[0] == 0 || m.openFolderRect.Size[1] == 0 {
-		t.Errorf("Open game directory button not rendered for a clean row (rect %+v)", m.openFolderRect)
+		t.Errorf("Game directory button not rendered for a clean row (rect %+v)", m.openFolderRect)
 	}
 	t.Logf("open-directory button rect: %+v", m.openFolderRect)
 }

@@ -117,7 +117,7 @@ here are closed; reopen only with new evidence.
   "Install/Uninstall/Adopt OptiScaler" and "Launch Game" in the GUI and
   the TUI detail actions, and the settings modal's Apply/Close share a
   row. The detail pane groups its action buttons into two rows (issue
-  036): row 1 the game actions (Launch Game, Open game directory, Reset
+  036): row 1 the game actions (Launch Game, Game directory, Reset
   poster), row 2 the OptiScaler actions — each row wraps within itself,
   the groups never interleave. User-facing copy says "directory", never
   "folder" (buttons, empty states, toasts).

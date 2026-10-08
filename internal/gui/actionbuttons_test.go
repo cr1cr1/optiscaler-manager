@@ -10,7 +10,7 @@ import (
 // "Launch Game"; the settings modal's Apply/Close share a row.
 //
 // Issue 036: the detail pane groups its action buttons into two rows —
-// row 1 the game actions (Launch Game, then Open game directory), row 2
+// row 1 the game actions (Launch Game, then Game directory), row 2
 // the OptiScaler actions (install/uninstall, rollback, …). Each row
 // wraps within itself on narrow panes but the groups never interleave.
 
@@ -38,11 +38,11 @@ func TestDetailActionRowsGrouped(t *testing.T) {
 		rendered(t)
 		launch, openDir, install := m.launchBtnRect, m.openFolderRect, m.quickBtnRect
 		if launch.Origin[1] != openDir.Origin[1] {
-			t.Errorf("Launch Game (y %.0f) and Open game directory (y %.0f) must share row 1",
+			t.Errorf("Launch Game (y %.0f) and Game directory (y %.0f) must share row 1",
 				launch.Origin[1], openDir.Origin[1])
 		}
 		if launch.Origin[0] >= openDir.Origin[0] {
-			t.Errorf("Launch Game (x %.0f) must sit left of Open game directory (x %.0f)",
+			t.Errorf("Launch Game (x %.0f) must sit left of Game directory (x %.0f)",
 				launch.Origin[0], openDir.Origin[0])
 		}
 		if install.Origin[1] <= launch.Origin[1] {
@@ -60,7 +60,7 @@ func TestDetailActionRowsGrouped(t *testing.T) {
 		rendered(t)
 		launch, openDir, install := m.launchBtnRect, m.openFolderRect, m.quickBtnRect
 		if openDir.Origin[1] < launch.Origin[1] {
-			t.Errorf("Open game directory (y %.0f) wrapped above Launch Game (y %.0f)",
+			t.Errorf("Game directory (y %.0f) wrapped above Launch Game (y %.0f)",
 				openDir.Origin[1], launch.Origin[1])
 		}
 		if install.Origin[1] <= openDir.Origin[1] {

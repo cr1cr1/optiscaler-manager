@@ -74,7 +74,7 @@ stages on the per-game op registry (Working…/Cancel in the pane), toasts
 `rescanned <title>`, persists the cache, and keeps the old row on
 cancellation or `ErrGameNotFound` (warning toast — pruning stays the
 global scan's job). GUI: Rescan button (refresh icon) in detail action
-row 1 after Open game directory, placed inside the parallel session's
+row 1 after Game directory, placed inside the parallel session's
 issue-036 two-row layout that landed mid-flight. TUI: `R` on the detail
 screen, matching the games screen's library-wide `R`. ATDD red witnessed
 (`tmp/test-red-035.log`: compile reds in app/ui/gui, behavior red in

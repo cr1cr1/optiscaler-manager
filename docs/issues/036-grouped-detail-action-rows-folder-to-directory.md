@@ -1,6 +1,6 @@
 ---
 title: Grouped detail action rows, folder renamed to directory
-description: The detail pane's action buttons form two rows — game actions (Launch Game, Open game directory) above the OptiScaler actions — and every user-facing "folder" becomes "directory".
+description: The detail pane's action buttons form two rows — game actions (Launch Game, Game directory) above the OptiScaler actions — and every user-facing "folder" becomes "directory".
 ---
 
 # 036 — Grouped detail action rows, folder renamed to directory
@@ -8,7 +8,7 @@ description: The detail pane's action buttons form two rows — game actions (La
 ## What and why
 
 1. **Two action rows in the detail pane**: row 1 holds the game actions —
-   "Launch Game", then "Open game directory" (plus the conditional
+   "Launch Game", then "Game directory" (plus the conditional
    "Reset poster", which is a poster/game action, not an OptiScaler
    one) — and row 2 holds every OptiScaler-related button:
    Install/Uninstall/Adopt OptiScaler, Rollback, Disable/Enable, and
@@ -25,7 +25,7 @@ description: The detail pane's action buttons form two rows — game actions (La
 
 ## Acceptance
 
-- [x] Wide pane: Launch Game and Open game directory share row 1 (same
+- [x] Wide pane: Launch Game and Game directory share row 1 (same
       Y, launch left of open-dir); Install sits strictly below (seams:
       `launchBtnRect`, `openFolderRect`, `quickBtnRect`).
 - [x] Narrow pane: rows wrap but never interleave — Install stays below

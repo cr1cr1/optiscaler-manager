@@ -4022,7 +4022,7 @@ User request: detail pane buttons in two rows — row 1 "Launch Game" and
 every "folder" to "directory".
 
 - The single wrapping action row (issue 033) became two `Row + Wrap`
-  containers: game actions (Launch Game, Open game directory, Reset
+  containers: game actions (Launch Game, Game directory, Reset
   poster) above the OptiScaler actions (install/uninstall, rollback,
   disable/enable, open INI). Rows wrap within themselves on narrow
   panes but never interleave — the old single row let Open folder wrap
@@ -4085,7 +4085,7 @@ not just the global toolbar Scan — same methods and logic, one game.
   cancellation and `ErrGameNotFound` both keep the old row (pruning
   stays the global scan's job), the latter with a warning toast.
 - Frontends: GUI detail panel action row 1 gains a Rescan button
-  (refresh icon, after Open game directory, rect seam `rescanBtnRect`);
+  (refresh icon, after Game directory, rect seam `rescanBtnRect`);
   the TUI detail view lists and handles `R` (matching the games
   screen's library-wide `R`).
 - ATDD red witnessed (`tmp/test-red-035.log`): compile reds in app/ui/

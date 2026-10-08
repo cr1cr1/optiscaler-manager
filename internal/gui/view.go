@@ -577,7 +577,7 @@ func (m *model) detailPanel() {
 				return
 			}
 			// Two action rows (issue 036): row 1 the game actions (Launch
-			// Game, Open game directory, Rescan, Reset poster), row 2 the
+			// Game, Game directory, Rescan, Reset poster), row 2 the
 			// OptiScaler actions. Each row wraps within itself on narrow
 			// panes but the groups never interleave.
 			Container(Attrs(Row, Wrap, Gap(sp8), CrossMid), func() {
@@ -593,7 +593,7 @@ func (m *model) detailPanel() {
 				// the button is always rendered (unlike OpenINI below).
 				Container(Attrs(Row), func() {
 					m.openFolderRect = GetScreenRectOf(CurrentId())
-					if focusableButton(SymFolder, "Open game directory") {
+					if focusableButton(SymFolder, "Game directory") {
 						m.sess.OpenGameFolder(e.InstallDir)
 					}
 				})
