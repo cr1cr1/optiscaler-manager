@@ -15,6 +15,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
+	"github.com/cr1cr1/optiscaler-manager/internal/installer"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 	"github.com/cr1cr1/optiscaler-manager/internal/testutil"
@@ -128,7 +129,7 @@ func TestInstallDownloadsWhenCacheMissing(t *testing.T) {
 
 	// Second install (after uninstall) must reuse the cached bundle even when
 	// release info is served stale from the gh cooldown (consent given).
-	if _, err := Uninstall(context.Background(), f.st, f.gameRoot); err != nil {
+	if _, err := UninstallWithOptions(context.Background(), f.st, f.gameRoot, installer.UninstallOptions{}); err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
 	m2, err := Install(context.Background(), f.st, f.client, f.cacheDir, f.gameRoot, InstallOpts{AllowCached: true})
@@ -149,7 +150,7 @@ func TestInstallDownloadsWhenCacheMissing(t *testing.T) {
 // instead of the raw store.Load error.
 func TestUninstallNotManaged(t *testing.T) {
 	f := newAppFakes(t)
-	_, err := Uninstall(context.Background(), f.st, f.gameRoot)
+	_, err := UninstallWithOptions(context.Background(), f.st, f.gameRoot, installer.UninstallOptions{})
 	if !errors.Is(err, ErrNotManaged) {
 		t.Fatalf("Uninstall err = %v, want errors.Is(err, ErrNotManaged)", err)
 	}
@@ -176,10 +177,10 @@ func TestUninstallManagedUnaffected(t *testing.T) {
 	if _, err := Install(context.Background(), f.st, f.client, f.cacheDir, f.gameRoot, InstallOpts{}); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	if _, err := Uninstall(context.Background(), f.st, f.gameRoot); err != nil {
+	if _, err := UninstallWithOptions(context.Background(), f.st, f.gameRoot, installer.UninstallOptions{}); err != nil {
 		t.Fatalf("Uninstall of managed game: %v", err)
 	}
-	if _, err := Uninstall(context.Background(), f.st, f.gameRoot); !errors.Is(err, ErrNotManaged) {
+	if _, err := UninstallWithOptions(context.Background(), f.st, f.gameRoot, installer.UninstallOptions{}); !errors.Is(err, ErrNotManaged) {
 		t.Fatalf("second Uninstall err = %v, want errors.Is(err, ErrNotManaged)", err)
 	}
 }

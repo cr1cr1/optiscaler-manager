@@ -109,6 +109,11 @@ const (
 	// the no-confirm budget (issue 023): Op names the paused operation so
 	// accepting resumes the right call with the large-backup override.
 	ConfirmLargeBackup
+	// ConfirmMissingBackup pauses a standalone uninstall whose backup
+	// store lost entries (issue 050): accepting resumes the uninstall
+	// with AllowMissingBackup, dropping the unrestorable mod bytes
+	// instead of restoring the lost originals.
+	ConfirmMissingBackup
 )
 
 // Large-backup op discriminators for Confirmation.Op (ConfirmLargeBackup

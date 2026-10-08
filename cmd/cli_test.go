@@ -178,6 +178,41 @@ func TestInstallCommandRunsTransaction(t *testing.T) {
 	}
 }
 
+// TestUninstallCmdMissingBackupForce: with an adopt-time backup entry
+// gone (issue 050), `uninstall` refuses with a --force hint and
+// `uninstall --force` proceeds with removal.
+func TestUninstallCmdMissingBackupForce(t *testing.T) {
+	srv := fakeGitHub(t)
+	client := gh.NewWithBaseURL(nil, t.TempDir(), srv.URL)
+	d, _ := testDeps(t, client)
+
+	_, gameRoot := fakeSteam(t)
+	bin := filepath.Join(gameRoot, "bin")
+	writeCmdTestFile(t, filepath.Join(bin, "dxgi.dll"), "EXTERNAL-DXGI")
+	if err := (&InstallCmd{Path: gameRoot}).Run(d); err != nil {
+		t.Fatalf("InstallCmd.Run: %v", err)
+	}
+	if err := os.Remove(filepath.Join(bin, "optiscaler-backups", "files", "dxgi.dll")); err != nil {
+		t.Fatal(err)
+	}
+
+	err := (&UninstallCmd{Path: gameRoot}).Run(d)
+	if err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("uninstall without --force err = %v, want a --force hint", err)
+	}
+	if _, serr := os.Stat(filepath.Join(bin, "dxgi.dll")); serr != nil {
+		t.Fatal("uninstall removed files without --force")
+	}
+
+	if err := (&UninstallCmd{Path: gameRoot, Force: true}).Run(d); err != nil {
+		t.Fatalf("uninstall --force: %v", err)
+	}
+	if _, serr := os.Stat(filepath.Join(bin, "dxgi.dll")); !os.IsNotExist(serr) {
+		t.Error("mod dxgi.dll survived forced removal")
+	}
+	t.Log("missing backup: refused with --force hint, forced removal completed")
+}
+
 func TestStartupRecoveryFlagsInterruptedManifests(t *testing.T) {
 	d, out := testDeps(t, nil)
 	m := &domain.Manifest{

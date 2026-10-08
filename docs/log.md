@@ -4399,3 +4399,56 @@ only the generic filler, and per-game rescans did NOT bring them back.
 - Ponytail pass: `strings.Join` over a hand-rolled helper, shared
   `homeAndXDGData` across the runner/prefix scans.
 2026-10-08
+
+## 2026-10-09 — issue 50: uninstall no longer blocked by a missing backup
+
+User report: uninstalling an old semi-manual (adopted) OptiScaler
+install that had been switched to the optiscaler-dlssnr fork failed
+outright — `WRN Failed: uninstall cea58c7827e6f3a7: backup unreadable:
+open .../optiscaler-backups/files/amd_fidelityfx_framegeneration_dx12.dll:
+no such file or directory` — stranding the mod installed forever.
+
+- Root cause: `installer.UninstallWithOptions` hard-failed on the FIRST
+  unreadable backup entry and aborted the whole uninstall; whatever lost
+  the backup is unrecoverable, so the block was permanent.
+- Installer: missing backups now collect into a typed
+  `MissingBackupError` (every lost entry named, manifest progress
+  persisted for resume) instead of failing fast; the new
+  `UninstallOptions.AllowMissingBackup` consent drops the installed
+  bytes and completes the teardown (the lost original is simply not
+  restored). Installed file AND backup both gone is a no-op, never a
+  blocker — even without consent.
+- UI: a standalone uninstall over a missing backup pauses with the
+  existing consent modal (`ConfirmMissingBackup`, message names the
+  files); declining leaves every byte untouched, accepting resumes via
+  `app.UninstallDroppingMissingBackups`. The fork-switch chain keeps
+  failing loudly — no consent prompt mid-chain.
+- CLI: `uninstall` hints `(use --force to proceed with removal anyway)`,
+  mirroring the `install --force` precedent; `--force` proceeds.
+- GUI/TUI needed zero changes: both render `Confirmation.Message`
+  generically.
+- TDD: reds witnessed per layer (installer build-fail on the new API,
+  ui build-fail on ConfirmMissingBackup, cmd build-fail on Force),
+  green after each implementation slice; full suite green except the
+  foreign session's sandbox-blocked tmp/gpuprobe hardware probe.
+- Repair folded in: the issue-045 doc had been emptied by foreign
+  session churn before its pin commit; reconstructed from the surviving
+  log.md/vendor-patches.md records.
+
+## 2026-10-08 — issue 51: richer umu prefix detection
+
+- Steam compatdata prefixes were listed as bare appids; the label now
+  comes from the sibling `steamapps/appmanifest_<appid>.acf` `"name"`
+  (line-regex, the libraryfolders.vdf precedent), appid as fallback.
+- Coverage expanded: Lutris per-game `prefix:` paths parsed from
+  `~/.config/lutris/games/*.yml` (XDG_CONFIG_HOME honored) and the
+  Flatpak config dir — a two-key line scanner, no YAML dependency;
+  PlayOnLinux `~/.PlayOnLinux/wineprefix` and CrossOver `~/.cxoffice`
+  children. Everything keeps the `drive_c` validity check and stays
+  read-only. Sources: `lutris`, `playonlinux`, `crossover`.
+- TDD: four failing fixtures first (appmanifest naming + appid
+  fallback, Lutris YAML with/without `prefix:`, Lutris XDG/Flatpak
+  variants, PoL/CrossOver containers), then the implementation.
+- Numbering: drafted as 049, renumbered to 051 — parallel sessions
+  claimed 049 and 050 mid-flight.
+2026-10-08

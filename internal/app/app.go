@@ -521,20 +521,16 @@ func requireManaged(st *store.Store, id, dir string) error {
 	return nil
 }
 
-// Uninstall reverses the committed install for a game root.
-func Uninstall(ctx context.Context, st *store.Store, gameRoot string) (string, error) {
-	return uninstall(ctx, st, gameRoot, "")
-}
-
-// UninstallRelocating reverses the committed install like Uninstall, but
-// moves the old distribution's file set into relocateDir (relative paths
-// preserved) instead of deleting it — the fork-switch preservation path
-// (issue 10). relocateDir lives inside the game's injection dir.
-func UninstallRelocating(ctx context.Context, st *store.Store, gameRoot, relocateDir string) (string, error) {
-	return uninstall(ctx, st, gameRoot, relocateDir)
-}
-
-func uninstall(ctx context.Context, st *store.Store, gameRoot, relocateDir string) (string, error) {
+// UninstallWithOptions reverses the committed install for a game root.
+// RelocateDir moves the old distribution's file set into the dated fork
+// dir (relative paths preserved) instead of deleting it — the
+// fork-switch preservation path (issue 10); relocateDir lives inside the
+// game's injection dir. AllowMissingBackup carries the user's explicit
+// consent to drop installed files whose pre-install backup is missing,
+// leaving the lost originals unrestored (issue 050) — surface
+// installer.MissingBackupError first and only set it after the user
+// confirms.
+func UninstallWithOptions(ctx context.Context, st *store.Store, gameRoot string, opts installer.UninstallOptions) (string, error) {
 	id, dir, err := ManifestIDFor(gameRoot)
 	if err != nil {
 		return "", err
@@ -542,7 +538,7 @@ func uninstall(ctx context.Context, st *store.Store, gameRoot, relocateDir strin
 	if err := requireManaged(st, id, dir); err != nil {
 		return "", err
 	}
-	if err := installer.UninstallWithOptions(ctx, st, id, installer.UninstallOptions{RelocateDir: relocateDir}); err != nil {
+	if err := installer.UninstallWithOptions(ctx, st, id, opts); err != nil {
 		return "", err
 	}
 	return dir, nil

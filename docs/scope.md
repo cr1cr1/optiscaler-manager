@@ -85,9 +85,13 @@ here are closed; reopen only with new evidence.
   app's state root. Any pending backup over 100 MiB (total per operation)
   pauses for explicit consent BEFORE a byte is touched; declining — or a
   non-interactive CLI — aborts the operation untouched. Pre-023 central
-  backups are not read (clean break): uninstalling an install committed
-  before this change errors on the missing backup instead of silently
-  losing the originals.
+  backups are not read (clean break). A missing backup entry never strands
+  the install (issue 050): the uninstall collects every unrestorable file
+  into a typed error and pauses for explicit consent naming them;
+  accepting drops the installed bytes without restoring the lost
+  originals (CLI: `uninstall --force`), declining leaves everything
+  untouched. The fork-switch chain does not consent-prompt mid-chain —
+  the typed error surfaces instead.
 
 ## Discovery & classification
 
@@ -589,7 +593,8 @@ decisions the per-version sections above do not cover.
   runtime when nothing is found. The wine prefix resolves per game pin
   → global default → auto chain: `PrefixOverrides` pins a prefix per
   install dir (detail pane, issue 048), `UmuPrefixPath` sets the global
-  default (settings picker over detected Heroic/Bottles/Steam/~/.wine
+  default (settings picker over detected Heroic/Bottles/Steam (named
+  from the appmanifest)/Lutris/PlayOnLinux/CrossOver/~/.wine
   prefixes), and with neither the launch reuses a prefix the game
   already lives in (an enclosing `drive_c`, or a Heroic prefix matching
   the game's AppName) before deriving a deterministic per-game prefix

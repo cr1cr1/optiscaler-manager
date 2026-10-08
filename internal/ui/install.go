@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 
@@ -109,6 +111,8 @@ func (s *Session) AnswerConfirm(accept bool) {
 		go s.doSwitchVersion(c.GameDir, c.Version, true)
 	case ConfirmDLSSRestore:
 		go s.doRestoreDLSS(c.GameDir, c.SnapshotID, false)
+	case ConfirmMissingBackup:
+		go func() { _ = s.runUninstallOpt(c.GameDir, "", true) }()
 	case ConfirmLargeBackup:
 		switch c.Op {
 		case OpDLSSUpdate:
@@ -225,6 +229,17 @@ func (s *Session) runInstallVersion(gameDir, version string, consent installCons
 	return nil
 }
 
+// missingBackupWarning is the consent wording when an uninstall cannot
+// restore originals because their backups are gone (issue 050).
+func missingBackupWarning(mb *installer.MissingBackupError) string {
+	names := make([]string, len(mb.Paths))
+	for i, p := range mb.Paths {
+		names[i] = filepath.Base(p)
+	}
+	return fmt.Sprintf("The backup of %d original file(s) is missing (%s), so they cannot be restored. Proceed with removal anyway?",
+		len(mb.Paths), strings.Join(names, ", "))
+}
+
 // errNotManagedToast is the user-facing refusal when an uninstall targets an
 // install this manager never made (external, or its manifest vanished): the
 // store holds no manifest, so no SHA-verified removal is possible and the
@@ -232,22 +247,21 @@ func (s *Session) runInstallVersion(gameDir, version string, consent installCons
 const errNotManagedToast = "not installed by this manager — adopt first or remove manually"
 
 func (s *Session) doUninstall(gameDir string) {
-	_ = s.runUninstall(gameDir)
+	_ = s.runUninstallOpt(gameDir, "", false)
 }
 
-// runUninstall is doUninstall's body with an outcome, mirroring
+// runUninstallOpt is the uninstall body with an outcome, mirroring
 // runInstall: nil on success, app.ErrNotManaged on the refusal paths,
-// errOpBusy when the game is busy, the context cause on cancel, and the
-// surfaced error on failure.
-func (s *Session) runUninstall(gameDir string) error {
-	return s.runUninstallOpt(gameDir, "")
-}
-
-// runUninstallOpt is runUninstall with a relocation target: when
-// relocateDir is non-empty the old distribution's file set is moved there
-// (relative paths preserved) instead of deleted — the fork-switch
-// preservation path (issue 10).
-func (s *Session) runUninstallOpt(gameDir, relocateDir string) error {
+// errInstallPaused when the missing-backup consent gate owns the
+// continuation, errOpBusy when the game is busy, the context cause on
+// cancel, and the surfaced error on failure. When relocateDir is
+// non-empty the old distribution's file set is moved there (relative
+// paths preserved) instead of deleted — the fork-switch preservation
+// path (issue 10). allowMissing carries the user's consent to drop files
+// whose backups are gone (issue 050); without it a missing backup pauses
+// the STANDALONE uninstall with a confirmation, while the switch chain
+// surfaces the typed error (no consent prompt mid-chain).
+func (s *Session) runUninstallOpt(gameDir, relocateDir string, allowMissing bool) error {
 	row := s.findRow(gameDir)
 	if row != nil && row.Status == domain.StatusExternal {
 		s.toast(errNotManagedToast, true)
@@ -260,12 +274,10 @@ func (s *Session) runUninstallOpt(gameDir, relocateDir string) error {
 		return errOpBusy
 	}
 	s.opStarted("Uninstalling…")
-	var err error
-	if relocateDir != "" {
-		_, err = app.UninstallRelocating(ctx, s.deps.Store, gameDir, relocateDir)
-	} else {
-		_, err = app.Uninstall(ctx, s.deps.Store, gameDir)
-	}
+	_, err := app.UninstallWithOptions(ctx, s.deps.Store, gameDir, installer.UninstallOptions{
+		RelocateDir:        relocateDir,
+		AllowMissingBackup: allowMissing,
+	})
 	s.finishOp(gameDir)
 	if errors.Is(err, context.Canceled) {
 		s.opCancelled(gameDir, pre)
@@ -274,6 +286,16 @@ func (s *Session) runUninstallOpt(gameDir, relocateDir string) error {
 	if errors.Is(err, app.ErrNotManaged) {
 		s.opRefused(errNotManagedToast, gameDir)
 		return err
+	}
+	var mb *installer.MissingBackupError
+	if errors.As(err, &mb) && relocateDir == "" && !allowMissing {
+		s.opAborted()
+		s.setConfirm(&Confirmation{
+			Kind:    ConfirmMissingBackup,
+			GameDir: gameDir,
+			Message: missingBackupWarning(mb),
+		})
+		return errInstallPaused
 	}
 	if err != nil {
 		s.opFailed(err, gameDir)

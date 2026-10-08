@@ -178,7 +178,7 @@ func (s *Session) doSwitchVersionChain(gameDir, version string, eacConsented boo
 	if forkSlugOrDefault(row.Fork) != s.Settings().Active().Slug {
 		relocateDir = forkBackupDir(row.InjectionDir, row.Fork, s.now())
 	}
-	if err := s.runUninstallOpt(gameDir, relocateDir); err != nil {
+	if err := s.runUninstallOpt(gameDir, relocateDir, false); err != nil {
 		if removedINI {
 			// Nothing else ran (refused or busy): put the ini back so
 			// the game is exactly as found.

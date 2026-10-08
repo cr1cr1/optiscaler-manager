@@ -95,6 +95,22 @@ func (e *RefusedError) Error() string {
 	return fmt.Sprintf("uninstall refused %d changed file(s): %v", len(e.Paths), e.Paths)
 }
 
+// MissingBackupError reports overwritten files whose pre-install backups
+// are absent from the in-game backup store, so Uninstall cannot restore
+// the originals (issue 050 — e.g. a semi-manual install whose
+// optiscaler-backups store lost entries). It is recoverable: consent via
+// UninstallOptions.AllowMissingBackup drops the installed bytes instead
+// of restoring.
+type MissingBackupError struct {
+	ID    string
+	Paths []string
+}
+
+func (e *MissingBackupError) Error() string {
+	return fmt.Sprintf("uninstall %s: %d backup file(s) missing, originals unrestorable: %v",
+		e.ID, len(e.Paths), e.Paths)
+}
+
 // UninstallOptions tunes UninstallWithOptions.
 type UninstallOptions struct {
 	// RelocateDir, when set, receives the current bytes of every
@@ -106,6 +122,12 @@ type UninstallOptions struct {
 	// Foreign-modified files are refused exactly as before — never
 	// moved, never deleted.
 	RelocateDir string
+	// AllowMissingBackup consents to dropping installed files whose
+	// pre-install backup is absent from the backup store (issue 050):
+	// the mod bytes are removed and the lost original is not restored.
+	// Without it every missing backup collects into a MissingBackupError
+	// after all processable entries were handled.
+	AllowMissingBackup bool
 }
 
 // UninstallWithOptions is Uninstall with options; see UninstallOptions.
@@ -148,6 +170,7 @@ func UninstallWithOptions(ctx context.Context, st *store.Store, id string, opts 
 	}
 
 	var refused []string
+	var missingBackup []string
 
 	kept := m.Created[:0]
 	for i, c := range m.Created {
@@ -204,7 +227,29 @@ func UninstallWithOptions(ctx context.Context, st *store.Store, id string, opts 
 		}
 		backup := filepath.Join(backupsDir(m.InstallDir), "files", ow.BackupRelPath)
 		backupSHA, err := hashFile(backup)
-		if err != nil {
+		switch {
+		case err == nil:
+			// Verified against the manifest below.
+		case os.IsNotExist(err) && vanished:
+			// Installed file and backup both gone: nothing to remove,
+			// nothing to restore — a no-op, never a blocker.
+			continue
+		case os.IsNotExist(err) && !opts.AllowMissingBackup:
+			// The original is unrestorable; hold the entry and let the
+			// caller decide (issue 050).
+			missingBackup = append(missingBackup, ow.Path)
+			keptOw = append(keptOw, ow)
+			continue
+		case os.IsNotExist(err):
+			// Consented: the original is lost, so drop the installed
+			// bytes outright. A relocate already moved them out, so
+			// NotExist is fine.
+			if rerr := os.Remove(ow.Path); rerr != nil && !os.IsNotExist(rerr) {
+				return fmt.Errorf("uninstall delete %s: %w", ow.Path, rerr)
+			}
+			m.Ops = append(m.Ops, domain.OpEntry{Op: "delete", Path: ow.Path})
+			continue
+		default:
 			return fmt.Errorf("uninstall %s: backup unreadable: %w", id, err)
 		}
 		if backupSHA != ow.PreSHA256 {
@@ -217,6 +262,15 @@ func UninstallWithOptions(ctx context.Context, st *store.Store, id string, opts 
 	}
 	m.Overwritten = keptOw
 	m.CreatedDirs = removeEmptyDirs(m.CreatedDirs)
+
+	if len(missingBackup) > 0 {
+		m.LastError = "uninstall blocked: backup files missing"
+		if err := st.Save(m); err != nil {
+			return err
+		}
+		sort.Strings(missingBackup)
+		return &MissingBackupError{ID: id, Paths: missingBackup}
+	}
 
 	if len(refused) > 0 {
 		m.LastError = "uninstall refused changed files"
