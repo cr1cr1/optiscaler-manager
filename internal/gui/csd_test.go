@@ -110,6 +110,9 @@ func TestVendorCSDPatchPresent(t *testing.T) {
 	if !strings.Contains(string(b), "lastPresentedHash") {
 		t.Error("vendored waylandbackend_linux.go lost the upstream skip-unchanged-frames (SurfacesHash early-return); the v0.15 behavior regressed")
 	}
+	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.20)") {
+		t.Error("vendored waylandbackend_linux.go lacks the v0.20 GPU present-sync patch (Render wait=true); reapply it (docs/vendor-patches.md)")
+	}
 
 	gles := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "gpurender", "gles_linux.go")
 	b, err = os.ReadFile(gles)

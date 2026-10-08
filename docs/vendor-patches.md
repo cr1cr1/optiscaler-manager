@@ -442,3 +442,24 @@ verbatim. Failure still falls back to software exactly as upstream.
 `AllocTarget` over `glesBOStrategies(w, h)` with `importBO` holding the
 post-BO body (planes/fds, modifier, EGL image, texture, FBO check);
 `glesCreateBO` is deleted. The guard fails while the marker is missing.
+
+## shirei: Wayland GPU present sync (v0.20)
+
+- **File**: `vendor/go.hasen.dev/shirei/waylandbackend/waylandbackend_linux.go`
+  (the `gpurender.Render` call in `drawFrame`).
+- **Marker**: `// PATCHED by optiscaler-manager (v0.20)`.
+- **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent` checks
+  the marker).
+
+**What.** The Wayland backend rendered with `wait=false` and immediately
+attached/committed the dmabuf. On the Linux GLES path `wait=false` means
+a bare `glFlush` — the GPU may still be drawing while the compositor
+samples the buffer (no completion fence is plumbed; `SetCompleteFunc`
+fires right after the flush on GLES, unlike Metal's real callback, and
+only the Cocoa backend wires it at all). The result was partially drawn
+presents — severe clipping under high-rate hover repaints on NVIDIA GBM.
+Upstream's own comment reserves `wait=true` for "tests / Wayland M1";
+NVIDIA GBM needs it too. The patch passes `wait=true` (glFinish before
+attach/commit); the per-frame cost is sub-millisecond at this app's draw
+load. Reapply after `go mod vendor`: change the `Render(..., false)` call
+in `drawFrame` to `true` with the marker comment.

@@ -4279,3 +4279,17 @@ Extracted fourteenGameLibrary; both tests pass unchanged. Test-only, net
 −10 lines. Note: the foreign session's tmp/gpuprobe hardware probe is
 sandbox-blocked here (no /dev/dri) and is the lone `go test ./...` red
 from sandboxed shells — it needs an underscore-prefixed dir or a host run.
+
+## 2026-10-08 — issue 45: Wayland GPU presents wait for render completion
+
+After issue 43 re-enabled the GPU path: severe clipping, worst while
+moving the cursor. Root cause (vendor inspection): drawFrame rendered
+with wait=false — a bare glFlush on Linux GLES — and attached/committed
+the dmabuf immediately; no completion fence is plumbed and
+SetCompleteFunc is only wired by Cocoa (and fires post-flush on GLES
+anyway). The compositor sampled mid-render whenever hover repaints
+(60-150/s) outran the GPU. Invisible while 043's probe failure forced
+software rendering (CPU raster completes synchronously). Vendor patch
+v0.20: Render wait=true (glFinish before present) — the mode upstream
+reserves for "Wayland M1"; NVIDIA GBM needs it too. Guard in
+TestVendorCSDPatchPresent; user verifies visually.

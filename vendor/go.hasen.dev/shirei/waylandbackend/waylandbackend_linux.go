@@ -503,7 +503,14 @@ func drawFrame() {
 	var presentBuf *wl.Buffer
 	painted := false
 	if slot != nil {
-		err := gpurender.Render(slot.target.Handle(), slot.w, slot.h, scale, out.Surfaces, out.GlyphRuns, out.GlyphsAdded, out.GlyphsEvicted, false)
+		// PATCHED by optiscaler-manager (v0.20): wait=true — glFinish before
+		// attach/commit. With wait=false the GLES path only glFlush-es and
+		// the compositor can sample the dmabuf mid-render (no completion
+		// fence is plumbed on Linux; SetCompleteFunc fires right after the
+		// flush there), presenting partially drawn frames — visible as
+		// severe clipping under high-rate hover repaints on NVIDIA GBM.
+		// Reapply after `go mod vendor` (see docs/vendor-patches.md).
+		err := gpurender.Render(slot.target.Handle(), slot.w, slot.h, scale, out.Surfaces, out.GlyphRuns, out.GlyphsAdded, out.GlyphsEvicted, true)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "gpurender: %v; software this frame\n", err)
 			slot = nil
