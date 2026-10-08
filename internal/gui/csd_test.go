@@ -70,6 +70,9 @@ func TestVendorCSDPatchPresent(t *testing.T) {
 	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.22)") {
 		t.Error("vendored widgets/logview.go lacks the v0.22 search-highlight patch (LogViewSearch paints query matches as Background spans); reapply it (docs/vendor-patches.md)")
 	}
+	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.23)") {
+		t.Error("vendored widgets/logview.go lacks the v0.23 extra-spans patch (LogViewSearchExt paints per-line app spans, e.g. colored game-title prefixes); reapply it (docs/vendor-patches.md)")
+	}
 	renderpng := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "renderpng.go")
 	b, err = os.ReadFile(renderpng)
 	if err != nil {

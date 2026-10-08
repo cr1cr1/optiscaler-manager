@@ -10,7 +10,20 @@ import (
 	"time"
 
 	. "go.hasen.dev/shirei"
+
+	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
+
+// syncLogLines is the test shorthand for mirroring bare (gameless) lines
+// into the log ring; production syncs ui.LogEntry via syncLogEntries
+// (issue 057).
+func (m *model) syncLogLines(lines []string) {
+	entries := make([]ui.LogEntry, len(lines))
+	for i, l := range lines {
+		entries[i].Line = l
+	}
+	m.syncLogEntries(entries)
+}
 
 // Issue 052: the status bar stays one line tall regardless of the status
 // text (multi-line umu stderr tails used to grow it vertically), and a
@@ -311,5 +324,33 @@ func TestLogSearchNextFlushesDebounce(t *testing.T) {
 	}
 	if m.logSearchHitLine != 0 {
 		t.Fatalf("hit line = %d, want 0", m.logSearchHitLine)
+	}
+}
+
+// Issue 057: game-scoped entries render as "Title › line" with the
+// prefix painted in logGamePrefix; global lines render unprefixed.
+
+func TestLogEntriesRenderTitlePrefix(t *testing.T) {
+	m := newModel(Config{})
+	m.syncLogEntries([]ui.LogEntry{
+		{Line: "Launch failed: boom", Game: "Cyberpunk 2077"},
+		{Line: "Ready"},
+	})
+	if got := m.logRing.Line(0); got != "Cyberpunk 2077 › Launch failed: boom" {
+		t.Fatalf("prefixed line = %q", got)
+	}
+	if got := m.logRing.Line(1); got != "Ready" {
+		t.Fatalf("global line = %q, want unprefixed", got)
+	}
+	spans := m.logLineExtraSpans(0)
+	prefixRunes := len([]rune("Cyberpunk 2077 › "))
+	if len(spans) != 1 || spans[0].From != 0 || spans[0].To != prefixRunes {
+		t.Fatalf("prefix span = %+v, want [0,%d)", spans, prefixRunes)
+	}
+	if spans[0].Style.TextColor != logGamePrefix {
+		t.Errorf("prefix color = %v, want logGamePrefix %v", spans[0].Style.TextColor, logGamePrefix)
+	}
+	if spans := m.logLineExtraSpans(1); len(spans) != 0 {
+		t.Errorf("global line has spans: %+v", spans)
 	}
 }

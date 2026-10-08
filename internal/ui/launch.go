@@ -42,7 +42,7 @@ func (s *Session) doLaunch(gameDir string) {
 			return
 		}
 		what := "Launch requested: " + row.Title + " (via umu-launcher)"
-		s.setStatus(what)
+		s.setStatusGame(gameDir, what)
 		s.toast(what, false)
 		s.emit(Event{Kind: EvOpDone, Text: what, GameDir: gameDir})
 		return
@@ -53,7 +53,7 @@ func (s *Session) doLaunch(gameDir string) {
 		return
 	}
 	what := "Launch requested: " + row.Title
-	s.setStatus(what)
+	s.setStatusGame(gameDir, what)
 	s.toast(what, false)
 	s.emit(Event{Kind: EvOpDone, Text: what, GameDir: gameDir})
 }
@@ -94,7 +94,7 @@ func (s *Session) shouldUseUmu(row *GameRow) bool {
 }
 
 func (s *Session) launchFailed(err error, gameDir string) {
-	s.setStatus("Launch failed: " + err.Error())
+	s.setStatusGame(gameDir, "Launch failed: "+err.Error())
 	s.toast("Launch failed: "+err.Error(), true)
 	s.emit(Event{Kind: EvOpFailed, Text: err.Error(), GameDir: gameDir})
 }

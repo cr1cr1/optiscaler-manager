@@ -34,6 +34,14 @@ const toastTTL = 8 * time.Second
 // oldest lines evicted past the cap.
 const logRingCap = 512
 
+// LogEntry is one status-history line with its game context (issue 057):
+// Game is the row title for game-scoped statuses, "" for library-wide
+// ones (scans, cache warmup).
+type LogEntry struct {
+	Line string
+	Game string
+}
+
 // ViewMode selects the library presentation.
 type ViewMode int
 
@@ -251,12 +259,12 @@ type Session struct {
 	deps   Deps
 	events chan Event
 
-	mu        sync.Mutex
-	st        State
-	now       func() time.Time
-	opCancels map[string]context.CancelFunc // in-flight op per game dir
-	cacheMu   sync.Mutex                    // serializes games-cache writes
-	logLines  []string                      // capped status history for the GUI log panel (issue 052), guarded by mu
+	mu         sync.Mutex
+	st         State
+	now        func() time.Time
+	opCancels  map[string]context.CancelFunc // in-flight op per game dir
+	cacheMu    sync.Mutex                    // serializes games-cache writes
+	logEntries []LogEntry                    // capped status history with game titles (issues 052, 057), guarded by mu
 
 	progressMu sync.Mutex // serializes progress poke throttling
 	lastPoke   time.Time
@@ -460,35 +468,59 @@ func (s *Session) setBusy(b string) {
 func (s *Session) setStatus(line string) {
 	s.mu.Lock()
 	s.st.StatusLine = line
-	s.appendLogLocked(line)
+	s.appendLogLocked(line, "")
+	s.mu.Unlock()
+}
+
+// setStatusGame is setStatus with the game's title attached to the log
+// entry (issue 057); the status bar text itself stays unprefixed.
+func (s *Session) setStatusGame(gameDir, line string) {
+	title := ""
+	if r := s.findRow(gameDir); r != nil {
+		title = r.Title
+	}
+	s.mu.Lock()
+	s.st.StatusLine = line
+	s.appendLogLocked(line, title)
 	s.mu.Unlock()
 }
 
 // appendLogLocked records a status text in the log ring (issue 052):
 // multi-line text splits into lines, blank lines and consecutive
 // duplicates are skipped, and the oldest lines are evicted past the cap.
-func (s *Session) appendLogLocked(text string) {
+func (s *Session) appendLogLocked(text, game string) {
 	for _, l := range strings.Split(text, "\n") {
 		l = strings.TrimRight(l, "\r")
 		if strings.TrimSpace(l) == "" {
 			continue
 		}
-		if n := len(s.logLines); n > 0 && s.logLines[n-1] == l {
+		if n := len(s.logEntries); n > 0 && s.logEntries[n-1].Line == l {
 			continue
 		}
-		s.logLines = append(s.logLines, l)
+		s.logEntries = append(s.logEntries, LogEntry{Line: l, Game: game})
 	}
-	if len(s.logLines) > logRingCap {
-		s.logLines = append([]string(nil), s.logLines[len(s.logLines)-logRingCap:]...)
+	if len(s.logEntries) > logRingCap {
+		s.logEntries = append([]LogEntry(nil), s.logEntries[len(s.logEntries)-logRingCap:]...)
 	}
 }
 
-// LogLines returns a copy of the capped status history (issue 052): the
-// same console output the status bar shows, oldest first.
+// LogLines returns the capped status history as bare lines (issue 052).
 func (s *Session) LogLines() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]string(nil), s.logLines...)
+	lines := make([]string, len(s.logEntries))
+	for i, e := range s.logEntries {
+		lines[i] = e.Line
+	}
+	return lines
+}
+
+// LogEntries returns a copy of the capped status history with game
+// titles attached (issue 057), oldest first.
+func (s *Session) LogEntries() []LogEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]LogEntry(nil), s.logEntries...)
 }
 
 func (s *Session) setConfirm(c *Confirmation) {
@@ -506,14 +538,14 @@ func (s *Session) opStarted(what string) {
 
 func (s *Session) opDone(what, gameDir string) {
 	s.setBusy("")
-	s.setStatus(what)
+	s.setStatusGame(gameDir, what)
 	s.toast(what, false)
 	s.emit(Event{Kind: EvOpDone, Text: what, GameDir: gameDir})
 }
 
 func (s *Session) opFailed(err error, gameDir string) {
 	s.setBusy("")
-	s.setStatus("Failed: " + err.Error())
+	s.setStatusGame(gameDir, "Failed: "+err.Error())
 	s.toast("Failed: "+err.Error(), true)
 	// GameDir lets frontends refresh the affected game (a failed update or
 	// restore may still have created its pre-op backup).
@@ -524,7 +556,7 @@ func (s *Session) opFailed(err error, gameDir string) {
 // clears and one clean warning toast/event surfaces — never the raw sentinel.
 func (s *Session) opRefused(msg, gameDir string) {
 	s.setBusy("")
-	s.setStatus(msg)
+	s.setStatusGame(gameDir, msg)
 	s.toast(msg, true)
 	s.emit(Event{Kind: EvOpFailed, Text: msg, GameDir: gameDir})
 }
@@ -540,7 +572,7 @@ func (s *Session) opAborted() {
 // and exactly one "Cancelled" toast/event surfaces — never the failure path.
 func (s *Session) opCancelled(gameDir string, pre domain.Status) {
 	s.setBusy("")
-	s.setStatus("Cancelled")
+	s.setStatusGame(gameDir, "Cancelled")
 	s.setRowStatus(gameDir, pre)
 	s.toast("Cancelled", false)
 	s.emit(Event{Kind: EvOpCancelled, Text: "Cancelled", GameDir: gameDir})

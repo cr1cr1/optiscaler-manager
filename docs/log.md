@@ -4565,3 +4565,18 @@ no such file or directory` — stranding the mod installed forever.
   dropdown work drafted as 054, renumbered). Comments restored; files
   re-applied; verification in `tmp/verify-055` worktree: 32/32 + vet.
 2026-10-09
+
+## 2026-10-09 — issue 57: game-title prefixes in the log panel
+
+- The status ring is now `[]LogEntry{Line, Game}`; `setStatusGame`
+  (opDone/opFailed/opRefused/opCancelled/launchFailed/doLaunch) attaches
+  the row title, global statuses stay gameless. `LogLines()` derives
+  from entries for compatibility; `LogEntries()` is the new accessor.
+- GUI mirror syncs entries: game lines render as `Title › line`, the
+  prefix painted in `logGamePrefix` (teal) via vendor patch v0.23
+  (`LogViewSearchExt` extraSpans hook). Search highlight composes with
+  the prefix span; searching a title finds its lines.
+- Trap recorded in vendor-patches.md: `overlayStyle` replaces any field
+  differing from the base — spans must be built FROM the base style or
+  FontSize zeroes out.
+2026-10-09

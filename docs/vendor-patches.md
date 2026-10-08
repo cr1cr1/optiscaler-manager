@@ -510,3 +510,24 @@ match finding. Reapply after `go mod vendor`: rename `logView`'s body to
 `logViewSearch` with extra `query string, hitColor Vec4` params, delegate
 `logView` with empty query, add `LogViewSearch` + `logSearchSpans`, and
 extend the item-view `ShapedTextLayoutStyled` call.
+
+## shirei widgets: LogView per-line app spans (v0.23)
+
+- **File**: `vendor/go.hasen.dev/shirei/widgets/logview.go`
+  (`LogViewSearchExt`; `logViewSearch` gains an `extraSpans` parameter;
+  `logView`/`LogViewSearch` delegate with nil).
+- **Marker**: `// PATCHED by optiscaler-manager (v0.23)`.
+- **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent`
+  checks the marker); behavior pinned by
+  `internal/gui/logpanel_test.go` (`TestLogEntriesRenderTitlePrefix`).
+
+**What.** v0.22 added search highlighting but the app had no way to
+color a per-line region of its own (the issue-057 game-title prefix).
+`LogViewSearchExt` takes `extraSpans func(idx int) []StyleSpan`, called
+per visible line; the returned spans append to the search-highlight
+spans before `ShapedTextLayoutStyled`. Spans must be built from the
+line's base style — `overlayStyle` replaces any field that differs from
+the base, so a bare `TextStyleAttrs{TextColor: c}` would zero the font
+size. Reapply after `go mod vendor`: extend `logViewSearch` with the
+`extraSpans` param, delegate nil from `logView`/`LogViewSearch`, add
+`LogViewSearchExt`, and append `extraSpans(idx)` in the item view.

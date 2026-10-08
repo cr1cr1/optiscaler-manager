@@ -84,20 +84,21 @@ func detailPanelWidth(windowW float32) float32 {
 
 // Dark theme palette (HSLA), matching the reference client's look.
 var (
-	bgApp       = Vec4{230, 25, 11, 1}
-	bgPanel     = Vec4{230, 20, 16, 1}
-	bgCard      = Vec4{230, 18, 20, 1}
-	bgRaised    = Vec4{230, 16, 25, 1}
-	border      = Vec4{230, 12, 32, 1}
-	accent      = Vec4{220, 18, 26, 1}
-	accentHov   = Vec4{220, 22, 34, 1}
-	focusBorder = Vec4{210, 70, 62, 1} // bright: focus rings and the text caret
-	selBg       = Vec4{210, 45, 45, 1} // selection highlight band
-	scrolAccent = Vec4{220, 10, 45, 1}
-	txtMain     = Vec4{220, 15, 92, 1}
-	txtMuted    = Vec4{220, 10, 62, 1}
-	txtWarn     = Vec4{20, 80, 65, 1}
-	searchHitBg = Vec4{45, 75, 38, 1} // log search hit highlight (issue 054)
+	bgApp         = Vec4{230, 25, 11, 1}
+	bgPanel       = Vec4{230, 20, 16, 1}
+	bgCard        = Vec4{230, 18, 20, 1}
+	bgRaised      = Vec4{230, 16, 25, 1}
+	border        = Vec4{230, 12, 32, 1}
+	accent        = Vec4{220, 18, 26, 1}
+	accentHov     = Vec4{220, 22, 34, 1}
+	focusBorder   = Vec4{210, 70, 62, 1} // bright: focus rings and the text caret
+	selBg         = Vec4{210, 45, 45, 1} // selection highlight band
+	scrolAccent   = Vec4{220, 10, 45, 1}
+	txtMain       = Vec4{220, 15, 92, 1}
+	txtMuted      = Vec4{220, 10, 62, 1}
+	txtWarn       = Vec4{20, 80, 65, 1}
+	searchHitBg   = Vec4{45, 75, 38, 1}  // log search hit highlight (issue 054)
+	logGamePrefix = Vec4{150, 55, 62, 1} // log line game-title prefix text (issue 057)
 )
 
 // elevateOverlay is the stronger lift for modals, toasts, and popups.
