@@ -4580,3 +4580,19 @@ no such file or directory` — stranding the mod installed forever.
   differing from the base — spans must be built FROM the base style or
   FontSize zeroes out.
 2026-10-09
+
+## 2026-10-09 — issue 58: toast overlay clipped at the window bottom
+
+- Root cause: `toastOverlay` reserved a constant 40px per card while the
+  card auto-sized — a launch-failure toast carrying the multi-line
+  stderr tail wrapped tall and the float stack crossed the window's
+  bottom edge.
+- Fix: toast text renders single-line (`oneLineStatus`; the full text
+  lives in the log panel since 052) and the stack's bottom margin is the
+  captured status-bar height + spacer instead of a fixed sp24, so the
+  lowest card always clears the window bottom.
+- Pinned by `TestToastRaisedAboveStatusBarAndSingleLine` (rect seams).
+- Flake noted (unrelated, green on re-run): `TestTitleEditorEnterApplies`
+  TempDir cleanup raced a late games-cache write (`unlinkat settings:
+  directory not empty`).
+2026-10-09

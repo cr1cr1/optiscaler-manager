@@ -714,7 +714,11 @@ func (m *model) statusBar() {
 }
 
 // toastOverlay floats the newest toasts (at most three) at the bottom-right
-// as raised cards with a tone accent bar.
+// as raised cards with a tone accent bar. Cards render single-line
+// (multi-line texts — launch-failure stderr tails — collapse to the first
+// line; the full text lives in the log panel, issue 052) and the stack
+// sits above the status bar so the lowest card is never clipped by the
+// window bottom (issue 058).
 func (m *model) toastOverlay() {
 	toasts := m.state.Toasts
 	if len(toasts) == 0 {
@@ -724,10 +728,18 @@ func (m *model) toastOverlay() {
 		toasts = toasts[len(toasts)-3:]
 	}
 	const toastH = 40 // card padding + one text line + gap, per toast
-	y := GetHost().WindowSize[1] - float32(len(toasts)*toastH) - sp24
+	// Clear the status bar (its height is captured each frame; sp24 is the
+	// fallback for the very first frame).
+	bottomGap := m.statusBarRect.Size[1] + sp8
+	if bottomGap < sp24 {
+		bottomGap = sp24
+	}
+	y := GetHost().WindowSize[1] - float32(len(toasts)*toastH) - bottomGap
+	m.toastRects = m.toastRects[:0]
 	Container(Attrs(Float(GetHost().WindowSize[0]-380, y), Z(10), FixSize(360, 0), Gap(sp8)), func() {
 		for _, t := range toasts {
 			Container(Attrs(Row, Expand, Corners(radiusM), BackgroundVec(bgRaised), elevateOverlay, Clip), func() {
+				m.toastRects = append(m.toastRects, GetScreenRectOf(CurrentId()))
 				bar := Vec4{140, 55, 45, 1}
 				fg := txtMain
 				if t.Warn {
@@ -736,7 +748,7 @@ func (m *model) toastOverlay() {
 				}
 				Container(Attrs(FixWidth(sp4), Expand, BackgroundVec(bar)), func() {})
 				Container(Attrs(Pad2(sp8, sp12)), func() {
-					Label(t.Text, TextColorVec(fg), FontSize(12))
+					Label(oneLineStatus(t.Text), TextColorVec(fg), FontSize(12))
 				})
 			})
 		}
