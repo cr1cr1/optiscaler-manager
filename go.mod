@@ -23,7 +23,7 @@ require (
 require (
 	github.com/HugoSmits86/nativewebp v1.3.0 // indirect
 	github.com/andybalholm/brotli v1.2.6 // indirect
-	github.com/anthonynsimon/bild v0.17.1 // indirect
+	github.com/anthonynsimon/bild v0.17.1
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/aymanbagabas/go-udiff v0.4.1 // indirect

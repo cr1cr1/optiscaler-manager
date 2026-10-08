@@ -4229,3 +4229,25 @@ platforms. Audit of the vendored shirei v0.8.0 (migrated in a60ea76):
   paragraph). README needed no change ("available for Linux and Windows"
   stays true). No code/vendor change, so no new tests; full suite re-run
   green.
+
+## 2026-10-08 — issue 42: hi-res Steam cover art (_2x) + Lanczos idle resample
+
+User report: the detail-pane poster looks like an upscale of the card
+poster; it must render at the highest quality available.
+
+- Root cause (verified against the live CDN + local cache): Steam now
+  serves library_600x900.jpg at 300x450 for every probed appid; the true
+  600x900 art is the _2x variant. ~90% of the local cache was 300x450 —
+  fine downscaled on cards, upscaled (soft) in the detail pane.
+- covers: fetchPortrait/fetchHero try the _2x variant first, 1x fallback
+  (both CDN call sites); marker-gated `_hires-v1` migration drops cached
+  CDN-named covers narrower than 600px so they re-fetch (sgdb_/pcgw_/gog_
+  files untouched). Mirrors issue 039's migration shape.
+- gui: configureImageQuality sets shirei.ScaleIdleFilter = Lanczos at
+  startup (software-path steady-state resample; bild promoted to a direct
+  dependency).
+- Foreign-test touch: issue 039's TestNewMigratesLegacyCacheOnce fixture
+  bumped 64x96 → 600x900 (narrow numeric-named files are exactly what the
+  hires migration drops; sharpen math is width-independent).
+- TDD: red witnessed for the 2x-first fetch order (1x-only before);
+  migration + fallback + filter tests green; full suite green.

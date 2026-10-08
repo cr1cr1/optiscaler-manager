@@ -12,6 +12,8 @@ import (
 
 	. "go.hasen.dev/shirei"
 
+	"github.com/anthonynsimon/bild/transform"
+
 	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
@@ -153,6 +155,7 @@ func newModel(cfg Config) *model {
 
 // Run opens the window and drives the frame loop.
 func Run(ctx context.Context, cfg Config) error {
+	configureImageQuality()
 	shireiapp.SetupWindow("optiscaler-manager", 1100, 700)
 	m := newModel(cfg)
 	m.ctx = ctx
@@ -173,6 +176,14 @@ func Run(ctx context.Context, cfg Config) error {
 	view := m.rootView
 	shireiapp.Run(view)
 	return nil
+}
+
+// configureImageQuality sets shirei's steady-state image resampler to the
+// highest-quality filter available (issue 042): bilinear downscales leave
+// covers visibly soft on the software render path. Motion phases keep the
+// cheap filter — only idle paints change.
+func configureImageQuality() {
+	ScaleIdleFilter = transform.Lanczos
 }
 
 // forwardSessionEvents requests a frame for every session event until the

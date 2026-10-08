@@ -147,7 +147,10 @@ Added after v0.1, modeled on the reference client's main window:
 - **Cover-art card grid** (default view) with list view toggle. Cards:
   cover, platform pill, installed badge, EAC badge, status badges, tech
   pills, quick-install toggle.
-- **Covers**: Steam CDN `library_600x900.jpg` by appid (primary) →
+- **Covers**: Steam CDN `library_600x900.jpg` by appid (primary; the
+  `_2x` variant first since Steam shrunk the 1x art to 300x450
+  server-side — a `_hires-v1` marker-gated migration drops narrow
+  CDN-cached files so they re-fetch, issue 042) →
   SteamGridDB grid (when `steamgriddb_key` is set in settings.json) →
   PCGamingWiki box art (keyless: opensearch + wikitext infobox) →
   GOG catalog vertical art (keyless: Galaxy catalog like: search, also

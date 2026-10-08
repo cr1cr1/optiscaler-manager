@@ -108,16 +108,18 @@ func TestCoverCacheHitLeavesFileUntouched(t *testing.T) {
 
 // TestNewMigratesLegacyCacheOnce: caches written before issue 039 hold
 // unsharpened images; the first New() sweeps them exactly once (marker
-// file), later constructions leave the bytes alone.
+// file), later constructions leave the bytes alone. The fixture is
+// 600x900: narrow numeric-named files are CDN-derived and dropped by the
+// hires migration (issue 042) before the sharpen sweep would matter.
 func TestNewMigratesLegacyCacheOnce(t *testing.T) {
 	dir := t.TempDir()
 	legacy := filepath.Join(dir, "100.img")
-	if err := os.WriteFile(legacy, edgePNG(t, 64, 96, 100, 160), 0o644); err != nil {
+	if err := os.WriteFile(legacy, edgePNG(t, 600, 900, 100, 160), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	New(nil, dir)
-	if got := pixelR(t, legacy, 31, 48); got != 98 {
+	if got := pixelR(t, legacy, 299, 450); got != 98 {
 		t.Errorf("legacy left edge R = %d, want 98 after the one-time migration", got)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "_sharpened-v1")); err != nil {

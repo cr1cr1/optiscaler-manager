@@ -81,6 +81,7 @@ func New(httpClient *http.Client, cacheDir string) *Covers {
 		httpClient = http.DefaultClient
 	}
 	sharpenLegacyCache(cacheDir) // one-time migration (issue 039)
+	dropLoResCDNCovers(cacheDir) // one-time migration (issue 042)
 	return &Covers{
 		http:       httpClient,
 		cacheDir:   cacheDir,
@@ -115,7 +116,7 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 			return cached, nil
 		}
 		if !c.recentMiss(sanitized) {
-			if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_600x900.jpg"), url.PathEscape(sanitized)), cached); err == nil {
+			if err := c.fetchPortrait(ctx, sanitized, cached); err == nil {
 				return cached, nil
 			}
 			if p, ok := c.fromSGDB(ctx, sanitized, name); ok {
@@ -130,7 +131,7 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 			if p, ok := c.fromWikidata(ctx, sanitized, name); ok {
 				return p, nil
 			}
-			if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_hero.jpg"), url.PathEscape(sanitized)), cached); err == nil {
+			if err := c.fetchHero(ctx, sanitized, cached); err == nil {
 				return cached, nil
 			}
 			c.markMiss(sanitized)
@@ -140,7 +141,7 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 	if name != "" {
 		if id, err := c.searchAppID(ctx, name); err == nil && id != "" {
 			cached := filepath.Join(c.cacheDir, id+".img")
-			if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_600x900.jpg"), url.PathEscape(id)), cached); err == nil {
+			if err := c.fetchPortrait(ctx, id, cached); err == nil {
 				return cached, nil
 			}
 			if p, ok := c.fromSGDB(ctx, id, name); ok {
@@ -155,7 +156,7 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 			if p, ok := c.fromWikidata(ctx, id, name); ok {
 				return p, nil
 			}
-			if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_hero.jpg"), url.PathEscape(id)), cached); err == nil {
+			if err := c.fetchHero(ctx, id, cached); err == nil {
 				return cached, nil
 			}
 		} else if p, ok := c.fromSGDB(ctx, "", name); ok {
@@ -170,6 +171,70 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 	}
 
 	return c.placeholder()
+}
+
+// hiresMarker is the cacheDir file whose presence means narrow CDN-derived
+// covers were already dropped once (issue 042 migration).
+const hiresMarker = "_hires-v1"
+
+// dropLoResCDNCovers deletes cached CDN-named covers narrower than 600px,
+// exactly once. Steam now serves library_600x900.jpg at HALF resolution
+// (300x450); the real 600x900 art is the _2x variant, which issue 042
+// fetches first — dropping the narrow files lets them re-fetch at full
+// resolution on the next cover lookup. Only bare <appid>.img names are
+// CDN-derived; source-prefixed files (sgdb_/pcgw_/gog_) keep their own
+// sizes. Marker-gated like the sharpen migration (issue 039); best-effort.
+func dropLoResCDNCovers(cacheDir string) {
+	if _, err := os.Stat(filepath.Join(cacheDir, hiresMarker)); err == nil {
+		return
+	}
+	entries, err := os.ReadDir(cacheDir)
+	if err == nil {
+		for _, e := range entries {
+			name := e.Name()
+			appid := strings.TrimSuffix(name, ".img")
+			if e.IsDir() || appid == name || sanitize(appid) != appid || appid == "" {
+				continue // placeholder, markers, source-prefixed files
+			}
+			f, err := os.Open(filepath.Join(cacheDir, name))
+			if err != nil {
+				continue
+			}
+			cfg, _, err := image.DecodeConfig(f)
+			_ = f.Close()
+			if err != nil {
+				continue // undecodable: the fetch chain owns it
+			}
+			if cfg.Width < 600 {
+				_ = os.Remove(filepath.Join(cacheDir, name))
+			}
+		}
+	}
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return
+	}
+	if f, err := os.Create(filepath.Join(cacheDir, hiresMarker)); err == nil {
+		_ = f.Close()
+	}
+}
+
+// fetchPortrait tries the CDN portrait art highest-quality first: the _2x
+// variant (true 600x900) before the 1x (server-side 300x450 since Steam
+// halved it — issue 042).
+func (c *Covers) fetchPortrait(ctx context.Context, appid, dest string) error {
+	if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_600x900_2x.jpg"), url.PathEscape(appid)), dest); err == nil {
+		return nil
+	}
+	return c.fetch(ctx, fmt.Sprintf(c.artURL("library_600x900.jpg"), url.PathEscape(appid)), dest)
+}
+
+// fetchHero tries the CDN hero banner highest-quality first (issue 042);
+// normalizeCover center-crops the 2:3 portrait out of it.
+func (c *Covers) fetchHero(ctx context.Context, appid, dest string) error {
+	if err := c.fetch(ctx, fmt.Sprintf(c.artURL("library_hero_2x.jpg"), url.PathEscape(appid)), dest); err == nil {
+		return nil
+	}
+	return c.fetch(ctx, fmt.Sprintf(c.artURL("library_hero.jpg"), url.PathEscape(appid)), dest)
 }
 
 // artURL formats one of the CDN art variants for an appid. cdnBase carries
