@@ -51,5 +51,13 @@ behavior test.
 
 ## Outcome
 
-Filled in when the issue closes: what actually happened, the commit
-hash, anything left open.
+Done in commit 2d1e49b (docs-only, per user decision). The audit is
+recorded in the issue doc and log.md; scope.md and architecture.md now
+state that macOS release artifacts are disabled by decision while the
+CGO-free darwin build path is verified working (shirei v0.8.0 purego cocoa
+backend), and architecture.md records the GPU-compositor defaults
+(Wayland/Windows/macOS on by default, software fallback, `SHIREI_GPU=0`
+opt-out, X11 software-only). Full `go test ./...` re-run green in a clean
+worktree at c2379b9 (no code changed). Left open, one config change away:
+enabling darwin amd64+arm64 in `.goreleaser.yml` and widening the CI darwin
+gate to the whole tree.
