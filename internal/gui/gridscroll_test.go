@@ -8,7 +8,25 @@ import (
 
 	. "go.hasen.dev/shirei"
 	. "go.hasen.dev/shirei/widgets"
+
+	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 )
+
+// fourteenGameLibrary scans a 14-game fake steam library: enough rows to
+// scroll, with a partial last row at the test window's column count.
+// Shared by the scroll-restore and settle-guard tests (issue 044).
+func fourteenGameLibrary(t *testing.T) (*ui.Session, []ui.GameRow) {
+	t.Helper()
+	sess, gameRoot := guiFakes(t)
+	steamRoot := filepath.Dir(filepath.Dir(filepath.Dir(gameRoot)))
+	for i := 2; i <= 14; i++ {
+		writeGUIFile(t, filepath.Join(steamRoot, "steamapps", fmt.Sprintf("appmanifest_%d.acf", 100+i)),
+			fmt.Sprintf(`"AppState" { "appid" "%d" "name" "Game %d" "installdir" "Game%d" }`, 100+i, i, i))
+		writeGUIFile(t, filepath.Join(steamRoot, "steamapps", "common", fmt.Sprintf("Game%d", i), "bin", "game.exe"), "GAME")
+	}
+	sess.Scan(context.Background())
+	return sess, waitScanSettled(t, sess, 14)
+}
 
 // TestGridClickLastRowKeepsScroll (issue 037): clicking a card on the
 // grid's last, partially-filled row opens the detail panel without
@@ -20,17 +38,7 @@ import (
 // when the cursor card happens to render inside the reset (top) window,
 // which a deep, last-row card never does.
 func TestGridClickLastRowKeepsScroll(t *testing.T) {
-	sess, gameRoot := guiFakes(t)
-	// 13 more games (14 total): enough rows to scroll, with a partial
-	// last row at the test window's column count.
-	steamRoot := filepath.Dir(filepath.Dir(filepath.Dir(gameRoot)))
-	for i := 2; i <= 14; i++ {
-		writeGUIFile(t, filepath.Join(steamRoot, "steamapps", fmt.Sprintf("appmanifest_%d.acf", 100+i)),
-			fmt.Sprintf(`"AppState" { "appid" "%d" "name" "Game %d" "installdir" "Game%d" }`, 100+i, i, i))
-		writeGUIFile(t, filepath.Join(steamRoot, "steamapps", "common", fmt.Sprintf("Game%d", i), "bin", "game.exe"), "GAME")
-	}
-	sess.Scan(context.Background())
-	rows := waitScanSettled(t, sess, 14)
+	sess, rows := fourteenGameLibrary(t)
 	m := newModel(Config{Session: sess})
 
 	headlessFrames(t, 1100, 800)

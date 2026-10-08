@@ -1,9 +1,6 @@
 package gui
 
 import (
-	"context"
-	"fmt"
-	"path/filepath"
 	"testing"
 
 	. "go.hasen.dev/shirei"
@@ -14,15 +11,7 @@ import (
 // how many frames stay hot? Healthy: quiet after ~5. Churn: repeated
 // NextFrameRequested/FrameHasChanges with scrollCursorPending re-arms.
 func TestScrollChurnProbe(t *testing.T) {
-	sess, gameRoot := guiFakes(t)
-	steamRoot := filepath.Dir(filepath.Dir(filepath.Dir(gameRoot)))
-	for i := 2; i <= 14; i++ {
-		writeGUIFile(t, filepath.Join(steamRoot, "steamapps", fmt.Sprintf("appmanifest_%d.acf", 100+i)),
-			fmt.Sprintf(`"AppState" { "appid" "%d" "name" "Game %d" "installdir" "Game%d" }`, 100+i, i, i))
-		writeGUIFile(t, filepath.Join(steamRoot, "steamapps", "common", fmt.Sprintf("Game%d", i), "bin", "game.exe"), "GAME")
-	}
-	sess.Scan(context.Background())
-	rows := waitScanSettled(t, sess, 14)
+	sess, rows := fourteenGameLibrary(t)
 	m := newModel(Config{Session: sess})
 
 	headlessFrames(t, 1100, 800)

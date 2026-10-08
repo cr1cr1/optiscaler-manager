@@ -4270,3 +4270,12 @@ software throughout.
   total failure still falls back to software as before.
 - Guard: TestVendorCSDPatchPresent checks the v0.19 marker; real
   verification is on the user's next launch (stderr line gone).
+
+## 2026-10-08 — issue 44: shared 14-game grid fixture (post-commit ponytail)
+
+Ponytail review of the issue-037/040 test diffs: the 14-game steam
+fixture was duplicated between gridscroll_test.go and churn_probe_test.go.
+Extracted fourteenGameLibrary; both tests pass unchanged. Test-only, net
+−10 lines. Note: the foreign session's tmp/gpuprobe hardware probe is
+sandbox-blocked here (no /dev/dri) and is the lone `go test ./...` red
+from sandboxed shells — it needs an underscore-prefixed dir or a host run.
