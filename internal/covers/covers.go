@@ -196,10 +196,16 @@ func (c *Covers) markMiss(appid string) {
 // (issue 030). Candidates are scored (normalized exact or near-equal, PC
 // bonus, edition penalty) and the BEST score above the acceptance
 // threshold binds — not the first acceptable hit; anything weaker means
-// no cover rather than the wrong one.
+// no cover rather than the wrong one. Truncated variants add a numeral
+// rule (issue 033): digit tokens of the ORIGINAL title must equal the
+// item's — edition stripping makes "The Witcher: Enhanced Edition" an
+// exact match for a truncated "the witcher" query, and the truncated-away
+// "3" is the only thing keeping Witcher 1's art off a Witcher 3 row. The
+// same numerals also corroborate: a non-empty matching set lets a weak
+// truncated query bind the right item ("the witcher" + {3} → Witcher 3).
 func (c *Covers) searchAppID(ctx context.Context, name string) (string, error) {
 	for _, q := range queryVariants(name) {
-		id, err := c.searchAppIDOnce(ctx, q)
+		id, err := c.searchAppIDOnce(ctx, q, name)
 		if err != nil {
 			return "", err
 		}
@@ -235,10 +241,15 @@ func queryVariants(name string) []string {
 	return out
 }
 
-// searchAppIDOnce runs one storesearch query and binds its best-scored
-// acceptable item.
-func (c *Covers) searchAppIDOnce(ctx context.Context, name string) (string, error) {
-	u := c.searchBase + "?term=" + url.QueryEscape(name) + "&cc=us&l=en"
+// searchAppIDOnce runs one storesearch query variant and binds its best
+// candidate under the numeral rule (issue 033): items whose digit tokens
+// differ from the ORIGINAL title's are refused outright; among the rest,
+// a gid-accepted score wins, else a non-empty matching numeral set
+// corroborates a weak truncated query whose tokens are a subset of the
+// item's ("the witcher" + {3} binds Witcher 3, but "doom" never binds
+// Doom Eternal — no numeral, no corroboration).
+func (c *Covers) searchAppIDOnce(ctx context.Context, query, original string) (string, error) {
+	u := c.searchBase + "?term=" + url.QueryEscape(query) + "&cc=us&l=en"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return "", err
@@ -264,16 +275,70 @@ func (c *Covers) searchAppIDOnce(ctx context.Context, name string) (string, erro
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", err
 	}
+	wantNumerals := digitTokens(gid.Normalize(original))
+	queryToks := strings.Fields(gid.Normalize(query))
 	bestID, bestScore := "", -1
+	corrID, corrScore := "", -1
 	for _, item := range result.Items {
-		if score := gid.Score(name, item.Name, item.Platforms.Windows); score > bestScore {
+		if !digitTokensEqual(digitTokens(gid.Normalize(item.Name)), wantNumerals) {
+			continue
+		}
+		score := gid.Score(query, item.Name, item.Platforms.Windows)
+		if score > bestScore {
 			bestID, bestScore = sanitize(item.ID.String()), score
+		}
+		if len(wantNumerals) > 0 && tokenSubset(queryToks, strings.Fields(gid.Normalize(item.Name))) && score > corrScore {
+			corrID, corrScore = sanitize(item.ID.String()), score
 		}
 	}
 	if bestID != "" && gid.Accept(bestScore, false) {
 		return bestID, nil
 	}
+	if corrID != "" {
+		return corrID, nil
+	}
 	return "", nil
+}
+
+// digitTokens counts the tokens containing at least one digit ("3",
+// "2077") in an already-normalized title. Roman numerals are not digits;
+// the gid scorer's roman equivalence covers those.
+func digitTokens(norm string) map[string]int {
+	out := map[string]int{}
+	for _, t := range strings.Fields(norm) {
+		if strings.ContainsAny(t, "0123456789") {
+			out[t]++
+		}
+	}
+	return out
+}
+
+func digitTokensEqual(a, b map[string]int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for t, n := range a {
+		if b[t] != n {
+			return false
+		}
+	}
+	return true
+}
+
+// tokenSubset reports whether every query token appears in the item's
+// tokens (multiplicity-aware).
+func tokenSubset(query, item []string) bool {
+	avail := map[string]int{}
+	for _, t := range item {
+		avail[t]++
+	}
+	for _, t := range query {
+		if avail[t] == 0 {
+			return false
+		}
+		avail[t]--
+	}
+	return true
 }
 
 // fetch downloads url to dest atomically (temp + rename), rejecting non-200

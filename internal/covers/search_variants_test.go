@@ -115,3 +115,91 @@ func TestSearchAppIDTruncationFloor(t *testing.T) {
 		}
 	}
 }
+
+// Truncated franchise-root queries are dangerous: edition stripping
+// normalizes "The Witcher: Enhanced Edition Director's Cut" to exactly
+// "the witcher", an exact match for the truncated query — the numeral
+// that actually identifies the game was truncated away. Binding requires
+// digit-token equality with the ORIGINAL title; Witcher 1 lacks the "3"
+// and is refused even when it is the only candidate (issue 033).
+func TestSearchAppIDNumeralGuardRejectsWrongGame(t *testing.T) {
+	f := &searchFake{itemsByTerm: map[string]string{
+		"the witcher": `{"items":[
+		  {"id":20900,"name":"The Witcher: Enhanced Edition Director's Cut","platforms":{"windows":true}}]}`,
+	}}
+	srv := httptest.NewServer(f.mux(t))
+	t.Cleanup(srv.Close)
+	c := NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+
+	p, err := c.Cover(context.Background(), "", "The Witcher 3: Wild Hunt - Game of the Year Edition")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	if !strings.HasSuffix(p, "_placeholder.png") {
+		t.Errorf("path = %q, want the placeholder — Witcher 1 (20900) lacks the 3 and must never bind", p)
+	}
+}
+
+// The guard is corroborating evidence, not just a veto: when the
+// original title's numerals match the item's, a weak truncated query
+// ("the witcher") MAY bind the right game ("The Witcher 3: Wild Hunt")
+// — the numeral is what makes the franchise root unambiguous.
+func TestSearchAppIDNumeralCorroboratesTruncatedQuery(t *testing.T) {
+	f := &searchFake{itemsByTerm: map[string]string{
+		"the witcher": `{"items":[
+		  {"id":20900,"name":"The Witcher: Enhanced Edition Director's Cut","platforms":{"windows":true}},
+		  {"id":292030,"name":"The Witcher® 3: Wild Hunt","platforms":{"windows":true}}]}`,
+	}}
+	srv := httptest.NewServer(f.mux(t))
+	t.Cleanup(srv.Close)
+	c := NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+
+	p, err := c.Cover(context.Background(), "", "The Witcher 3: Wild Hunt - Game of the Year Edition")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	if !strings.HasSuffix(p, "292030.img") {
+		t.Errorf("path = %q, want Witcher 3's art (292030.img) — numerals corroborate the truncated query", p)
+	}
+}
+
+// Same rule, shorter tail: "cyberpunk" + matching 2077 binds
+// Cyberpunk 2077.
+func TestSearchAppIDNumeralMatchBinds(t *testing.T) {
+	f := &searchFake{itemsByTerm: map[string]string{
+		"cyberpunk": `{"items":[
+		  {"id":1091500,"name":"Cyberpunk 2077","platforms":{"windows":true}}]}`,
+	}}
+	srv := httptest.NewServer(f.mux(t))
+	t.Cleanup(srv.Close)
+	c := NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+
+	p, err := c.Cover(context.Background(), "", "Cyberpunk 2077 GOTY")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	if !strings.HasSuffix(p, "1091500.img") {
+		t.Errorf("path = %q, want Cyberpunk 2077's art (numerals match)", p)
+	}
+}
+
+// Without a numeral there is no corroboration: a franchise-root query
+// must never subset-bind a different entry ("doom" ⊂ "Doom Eternal").
+func TestSearchAppIDEmptyNumeralsNeverCorroborate(t *testing.T) {
+	f := &searchFake{itemsByTerm: map[string]string{
+		"doom": `{"items":[
+		  {"id":20820,"name":"Doom 3","platforms":{"windows":true}},
+		  {"id":782330,"name":"Doom Eternal","platforms":{"windows":true}}]}`,
+	}}
+	srv := httptest.NewServer(f.mux(t))
+	t.Cleanup(srv.Close)
+	c := NewWithBase(srv.Client(), t.TempDir(), srv.URL+"/steam/apps/%s/library_600x900.jpg", srv.URL+"/api/storesearch/")
+
+	p, err := c.Cover(context.Background(), "", "Doom")
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	if !strings.HasSuffix(p, "_placeholder.png") {
+		t.Errorf("path = %q, want the placeholder — no numeral corroboration, no bind", p)
+	}
+}

@@ -76,7 +76,9 @@ Cover art comes from Steam's CDN first, then PCGamingWiki box art
 source for console titles with no PC store page), then SteamGridDB when
 a key is configured. Name-based lookups are junk-tolerant: repack tags
 and edition suffixes in folder names ("Spelunky HD", "… PROPER") are
-stripped or truncated away until the store answers. SteamGridDB covers
+stripped or truncated away until the store answers — and digit tokens
+(the "3" in "The Witcher 3 …") veto mismatched franchise siblings and
+corroborate truncated matches. SteamGridDB covers
 games Steam has no art for (unreleased or asset-less appids) and resolves
 folder names that drop a subtitle ("The Witcher 3 Remastered" → The
 Witcher 3: Wild Hunt). Whatever the source — including landscape hero

@@ -96,7 +96,9 @@ internal/
               query variants (raw → gid-normalized → right-truncated,
               ≥4 chars) because storesearch substring-matches the whole
               term — one junk token answers zero items (issue 030).
-              The SGDB name search
+              Truncated variants bind under a numeral rule: the original
+              title's digit tokens veto mismatches and corroborate weak
+              subset queries (issue 033). The SGDB name search
               binds via a scoped subset rule (candidate tokens ⊆ hit, no
               new numerals) — covers only, never identification. Every
               cached image is normalized to the 2:3 card aspect

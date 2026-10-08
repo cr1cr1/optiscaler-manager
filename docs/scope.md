@@ -146,7 +146,7 @@ Added after v0.1, modeled on the reference client's main window:
   Wikidata/Commons box art (keyless: entity search → P18 image, the only
   source for console titles; issue 030) → Steam
   store search (name→appid, zero-key fallback; junk-tolerant query
-  variants, issue 030) → generated placeholder.
+  variants with a numeral veto/corroboration rule, issues 030/033) → generated placeholder.
   A user-uploaded poster (`cover_overrides`, issue 028) beats the whole
   chain and survives rescans. Cached on disk by sanitized appid; every
   cached image is normalized to

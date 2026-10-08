@@ -3940,3 +3940,24 @@ and give the header buttons the hand pointer.
   title and Close).
 - Red witnessed on all four behaviors; full `go test ./...` exit 0 (31
   packages), `go vet`/`gofmt` clean.
+
+## 2026-10-08 — issue 33: numeral guard for cover search binding
+
+User report: the Witcher 3 GOTY row got Witcher 1's poster. Root cause
+in issue 030's truncation: "The Witcher 3: Wild Hunt - Game of the Year
+Edition" walks down to "the witcher" (Steam's "The Witcher® 3: Wild
+Hunt" defeats substring matching at every longer variant), and edition
+stripping makes "The Witcher: Enhanced Edition Director's Cut" an exact
+normalized match — the identifying numeral was truncated away and
+nothing required it. Verified in the live cache: `20900.img` bound.
+
+- Binding rule in `searchAppIDOnce`: digit tokens of the ORIGINAL title
+  must equal the item's (veto), and a non-empty matching set
+  corroborates a weak truncated query whose tokens subset the item's —
+  "the witcher" + {3} now binds Witcher 3 (292030), "doom" never binds
+  Doom Eternal. The user's Witcher row gets the correct Steam art on
+  the next rescan; the stale 20900.img association is recomputed because
+  cover resolution re-runs per scan.
+- Red witnessed (20900 bound before the fix; `tmp/test-red-033.log`),
+  full `go test ./...` exit 0 (30 packages), vet/gofmt clean,
+  windows/darwin builds OK.
