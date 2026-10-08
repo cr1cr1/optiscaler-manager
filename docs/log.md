@@ -4167,3 +4167,28 @@ belongs in the on-disk cache.
   file deletions; final verification ran in a clean worktree.
 - The foreign session's pulse-ticker work cites issue 040, resolving
   the 038 numbering collision noted in the issue-38 entry.
+
+## 2026-10-08 — issue 40: caret/spinner frame churn replaced by a shared pulse
+
+User report: a subtle whole-canvas "refresh" artifact from time to time,
+not tied to any component. Wayland session.
+
+- Root cause (mechanism confirmed by red tests): the caret blink
+  (caretFloat, any focused text field) and the busy spinner requested a
+  frame on EVERY frame; each caret/spinner flip re-presents the whole
+  canvas (Wayland damages the full surface per present; X11 re-renders
+  every produced frame) — a whole-window flicker keyed to focus/busy
+  state.
+- Fix: widgets flag the frame-scoped `pulseWanted` (cleared by rootView
+  each frame); a 100 ms `pulseFrames` ticker started by Run requests
+  frames only while flagged (10 Hz instead of per-frame). Blink/spinner
+  cadence logic unchanged.
+- Also added `forwardSessionEvents` (Run): every session event requests
+  a frame — the spinner churn had accidentally been the event pump for
+  scan progress/toasts; sharing the channel with drain() is safe (both
+  discard values and re-snapshot).
+- Tooltip debounce keeps its bounded self-request (quiet after 500 ms).
+- TDD: three reds witnessed (caret idle-settle, spinner idle-settle,
+  pulse-signal seam); full `go test ./...` green, vet/gofmt clean.
+- Foreign session concurrently moved cover sharpening to store-time
+  (their issue 039); their hunks excluded from this commit.

@@ -297,7 +297,13 @@ evidence.
   grid (path-scoped shirei identities recreate the virtual list at
   scroll offset 0), so both the Enter and the card-click paths arm a
   deferred scroll-into-view restore — a clicked last-row card no longer
-  jumps the view to the top (issue 037).
+  jumps the view to the top (issue 037). Frame discipline (issue 040):
+  the loop rides the unchanged-frame early return; time-driven widgets
+  (focused caret, busy spinner) flag a frame-scoped `pulseWanted` serviced
+  by a 100 ms pulse ticker instead of requesting a frame per frame, and a
+  forwarder goroutine turns session events into frame requests, so
+  background progress/toasts repaint without input (previously the
+  spinner's churn doubled as the event pump).
 - **TUI overhaul**: number-key screens (1 Games / 2 Settings / 3 Help),
   styled game columns (badges, title, store, version, status with tone
   colors), detail screen (`enter`) with actions `i`/`l`/`c`/`r`/`o` and

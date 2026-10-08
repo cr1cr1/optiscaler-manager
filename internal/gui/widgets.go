@@ -2,6 +2,7 @@ package gui
 
 import (
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -12,6 +13,15 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 	"github.com/cr1cr1/optiscaler-manager/internal/version"
 )
+
+// pulseWanted is the frame-scoped signal of the time-driven widgets (the
+// focused edit-field caret, the busy spinner): each sets it while rendered
+// so the pulse ticker (pulseFrames, started by Run) wakes the loop at a
+// calm 10 Hz instead of every widget requesting a frame per frame —
+// sustained per-frame requests re-present the whole canvas and showed as a
+// subtle whole-window flicker (issue 040). rootView clears it at frame
+// start, mirroring the pillTip.seen re-arm discipline.
+var pulseWanted atomic.Bool
 
 // focusableButton renders widgets.ButtonExt: since shirei v0.6.10 the
 // button face itself joins the tab ring, takes focus on click, and
@@ -64,7 +74,9 @@ func spinnerGlyph() {
 		st.last = time.Now()
 	}
 	Label(spinnerFrames[st.idx], FontSize(13), TextColorVec(txtMain))
-	RequestNextFrame()
+	// Advance wakes come from the shared pulse ticker (issue 040): flag the
+	// frame as time-driven instead of requesting a frame per frame.
+	pulseWanted.Store(true)
 }
 
 // focusableToggle renders widgets.ToggleSwitchExt with a label. Since
@@ -413,7 +425,9 @@ func caretFloat(st *editState, focused bool, x float32) {
 		}
 		Container(Attrs(Float(x-1, 0), FixSize(2, h), NoAnimate, BackgroundVec(focusBorder)), func() {})
 	}
-	RequestNextFrame()
+	// Blink wakes come from the shared pulse ticker (issue 040): flag the
+	// frame as time-driven instead of requesting a frame per frame.
+	pulseWanted.Store(true)
 }
 
 // advanceUpTo returns the shaped advance of the runes before cursor —

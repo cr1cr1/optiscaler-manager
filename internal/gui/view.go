@@ -18,6 +18,10 @@ func (m *model) rootView() {
 	// render; text/rect/since persist so the 500ms debounce clock survives.
 	pillTip.seen = false
 	pillTip.shown = false
+	// Frame-scoped pulse re-arm: time-driven widgets (caret, spinner) set
+	// pulseWanted as they render; the pulse ticker reads it between frames
+	// (issue 040).
+	pulseWanted.Store(false)
 	Container(Attrs(Viewport, Row, BackgroundVec(bgApp)), func() {
 		m.sidebar()
 		Container(Attrs(Grow(1), Expand, Gap(0)), func() {
