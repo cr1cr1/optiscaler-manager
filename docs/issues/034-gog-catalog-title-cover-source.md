@@ -52,4 +52,4 @@ canonical source in `ui/identify.go` after Steam/PCGW. Red witnessed
 (`tmp/test-red-034.log`, compile reds on all three seams); two real
 bugs caught by the green run and fixed (cache-key poisoning, corr
 sentinel). Full `go test ./...` exit 0 (30 packages), vet/gofmt clean,
-windows/darwin builds OK. Commit: pinned after the fact.
+windows/darwin builds OK. Commit: `3b35e90`.
