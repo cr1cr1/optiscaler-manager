@@ -14,6 +14,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/gh"
+	"github.com/cr1cr1/optiscaler-manager/internal/gogdb"
 	"github.com/cr1cr1/optiscaler-manager/internal/launch"
 	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
 	"github.com/cr1cr1/optiscaler-manager/internal/pickdir"
@@ -202,6 +203,11 @@ type Deps struct {
 	// PCGW is the secondary canonical-title source (PCGamingWiki), used
 	// when Steam's storesearch finds nothing; nil disables the fallback.
 	PCGW *pcgw.Client
+
+	// GOG is the tertiary canonical-title source (GOG's keyless Galaxy
+	// catalog), used when Steam and PCGW find nothing; nil disables it
+	// (issue 034).
+	GOG *gogdb.Client
 
 	// NewGH builds the GitHub client for a fork. SetActiveFork (and
 	// RemoveFork when it resets the active fork) swaps deps.GH through

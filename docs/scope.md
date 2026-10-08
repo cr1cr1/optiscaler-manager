@@ -147,6 +147,8 @@ Added after v0.1, modeled on the reference client's main window:
 - **Covers**: Steam CDN `library_600x900.jpg` by appid (primary) →
   SteamGridDB grid (when `steamgriddb_key` is set in settings.json) →
   PCGamingWiki box art (keyless: opensearch + wikitext infobox) →
+  GOG catalog vertical art (keyless: Galaxy catalog like: search, also
+  a tertiary canonical-title source for identification; issue 034) →
   Wikidata/Commons box art (keyless: entity search → P18 image, the only
   source for console titles; issue 030) → Steam
   store search (name→appid, zero-key fallback; junk-tolerant query

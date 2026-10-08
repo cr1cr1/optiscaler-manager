@@ -106,6 +106,23 @@ func (s *Session) identifyRow(ctx context.Context, row *GameRow, st *steam.Clien
 				}
 			}
 		}
+		// GOG's keyless catalog is the tertiary canonical source —
+		// store-named titles for everything GOG sells (issue 034).
+		if s.deps.GOG != nil {
+			prods, reqLive, err := s.deps.GOG.SearchProducts(ctx, cand)
+			live = live || reqLive
+			if err == nil {
+				titles := make([]string, 0, len(prods))
+				for _, p := range prods {
+					titles = append(titles, p.Title)
+				}
+				if best := gid.BestAccepted(cand, titles, true); best != "" {
+					row.Title = best
+					row.TitleSource = string(domain.SourceFuzzy)
+					return live
+				}
+			}
+		}
 	}
 	return live
 }

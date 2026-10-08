@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -24,6 +25,7 @@ import (
 	_ "golang.org/x/image/webp"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/gid"
+	"github.com/cr1cr1/optiscaler-manager/internal/gogdb"
 	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
 	"github.com/cr1cr1/optiscaler-manager/internal/sgdb"
 	"github.com/cr1cr1/optiscaler-manager/internal/wikidata"
@@ -57,6 +59,10 @@ type Covers struct {
 	// no Steam or PCGW presence at all (console titles via emulator)
 	// (issue 030).
 	Wikidata *wikidata.Client
+
+	// GOG, when non-nil, supplies store-quality vertical covers from the
+	// keyless Galaxy catalog — after PCGW, before Wikidata (issue 034).
+	GOG *gogdb.Client
 
 	// UserAgent identifies every outbound request; the wiki's hosts
 	// reject requests without a descriptive UA (403), and Go's default
@@ -117,6 +123,9 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 			if p, ok := c.fromPCGW(ctx, sanitized, name); ok {
 				return p, nil
 			}
+			if p, ok := c.fromGOG(ctx, sanitized, name); ok {
+				return p, nil
+			}
 			if p, ok := c.fromWikidata(ctx, sanitized, name); ok {
 				return p, nil
 			}
@@ -139,6 +148,9 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 			if p, ok := c.fromPCGW(ctx, id, name); ok {
 				return p, nil
 			}
+			if p, ok := c.fromGOG(ctx, id, name); ok {
+				return p, nil
+			}
 			if p, ok := c.fromWikidata(ctx, id, name); ok {
 				return p, nil
 			}
@@ -148,6 +160,8 @@ func (c *Covers) Cover(ctx context.Context, appID, name string) (string, error) 
 		} else if p, ok := c.fromSGDB(ctx, "", name); ok {
 			return p, nil
 		} else if p, ok := c.fromPCGW(ctx, "", name); ok {
+			return p, nil
+		} else if p, ok := c.fromGOG(ctx, "", name); ok {
 			return p, nil
 		} else if p, ok := c.fromWikidata(ctx, "", name); ok {
 			return p, nil
@@ -275,29 +289,57 @@ func (c *Covers) searchAppIDOnce(ctx context.Context, query, original string) (s
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", err
 	}
-	wantNumerals := digitTokens(gid.Normalize(original))
-	queryToks := strings.Fields(gid.Normalize(query))
-	bestID, bestScore := "", -1
-	corrID, corrScore := "", -1
+	cands := make([]bindCand, 0, len(result.Items))
 	for _, item := range result.Items {
-		if !digitTokensEqual(digitTokens(gid.Normalize(item.Name)), wantNumerals) {
-			continue
-		}
-		score := gid.Score(query, item.Name, item.Platforms.Windows)
-		if score > bestScore {
-			bestID, bestScore = sanitize(item.ID.String()), score
-		}
-		if len(wantNumerals) > 0 && tokenSubset(queryToks, strings.Fields(gid.Normalize(item.Name))) && score > corrScore {
-			corrID, corrScore = sanitize(item.ID.String()), score
-		}
+		cands = append(cands, bindCand{name: item.Name, pc: item.Platforms.Windows})
 	}
-	if bestID != "" && gid.Accept(bestScore, false) {
-		return bestID, nil
-	}
-	if corrID != "" {
-		return corrID, nil
+	if i := bindCandidate(query, original, cands); i >= 0 {
+		return sanitize(result.Items[i].ID.String()), nil
 	}
 	return "", nil
+}
+
+// bindCand is one store candidate for bindCandidate: a name plus whether
+// it targets PC (GOG products are PC by definition).
+type bindCand struct {
+	name string
+	pc   bool
+}
+
+// bindCandidate picks the best candidate for one query variant under the
+// gid scorer plus the issue-033 numeral rule: items whose digit tokens
+// differ from the ORIGINAL title's are refused outright; among the rest,
+// a gid-accepted score wins, else a non-empty matching numeral set
+// corroborates a weak truncated query whose tokens are a subset of the
+// candidate's ("the witcher" + {3} binds Witcher 3, but "doom" never
+// binds Doom Eternal — no numeral, no corroboration). Ties keep the
+// earlier candidate. Returns -1 when nothing binds. Shared by the Steam
+// and GOG bindings so the rule cannot drift between stores (issue 034).
+func bindCandidate(query, original string, cands []bindCand) int {
+	wantNumerals := digitTokens(gid.Normalize(original))
+	queryToks := strings.Fields(gid.Normalize(query))
+	best, bestScore := -1, -1
+	corr, corrScore := -1, -1
+	for i, cand := range cands {
+		if !digitTokensEqual(digitTokens(gid.Normalize(cand.name)), wantNumerals) {
+			continue
+		}
+		score := gid.Score(query, cand.name, cand.pc)
+		if score > bestScore {
+			best, bestScore = i, score
+		}
+		// corr < 0 (not score > corrScore) admits the first corroborated
+		// candidate: legitimately penalized scores go below the -1
+		// sentinel — a truncated query always edition-mismatches an
+		// edition-carrying item ("the witcher" vs "…— Remastered", −20).
+		if len(wantNumerals) > 0 && tokenSubset(queryToks, strings.Fields(gid.Normalize(cand.name))) && (corr < 0 || score > corrScore) {
+			corr, corrScore = i, score
+		}
+	}
+	if best >= 0 && gid.Accept(bestScore, false) {
+		return best
+	}
+	return corr
 }
 
 // digitTokens counts the tokens containing at least one digit ("3",
@@ -500,6 +542,48 @@ func (c *Covers) fromSGDB(ctx context.Context, appID, name string) (string, bool
 	}
 	if err := c.fetch(ctx, u, dest); err == nil {
 		return dest, true
+	}
+	return "", false
+}
+
+// fromGOG resolves store vertical art via GOG's keyless catalog by
+// title: query variants walk past junk tokens (like: degrades exactly
+// like Steam's storesearch), the shared bindCandidate applies the gid
+// scorer and the numeral rule, and the bound product's coverVertical is
+// fetched and normalized like any art. A cached no-match variant moves
+// to the next; a live failure (rate limit) stops the walk (issue 034).
+func (c *Covers) fromGOG(ctx context.Context, appID, name string) (string, bool) {
+	if c.GOG == nil || name == "" {
+		return "", false
+	}
+	for _, q := range queryVariants(name) {
+		prods, _, err := c.GOG.SearchProducts(ctx, q)
+		if err != nil {
+			if errors.Is(err, gogdb.ErrNoMatch) {
+				continue
+			}
+			return "", false
+		}
+		cands := make([]bindCand, 0, len(prods))
+		for _, p := range prods {
+			cands = append(cands, bindCand{name: p.Title, pc: true})
+		}
+		i := bindCandidate(q, name, cands)
+		if i < 0 {
+			continue
+		}
+		if prods[i].CoverVertical == "" {
+			return "", false // bound, but the product has no art to serve
+		}
+		dest := filepath.Join(c.cacheDir, appID+".img")
+		if appID == "" {
+			sum := sha256.Sum256([]byte("gog:" + prods[i].ID))
+			dest = filepath.Join(c.cacheDir, "gog_"+hex.EncodeToString(sum[:])[:16]+".img")
+		}
+		if err := c.fetch(ctx, prods[i].CoverVertical, dest); err == nil {
+			return dest, true
+		}
+		return "", false
 	}
 	return "", false
 }

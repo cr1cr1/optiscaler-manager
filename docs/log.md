@@ -3987,3 +3987,30 @@ modal's Apply/Close share a row. TUI labels checked too.
   needs a 1400px-tall window (cover art pushes the action row down).
 - Verification: `go test ./...` exit 0 (31 packages), `go vet`/`gofmt`
   clean.
+
+## 2026-10-08 — issue 34: GOG catalog as a title and cover source
+
+User request: add gog.com as a game database for matches and covers.
+Verified live that `catalog.gog.com/v1/catalog?query=like:<term>` is
+keyless and returns titles plus portrait `coverVertical` art (342x482,
+cropped to 2:3 by the issue-025 invariant); its like: ranking degrades
+with junk tokens exactly like Steam's storesearch, so the issue-030
+variant walk and issue-033 numeral rule apply unchanged.
+
+- New `internal/gogdb` client mirroring the pcgw/wikidata discipline
+  (pacing, cooldown, 30d cache with negatives). Two bugs caught by the
+  green run, not the red: (1) caching by `gid.Normalize(term)` let a
+  junky raw query's negative answer poison its normalized variant —
+  the productive query — now keyed by the raw case-folded term;
+  (2) `bindCandidate`'s corroboration sentinel collided with real
+  penalized scores (−10 < −1) so numeral corroboration never fired.
+- Steam's item binding and GOG's product binding now share
+  `bindCandidate` (index-returning) so the numeral rule cannot drift
+  between stores.
+- Covers: GOG sits after PCGW, before Wikidata in both appid and name
+  paths; ties keep the earlier hit, so Riven (1997) outranks the 2024
+  remake on GOG — the user's actual version. Identification: GOG titles
+  are the tertiary canonical source in identify.go.
+- Red witnessed (compile reds on all three seams,
+  `tmp/test-red-034.log`), full `go test ./...` exit 0 (30 packages),
+  vet/gofmt clean, windows/darwin builds OK.

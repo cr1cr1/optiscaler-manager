@@ -88,7 +88,8 @@ internal/
               (cleanup under context.WithoutCancel)
   profile/    curated OptiScaler.ini writer
   covers/     cover art: Steam CDN by appid → SGDB grid (when a key is
-              configured) → PCGW box art → Wikidata/Commons P18 box art
+              configured) → PCGW box art → GOG vertical store art
+              (keyless; issue 034) → Wikidata/Commons P18 box art
               (keyless; issue 030) → hero image → scored title
               search (best candidate, PC tie-break) → placeholder; disk
               cache plus a 7-day `.miss` negative marker that skips only
@@ -119,6 +120,10 @@ internal/
               not used, and HTTP-200 error envelopes are live errors,
               never cached; 30 req/min pacing, 429/5xx cooldown, 30d disk
               cache with negatives, v2 cache namespace)
+  gogdb/      GOG Galaxy catalog (keyless; issue 034): like: search →
+              game products (titles for identification, coverVertical
+              art); 30d disk cache with negatives keyed by RAW term
+              (normalized keys poison variants), 429/5xx cooldown
   wikidata/   Wikidata/Commons last-resort cover source (keyless;
               issue 030): wbsearchentities scored with the gid matcher,
               best-accepted entity's P18 image via Commons

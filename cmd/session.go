@@ -10,6 +10,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/covers"
 	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
+	"github.com/cr1cr1/optiscaler-manager/internal/gogdb"
 	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
 	"github.com/cr1cr1/optiscaler-manager/internal/protondb"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
@@ -46,6 +47,7 @@ func newSession(d *Deps) *ui.Session {
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	steamClient, protonClient := onlineClients(d.CacheDir, d.Version)
 	pcgwClient := pcgw.New(httpClient, filepath.Join(d.CacheDir, "pcgw"), d.Version)
+	gogClient := gogdb.New(httpClient, filepath.Join(d.CacheDir, "gog"), d.Version)
 	dlssClient := d.DLSS
 	if dlssClient == nil {
 		dlssClient = dlss.New(httpClient)
@@ -54,6 +56,7 @@ func newSession(d *Deps) *ui.Session {
 	if coverClient == nil {
 		coverClient = covers.New(httpClient, filepath.Join(d.CacheDir, "covers"))
 		coverClient.PCGW = pcgwClient
+		coverClient.GOG = gogClient
 		coverClient.Wikidata = wikidata.New(httpClient, filepath.Join(d.CacheDir, "wikidata"), d.Version)
 		coverClient.UserAgent = "optiscaler-manager/" + d.Version + " (https://github.com/cr1cr1/optiscaler-manager)"
 	}
@@ -75,6 +78,7 @@ func newSession(d *Deps) *ui.Session {
 		Steam:        steamClient,
 		ProtonDB:     protonClient,
 		PCGW:         pcgwClient,
+		GOG:          gogClient,
 		Launcher:     d.Launcher, // nil selects the platform default
 		UmuLauncher:  newUmuLauncher(prefs),
 	})

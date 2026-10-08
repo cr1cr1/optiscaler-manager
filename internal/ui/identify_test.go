@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/gogdb"
 	"github.com/cr1cr1/optiscaler-manager/internal/pcgw"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/steam"
@@ -320,5 +321,29 @@ func TestIdentify_NormalizedVariantResolvesJunkTitle(t *testing.T) {
 	f.sess.identifyRow(context.Background(), &row, f.sess.deps.Steam)
 	if row.Title != "CONTROL Ultimate Edition" || row.SteamAppID != "870780" || row.TitleSource != "fuzzy" {
 		t.Errorf("row = %+v, want canonical via the normalized folder variant", row)
+	}
+}
+
+// GOG's catalog is the tertiary canonical source: when Steam's
+// storesearch and PCGamingWiki both find nothing, an accepted GOG title
+// canonicalizes the row (issue 034).
+func TestIdentify_GOGFallbackResolves(t *testing.T) {
+	f := newIdentifyFixture(t)
+	gogSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		term := strings.ToLower(strings.TrimPrefix(r.URL.Query().Get("query"), "like:"))
+		if term == "a gog only title" {
+			_, _ = fmt.Fprint(w, `{"products":[{"id":"7","productType":"game","title":"A GOG Only Title","coverVertical":""}]}`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"products":[]}`)
+	}))
+	t.Cleanup(gogSrv.Close)
+	f.sess.deps.GOG = gogdb.NewWithBaseURL(gogSrv.Client(), t.TempDir(), gogSrv.URL, "test")
+	row := GameRow{Title: "Codename", InstallDir: "/games/A GOG Only Title", Store: domain.StoreManual, TitleSource: "pe"}
+
+	f.sess.identifyRow(context.Background(), &row, f.sess.deps.Steam)
+	if row.Title != "A GOG Only Title" || row.TitleSource != "fuzzy" {
+		t.Errorf("row = %+v, want the GOG catalog title", row)
 	}
 }

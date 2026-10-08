@@ -72,7 +72,9 @@ panel (GUI) or with `l` (TUI); launching is fire-and-forget. Busy installs and
 uninstalls can be cancelled per game and roll back to the pre-operation state.
 
 Cover art comes from Steam's CDN first, then PCGamingWiki box art
-(keyless), then Wikidata/Commons box art (keyless — the only automatic
+(keyless), then GOG's catalog (keyless — vertical store art, and GOG
+titles double as a canonical-title source when Steam's search misses),
+then Wikidata/Commons box art (keyless — the only automatic
 source for console titles with no PC store page), then SteamGridDB when
 a key is configured. Name-based lookups are junk-tolerant: repack tags
 and edition suffixes in folder names ("Spelunky HD", "… PROPER") are
