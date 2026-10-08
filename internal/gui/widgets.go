@@ -116,6 +116,11 @@ type editState struct {
 	caretVisible bool    // the caret bar was painted this frame
 	caretX       float32 // screen x of the caret bar's center
 	inkRight     float32 // screen x of the text/hint ink's right edge
+	// Optional Enter/Esc overrides (issue 031 — the title editor maps
+	// Enter→apply, Esc→cancel). Nil keeps the field defaults: Enter is
+	// consumed, Esc clears the buffer and blurs.
+	onEnter  func()
+	onEscape func()
 }
 
 // selRange normalizes anchor/cursor into (lo, hi, hasSelection).
@@ -244,11 +249,18 @@ func editKeys(buf *string, st *editState) {
 			deleteRange(st.cursor, st.cursor+1)
 		}
 	case key == KeyEscape:
+		if st.onEscape != nil {
+			st.onEscape()
+			break
+		}
 		*buf = ""
 		st.cursor = 0
 		st.anchor = -1
 		Blur()
 	case key == KeyEnter:
+		if st.onEnter != nil {
+			st.onEnter()
+		}
 		// consumed: Enter must never leak to global handlers
 	default:
 		return
@@ -433,7 +445,8 @@ func themedInput(buf *string, hint string, icon widgets.IconGlyph, sizing ...Att
 }
 
 // themedInputState is themedInput with a caller-owned edit state (tests
-// drive the same editing flow and assert on st directly).
+// drive the same editing flow and assert on st directly; the title editor
+// passes its own state to attach Enter/Esc hooks, issue 031).
 func themedInputState(buf *string, hint string, icon widgets.IconGlyph, st *editState, sizing ...AttrsFn) {
 	// TextEntry keeps the default arrow cursor over the field (v0.17
 	// hover-chain rule): the caret, not a hand, signals editability.

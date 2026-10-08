@@ -144,3 +144,109 @@ func TestDetailTitleEditorRendersInHeader(t *testing.T) {
 			m.titleApplyRect.Origin[1], m.posterRect.Origin[1])
 	}
 }
+
+// Issue 031: Enter in the title editor's input applies, Esc cancels
+// (without closing the panel); the poster overlay button is 30% larger
+// and shows a "Set Poster" tooltip on hover.
+
+func TestTitleEditorEnterApplies(t *testing.T) {
+	sess, _ := guiFakes(t)
+	row := scanOneRow(t, sess)
+	m := newModel(Config{Session: sess})
+	sess.Select(row.InstallDir)
+	m.startTitleEdit(row)
+
+	headlessFrames(t, 1100, 1400)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if m.titleInputID == nil {
+		t.Fatal("title editor input id not captured")
+	}
+	FocusImmediateOn(m.titleInputID)
+	m.titleBuf = "Entered Name"
+	keyFrame(KeyEnter, 0, m.rootView)
+
+	if m.titleEditDir != "" || m.titleBuf != "" {
+		t.Errorf("Enter did not apply: titleEditDir=%q titleBuf=%q", m.titleEditDir, m.titleBuf)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for sess.Snapshot().Rows[0].Title != "Entered Name" {
+		if time.Now().After(deadline) {
+			t.Fatalf("applied title did not land: %q", sess.Snapshot().Rows[0].Title)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestTitleEditorEscCancels(t *testing.T) {
+	sess, _ := guiFakes(t)
+	row := scanOneRow(t, sess)
+	m := newModel(Config{Session: sess})
+	sess.Select(row.InstallDir)
+	m.startTitleEdit(row)
+
+	headlessFrames(t, 1100, 1400)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	FocusImmediateOn(m.titleInputID)
+	m.titleBuf = "Discarded"
+	keyFrame(KeyEscape, 0, m.rootView)
+
+	if m.titleEditDir != "" || m.titleBuf != "" {
+		t.Errorf("Esc did not cancel: titleEditDir=%q titleBuf=%q", m.titleEditDir, m.titleBuf)
+	}
+	if got := sess.Snapshot().Rows[0].Title; got == "Discarded" {
+		t.Error("Esc applied the edited title")
+	}
+	// Cancel, not close: the panel stays open.
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if m.state.Selected != row.InstallDir {
+		t.Errorf("Esc closed the panel (selected %q), want cancel-only", m.state.Selected)
+	}
+}
+
+func TestPosterButtonThirtyPercentLarger(t *testing.T) {
+	sess, _ := guiFakes(t)
+	row := scanOneRow(t, sess)
+	m := newModel(Config{Session: sess})
+	sess.Select(row.InstallDir)
+
+	headlessFrames(t, 1100, 1400)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+
+	if m.posterBtnRect.Size[1] == 0 || m.setTitleRect.Size[1] == 0 {
+		t.Fatalf("button rects missing: poster %+v, set-title %+v", m.posterBtnRect, m.setTitleRect)
+	}
+	ratio := m.posterBtnRect.Size[1] / m.setTitleRect.Size[1]
+	if ratio < 1.15 || ratio > 1.5 {
+		t.Errorf("poster button is %.2fx the default button height, want ~1.3x", ratio)
+	}
+}
+
+func TestPosterButtonTooltip(t *testing.T) {
+	sess, _ := guiFakes(t)
+	row := scanOneRow(t, sess)
+	m := newModel(Config{Session: sess})
+	sess.Select(row.InstallDir)
+
+	headlessFrames(t, 1100, 1400)
+	pillTip = pillTipState{}
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	r := m.posterBtnRect
+	if r.Size[0] == 0 {
+		t.Fatal("poster overlay button not rendered")
+	}
+	// Warm-up: fonts settle over the first hover frames, shifting rects;
+	// a rect change legitimately restarts the debounce clock.
+	for range 3 {
+		GetInputState().MousePoint = Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
+		keyFrame(KeyCodeNone, 0, m.rootView)
+		r = m.posterBtnRect
+	}
+	pillTip.since = time.Now().Add(-pillTipDelay)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+
+	if !pillTip.shown || pillTip.text != "Set Poster" {
+		t.Errorf("tooltip = (shown %v, text %q), want (true, %q)", pillTip.shown, pillTip.text, "Set Poster")
+	}
+}

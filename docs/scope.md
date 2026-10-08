@@ -108,7 +108,9 @@ here are closed; reopen only with new evidence.
   survives rescans) in both frontends. GUI placement (issue 029): Set
   title lives in the detail panel header next to the title (left of
   Close, wrap-safe), Set poster is an icon-only button on the poster's
-  own top-left corner; Reset poster stays in the action list.
+  own top-left corner; Reset poster stays in the action list. The title
+  editor applies on Enter and cancels on Esc (issue 031); the poster
+  button is 30% larger than default and tooltips "Set Poster".
 
 ## UX
 

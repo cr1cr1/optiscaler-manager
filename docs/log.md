@@ -3857,3 +3857,26 @@ title (left of Close), Set poster belongs ON the poster.
   accounts for title trimming.
 - Verification: `go test ./...` exit 0 (30 packages), `go vet`/`gofmt`
   clean.
+
+## 2026-10-08 — issue 31: title editor Enter/Esc; larger poster button + tooltip
+
+User follow-up on issue 029: Enter in the title input should apply, Esc
+should cancel; the poster button should be 30% larger with a "Set
+Poster" tooltip.
+
+- Enter/Esc reach `editKeys` (shared by every themed input) and are
+  consumed there by default — a post-render check never sees them
+  (witnessed in the red run: Esc even cleared the buffer). Fix:
+  `editState` gained optional `onEnter`/`onEscape` hooks; the title
+  editor owns its state (`m.titleEditState`) with hooks to
+  apply/cancel. Search and settings fields keep the defaults (Enter
+  leak guard, Esc clear+blur).
+- Poster overlay button: `TextSize: ButtonDefaultSize * 1.3` and the
+  tooltip is the first non-pill user of `hoverTip(text)` — issue 020's
+  tooltip registration generalized out of `pillHoverTip`, same 500ms
+  resting debounce.
+- Red witnessed (build failure on the `titleInputID` seam, then runtime
+  failure traced to editKeys via a throwaway debug test). Full
+  `go test ./...` exit 0 (30 packages), `go vet`/`gofmt` clean.
+- Numbering: planned as 030, renumbered to 031 — the concurrent session
+  claimed 030 (title cleanup / resilient cover search) first.

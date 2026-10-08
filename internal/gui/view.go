@@ -392,6 +392,7 @@ func (m *model) detailPanel() {
 	m.closeBtnRect = Rect{}
 	m.posterRect = Rect{}
 	m.posterBtnRect = Rect{}
+	m.titleInputID = nil
 	// The grid rendered first and captured its own tech row; the panel owns
 	// the seam while open so a missing panel row reads as zero.
 	m.techPillRowRect = Rect{}
@@ -409,8 +410,14 @@ func (m *model) detailPanel() {
 			// button in place.
 			Container(Attrs(Row, Wrap, CrossMid, Gap(sp8)), func() {
 				if m.sess != nil && m.titleEditDir == e.InstallDir {
-					themedInput(&m.titleBuf, "title (empty clears the override)", NoIcon,
+					// The editor's own edit state carries Enter→apply and
+					// Esc→cancel hooks (issue 031): editKeys consumes both
+					// keys, so the hooks — not a post-render check — are
+					// the only place they can fire. Esc therefore cancels
+					// the edit instead of closing the panel.
+					themedInputState(&m.titleBuf, "title (empty clears the override)", NoIcon, m.titleEditState,
 						MinSize(140, fieldH), MaxSizeVec(Vec2{panelW - 2*sp16, fieldH}))
+					m.titleInputID = GetLastId()
 					Container(Attrs(Row), func() {
 						m.titleApplyRect = GetScreenRectOf(CurrentId())
 						if m.panelHeaderButton(NoIcon, "Apply") {
@@ -478,7 +485,10 @@ func (m *model) detailPanel() {
 				if m.sess != nil {
 					Container(Attrs(Float(sp8, sp8), Z(1)), func() {
 						m.posterBtnRect = GetScreenRectOf(CurrentId())
-						if focusableButton(SymImage, "") {
+						hoverTip("Set Poster")
+						// Icon-only, 30% larger than the default button
+						// (issue 031): TextSize scales icon AND padding.
+						if focusableButtonExt("", ButtonAttrs{Icon: SymImage, TextSize: ButtonDefaultSize * 1.3}) {
 							m.sess.PickAndSetCover(m.ctx, e.InstallDir)
 						}
 					})

@@ -55,16 +55,13 @@ func pillTipText(label string) string {
 	return pillTipFullNames[token]
 }
 
-// pillHoverTip registers the frame's tooltip when the current pill container
-// is hovered and its label carries a known abbreviation. Call it inside the
-// pill's container closure so CurrentId is the pill. Hovering the SAME pill
-// keeps the debounce clock running; moving to a different pill restarts it.
-func pillHoverTip(label string) {
-	if !IsHovered() {
-		return
-	}
-	tip := pillTipText(label)
-	if tip == "" {
+// hoverTip registers the frame's tooltip with an explicit text when the
+// current container is hovered. Call it inside the element's container
+// closure so CurrentId is the anchor. Hovering the SAME element keeps the
+// debounce clock running; moving to a different one restarts it. Issue 031
+// generalized this from pills to any element (the poster overlay button).
+func hoverTip(tip string) {
+	if tip == "" || !IsHovered() {
 		return
 	}
 	r := GetScreenRectOf(CurrentId())
@@ -72,6 +69,13 @@ func pillHoverTip(label string) {
 		pillTip.since = time.Now()
 	}
 	pillTip.text, pillTip.rect, pillTip.seen = tip, r, true
+}
+
+// pillHoverTip registers the frame's tooltip when the current pill container
+// is hovered and its label carries a known abbreviation. Call it inside the
+// pill's container closure so CurrentId is the pill.
+func pillHoverTip(label string) {
+	hoverTip(pillTipText(label))
 }
 
 // pillTipOverlay renders the pending tooltip below its anchor pill (above it
