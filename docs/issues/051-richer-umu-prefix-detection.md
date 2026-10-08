@@ -1,6 +1,7 @@
 ---
 title: Richer umu prefix detection (Steam names, Lutris, PlayOnLinux, CrossOver)
 description: Steam compatdata prefixes are labeled with the game title from appmanifest, and prefix detection expands to Lutris YAML configs, PlayOnLinux, and CrossOver bottles.
+status: done
 ---
 
 # 051 — richer umu prefix detection
@@ -29,5 +30,17 @@ validity check.
 
 ## Outcome
 
-Filled in when the issue closes: what actually happened, the commit
-hash, anything left open.
+Implemented as designed. Steam compatdata prefixes are labeled from
+the sibling `appmanifest_<appid>.acf` (appid fallback); Lutris
+prefixes come from per-game YAML `prefix:` paths (XDG config and
+Flatpak, two-key line scanner, no YAML dependency); PlayOnLinux
+`wineprefix/` and CrossOver `~/.cxoffice` children detected; all
+read-only with the `drive_c` check. `go test ./...` passes for the
+touched packages; the full suite at commit time also showed failures
+from a parallel session's in-flight uninstall work (internal/ui,
+internal/app — passing at the parent commit) and the pre-existing
+sandbox-blocked `tmp/gpuprobe` probe. Committed as `fe2fc16` — during
+this work a parallel session raced the index and issue numbering
+(drafted as 049, theirs claimed 049/050, hence 051); a foreign commit
+`39807fe` briefly captured their in-flight files under this change's
+message and was superseded by their own commits. Open follow-up: none.
