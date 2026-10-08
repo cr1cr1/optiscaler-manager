@@ -115,9 +115,12 @@ here are closed; reopen only with new evidence.
   unchanged titles are never written (issue 032); the header buttons
   show the hand pointer. Action labels name the payload (issue 033):
   "Install/Uninstall/Adopt OptiScaler" and "Launch Game" in the GUI and
-  the TUI detail actions; the detail pane's action buttons flow
-  horizontally in one wrapping row, and the settings modal's
-  Apply/Close share a row.
+  the TUI detail actions, and the settings modal's Apply/Close share a
+  row. The detail pane groups its action buttons into two rows (issue
+  036): row 1 the game actions (Launch Game, Open game directory, Reset
+  poster), row 2 the OptiScaler actions — each row wraps within itself,
+  the groups never interleave. User-facing copy says "directory", never
+  "folder" (buttons, empty states, toasts).
 
 ## UX
 
@@ -429,7 +432,7 @@ closed; reopen only with new evidence.
   → the v0.5 async contract unchanged (placeholder row, background
   enrichment, "directory added" event). Container → registered as a scan
   root: settings persisted synchronously, no placeholder/self-row, a
-  "registered `<base>` as a scan folder" toast, and a background rescan
+  "registered `<base>` as a scan directory" toast, and a background rescan
   surfaces its games. Empty → refused with a "no games found under
   `<base>`" warning; settings untouched, no op slot held. Classification
   failure falls through to the game flow.

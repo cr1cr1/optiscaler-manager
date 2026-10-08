@@ -575,16 +575,11 @@ func (m *model) detailPanel() {
 				}
 				return
 			}
-			// The action buttons flow horizontally and wrap with the pane
-			// width (issue 033): one row on wide panes, reflowed lines on
-			// narrow ones — never stacked one-per-line, never overflowing.
+			// Two action rows (issue 036): row 1 the game actions (Launch
+			// Game, Open game directory, Reset poster), row 2 the
+			// OptiScaler actions. Each row wraps within itself on narrow
+			// panes but the groups never interleave.
 			Container(Attrs(Row, Wrap, Gap(sp8), CrossMid), func() {
-				Container(Attrs(Row), func() {
-					m.quickBtnRect = GetScreenRectOf(CurrentId())
-					if focusableButton(SymIRight, quickLabel(e)) {
-						m.sess.QuickInstall(e.InstallDir)
-					}
-				})
 				if launchable(e) {
 					Container(Attrs(Row), func() {
 						m.launchBtnRect = GetScreenRectOf(CurrentId())
@@ -593,17 +588,11 @@ func (m *model) detailPanel() {
 						}
 					})
 				}
-				if e.Actionable && focusableButton(SymUndo, "Rollback") {
-					m.sess.Rollback(e.InstallDir)
-				}
-				if label, ok := e.DisableToggleLabel(); ok && focusableButton(NoIcon, label) {
-					m.sess.ToggleDisabled(e.InstallDir)
-				}
-				// The game folder exists regardless of install state — the
-				// button is always rendered (unlike OpenINI below).
+				// The game directory exists regardless of install state —
+				// the button is always rendered (unlike OpenINI below).
 				Container(Attrs(Row), func() {
 					m.openFolderRect = GetScreenRectOf(CurrentId())
-					if focusableButton(SymFolder, "Open game folder") {
+					if focusableButton(SymFolder, "Open game directory") {
 						m.sess.OpenGameFolder(e.InstallDir)
 					}
 				})
@@ -612,6 +601,20 @@ func (m *model) detailPanel() {
 				// (issue 029); only the poster reset stays in the action list.
 				if m.sess.CoverOverrideActive(e.InstallDir) && focusableButton(NoIcon, "Reset poster") {
 					m.sess.ClearCoverOverride(e.InstallDir)
+				}
+			})
+			Container(Attrs(Row, Wrap, Gap(sp8), CrossMid), func() {
+				Container(Attrs(Row), func() {
+					m.quickBtnRect = GetScreenRectOf(CurrentId())
+					if focusableButton(SymIRight, quickLabel(e)) {
+						m.sess.QuickInstall(e.InstallDir)
+					}
+				})
+				if e.Actionable && focusableButton(SymUndo, "Rollback") {
+					m.sess.Rollback(e.InstallDir)
+				}
+				if label, ok := e.DisableToggleLabel(); ok && focusableButton(NoIcon, label) {
+					m.sess.ToggleDisabled(e.InstallDir)
 				}
 				if e.CanOpenINI() {
 					Container(Attrs(Row), func() {
@@ -740,7 +743,7 @@ func emptyStateCopy(query string) string {
 	if query != "" {
 		return "No games match \"" + query + "\" — clear the search to see the library"
 	}
-	return "No games found — use Add Game to register a folder"
+	return "No games found — use Add Game to register a directory"
 }
 
 // emptyState renders a centered icon, heading, guidance, and calls to action

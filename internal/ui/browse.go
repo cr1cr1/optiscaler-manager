@@ -54,7 +54,7 @@ func (s *Session) OpenGameFolder(gameDir string) {
 		dir = row.InstallDir
 	}
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-		s.toast("game folder not on disk: "+dir, true)
+		s.toast("game directory not on disk: "+dir, true)
 		return
 	}
 	if err := s.openFolder(dir); err != nil {

@@ -4014,3 +4014,27 @@ variant walk and issue-033 numeral rule apply unchanged.
 - Red witnessed (compile reds on all three seams,
   `tmp/test-red-034.log`), full `go test ./...` exit 0 (30 packages),
   vet/gofmt clean, windows/darwin builds OK.
+
+## 2026-10-08 — issue 36: grouped detail action rows, folder → directory
+
+User request: detail pane buttons in two rows — row 1 "Launch Game" and
+"Open game folder", row 2 all OptiScaler-related buttons — and rename
+every "folder" to "directory".
+
+- The single wrapping action row (issue 033) became two `Row + Wrap`
+  containers: game actions (Launch Game, Open game directory, Reset
+  poster) above the OptiScaler actions (install/uninstall, rollback,
+  disable/enable, open INI). Rows wrap within themselves on narrow
+  panes but never interleave — the old single row let Open folder wrap
+  below Install.
+- User-facing copy renamed: the Open-game button, GUI/TUI empty-state
+  guidance, the missing-dir toast, the scan-root toast, and the
+  settings directories placeholder all say "directory" now. Internal
+  identifiers (`OpenGameFolder`, `openFolderRect`, Steam's
+  `libraryfolders.vdf`) unchanged — code, not copy.
+- Red witnessed (`tmp/issue36-red.txt`): shared Y in the wide pane,
+  interleaved wrap in the narrow pane, four copy pins on "folder".
+  Narrow subtest needs a 900×1400 window — the second row falls below
+  the Viewport fold at 800px and shirei culls it.
+- Verification: `go test ./...` exit 0 (32 packages), `go vet`/`gofmt`
+  clean.

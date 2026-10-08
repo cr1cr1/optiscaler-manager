@@ -853,6 +853,13 @@ func TestTUIEmptyLibraryGuidance(t *testing.T) {
 	if !strings.Contains(frame, "no games yet") {
 		t.Errorf("empty-state guidance missing:\n%s", frame)
 	}
+	// Issue 036: user-facing copy says "directory", never "folder".
+	if !strings.Contains(frame, "add a directory") {
+		t.Errorf("empty-state guidance must say \"add a directory\":\n%s", frame)
+	}
+	if strings.Contains(frame, "folder") {
+		t.Errorf("empty-state guidance still says folder:\n%s", frame)
+	}
 }
 
 // TestTUIFooterShowsScreenHintsOnGames: the games footer advertises the

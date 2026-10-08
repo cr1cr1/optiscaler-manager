@@ -187,7 +187,7 @@ func (s *Session) addScanRoot(root string) {
 			s.toast("settings not saved: "+err.Error(), true)
 		}
 	}
-	s.toast("registered "+filepath.Base(root)+" as a scan folder", false)
+	s.toast("registered "+filepath.Base(root)+" as a scan directory", false)
 	s.Scan(context.Background())
 }
 

@@ -85,7 +85,7 @@ type model struct {
 	listRowRects        []Rect                        // screen rects of rendered list rows by row index, rebuilt each list frame (row-click test seam)
 	listSelectedRect    Rect                          // screen rect of the session-selected list row's selection band (selected-highlight test seam)
 	openINIRect         Rect                          // screen rect of the detail panel's OpenINI button (visibility test seam)
-	openFolderRect      Rect                          // screen rect of the detail panel's Open-game-folder button (visibility test seam, issue 027)
+	openFolderRect      Rect                          // screen rect of the detail panel's Open-game-directory button (visibility test seam, issue 027)
 	panelTitleRect      Rect                          // screen rect of the detail panel header's title label container (header wrap test seam, issue 029)
 	setTitleRect        Rect                          // screen rect of the detail panel header's Set-title button (placement test seam, issue 029)
 	titleApplyRect      Rect                          // screen rect of the header title editor's Apply button (placement test seam, issue 029)

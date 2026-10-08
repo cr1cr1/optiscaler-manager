@@ -7,9 +7,9 @@ import (
 )
 
 // TestDetailOpenFolderButton (issue 027): the detail panel always renders
-// the Open-game-folder button — install state is irrelevant (the folder
-// exists either way), unlike OpenINI which is gated on CanOpenINI. The
-// rect seam mirrors openINIRect: non-zero when rendered.
+// the Open-game-directory button — install state is irrelevant (the
+// directory exists either way), unlike OpenINI which is gated on
+// CanOpenINI. The rect seam mirrors openINIRect: non-zero when rendered.
 func TestDetailOpenFolderButton(t *testing.T) {
 	sess, _ := guiFakes(t)
 	row := scanOneRow(t, sess)
@@ -25,7 +25,7 @@ func TestDetailOpenFolderButton(t *testing.T) {
 	keyFrame(KeyCodeNone, 0, m.rootView) // build
 	keyFrame(KeyCodeNone, 0, m.rootView) // capture rects from the previous frame
 	if m.openFolderRect.Size[0] == 0 || m.openFolderRect.Size[1] == 0 {
-		t.Errorf("Open game folder button not rendered for a clean row (rect %+v)", m.openFolderRect)
+		t.Errorf("Open game directory button not rendered for a clean row (rect %+v)", m.openFolderRect)
 	}
-	t.Logf("open-folder button rect: %+v", m.openFolderRect)
+	t.Logf("open-directory button rect: %+v", m.openFolderRect)
 }

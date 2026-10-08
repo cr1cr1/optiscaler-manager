@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
@@ -58,8 +59,22 @@ func TestOpenGameFolderMissingDirToasts(t *testing.T) {
 	if called {
 		t.Error("opener ran for a directory that is not on disk")
 	}
-	if toasts := s.Snapshot().Toasts; len(toasts) == 0 {
-		t.Error("no warn toast for a missing game folder")
+	toasts := s.Snapshot().Toasts
+	if len(toasts) == 0 {
+		t.Fatal("no warn toast for a missing game directory")
+	}
+	// Issue 036: user-facing copy says "directory", never "folder".
+	found := false
+	for _, toast := range toasts {
+		if strings.Contains(toast.Text, "game directory not on disk") {
+			found = true
+		}
+		if strings.Contains(toast.Text, "folder") {
+			t.Errorf("toast %q still says folder, want directory", toast.Text)
+		}
+	}
+	if !found {
+		t.Errorf("missing \"game directory not on disk\" toast: %+v", toasts)
 	}
 }
 

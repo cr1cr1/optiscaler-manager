@@ -129,7 +129,8 @@ func toastWith(toasts []Toast, substr string) (Toast, bool) {
 
 // TestAddDirectory_Container_NoSelfRow_ScanFolderToast: adding a container
 // registers it as a scan root — ExtraDirs updated and persisted — without a
-// placeholder or self-row, and the toast says "scan folder", never "added".
+// placeholder or self-row, and the toast says "scan directory", never
+// "added".
 func TestAddDirectory_Container_NoSelfRow_ScanFolderToast(t *testing.T) {
 	e := newTestEnv(t)
 	e.sess.deps.SettingsRoot = t.TempDir()
@@ -157,8 +158,8 @@ func TestAddDirectory_Container_NoSelfRow_ScanFolderToast(t *testing.T) {
 
 	waitEvent(t, e.sess, EvScanDone) // the triggered rescan settles
 	toasts := e.sess.Snapshot().Toasts
-	if _, ok := toastWith(toasts, "as a scan folder"); !ok {
-		t.Errorf("missing scan-folder toast: %+v", toasts)
+	if _, ok := toastWith(toasts, "as a scan directory"); !ok {
+		t.Errorf("missing scan-directory toast: %+v", toasts)
 	}
 	if _, ok := toastWith(toasts, "added "); ok {
 		t.Errorf("container add must not toast 'added X': %+v", toasts)

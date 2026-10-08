@@ -276,7 +276,7 @@ func (m Model) gamesView(snap ui.State, w, contentH int) string {
 		if snap.Query != "" {
 			empty = fmt.Sprintf("no games match %q (no matches) — Esc to clear the filter", snap.Query)
 		} else {
-			empty = "no games yet — press R to scan, or 2 → a to add a folder"
+			empty = "no games yet — press R to scan, or 2 → a to add a directory"
 		}
 		return header + "\n" + styleMuted.Render(empty)
 	}

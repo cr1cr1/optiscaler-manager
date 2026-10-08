@@ -364,7 +364,7 @@ func (m *model) cardSizeSelector() {
 func (m *model) settingsDirsSection() {
 	dirs := m.settingsDirs()
 	if len(dirs) == 0 {
-		muted("No extra directories — Steam library folders are always scanned")
+		muted("No extra directories — Steam library directories are always scanned")
 	}
 	if len(dirs) > 0 {
 		// A Viewport inside the auto-sized modal needs an explicit height:

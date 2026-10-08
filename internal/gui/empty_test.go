@@ -17,6 +17,13 @@ func TestEmptyStateCopyShown(t *testing.T) {
 	if !strings.Contains(strings.ToLower(guidance), "add game") {
 		t.Errorf("empty-library copy %q does not mention adding games", guidance)
 	}
+	// Issue 036: user-facing copy says "directory", never "folder".
+	if strings.Contains(strings.ToLower(guidance), "folder") {
+		t.Errorf("empty-library copy %q still says folder, want directory", guidance)
+	}
+	if !strings.Contains(strings.ToLower(guidance), "directory") {
+		t.Errorf("empty-library copy %q does not say directory", guidance)
+	}
 	filtered := emptyStateCopy("cyberpunk")
 	if filtered == guidance {
 		t.Error("filter-empty copy identical to library-empty copy")

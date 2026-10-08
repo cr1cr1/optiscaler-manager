@@ -6,44 +6,69 @@ import (
 	. "go.hasen.dev/shirei"
 )
 
-// Issue 033: the detail pane's action buttons flow horizontally and wrap
-// with the pane width; install/uninstall labels name OptiScaler; Launch
-// is "Launch Game"; the settings modal's Apply/Close share a row.
+// Issue 033: install/uninstall labels name OptiScaler; Launch is
+// "Launch Game"; the settings modal's Apply/Close share a row.
+//
+// Issue 036: the detail pane groups its action buttons into two rows —
+// row 1 the game actions (Launch Game, then Open game directory), row 2
+// the OptiScaler actions (install/uninstall, rollback, …). Each row
+// wraps within itself on narrow panes but the groups never interleave.
 
-func TestDetailActionButtonsWrapHorizontal(t *testing.T) {
+func TestDetailActionRowsGrouped(t *testing.T) {
 	sess, _ := guiFakes(t)
 	row := scanOneRow(t, sess)
 	m := newModel(Config{Session: sess})
 	sess.Select(row.InstallDir)
 
-	t.Run("wide pane keeps one line", func(t *testing.T) {
-		// Tall window: the 2:3 cover pushes the action row near the fold,
-		// and shirei culls clipped Viewport children (zero rect).
-		headlessFrames(t, 1600, 1400)
-		keyFrame(KeyCodeNone, 0, m.rootView)
-		keyFrame(KeyCodeNone, 0, m.rootView)
-		for name, r := range map[string]Rect{"install": m.quickBtnRect, "launch": m.launchBtnRect, "open folder": m.openFolderRect} {
+	rendered := func(t *testing.T) {
+		t.Helper()
+		for name, r := range map[string]Rect{"install": m.quickBtnRect, "launch": m.launchBtnRect, "open dir": m.openFolderRect} {
 			if r.Size[0] == 0 {
 				t.Fatalf("%s button not rendered", name)
 			}
 		}
-		if m.quickBtnRect.Origin[1] != m.launchBtnRect.Origin[1] ||
-			m.quickBtnRect.Origin[1] != m.openFolderRect.Origin[1] {
-			t.Errorf("buttons not on one line in a wide pane: install y %.0f, launch y %.0f, folder y %.0f",
-				m.quickBtnRect.Origin[1], m.launchBtnRect.Origin[1], m.openFolderRect.Origin[1])
+	}
+
+	t.Run("wide pane: game row above optiscaler row", func(t *testing.T) {
+		// Tall window: the 2:3 cover pushes the action rows near the fold,
+		// and shirei culls clipped Viewport children (zero rect).
+		headlessFrames(t, 1600, 1400)
+		keyFrame(KeyCodeNone, 0, m.rootView)
+		keyFrame(KeyCodeNone, 0, m.rootView)
+		rendered(t)
+		launch, openDir, install := m.launchBtnRect, m.openFolderRect, m.quickBtnRect
+		if launch.Origin[1] != openDir.Origin[1] {
+			t.Errorf("Launch Game (y %.0f) and Open game directory (y %.0f) must share row 1",
+				launch.Origin[1], openDir.Origin[1])
+		}
+		if launch.Origin[0] >= openDir.Origin[0] {
+			t.Errorf("Launch Game (x %.0f) must sit left of Open game directory (x %.0f)",
+				launch.Origin[0], openDir.Origin[0])
+		}
+		if install.Origin[1] <= launch.Origin[1] {
+			t.Errorf("install (y %.0f) must sit on a row below the game row (y %.0f)",
+				install.Origin[1], launch.Origin[1])
 		}
 	})
 
-	t.Run("narrow pane wraps inside the panel", func(t *testing.T) {
-		headlessFrames(t, 900, 800)
+	t.Run("narrow pane: rows wrap but never interleave", func(t *testing.T) {
+		// Tall window: two action rows sit below the 2:3 cover, and shirei
+		// culls Viewport children clipped past the fold (zero rect).
+		headlessFrames(t, 900, 1400)
 		keyFrame(KeyCodeNone, 0, m.rootView)
 		keyFrame(KeyCodeNone, 0, m.rootView)
-		if m.openFolderRect.Origin[1] <= m.quickBtnRect.Origin[1] {
-			t.Errorf("open folder (y %.0f) did not wrap below install (y %.0f) in the narrow pane",
-				m.openFolderRect.Origin[1], m.quickBtnRect.Origin[1])
+		rendered(t)
+		launch, openDir, install := m.launchBtnRect, m.openFolderRect, m.quickBtnRect
+		if openDir.Origin[1] < launch.Origin[1] {
+			t.Errorf("Open game directory (y %.0f) wrapped above Launch Game (y %.0f)",
+				openDir.Origin[1], launch.Origin[1])
+		}
+		if install.Origin[1] <= openDir.Origin[1] {
+			t.Errorf("install (y %.0f) must stay below the game row (open dir y %.0f) even when wrapped",
+				install.Origin[1], openDir.Origin[1])
 		}
 		panelRight := m.detailPanelRect.Origin[0] + m.detailPanelRect.Size[0]
-		for name, r := range map[string]Rect{"install": m.quickBtnRect, "launch": m.launchBtnRect, "open folder": m.openFolderRect} {
+		for name, r := range map[string]Rect{"install": install, "launch": launch, "open dir": openDir} {
 			if right := r.Origin[0] + r.Size[0]; right > panelRight+1 {
 				t.Errorf("%s (right edge %.0f) sticks out of the panel (right edge %.0f)", name, right, panelRight)
 			}
