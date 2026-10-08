@@ -63,7 +63,7 @@ in a readonly, selectable view.
 
 ## Outcome
 
-Done. Status bar is single-line always (`oneLineStatus` collapses
+Done in commit cab2d31. Status bar is single-line always (`oneLineStatus` collapses
 multi-line text to its first line + " …"); `ui.Session` keeps a capped
 (512-line) append-only status ring exposed via `LogLines()`; the GUI
 mirrors it into a `widgets.TextRing` (`syncLogLines`, full rebuild on
@@ -74,4 +74,3 @@ detail panel. Red witnessed as build failures on the new seams, then
 green; two unrelated flakes during verification (`TestWarmBootResolvesDefault`
 under `-count=1` load, `TestFindPrefixes_BottlesCustomPath` from a
 parallel session's half-edited `internal/umu`) both passed on re-run.
-Commit hash recorded in a follow-up commit.
