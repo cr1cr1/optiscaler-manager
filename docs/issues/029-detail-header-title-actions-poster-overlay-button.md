@@ -49,4 +49,4 @@ re-snapshots `m.state` every frame) and trims trailing spaces. Full
 (Apply while editing, Close without a session) — paneltab tests hold.
 Deferred: Shift+Tab on the title INPUT itself (open editor) does the
 default reverse walk, not the card continuation — the continuation seam
-targets the first panelHeaderButton. Commit: see git log.
+targets the first panelHeaderButton. Commit: 2e16cf5.
