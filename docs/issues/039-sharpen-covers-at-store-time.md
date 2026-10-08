@@ -74,5 +74,17 @@ docs/vendor-patches.md marks v0.18 REMOVED.
   reds (their caret/spinner/title-edit files change under the test
   runner). vet/gofmt clean; GOOS=windows/darwin builds OK.
 
-Commit: <hash>
+Commit: d6bf0d0
+
+**Collision note.** Staging d6bf0d0 raced the foreign session's
+issue-040 work: their in-flight model.go hunk (pulseFrames,
+forwardSessionEvents) landed in the diff between hunk inspection and
+staging and rode the commit. They noticed and committed around it
+("rode the foreign session's commit d6bf0d0... content intact" in
+5f806d7), so the tree builds from 5f806d7 onward; d6bf0d0 alone lacks
+pulseWanted and does not build standalone. A subsequent amend of mine
+mistakenly targeted their docs-pin commit; it was fully undone via
+reset to e21b35d (reflog orphan 0e00f40), leaving every foreign hash
+valid. Final full-suite verification ran in a clean worktree at
+e21b35d: 32/32 packages green with both issues' code combined.
 

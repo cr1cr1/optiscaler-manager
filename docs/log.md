@@ -4192,3 +4192,13 @@ not tied to any component. Wayland session.
   pulse-signal seam); full `go test ./...` green, vet/gofmt clean.
 - Foreign session concurrently moved cover sharpening to store-time
   (their issue 039); their hunks excluded from this commit.
+
+Postscript: staging the feat commit raced the foreign session's
+issue-040 work — their in-flight model.go hunks rode d6bf0d0 (they
+committed around it, "content intact", 5f806d7), and a follow-up amend
+of mine mistakenly targeted their docs-pin commit; it was undone with
+`git reset --hard e21b35d`, orphaning only my damage (0e00f40). HEAD
+was then verified green (32/32 packages) in a clean worktree at
+e21b35d — both issues' code combined. Lesson recorded: re-diff every
+staged shared file immediately before committing while the parallel
+session is active.
