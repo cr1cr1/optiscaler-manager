@@ -172,8 +172,10 @@ internal/
                returns the newest detected runner (Proton is always
                Auto); FindPrefixes detects wine prefixes (dirs with a
                drive_c) in Heroic Prefixes/, Bottles bottles/, Steam
-               compatdata pfx/, and ~/.wine; ResolvePrefix applies the
-               pin precedence (per-game PrefixOverrides, then the
+               compatdata pfx/ (named from the appmanifest), Lutris
+               per-game YAML prefix: paths, PlayOnLinux wineprefix/,
+               CrossOver ~/.cxoffice, and ~/.wine; ResolvePrefix applies
+               the pin precedence (per-game PrefixOverrides, then the
                global UmuPrefixPath) before the PrefixForGame auto
                chain (existing enclosing drive_c or Heroic prefix, else
                a derived per-game prefix under

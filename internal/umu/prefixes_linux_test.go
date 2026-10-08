@@ -160,3 +160,100 @@ func TestStderrTail(t *testing.T) {
 		t.Errorf("stderrTail(blanks) = %q, want %q", got, "first\nsecond")
 	}
 }
+
+func TestFindPrefixes_SteamNamesFromAppmanifest(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	steamapps := filepath.Join(home, ".steam", "steam", "steamapps")
+	named := mkPrefix(t, filepath.Join(steamapps, "compatdata", "12345", "pfx"))
+	writeFile(t, filepath.Join(steamapps, "appmanifest_12345.acf"),
+		`"AppState" { "appid" "12345" "name" "Hades" "installdir" "Hades" }`)
+	// No manifest for this one: the appid stays the name.
+	anon := mkPrefix(t, filepath.Join(steamapps, "compatdata", "99999", "pfx"))
+
+	got := FindPrefixes(context.Background())
+	byPath := map[string]Prefix{}
+	for _, p := range got {
+		byPath[p.Path] = p
+	}
+	if p := byPath[named]; p.Name != "Hades" || p.Source != "steam" {
+		t.Errorf("named steam prefix = %+v, want {Hades steam}", p)
+	}
+	if p := byPath[anon]; p.Name != "99999" {
+		t.Errorf("anonymous steam prefix = %+v, want name 99999", p)
+	}
+}
+
+func TestFindPrefixes_LutrisYAML(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	pfx := mkPrefix(t, filepath.Join(home, "Games", "some-game"))
+	writeFile(t, filepath.Join(home, ".config", "lutris", "games", "some-game-1712345678.yml"),
+		"game:\n  exe: "+filepath.Join(pfx, "drive_c", "game.exe")+"\n  prefix: "+pfx+"\nname: Some Game\n")
+	// No prefix: key — skipped (Lutris defaults to the install dir,
+	// covered by the enclosing-drive_c launch rule).
+	writeFile(t, filepath.Join(home, ".config", "lutris", "games", "other-game-1712349999.yml"),
+		"game:\n  exe: /games/other/game.exe\nname: Other Game\n")
+
+	got := FindPrefixes(context.Background())
+	for _, p := range got {
+		if p.Path == pfx && p.Name == "Some Game" && p.Source == "lutris" {
+			return
+		}
+	}
+	t.Errorf("FindPrefixes = %+v, want Lutris prefix {Some Game %s lutris}", got, pfx)
+}
+
+func TestFindPrefixes_LutrisFlatpakAndXdgConfig(t *testing.T) {
+	home := t.TempDir()
+	cfg := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+
+	xdgPfx := mkPrefix(t, filepath.Join(t.TempDir(), "xdg-game"))
+	writeFile(t, filepath.Join(cfg, "lutris", "games", "xdg-game-1.yml"),
+		"game:\n  prefix: "+xdgPfx+"\nname: XDG Game\n")
+	flatPfx := mkPrefix(t, filepath.Join(t.TempDir(), "flat-game"))
+	writeFile(t, filepath.Join(home, ".var", "app", "net.lutris.Lutris", "config", "lutris", "games", "flat-game-2.yml"),
+		"game:\n  prefix: "+flatPfx+"\nname: Flat Game\n")
+
+	got := FindPrefixes(context.Background())
+	paths := map[string]bool{}
+	for _, p := range got {
+		paths[p.Path] = true
+	}
+	for _, want := range []string{xdgPfx, flatPfx} {
+		if !paths[want] {
+			t.Errorf("FindPrefixes missing Lutris prefix %q (got %+v)", want, got)
+		}
+	}
+}
+
+func TestFindPrefixes_PlayOnLinuxAndCrossOver(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	pol := mkPrefix(t, filepath.Join(home, ".PlayOnLinux", "wineprefix", "office2016"))
+	cx := mkPrefix(t, filepath.Join(home, ".cxoffice", "steamgames"))
+
+	got := FindPrefixes(context.Background())
+	byPath := map[string]Prefix{}
+	for _, p := range got {
+		byPath[p.Path] = p
+	}
+	if p, ok := byPath[pol]; !ok || p.Source != "playonlinux" || p.Name != "office2016" {
+		t.Errorf("PlayOnLinux prefix = %+v (present %v), want {office2016 playonlinux}", p, ok)
+	}
+	if p, ok := byPath[cx]; !ok || p.Source != "crossover" || p.Name != "steamgames" {
+		t.Errorf("CrossOver prefix = %+v (present %v), want {steamgames crossover}", p, ok)
+	}
+}
