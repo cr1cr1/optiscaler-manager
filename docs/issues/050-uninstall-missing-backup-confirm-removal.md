@@ -71,4 +71,4 @@ entry in 4d0bd6e ("uninstall: consent gate ... (issue 50)"). Content is
 intact at HEAD; history left unrewritten because the foreign session was
 actively committing.
 
-Commits: 39807fe (code+docs), 4d0bd6e (log). Pin: TBD.
+Commits: 39807fe (code+docs), 4d0bd6e (log). Pin: 51bf2fa.
