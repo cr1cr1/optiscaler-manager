@@ -65,5 +65,22 @@ global settle).
 
 ## Outcome
 
-Filled in when the issue closes: what actually happened, the commit
-hash, anything left open.
+Shipped in `49a1803` exactly as drafted. `app.ScanGame`
+(`internal/app/scangame.go`) re-discovers one game by canonical install
+dir through the global scan's own source paths and precedence;
+`Session.RescanGame` (`internal/ui/scan.go`) runs the identical
+rediscovery → covers → online identification → cover rebind → settle
+stages on the per-game op registry (Working…/Cancel in the pane), toasts
+`rescanned <title>`, persists the cache, and keeps the old row on
+cancellation or `ErrGameNotFound` (warning toast — pruning stays the
+global scan's job). GUI: Rescan button (refresh icon) in detail action
+row 1 after Open game directory, placed inside the parallel session's
+issue-036 two-row layout that landed mid-flight. TUI: `R` on the detail
+screen, matching the games screen's library-wide `R`. ATDD red witnessed
+(`tmp/test-red-035.log`: compile reds in app/ui/gui, behavior red in
+tui), green in `tmp/test-green-035.log`; `go test ./...` exit 0 (32
+packages) plus uncached reruns of the four touched packages, vet/gofmt
+clean, windows/darwin builds OK. Docs: log.md, architecture.md,
+scope.md, README.md. Left open: a title that rescans INTO a collision
+gets its disambiguation suffix immediately, but a suffix that becomes
+stale on the OTHER row refreshes only at the next global scan.
