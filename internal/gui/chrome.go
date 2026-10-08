@@ -129,12 +129,23 @@ func (m *model) settingsModal() {
 				}
 			})
 
-			if m.sess != nil && focusableButton(SymIRight, "Apply") {
-				m.applySettings()
-			}
-			if focusableButton(SymILeft, "Close") {
-				m.settingsOpen = false
-			}
+			// Apply and Close share one row (issue 033).
+			Container(Attrs(Row, Gap(sp8)), func() {
+				if m.sess != nil {
+					Container(Attrs(Row), func() {
+						m.settingsApplyRect = GetScreenRectOf(CurrentId())
+						if focusableButton(SymIRight, "Apply") {
+							m.applySettings()
+						}
+					})
+				}
+				Container(Attrs(Row), func() {
+					m.settingsCloseRect = GetScreenRectOf(CurrentId())
+					if focusableButton(SymILeft, "Close") {
+						m.settingsOpen = false
+					}
+				})
+			})
 		})
 	})
 }

@@ -497,9 +497,9 @@ func (m Model) detailView(w, contentH int) string {
 			}
 		}
 		b.WriteString("\n" + styleHeader.Render("Actions") + "\n")
-		install := "  i  install/uninstall"
+		install := "  i  install/uninstall OptiScaler"
 		if row.Status == "external" {
-			install = "  i  adopt (install over external)"
+			install = "  i  adopt OptiScaler (install over external)"
 		}
 		b.WriteString(install + "\n")
 		if row.Status == "committed" || row.Status == "external" {
@@ -515,7 +515,7 @@ func (m Model) detailView(w, contentH int) string {
 		}
 		b.WriteString(dlssUpdate + "\n")
 		b.WriteString(dlssRestore + "\n")
-		b.WriteString("  l  launch\n")
+		b.WriteString("  l  launch game\n")
 		b.WriteString("  c  cancel operation\n")
 		rollback := "  r  rollback"
 		if !row.Actionable {

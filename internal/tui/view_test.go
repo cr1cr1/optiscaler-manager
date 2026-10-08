@@ -185,7 +185,7 @@ func TestDetailViewAdoptHintForExternal(t *testing.T) {
 		plain := sgrRE.ReplaceAllString(out, "")
 		t.Logf("external detail actions:\n%s", plain)
 
-		if !strings.Contains(plain, "adopt (install over external)") {
+		if !strings.Contains(plain, "adopt OptiScaler (install over external)") {
 			t.Errorf("adopt hint missing for an external row: %q", plain)
 		}
 		if strings.Contains(plain, "install/uninstall") {

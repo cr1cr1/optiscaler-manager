@@ -402,6 +402,8 @@ func (m *model) detailPanel() {
 	m.closeBtnRect = Rect{}
 	m.posterRect = Rect{}
 	m.posterBtnRect = Rect{}
+	m.quickBtnRect = Rect{}
+	m.launchBtnRect = Rect{}
 	m.titleInputID = nil
 	// The grid rendered first and captured its own tech row; the panel owns
 	// the seam while open so a missing panel row reads as zero.
@@ -573,40 +575,53 @@ func (m *model) detailPanel() {
 				}
 				return
 			}
-			if focusableButton(SymIRight, quickLabel(e)) {
-				m.sess.QuickInstall(e.InstallDir)
-			}
-			if launchable(e) && focusableButton(SymPlay, "Launch") {
-				m.launchGame(*e)
-			}
-			if e.Actionable && focusableButton(SymUndo, "Rollback") {
-				m.sess.Rollback(e.InstallDir)
-			}
-			if label, ok := e.DisableToggleLabel(); ok && focusableButton(NoIcon, label) {
-				m.sess.ToggleDisabled(e.InstallDir)
-			}
-			// The game folder exists regardless of install state — the
-			// button is always rendered (unlike OpenINI below).
-			Container(Attrs(Row), func() {
-				m.openFolderRect = GetScreenRectOf(CurrentId())
-				if focusableButton(SymFolder, "Open game folder") {
-					m.sess.OpenGameFolder(e.InstallDir)
-				}
-			})
-			// Manual identification fixes (issue 028): the title pin and
-			// poster upload moved to the header and the poster itself
-			// (issue 029); only the poster reset stays in the action list.
-			if m.sess.CoverOverrideActive(e.InstallDir) && focusableButton(NoIcon, "Reset poster") {
-				m.sess.ClearCoverOverride(e.InstallDir)
-			}
-			if e.CanOpenINI() {
+			// The action buttons flow horizontally and wrap with the pane
+			// width (issue 033): one row on wide panes, reflowed lines on
+			// narrow ones — never stacked one-per-line, never overflowing.
+			Container(Attrs(Row, Wrap, Gap(sp8), CrossMid), func() {
 				Container(Attrs(Row), func() {
-					m.openINIRect = GetScreenRectOf(CurrentId())
-					if focusableButton(SymIRight, "Open OptiScaler.ini in editor") {
-						m.sess.OpenINI(e.InstallDir)
+					m.quickBtnRect = GetScreenRectOf(CurrentId())
+					if focusableButton(SymIRight, quickLabel(e)) {
+						m.sess.QuickInstall(e.InstallDir)
 					}
 				})
-			}
+				if launchable(e) {
+					Container(Attrs(Row), func() {
+						m.launchBtnRect = GetScreenRectOf(CurrentId())
+						if focusableButton(SymPlay, "Launch Game") {
+							m.launchGame(*e)
+						}
+					})
+				}
+				if e.Actionable && focusableButton(SymUndo, "Rollback") {
+					m.sess.Rollback(e.InstallDir)
+				}
+				if label, ok := e.DisableToggleLabel(); ok && focusableButton(NoIcon, label) {
+					m.sess.ToggleDisabled(e.InstallDir)
+				}
+				// The game folder exists regardless of install state — the
+				// button is always rendered (unlike OpenINI below).
+				Container(Attrs(Row), func() {
+					m.openFolderRect = GetScreenRectOf(CurrentId())
+					if focusableButton(SymFolder, "Open game folder") {
+						m.sess.OpenGameFolder(e.InstallDir)
+					}
+				})
+				// Manual identification fixes (issue 028): the title pin and
+				// poster upload moved to the header and the poster itself
+				// (issue 029); only the poster reset stays in the action list.
+				if m.sess.CoverOverrideActive(e.InstallDir) && focusableButton(NoIcon, "Reset poster") {
+					m.sess.ClearCoverOverride(e.InstallDir)
+				}
+				if e.CanOpenINI() {
+					Container(Attrs(Row), func() {
+						m.openINIRect = GetScreenRectOf(CurrentId())
+						if focusableButton(SymIRight, "Open OptiScaler.ini in editor") {
+							m.sess.OpenINI(e.InstallDir)
+						}
+					})
+				}
+			})
 			scrollBars()
 		})
 	})
@@ -774,13 +789,14 @@ func statusLabel(e *ui.GameRow) string {
 	return string(e.Status)
 }
 
-// quickLabel is the toggle caption matching the reference client.
+// quickLabel is the toggle caption; every caption names OptiScaler
+// (issue 033).
 func quickLabel(e *ui.GameRow) string {
 	switch e.Status {
 	case domain.StatusCommitted:
-		return "Uninstall"
+		return "Uninstall OptiScaler"
 	case domain.StatusExternal:
-		return "Adopt"
+		return "Adopt OptiScaler"
 	}
-	return "Install"
+	return "Install OptiScaler"
 }

@@ -113,7 +113,11 @@ here are closed; reopen only with new evidence.
   button is 30% larger than default and tooltips "Set Poster". Opening
   the editor focuses the input, hiding the pane cancels the edit, and
   unchanged titles are never written (issue 032); the header buttons
-  show the hand pointer.
+  show the hand pointer. Action labels name the payload (issue 033):
+  "Install/Uninstall/Adopt OptiScaler" and "Launch Game" in the GUI and
+  the TUI detail actions; the detail pane's action buttons flow
+  horizontally in one wrapping row, and the settings modal's
+  Apply/Close share a row.
 
 ## UX
 

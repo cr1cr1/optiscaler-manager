@@ -518,7 +518,7 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 				if focusableButton(SymIRight, quickLabel(&e)) {
 					m.sess.QuickInstall(e.InstallDir)
 				}
-				if launchable(&e) && focusableButton(NoIcon, "Launch") {
+				if launchable(&e) && focusableButton(NoIcon, "Launch Game") {
 					m.launchGame(e)
 				}
 				m.cardLastButtonID = GetLastId()

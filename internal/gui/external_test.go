@@ -14,17 +14,18 @@ import (
 
 // TestQuickLabelExternal: an external (PE-detected, unmanaged) install is
 // adopted, not installed over — the quick-action caption must say so.
+// Every caption names OptiScaler (issue 033).
 func TestQuickLabelExternal(t *testing.T) {
 	ext := &ui.GameRow{Title: "Ext", Status: domain.StatusExternal}
-	if got := quickLabel(ext); got != "Adopt" {
-		t.Errorf("external row: quickLabel %q, want %q", got, "Adopt")
+	if got := quickLabel(ext); got != "Adopt OptiScaler" {
+		t.Errorf("external row: quickLabel %q, want %q", got, "Adopt OptiScaler")
 	}
 	// The existing statuses must not drift.
-	if got := quickLabel(&ui.GameRow{Status: domain.StatusCommitted}); got != "Uninstall" {
-		t.Errorf("committed row: quickLabel %q, want Uninstall", got)
+	if got := quickLabel(&ui.GameRow{Status: domain.StatusCommitted}); got != "Uninstall OptiScaler" {
+		t.Errorf("committed row: quickLabel %q, want Uninstall OptiScaler", got)
 	}
-	if got := quickLabel(&ui.GameRow{}); got != "Install" {
-		t.Errorf("clean row: quickLabel %q, want Install", got)
+	if got := quickLabel(&ui.GameRow{}); got != "Install OptiScaler" {
+		t.Errorf("clean row: quickLabel %q, want Install OptiScaler", got)
 	}
 	t.Log("external quick action adopts the on-disk install")
 }

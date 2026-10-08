@@ -3961,3 +3961,29 @@ nothing required it. Verified in the live cache: `20900.img` bound.
 - Red witnessed (20900 bound before the fix; `tmp/test-red-033.log`),
   full `go test ./...` exit 0 (30 packages), vet/gofmt clean,
   windows/darwin builds OK.
+
+## 2026-10-08 — issue 33: OptiScaler action labels, wrapping detail actions, settings row
+
+User button pass: install/uninstall labels must name OptiScaler
+everywhere, Launch becomes "Launch Game", the detail pane's buttons
+align horizontally and wrap with the pane width, and the settings
+modal's Apply/Close share a row. TUI labels checked too.
+
+- `quickLabel` → "Install/Uninstall/Adopt OptiScaler" (cards + detail);
+  "Launch Game" on cards and the detail pane. TUI detail actions:
+  "i install/uninstall OptiScaler", "i adopt OptiScaler (install over
+  external)", "l launch game". The TUI footer key legend keeps short
+  forms — shortcut hint, not a button; lengthening would overflow it.
+- Detail action buttons moved into one `Row + Wrap` container
+  (install, launch, rollback, disable/enable, open folder, reset
+  poster, open INI): one line on wide panes, reflowed on narrow, never
+  stacked one-per-line. Wrap pinned at 900px (min-width panel) with
+  right-edge containment; one line pinned at 1600px. New seams:
+  `quickBtnRect`, `launchBtnRect`, `settingsApplyRect`,
+  `settingsCloseRect`.
+- Red witnessed: undefined seams + old-label guards
+  (TestQuickInstallButtonLabelByStatus, TestDetailViewAdoptHintForExternal)
+  updated to the new labels. One fold-culling fix: the wide-pane case
+  needs a 1400px-tall window (cover art pushes the action row down).
+- Verification: `go test ./...` exit 0 (31 packages), `go vet`/`gofmt`
+  clean.

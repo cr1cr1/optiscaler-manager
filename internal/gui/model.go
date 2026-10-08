@@ -92,6 +92,10 @@ type model struct {
 	closeBtnRect        Rect                          // screen rect of the detail panel header's Close button (placement test seam, issue 029)
 	posterRect          Rect                          // screen rect of the detail panel's poster box (overlay placement test seam, issue 029)
 	posterBtnRect       Rect                          // screen rect of the icon-only Set-poster overlay button on the poster (placement test seam, issue 029)
+	quickBtnRect        Rect                          // screen rect of the detail panel's Install/Uninstall OptiScaler button (action-row wrap test seam, issue 033)
+	launchBtnRect       Rect                          // screen rect of the detail panel's Launch Game button (action-row wrap test seam, issue 033)
+	settingsApplyRect   Rect                          // screen rect of the settings modal's Apply button (same-row test seam, issue 033)
+	settingsCloseRect   Rect                          // screen rect of the settings modal's Close button (same-row test seam, issue 033)
 	searchID            ContainerId                   // the search field's container (`/` focuses it from anywhere)
 	listID              ContainerId                   // the list view's focusable wrapper (Tab focus nav test seam)
 	listFocusPending    bool                          // deferred row-click focus grab: consumed once by actionList with the wrapper's fresh identity

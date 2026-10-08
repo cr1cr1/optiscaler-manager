@@ -57,15 +57,15 @@ func lens(chunks [][]ui.GameRow) []int {
 
 func TestQuickInstallButtonLabelByStatus(t *testing.T) {
 	clean := &ui.GameRow{Title: "A"}
-	if got := quickLabel(clean); got != "Install" {
+	if got := quickLabel(clean); got != "Install OptiScaler" {
 		t.Errorf("clean row: %q", got)
 	}
 	installed := &ui.GameRow{Title: "B", Status: domain.StatusCommitted}
-	if got := quickLabel(installed); got != "Uninstall" {
+	if got := quickLabel(installed); got != "Uninstall OptiScaler" {
 		t.Errorf("installed row: %q", got)
 	}
 	failed := &ui.GameRow{Title: "C", Status: domain.StatusFailed, Actionable: true}
-	if got := quickLabel(failed); got != "Install" {
+	if got := quickLabel(failed); got != "Install OptiScaler" {
 		t.Errorf("failed row: %q (retry counts as install)", got)
 	}
 }
