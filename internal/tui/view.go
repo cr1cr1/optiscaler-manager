@@ -236,9 +236,10 @@ func confirmBox(c *ui.Confirmation) string {
 		"\n" + "(other keys are disabled until answered)")
 }
 
-// restoreWindowRows caps the rendered picker list so a long list cannot
-// overflow the centered modal; the window slides with the selection.
-const restoreWindowRows = 8
+// pickerWindowRows caps the rendered picker list so a long list cannot
+// overflow the centered modal; the window slides with the selection
+// (issue 056: the cap is 20 rows, the rest scroll).
+const pickerWindowRows = 20
 
 // restoreBox renders the open restore-backup picker as a centered modal.
 func restoreBox(p *restorePick) string {
@@ -267,9 +268,9 @@ func pickerBox(title string, labels []string, sel int, hints string) string {
 	b.WriteString(title + "\n")
 	rows := labels
 	start := 0
-	if len(rows) > restoreWindowRows {
-		start = max(min(sel-restoreWindowRows/2, len(rows)-restoreWindowRows), 0)
-		rows = rows[start : start+restoreWindowRows]
+	if len(rows) > pickerWindowRows {
+		start = max(min(sel-pickerWindowRows/2, len(rows)-pickerWindowRows), 0)
+		rows = rows[start : start+pickerWindowRows]
 	}
 	for i, label := range rows {
 		if start+i == sel {

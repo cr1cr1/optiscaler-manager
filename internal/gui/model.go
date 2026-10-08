@@ -55,7 +55,7 @@ type model struct {
 	statusBarRect         Rect                        // screen rect of the status bar shell (single-line height test seam, issue 052)
 	logBtnRect            Rect                        // screen rect of the status bar's Log button (toggle test seam, issue 052)
 	logPanelRect          Rect                        // screen rect of the log panel shell (slide-up test seam, issue 052)
-	logSearchBuf          string                      // log panel search field buffer (issue 054); doubles as the live highlight query
+	logSearchBuf          string                      // log panel search field buffer (issue 054); debounced into logSearchQuery (issue 055)
 	logSearchState        *editState                  // log search field edit state (onEnter jumps to the next match, issue 054)
 	logSearchHitLine      int                         // ring line index of the current search hit, -1 none (issue 054)
 	logSearchLast         string                      // query of the last submitted search; an unchanged query advances (issue 054)
@@ -77,6 +77,7 @@ type model struct {
 	umuPrefixMenuItems    []umuPrefixMenuItem           // open prefix picker rows (menu test seam)
 	umuPrefixOpen         bool                          // prefix picker popup open this frame (modal dismiss guard)
 	prefixDDTriggerRect   Rect                          // screen rect of the detail panel's per-game prefix dropdown (click test seam)
+	prefixDDMenuRect      Rect                          // screen rect of the per-game prefix dropdown's popup panel (scroll-cap test seam, issue 056)
 	prefixDDItems         []umuPrefixMenuItem           // open per-game prefix dropdown rows (menu test seam)
 	prefixDDPrefixes      []umu.Prefix                  // detected prefixes scanned on the dropdown's opening frame
 	forkSlugBuf           string                        // settings-modal add-fork slug input

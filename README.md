@@ -221,7 +221,8 @@ nothing is detected). What you control is the wine **prefix**: the
 Settings picker sets the global default from the prefixes detected in
 Heroic `Prefixes/`, Bottles `bottles/`, Steam `compatdata/`, and
 `~/.wine`, and the detail pane (GUI) or `w` on the detail screen (TUI)
-pins a prefix per game — per-game wins over the global default, and
+pins a prefix per game — both pickers show 20 rows at a time and
+scroll longer lists — per-game wins over the global default, and
 **Auto** reuses a prefix the game already lives in (a
 Bottles/Lutris/Heroic `drive_c` or an existing Heroic prefix) before
 falling back to a per-game prefix under

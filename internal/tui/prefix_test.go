@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -64,5 +65,30 @@ func TestTUIPrefixPickerStateMachine(t *testing.T) {
 	view = tm.(Model).View()
 	if !strings.Contains(view, "SomeApp (heroic)") {
 		t.Errorf("reopened picker view lacks prefix row:\n%s", view)
+	}
+}
+
+// TestPrefixBoxWindowsAtTwenty: a long prefix list renders at most 20
+// rows, the window following the selection so the rest scroll (issue 056).
+func TestPrefixBoxWindowsAtTwenty(t *testing.T) {
+	items := make([]ui.UmuPickerOption, 25)
+	for i := range items {
+		items[i] = ui.UmuPickerOption{Value: fmt.Sprint(i), Label: fmt.Sprintf("pfx-%02d (bottles)", i)}
+	}
+
+	top := prefixBox(&prefixPick{items: items, sel: 0})
+	if !strings.Contains(top, "pfx-00") || !strings.Contains(top, "pfx-19") {
+		t.Errorf("top window must show rows 0..19:\n%s", top)
+	}
+	if strings.Contains(top, "pfx-20") {
+		t.Errorf("top window shows a 21st row — the cap is 20:\n%s", top)
+	}
+
+	bottom := prefixBox(&prefixPick{items: items, sel: 24})
+	if !strings.Contains(bottom, "pfx-24") {
+		t.Errorf("bottom window must follow the selection to row 24:\n%s", bottom)
+	}
+	if strings.Contains(bottom, "pfx-04") {
+		t.Errorf("bottom window still shows row 4 — the window must scroll:\n%s", bottom)
 	}
 }

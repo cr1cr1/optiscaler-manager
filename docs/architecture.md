@@ -188,7 +188,9 @@ internal/
                detects PE MZ binaries for eligibility. The frontends'
                prefix picker rows are composed once in
                ui.UmuPickerRows and fed by Deps.UmuPrefixes (global
-               default in settings, per-game pin in the detail views).
+               default in settings, per-game pin in the detail views);
+               both pickers cap at 20 visible rows and scroll the rest
+               (GUI windowed popup, TUI sliding window, issue 056).
    launch/     per-store per-OS command table (pure Command fn) + detached
                spawn (build-tagged spawners; Start + Process.Release, never
                Wait). Steam steam://rungameid (Proton is Steam's business),

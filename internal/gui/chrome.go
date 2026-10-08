@@ -286,6 +286,13 @@ func (m *model) umuPrefixPicker() {
 		m.umuPrefixMenuItems = nil
 	}
 	enterPick := false
+	// The row count feeds the trigger's menu keys, so it must be the
+	// TOTAL — the rendered window (m.umuPrefixMenuItems) is shorter
+	// whenever the list scrolls (issue 056).
+	var navRows int
+	if st.open {
+		navRows = len(ui.UmuPickerRows("Auto (detected)", m.umuPrefixBuf, m.umuPrefixes))
+	}
 	Container(Attrs(Focusable, PointerHand, Row, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(radiusS), BackgroundVec(bgCard), MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH})), func() {
 		FocusOnClick()
 		st.btnID = CurrentId()
@@ -300,7 +307,7 @@ func (m *model) umuPrefixPicker() {
 				// The trigger owns menu navigation while open (shared
 				// dropdown keys; all consumed).
 				var spaceToggle bool
-				enterPick, spaceToggle = dropdownMenuKeys(st, len(m.umuPrefixMenuItems))
+				enterPick, spaceToggle = dropdownMenuKeys(st, navRows)
 				if spaceToggle {
 					activated = true
 				}
@@ -323,7 +330,7 @@ func (m *model) umuPrefixPicker() {
 	})
 	if st.open {
 		rows := ui.UmuPickerRows("Auto (detected)", m.umuPrefixBuf, m.umuPrefixes)
-		dropdownPopup(st, 0, 460, func(mouseMoved bool) {
+		dropdownPopupCapped(st, 0, 460, len(rows), prefixMenuMaxRows, func(start, end int, mouseMoved bool) {
 			if st.hl < 0 {
 				// Open-time init: the highlight starts on the ticked
 				// (current selection) row, 0 when nothing is ticked.
@@ -336,8 +343,8 @@ func (m *model) umuPrefixPicker() {
 				}
 			}
 			m.umuPrefixMenuItems = m.umuPrefixMenuItems[:0]
-			for i, r := range rows {
-				r := r
+			for i := start; i < end; i++ {
+				r := rows[i]
 				ticked := r.Value == m.umuPrefixBuf
 				dropdownRow(st, i, enterPick, mouseMoved,
 					func(hl bool) {
@@ -364,6 +371,11 @@ func (m *model) umuPrefixPicker() {
 	dropdownDismiss(st, nil)
 }
 
+// prefixMenuMaxRows caps the visible rows of the umu prefix picker
+// popups (settings global default and detail per-game); longer lists
+// scroll a 20-row window (wheel and keyboard highlight, issue 056).
+const prefixMenuMaxRows = 20
+
 // prefixDropdown is the detail panel's per-game prefix selector (Linux
 // only, gated by the caller): a compact trigger showing the game's
 // pinned prefix (basename, zero I/O while closed) and a shared-machinery
@@ -382,6 +394,13 @@ func (m *model) prefixDropdown(e *ui.GameRow) {
 	}
 	enterPick := false
 	pin := m.sess.UmuPrefixPin(e.InstallDir)
+	// The row count feeds the trigger's menu keys, so it must be the
+	// TOTAL — the rendered window (m.prefixDDItems) is shorter whenever
+	// the list scrolls (issue 056).
+	var navRows int
+	if st.open {
+		navRows = len(ui.UmuPickerRows("Auto (inherit)", pin, m.prefixDDPrefixes))
+	}
 	trigger := "Prefix: Auto"
 	if pin != "" {
 		trigger = "Prefix: " + filepath.Base(pin)
@@ -398,7 +417,7 @@ func (m *model) prefixDropdown(e *ui.GameRow) {
 			})
 			if st.open {
 				var spaceToggle bool
-				enterPick, spaceToggle = dropdownMenuKeys(st, len(m.prefixDDItems))
+				enterPick, spaceToggle = dropdownMenuKeys(st, navRows)
 				if spaceToggle {
 					activated = true
 				}
@@ -426,7 +445,7 @@ func (m *model) prefixDropdown(e *ui.GameRow) {
 	if st.open {
 		dir := e.InstallDir
 		rows := ui.UmuPickerRows("Auto (inherit)", pin, m.prefixDDPrefixes)
-		dropdownPopup(st, 0, 360, func(mouseMoved bool) {
+		dropdownPopupCapped(st, 0, 360, len(rows), prefixMenuMaxRows, func(start, end int, mouseMoved bool) {
 			if st.hl < 0 {
 				// Open-time init: the highlight starts on the ticked
 				// (current pin) row, 0 when nothing is pinned.
@@ -439,8 +458,8 @@ func (m *model) prefixDropdown(e *ui.GameRow) {
 				}
 			}
 			m.prefixDDItems = m.prefixDDItems[:0]
-			for i, r := range rows {
-				r := r
+			for i := start; i < end; i++ {
+				r := rows[i]
 				ticked := r.Value == pin
 				dropdownRow(st, i, enterPick, mouseMoved,
 					func(hl bool) {
@@ -462,6 +481,7 @@ func (m *model) prefixDropdown(e *ui.GameRow) {
 			}
 		})
 	}
+	m.prefixDDMenuRect = GetResolvedRectOf(st.menuID)
 	dropdownDismiss(st, func() { m.openDropdownDir = "" })
 }
 

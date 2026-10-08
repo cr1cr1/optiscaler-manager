@@ -22,13 +22,15 @@ import (
 
 // dropdownState is the per-dropdown Use-hook state shared by every dropdown:
 // open flag, keyboard highlight, and the trigger/popup ids the popup anchors
-// to and the dismissal hit-tests against.
+// to and the dismissal hit-tests against. top is the capped popup's scroll
+// window start (dropdownPopupCapped).
 type dropdownState struct {
 	open      bool
 	btnID     ContainerId
 	menuID    ContainerId
 	hl        int
 	prevMouse Vec2
+	top       int
 }
 
 // dropdownMenuKeys consumes the menu-navigation keys for a dropdown
@@ -85,6 +87,11 @@ func dropdownRow(st *dropdownState, idx int, enterPick, hoverAdopt bool, content
 	})
 }
 
+// dropdownWheelRowPx approximates one row's pixel height for converting
+// wheel deltas into row steps (only the step SIZE depends on it, never
+// the layout).
+const dropdownWheelRowPx = 25
+
 // dropdownPopup renders the shared dark popup panel: a root-scope Popup
 // (escaping the card's Clip), the panel tokens, anchored below the trigger
 // via dropdownPos and clamped to the window, with st.menuID captured for
@@ -93,6 +100,53 @@ func dropdownRow(st *dropdownState, idx int, enterPick, hoverAdopt bool, content
 // no maximum. body runs inside the panel and receives the popup frame's
 // mouse-motion gate (see dropdownRow).
 func dropdownPopup(st *dropdownState, minW, maxW float32, body func(mouseMoved bool)) {
+	dropdownPopupPanel(st, minW, maxW, body)
+}
+
+// dropdownPopupCapped is dropdownPopup with the list windowed at maxRows
+// visible rows (issue 056): body receives the [start, end) slice of rows
+// to render, the wheel scrolls the window while the popup is hovered
+// (consumed, so nothing behind scrolls too), and the keyboard highlight
+// pulls the window along. No Viewport — the panel sizes intrinsically to
+// the rendered window, exactly like an uncapped menu.
+func dropdownPopupCapped(st *dropdownState, minW, maxW float32, rows, maxRows int, body func(start, end int, mouseMoved bool)) {
+	if rows > maxRows && IdIsHovered(st.menuID) {
+		if dy := GetFrameInput().Scroll[1]; dy != 0 {
+			step := int(dy) / dropdownWheelRowPx
+			if step == 0 {
+				if dy > 0 {
+					step = 1
+				} else {
+					step = -1
+				}
+			}
+			st.top = max(min(st.top+step, rows-maxRows), 0)
+			// The highlight scrolls with the content; otherwise the
+			// follow-the-highlight clamp below would yank the window
+			// right back.
+			if st.hl >= 0 {
+				st.hl = max(min(st.hl+step, rows-1), 0)
+			}
+			GetFrameInput().Scroll = Vec2{}
+		}
+	}
+	if st.hl >= 0 {
+		if st.hl < st.top {
+			st.top = st.hl
+		} else if st.hl >= st.top+maxRows {
+			st.top = st.hl - maxRows + 1
+		}
+	}
+	st.top = max(min(st.top, max(rows-maxRows, 0)), 0)
+	end := min(st.top+maxRows, rows)
+	dropdownPopupPanel(st, minW, maxW, func(mouseMoved bool) {
+		body(st.top, end, mouseMoved)
+	})
+}
+
+// dropdownPopupPanel is the shared panel half of dropdownPopup: the
+// root-scope Popup, the panel tokens, the anchoring, and st.menuID.
+func dropdownPopupPanel(st *dropdownState, minW, maxW float32, body func(mouseMoved bool)) {
 	Popup(func() {
 		// Mouse-motion gate, once per popup frame: hover adopts the
 		// highlight only when the mouse actually moved since the last

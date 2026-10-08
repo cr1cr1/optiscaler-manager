@@ -466,22 +466,22 @@ func fileVersion(path string) (string, error) {
 // TestRestoreBoxWindowsLongLists: the modal caps the rendered list around
 // the selection so a long backup history cannot overflow the terminal.
 func TestRestoreBoxWindowsLongLists(t *testing.T) {
-	items := make([]stagedItem, 10)
+	items := make([]stagedItem, 25)
 	for i := range items {
 		items[i] = stagedItem{ID: fmt.Sprintf("snap-%d", i), Label: fmt.Sprintf("backup-%d", i)}
 	}
 	out := restoreBox(&restorePick{items: items, sel: 0})
-	if strings.Contains(out, "backup-9") {
+	if strings.Contains(out, "backup-24") {
 		t.Error("restore box rendered the whole list with sel at the top (overflow)")
 	}
 	if !strings.Contains(out, "backup-0") {
 		t.Error("restore box lost the selected entry")
 	}
-	out = restoreBox(&restorePick{items: items, sel: 9})
+	out = restoreBox(&restorePick{items: items, sel: 24})
 	if strings.Contains(out, "backup-0") {
 		t.Error("restore box rendered the whole list with sel at the bottom (overflow)")
 	}
-	if !strings.Contains(out, "backup-9") {
+	if !strings.Contains(out, "backup-24") {
 		t.Error("restore box lost the selected entry")
 	}
 }
