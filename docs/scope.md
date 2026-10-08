@@ -166,7 +166,8 @@ Added after v0.1, modeled on the reference client's main window:
   legacy files scrubbed on read, issue 025) and sharpened with a 10%
   unsharp mask once when written to the cache — fetch and user-upload
   alike, with a one-time migration sweep for pre-existing caches
-  (issue 039). (Ecosystem-verified keyless
+  (issue 039). Warm boot re-resolves rows whose cached file vanished, in
+  the background (issue 046). (Ecosystem-verified keyless
   pattern: Lutris and Heroic use the same Steam CDN primary; Bottles uses
   a private SteamGridDB proxy, not copyable — we call SteamGridDB
   directly with the user's own free API key, issue 024.)

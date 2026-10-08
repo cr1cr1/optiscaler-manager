@@ -463,3 +463,28 @@ NVIDIA GBM needs it too. The patch passes `wait=true` (glFinish before
 attach/commit); the per-frame cost is sub-millisecond at this app's draw
 load. Reapply after `go mod vendor`: change the `Render(..., false)` call
 in `drawFrame` to `true` with the marker comment.
+
+## shirei: LoadImage does not pin a pixel-less zombie for missing files (v0.21)
+
+- **File**: `vendor/go.hasen.dev/shirei/images.go` (`LoadImage`, right after
+  the `ReadFileContent` call).
+- **Marker**: `// PATCHED by optiscaler-manager (v0.21)`.
+- **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent` checks
+  the marker); behavior pinned by `internal/gui/loadimage_test.go`
+  (`TestLoadImageRecoversWhenFileAppears`).
+
+**What.** Upstream `LoadImage` registers and file-caches the resulting
+`ImageData` unconditionally — including when the file is missing and the
+decode produced no pixels. The visible caller touches that entry every
+frame, so the sweep never reclaims it: once a path was loaded while
+missing, the pixel-less entry is returned forever and the image never
+appears, even after the file lands at the same path (a cover re-fetched
+after the issue-042 cache migration — the card kept showing the filler
+until restart). The patch returns a transient pixel-less image WITHOUT
+registering or caching it when `len(content) == 0`; the next frame retries
+the cheap stat+read and decodes once the file exists.
+Present-but-undecodable files keep the cached behavior (no per-frame
+hammering); the >64MB async read path is unaffected (nil content while in
+flight → transient → retried after the read caches; the load-id guard
+prevents duplicate reads). Reapply after `go mod vendor`: early
+`return img` on empty content, with the marker comment.

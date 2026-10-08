@@ -111,6 +111,12 @@ internal/
               one-time sweep in New migrates legacy caches, and reads
               never decode (issue 039; the issue-038 runtime decode
               hook was ripped out — registry sweeps re-applied it).
+               Warm boot self-heals rows whose persisted cover file
+               vanished (cache migrations, wiped dirs): a background pass
+               re-resolves them through the usual chain (online lookups
+               on; issue 046), and the vendored LoadImage never pins a
+               pixel-less registration for a missing file, so a re-fetch
+               to the same path renders without a restart (vendor v0.21).
               User-uploaded posters
               (settings.cover_overrides, issue 028) are validated, copied
               in as override_<sha256(dir)[:16]>.img, normalized the same

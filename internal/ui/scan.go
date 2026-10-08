@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -47,6 +48,69 @@ func (s *Session) Start(ctx context.Context) {
 	// dropdown before the next manual scan. Async: Start must not block on
 	// the resolve network call.
 	go s.warmBootResolveDefault(ctx)
+	// Re-resolve rows whose persisted cover file vanished (a cache
+	// migration, a wiped cache dir) instead of showing the filler until a
+	// manual rescan (issue 046). Async: network work.
+	go s.healDeadCovers(ctx)
+}
+
+// healDeadCovers re-resolves rows whose persisted CoverPath file no longer
+// exists. Warm-boot hydration trusts the cached path — that trust held
+// only while nothing deleted cache files (issue 042's hires migration did,
+// stranding 97 rows on the filler). Rows re-resolve through the same
+// resolveCover chain a scan uses (override pin, appid, title search);
+// rows with live files are never re-fetched, and the pass is skipped when
+// online lookups are off (it is network work) or Covers is nil. A poke
+// event at the end lets frontends repaint as the art lands.
+func (s *Session) healDeadCovers(ctx context.Context) {
+	if s.deps.Covers == nil {
+		return
+	}
+	if !s.Settings().OnlineLookups {
+		return
+	}
+	s.mu.Lock()
+	dead := make([]string, 0)
+	for _, r := range s.st.Rows {
+		if r.CoverPath == "" {
+			continue
+		}
+		if _, err := os.Stat(r.CoverPath); err != nil {
+			dead = append(dead, r.InstallDir)
+		}
+	}
+	s.mu.Unlock()
+	if len(dead) == 0 {
+		return
+	}
+	healed := 0
+	for _, dir := range dead {
+		if ctx.Err() != nil {
+			return
+		}
+		row := s.findRow(dir)
+		if row == nil {
+			continue
+		}
+		cp := *row
+		prev := cp.CoverPath
+		s.resolveCover(ctx, &cp)
+		if cp.CoverPath == prev {
+			continue
+		}
+		s.mu.Lock()
+		for i := range s.st.Rows {
+			if s.st.Rows[i].InstallDir == dir && s.st.Rows[i].CoverPath == prev {
+				s.st.Rows[i].CoverPath = cp.CoverPath
+			}
+		}
+		s.mu.Unlock()
+		healed++
+	}
+	if healed > 0 {
+		s.persistCache()
+		s.emit(Event{Kind: EvScanDone, Text: fmt.Sprintf("refreshed %d posters", healed)})
+	}
 }
 
 // toastInterrupted surfaces installs left in in_progress/failed state at

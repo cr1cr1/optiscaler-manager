@@ -244,6 +244,22 @@ func LoadImage(fpath string) *ImageData {
 	img := new(ImageData)
 	content := ReadFileContent(fpath)
 
+	// PATCHED by optiscaler-manager (v0.21): a missing/unreadable file
+	// must NOT be registered or file-cached. The visible caller touches
+	// the entry every frame, so a pixel-less registration is pinned
+	// forever and never re-decodes when the file appears at the same path
+	// (a cover re-fetched after a cache wipe — the card shows the filler
+	// until restart). Return a transient pixel-less image for this frame
+	// only; the next frame retries the cheap stat+read and decodes once
+	// the file lands. Present-but-undecodable files keep the cached
+	// behavior (no per-frame hammering); a nil content while a >64MB
+	// async read is in flight retries after the read caches, and the
+	// load-id guard there prevents duplicate reads. Reapply after
+	// `go mod vendor` (see docs/vendor-patches.md).
+	if len(content) == 0 {
+		return img
+	}
+
 	// read just the header
 	img.Config, _, _ = image.DecodeConfig(bytes.NewReader(content))
 

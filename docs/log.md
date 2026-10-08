@@ -4293,3 +4293,36 @@ software rendering (CPU raster completes synchronously). Vendor patch
 v0.20: Render wait=true (glFinish before present) — the mode upstream
 reserves for "Wayland M1"; NVIDIA GBM needs it too. Guard in
 TestVendorCSDPatchPresent; user verifies visually.
+
+## 2026-10-08 — issue 46: posters lost after cache wipe — boot self-heal + LoadImage zombie fix
+
+User report: after the first restart with issue 042's `_hires-v1`
+migration (which deleted 97 lo-res cached covers), most posters showed
+only the generic filler, and per-game rescans did NOT bring them back.
+
+- Root cause one (session): warm-boot hydration trusts the persisted
+  CoverPath; the design assumption "persisted path ⇒ file exists" broke
+  when a migration deleted cache files — 97/113 rows pointed at deleted
+  files and boot never re-resolved them. Fix: `healDeadCovers` in Start
+  re-resolves dead-path rows in a background pass (same resolveCover
+  chain; online-lookups gated; live files untouched), persists, and pokes
+  frontends.
+- Root cause two (vendored shirei): LoadImage registered and file-cached
+  a pixel-less ImageData for a missing file; the visible card touched it
+  every frame so the sweep never reclaimed it — when a rescan
+  re-downloaded the cover to the SAME path, the zombie was still returned
+  (cache-dir proof: 2050650.img 17:58, 5006530.img 18:06, 860510.img
+  18:08 downloaded while their cards stayed filler). Fix: vendor patch
+  v0.21 — missing/unreadable file returns a transient pixel-less image,
+  unregistered, so the next frame retries and decodes once the file
+  lands. (v0.21, not v0.20: the foreign session took v0.20 for the
+  issue-045 present-sync patch mid-flight.)
+- Diagnosis aids: live probes from tmp/ (gitignored) — `Cover()` against
+  the real CDN fetched fine (network and chain exonerated), and the GPU
+  probe verified the foreign v0.19 retry works on the user's RTX 5080
+  (modifier 0x300000000e08013 after LINEAR's FBO rejection).
+- TDD: reds witnessed for both layers
+  (TestLoadImageRecoversWhenFileAppears: "pixel-less image returned after
+  the file appeared"; TestStartHealsDeadCoverPaths: 5s timeout, path not
+  healed); green after the fixes; TestSwitchINIBackupIsCrashDurable
+  flaked once (passed on both re-runs, untouched by this change).
