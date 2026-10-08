@@ -4038,3 +4038,26 @@ every "folder" to "directory".
   the Viewport fold at 800px and shirei culls it.
 - Verification: `go test ./...` exit 0 (32 packages), `go vet`/`gofmt`
   clean.
+
+## 2026-10-08 — issue 37: card click on the last grid row no longer scrolls to top
+
+User report: clicking a card on the grid's partially-filled last row
+opens the details pane but scrolls the card view to the top; arrows +
+Enter does not.
+
+- Root cause (confirmed by repro): opening the panel re-nests the grid —
+  path-scoped shirei identities recreate the virtual list's node at
+  scroll offset 0. Restore relies on the deferred scrollCursorPending →
+  ScrollIntoView mechanism; Enter arms it, the click path never did.
+  The identity-churn fallback only covers cursor cards that render
+  inside the reset top window, so deep last-row clicks stayed at top
+  while early-row clicks appeared fine.
+- Fix: the card press gesture also sets scrollCursorPending (one line,
+  grid.go) — same timing as the proven Enter path.
+- Red witnessed (`tmp/issue37-red.txt`,
+  TestGridClickLastRowKeepsScroll: clicked card absent from the painted
+  window), green after; `internal/gui` fully green, `go vet`/`gofmt`
+  clean. The only full-suite failures are the foreign session's mid-TDD
+  issue-035 rescan tests in `internal/tui` (their red phase, untouched).
+- Deferred probe: the list view's row click has the same Select-without-
+  restore shape; not reported, needs a very long library to manifest.

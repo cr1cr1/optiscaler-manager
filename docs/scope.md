@@ -280,7 +280,11 @@ evidence.
   up/down; Enter opens the detail panel, Esc closes it) with status-bar
   shortcut hints, raised toast cards with tone accent bar capped at three,
   themed scrollbars and dark search input, and sort/view/search controls
-  disabled while the library is empty.
+  disabled while the library is empty. Opening the panel re-nests the
+  grid (path-scoped shirei identities recreate the virtual list at
+  scroll offset 0), so both the Enter and the card-click paths arm a
+  deferred scroll-into-view restore — a clicked last-row card no longer
+  jumps the view to the top (issue 037).
 - **TUI overhaul**: number-key screens (1 Games / 2 Settings / 3 Help),
   styled game columns (badges, title, store, version, status with tone
   colors), detail screen (`enter`) with actions `i`/`l`/`c`/`r`/`o` and

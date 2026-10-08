@@ -544,6 +544,12 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 			// re-asserts it after the panel re-nests the grid (see above).
 			m.selIdx = idx
 			m.cardFocusPending = e.InstallDir
+			// Opening the panel re-nests the grid, recreating the virtual
+			// list's node at scroll offset 0 (issue 037): arm the same
+			// deferred scroll-into-view the keyboard Enter path arms, or a
+			// clicked card outside the reset (top) window — e.g. the last
+			// row — leaves the grid scrolled back to the top.
+			m.scrollCursorPending = true
 			m.sess.Select(e.InstallDir)
 		}
 	})
