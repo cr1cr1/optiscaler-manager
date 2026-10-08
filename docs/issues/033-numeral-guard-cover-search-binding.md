@@ -44,4 +44,4 @@ alongside the query variant and applies the veto + corroboration rule.
 Four new tests in `internal/covers/search_variants_test.go` (red
 witnessed: Witcher 1's 20900.img bound before the fix —
 `tmp/test-red-033.log`). Full suite exit 0 (30 packages), vet/gofmt
-clean, windows/darwin builds OK. Commit: pinned after the fact.
+clean, windows/darwin builds OK. Commit: `6c6af42`.
