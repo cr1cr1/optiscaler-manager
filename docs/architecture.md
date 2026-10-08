@@ -163,14 +163,22 @@ internal/
                issue 028's poster upload) — zenity→kdialog on Linux,
                IFileOpenDialog via COM on Windows, osascript on macOS
    umu/        umu-launcher integration (Linux only). Detect parses
-               `umu-run --version`; FindRunners scans Steam
-               compatibilitytools.d, Bottles runners/, and umu
-               compatibilitytools for Proton builds; Launch wraps the
-               exec with the GAMEID/WINEPREFIX/PROTONPATH/STORE env and
-               scans stderr for umu's exit-0-on-fatal-error quirk;
-               PrefixFor derives a per-game prefix under
-               <state-root>/umu-prefixes/<sha1[:12]>; IsWindowsBinary
-               detects PE MZ binaries for eligibility.
+               `umu-run --version`; RunnerRoots lists the existing
+               runner roots across Steam (native, Flatpak, Snap, extra
+               libraries via libraryfolders.vdf), Bottles, Lutris,
+               Heroic, and umu compatibilitytools; FindRunners scans
+               them for Proton builds (toolmanifest.vdf OR a top-level
+               proton script) sorted newest-first; ResolveProtonPath
+               picks the pinned setting or the newest detected runner;
+               Launch wraps the exec with the
+               GAMEID/WINEPREFIX/PROTONPATH/STORE env and scans stderr
+               for umu's exit-0-on-fatal-error quirk; PrefixForGame
+               reuses an existing enclosing drive_c prefix or Heroic
+               prefix when present, else derives a per-game prefix under
+               <state-root>/umu-prefixes/<sha1[:12]> (PrefixFor);
+               IsWindowsBinary detects PE MZ binaries for eligibility.
+               The frontends' Proton picker rows are composed once in
+               ui.UmuPickerRows and fed by Deps.UmuRunners.
    launch/     per-store per-OS command table (pure Command fn) + detached
                spawn (build-tagged spawners; Start + Process.Release, never
                Wait). Steam steam://rungameid (Proton is Steam's business),

@@ -40,7 +40,6 @@ const (
 	inputAddDir
 	inputEditVersion
 	inputEditTemplate
-	inputEditUmuProton
 	inputAddForkSlug
 	inputAddForkPattern
 	inputSetTitle
@@ -56,6 +55,13 @@ const (
 	settingsFocusDirs settingsFocus = iota
 	settingsFocusForks
 )
+
+// protonPick is the open umu Proton picker modal: the composed rows and
+// the highlighted entry.
+type protonPick struct {
+	items []ui.UmuPickerOption
+	sel   int
+}
 
 // Model is the bubbletea model bound to one ui.Session: one flat model with
 // per-screen update/view handlers.
@@ -83,6 +89,7 @@ type Model struct {
 	cycle           *stagedCycle
 	backups         []stagedItem // detail dir's DLSS backups (menu + modal)
 	restore         *restorePick // open restore-backup modal
+	proton          *protonPick  // open umu Proton picker modal
 }
 
 // restorePick is the open restore-backup modal: the detail dir, its cached
@@ -406,6 +413,28 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// The umu Proton picker is modal (same discipline as the restore
+	// picker): only its navigation keys are accepted until it closes.
+	if m.proton != nil {
+		switch msg.String() {
+		case "j", "down":
+			if m.proton.sel < len(m.proton.items)-1 {
+				m.proton.sel++
+			}
+		case "k", "up":
+			if m.proton.sel > 0 {
+				m.proton.sel--
+			}
+		case "enter":
+			pick := m.proton
+			m.proton = nil
+			m.sess.SetUmuProtonPath(pick.items[pick.sel].Value)
+		case "esc":
+			m.proton = nil
+		}
+		return m, nil
+	}
+
 	// The restore-backup picker is modal: only its navigation keys are
 	// accepted until it is closed, so no staged pick, screen switch, or
 	// quit can fire underneath it.
@@ -675,7 +704,16 @@ func (m Model) settingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "u":
 		m.sess.SetUmuEnabled(!m.sess.Settings().UmuEnabled)
 	case "p":
-		m.openInput(inputEditUmuProton, "umu Proton path: ", m.sess.Settings().UmuProtonPath)
+		// Open the runner picker with the cursor on the current pick.
+		items := ui.UmuPickerRows(m.sess.Settings().UmuProtonPath, m.sess.UmuRunners())
+		sel := 0
+		for i, it := range items {
+			if it.Value == m.sess.Settings().UmuProtonPath {
+				sel = i
+				break
+			}
+		}
+		m.proton = &protonPick{items: items, sel: sel}
 	case "x":
 		m.sess.ClearBundleCache()
 	}
@@ -736,8 +774,6 @@ func (m *Model) commitInput() tea.Cmd {
 		m.sess.SetDefaultVersion(v)
 	case inputEditTemplate:
 		m.sess.SetLaunchTemplate(v)
-	case inputEditUmuProton:
-		m.sess.SetUmuProtonPath(v)
 	case inputAddForkPattern:
 		if v != "" && m.pendingForkSlug != "" {
 			// AddFork validates and toasts the reason on refusal.

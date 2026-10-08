@@ -4,7 +4,6 @@ package umu
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,35 +12,116 @@ import (
 	"strings"
 )
 
-// Runner represents a locally-installed Proton-compatible runner found
-// on disk. Path points at the runner directory itself; Source is one of
-// "steam", "bottles", "umu" depending on which root it came from.
-type Runner struct {
-	Name    string
-	Path    string
-	Source  string
-	Version string // normalized to "major.minor.patch" so it sorts sanely
+// RunnerRoots returns the existing directories worth scanning for
+// Proton-compatible runners: Steam (native, Flatpak, Snap, plus extra
+// library folders from steamapps/libraryfolders.vdf), Bottles, Lutris,
+// Heroic, and umu's own compatibilitytools. Missing dirs are skipped,
+// and entries that resolve to the same directory through symlinks are
+// deduplicated. XDG_DATA_HOME / XDG_CONFIG_HOME overrides are honored.
+func RunnerRoots() []string {
+	home := os.Getenv("HOME")
+	xdgData := os.Getenv("XDG_DATA_HOME")
+	if xdgData == "" && home != "" {
+		xdgData = filepath.Join(home, ".local", "share")
+	}
+	xdgConfig := os.Getenv("XDG_CONFIG_HOME")
+	if xdgConfig == "" && home != "" {
+		xdgConfig = filepath.Join(home, ".config")
+	}
+
+	var candidates []string
+	if home != "" {
+		candidates = append(candidates,
+			filepath.Join(home, ".steam", "steam", "compatibilitytools.d"),
+			filepath.Join(home, ".var", "app", "com.valvesoftware.Steam", "data", "Steam", "compatibilitytools.d"),
+			filepath.Join(home, "snap", "steam", "common", ".steam", "steam", "compatibilitytools.d"),
+			filepath.Join(home, ".var", "app", "com.usebottles.bottles", "data", "bottles", "runners"),
+			filepath.Join(home, ".var", "app", "net.lutris.Lutris", "data", "lutris", "runners", "wine"),
+			filepath.Join(home, ".var", "app", "com.heroicgameslauncher.hgl", "config", "heroic", "tools", "proton"),
+			filepath.Join(home, ".var", "app", "com.heroicgameslauncher.hgl", "config", "heroic", "tools", "wine"),
+		)
+	}
+	if xdgData != "" {
+		candidates = append(candidates,
+			filepath.Join(xdgData, "Steam", "compatibilitytools.d"),
+			filepath.Join(xdgData, "bottles", "runners"),
+			filepath.Join(xdgData, "lutris", "runners", "wine"),
+			filepath.Join(xdgData, "umu", "compatibilitytools"),
+		)
+	}
+	if xdgConfig != "" {
+		candidates = append(candidates,
+			filepath.Join(xdgConfig, "heroic", "tools", "proton"),
+			filepath.Join(xdgConfig, "heroic", "tools", "wine"),
+		)
+	}
+	candidates = append(candidates, steamLibraryCompatTools(home, xdgData)...)
+
+	var roots []string
+	seen := map[string]bool{}
+	for _, c := range candidates {
+		st, err := os.Stat(c)
+		if err != nil || !st.IsDir() {
+			continue
+		}
+		key := c
+		if resolved, err := filepath.EvalSymlinks(c); err == nil {
+			key = resolved
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		roots = append(roots, c)
+	}
+	return roots
 }
 
-// DefaultRootCandidates returns the conventional scan locations:
-// $XDG_DATA_HOME/Steam/compatibilitytools.d, $XDG_DATA_HOME/bottles/runners,
-// $XDG_DATA_HOME/umu/compatibilitytools. Missing dirs are silently
-// skipped by FindRunners, so returning all three unconditionally is fine.
-func DefaultRootCandidates() []string {
-	xdg := os.Getenv("XDG_DATA_HOME")
-	if xdg == "" {
-		xdg = filepath.Join(os.Getenv("HOME"), ".local", "share")
+// steamLibraryCompatTools returns <library>/compatibilitytools.d for
+// every extra Steam library folder recorded in each known Steam root's
+// steamapps/libraryfolders.vdf. Roots and files that don't exist are
+// skipped silently.
+func steamLibraryCompatTools(home, xdgData string) []string {
+	var steamDirs []string
+	if home != "" {
+		steamDirs = append(steamDirs,
+			filepath.Join(home, ".steam", "steam"),
+			filepath.Join(home, ".var", "app", "com.valvesoftware.Steam", "data", "Steam"),
+			filepath.Join(home, "snap", "steam", "common", ".steam", "steam"),
+		)
 	}
-	return []string{
-		filepath.Join(xdg, "Steam", "compatibilitytools.d"),
-		filepath.Join(xdg, "bottles", "runners"),
-		filepath.Join(xdg, "umu", "compatibilitytools"),
+	if xdgData != "" {
+		steamDirs = append(steamDirs, filepath.Join(xdgData, "Steam"))
 	}
+	var out []string
+	for _, dir := range steamDirs {
+		data, err := os.ReadFile(filepath.Join(dir, "steamapps", "libraryfolders.vdf"))
+		if err != nil {
+			continue
+		}
+		for _, lib := range libraryFolderPaths(string(data)) {
+			out = append(out, filepath.Join(lib, "compatibilitytools.d"))
+		}
+	}
+	return out
+}
+
+// libraryPathRe extracts the "path" values from libraryfolders.vdf.
+// The VDF is line-oriented enough in practice that a regex beats pulling
+// in a parser; escaped backslashes (Windows-style paths) are collapsed.
+var libraryPathRe = regexp.MustCompile(`"path"\s+"((?:[^"\\]|\\.)*)"`)
+
+func libraryFolderPaths(vdf string) []string {
+	var out []string
+	for _, m := range libraryPathRe.FindAllStringSubmatch(vdf, -1) {
+		out = append(out, strings.ReplaceAll(m[1], `\\`, `\`))
+	}
+	return out
 }
 
 // FindRunners scans the supplied root directories for Proton runners.
-// Each direct child of a root that contains a toolmanifest.vdf is
-// considered a valid runner. Roots that don't exist are skipped silently.
+// Each direct child of a root that passes runnerValid is considered a
+// valid runner. Roots that don't exist are skipped silently.
 // Results are sorted by Version descending (newest first); equal versions
 // preserve the order of roots supplied.
 //
@@ -64,7 +144,7 @@ func FindRunners(_ context.Context, roots []string) []Runner {
 				continue
 			}
 			dir := filepath.Join(root, e.Name())
-			if !hasManifest(dir) {
+			if !runnerValid(dir) {
 				continue
 			}
 			all = append(all, tagged{
@@ -89,15 +169,22 @@ func FindRunners(_ context.Context, roots []string) []Runner {
 }
 
 // rootSource classifies a root directory path into one of the canonical
-// source names ("steam", "bottles", "umu") for labelling. Anything
-// unrecognized is "other".
+// source names ("steam", "bottles", "lutris", "heroic", "umu") for
+// labelling. Anything unrecognized is "other".
 func rootSource(root string) string {
 	r := filepath.Clean(root)
 	switch {
-	case strings.HasSuffix(r, filepath.Join("Steam", "compatibilitytools.d")):
+	case strings.HasSuffix(r, "compatibilitytools.d"):
+		// Steam is the only launcher using compatibilitytools.d (native,
+		// Flatpak, Snap, and extra library folders alike).
 		return "steam"
 	case strings.HasSuffix(r, filepath.Join("bottles", "runners")):
 		return "bottles"
+	case strings.HasSuffix(r, filepath.Join("lutris", "runners", "wine")):
+		return "lutris"
+	case strings.HasSuffix(r, filepath.Join("heroic", "tools", "proton")),
+		strings.HasSuffix(r, filepath.Join("heroic", "tools", "wine")):
+		return "heroic"
 	case strings.HasSuffix(r, filepath.Join("umu", "compatibilitytools")):
 		return "umu"
 	default:
@@ -105,11 +192,16 @@ func rootSource(root string) string {
 	}
 }
 
-// hasManifest reports whether dir contains a toolmanifest.vdf file (the
-// presence marker Steam / umu / Bottles all use for valid Proton builds).
-func hasManifest(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, "toolmanifest.vdf"))
-	return err == nil
+// runnerValid reports whether dir looks like a usable Proton build:
+// either the Steam-style toolmanifest.vdf marker, or the top-level
+// proton script that GE-Proton repacks for Lutris/Heroic ship (umu's
+// PROTONPATH needs it). Plain wine builds (bin/wine only) are rejected.
+func runnerValid(dir string) bool {
+	if _, err := os.Stat(filepath.Join(dir, "toolmanifest.vdf")); err == nil {
+		return true
+	}
+	st, err := os.Stat(filepath.Join(dir, "proton"))
+	return err == nil && !st.IsDir()
 }
 
 // versionNum matches a numeric version component. We use a regex rather
@@ -168,5 +260,3 @@ func versionLess(a, b string) bool {
 	return false
 }
 
-// (no fmt use yet, reserved for diagnostic logging later)
-var _ = fmt.Sprintf

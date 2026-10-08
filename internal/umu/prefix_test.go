@@ -113,6 +113,112 @@ func TestPrefixFor_FallsBackToHomeShare(t *testing.T) {
 	}
 }
 
+func TestPrefixForGame_ReusesEnclosingPrefix(t *testing.T) {
+	root := t.TempDir()
+	prefix := filepath.Join(root, "bottles", "mybottle")
+	mustMkdir(t, filepath.Join(prefix, "drive_c", "Games", "Foo"))
+	exe := filepath.Join(prefix, "drive_c", "Games", "Foo", "foo.exe")
+
+	got, err := PrefixForGame(filepath.Join(root, "elsewhere"), exe, "")
+	if err != nil {
+		t.Fatalf("PrefixForGame: %v", err)
+	}
+	if got != prefix {
+		t.Errorf("prefix = %q, want enclosing prefix %q", got, prefix)
+	}
+}
+
+func TestPrefixForGame_EnclosingPrefixMustExist(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("OM_DATA_DIR", filepath.Join(root, "data"))
+	// drive_c in the path but the prefix root is NOT on disk.
+	exe := filepath.Join(root, "ghost", "drive_c", "Foo", "foo.exe")
+
+	got, err := PrefixForGame(filepath.Join(root, "install"), exe, "")
+	if err != nil {
+		t.Fatalf("PrefixForGame: %v", err)
+	}
+	want, _ := PrefixFor(filepath.Join(root, "install"), "")
+	if got != want {
+		t.Errorf("prefix = %q, want app-managed %q when the enclosing prefix is missing", got, want)
+	}
+}
+
+func TestPrefixForGame_ReusesHeroicPrefix(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	t.Setenv("HOME", home)
+	t.Setenv("OM_DATA_DIR", filepath.Join(root, "data"))
+	heroic := filepath.Join(home, "Games", "Heroic", "Prefixes", "SomeApp")
+	mustMkdir(t, heroic)
+
+	got, err := PrefixForGame(filepath.Join(root, "install"), filepath.Join(root, "install", "game.exe"), "SomeApp")
+	if err != nil {
+		t.Fatalf("PrefixForGame: %v", err)
+	}
+	if got != heroic {
+		t.Errorf("prefix = %q, want existing Heroic prefix %q", got, heroic)
+	}
+}
+
+func TestPrefixForGame_ReusesHeroicFlatpakPrefix(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	t.Setenv("HOME", home)
+	t.Setenv("OM_DATA_DIR", filepath.Join(root, "data"))
+	heroic := filepath.Join(home, ".var", "app", "com.heroicgameslauncher.hgl", "Games", "Heroic", "Prefixes", "SomeApp")
+	mustMkdir(t, heroic)
+
+	got, err := PrefixForGame(filepath.Join(root, "install"), filepath.Join(root, "install", "game.exe"), "SomeApp")
+	if err != nil {
+		t.Fatalf("PrefixForGame: %v", err)
+	}
+	if got != heroic {
+		t.Errorf("prefix = %q, want existing Heroic Flatpak prefix %q", got, heroic)
+	}
+}
+
+func TestPrefixForGame_HeroicPrefixMustExist(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	t.Setenv("OM_DATA_DIR", filepath.Join(root, "data"))
+
+	got, err := PrefixForGame(filepath.Join(root, "install"), filepath.Join(root, "install", "game.exe"), "SomeApp")
+	if err != nil {
+		t.Fatalf("PrefixForGame: %v", err)
+	}
+	want, _ := PrefixFor(filepath.Join(root, "install"), "")
+	if got != want {
+		t.Errorf("prefix = %q, want app-managed %q when no Heroic prefix exists", got, want)
+	}
+}
+
+func TestPrefixForGame_EnclosingBeatsHeroic(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	t.Setenv("HOME", home)
+	t.Setenv("OM_DATA_DIR", filepath.Join(root, "data"))
+	prefix := filepath.Join(root, "bottle")
+	mustMkdir(t, filepath.Join(prefix, "drive_c", "Foo"))
+	mustMkdir(t, filepath.Join(home, "Games", "Heroic", "Prefixes", "SomeApp"))
+
+	got, err := PrefixForGame(filepath.Join(root, "install"), filepath.Join(prefix, "drive_c", "Foo", "foo.exe"), "SomeApp")
+	if err != nil {
+		t.Fatalf("PrefixForGame: %v", err)
+	}
+	if got != prefix {
+		t.Errorf("prefix = %q, want enclosing prefix %q to win over Heroic", got, prefix)
+	}
+}
+
+// mustMkdir creates dir (and parents) or fails the test.
+func mustMkdir(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", dir, err)
+	}
+}
+
 // shaSlug is the test-only reference implementation of the slug,
 // re-declared here so a future edit of Slug's hash params breaks the
 // test instead of silently changing the directory layout on disk.

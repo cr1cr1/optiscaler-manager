@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"time"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
+	"github.com/cr1cr1/optiscaler-manager/internal/umu"
 )
 
 // Settings returns a snapshot of the current user settings; the ExtraDirs
@@ -107,8 +109,21 @@ func (s *Session) SetUmuEnabled(enabled bool) {
 	}, msg, "")
 }
 
+// UmuRunners returns the Proton-compatible runners the settings picker
+// offers, from the injected deps provider or the production disk scan.
+func (s *Session) UmuRunners() []umu.Runner {
+	s.mu.Lock()
+	fn := s.deps.UmuRunners
+	s.mu.Unlock()
+	if fn != nil {
+		return fn()
+	}
+	return umu.FindRunners(context.Background(), umu.RunnerRoots())
+}
+
 // SetUmuProtonPath pins the Proton build umu-run uses. An empty value
-// means "let umu resolve its own default (UMU-Latest)". Persisted.
+// means Auto: the newest runner detected across the Steam / Bottles /
+// Lutris / Heroic / umu roots is used at launch. Persisted.
 func (s *Session) SetUmuProtonPath(path string) {
 	msg := "umu Proton: auto"
 	if path != "" {

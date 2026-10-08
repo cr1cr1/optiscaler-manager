@@ -148,6 +148,205 @@ func mkRunner(t *testing.T, dir string) string {
 	return dir
 }
 
+func TestRunnerRoots_CoversKnownLauncherLayouts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	want := []string{
+		filepath.Join(home, ".steam", "steam", "compatibilitytools.d"),
+		filepath.Join(home, ".local", "share", "Steam", "compatibilitytools.d"),
+		filepath.Join(home, ".var", "app", "com.valvesoftware.Steam", "data", "Steam", "compatibilitytools.d"),
+		filepath.Join(home, "snap", "steam", "common", ".steam", "steam", "compatibilitytools.d"),
+		filepath.Join(home, ".local", "share", "bottles", "runners"),
+		filepath.Join(home, ".var", "app", "com.usebottles.bottles", "data", "bottles", "runners"),
+		filepath.Join(home, ".local", "share", "lutris", "runners", "wine"),
+		filepath.Join(home, ".var", "app", "net.lutris.Lutris", "data", "lutris", "runners", "wine"),
+		filepath.Join(home, ".config", "heroic", "tools", "proton"),
+		filepath.Join(home, ".config", "heroic", "tools", "wine"),
+		filepath.Join(home, ".var", "app", "com.heroicgameslauncher.hgl", "config", "heroic", "tools", "proton"),
+		filepath.Join(home, ".local", "share", "umu", "compatibilitytools"),
+	}
+	for _, d := range want {
+		mkdir(t, d)
+	}
+	// A plausible-looking dir that is NOT a runner root must not appear.
+	mkdir(t, filepath.Join(home, ".local", "share", "lutris", "pga.db"))
+
+	got := RunnerRoots()
+	gotSet := map[string]bool{}
+	for _, g := range got {
+		gotSet[g] = true
+	}
+	for _, w := range want {
+		if !gotSet[w] {
+			t.Errorf("RunnerRoots() missing %q (got %v)", w, got)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("len(RunnerRoots()) = %d, want %d (got %v)", len(got), len(want), got)
+	}
+}
+
+func TestRunnerRoots_SkipsMissingDirs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	if got := RunnerRoots(); len(got) != 0 {
+		t.Errorf("RunnerRoots() = %v, want none on an empty HOME", got)
+	}
+}
+
+func TestRunnerRoots_HonorsXdgOverrides(t *testing.T) {
+	home := t.TempDir()
+	data := t.TempDir()
+	cfg := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", data)
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+
+	bottles := filepath.Join(data, "bottles", "runners")
+	heroic := filepath.Join(cfg, "heroic", "tools", "proton")
+	mkdir(t, bottles)
+	mkdir(t, heroic)
+
+	got := RunnerRoots()
+	gotSet := map[string]bool{}
+	for _, g := range got {
+		gotSet[g] = true
+	}
+	if !gotSet[bottles] {
+		t.Errorf("RunnerRoots() missing XDG_DATA_HOME bottles root %q (got %v)", bottles, got)
+	}
+	if !gotSet[heroic] {
+		t.Errorf("RunnerRoots() missing XDG_CONFIG_HOME heroic root %q (got %v)", heroic, got)
+	}
+}
+
+func TestRunnerRoots_IncludesExtraSteamLibraries(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	steam := filepath.Join(home, ".steam", "steam")
+	lib := filepath.Join(t.TempDir(), "steamlib")
+	writeFile(t, filepath.Join(steam, "steamapps", "libraryfolders.vdf"),
+		`"libraryfolders" { "0" { "path" "`+lib+`" } }`)
+	compat := filepath.Join(lib, "compatibilitytools.d")
+	mkdir(t, compat)
+
+	got := RunnerRoots()
+	for _, g := range got {
+		if g == compat {
+			return
+		}
+	}
+	t.Errorf("RunnerRoots() = %v, want extra-library root %q included", got, compat)
+}
+
+func TestRunnerRoots_DeduplicatesSymlinks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	real := filepath.Join(home, ".local", "share", "Steam")
+	mkdir(t, filepath.Join(real, "compatibilitytools.d"))
+	link := filepath.Join(home, ".steam", "steam")
+	mkdir(t, filepath.Dir(link))
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	got := RunnerRoots()
+	count := 0
+	for _, g := range got {
+		if filepath.Base(g) == "compatibilitytools.d" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("compatibilitytools.d appears %d times in %v, want 1 (symlink dedup)", count, got)
+	}
+}
+
+func TestFindRunners_AcceptsProtonScriptWithoutManifest(t *testing.T) {
+	root := t.TempDir()
+
+	// GE-Proton repacks for Lutris/Heroic carry no toolmanifest.vdf but
+	// ship the top-level proton script umu's PROTONPATH needs.
+	ge := filepath.Join(root, "GE-Proton9-25")
+	mkdir(t, ge)
+	writeFile(t, filepath.Join(ge, "proton"), "#!/bin/sh\n")
+	// Plain wine builds (Kron4ek etc.) cannot serve as PROTONPATH.
+	wineOnly := filepath.Join(root, "kron4ek-wine-10.0-amd64")
+	writeFile(t, filepath.Join(wineOnly, "bin", "wine"), "")
+
+	runners := FindRunners(context.Background(), []string{root})
+	if len(runners) != 1 {
+		t.Fatalf("len(runners) = %d, want 1 (got %+v)", len(runners), runners)
+	}
+	if runners[0].Name != "GE-Proton9-25" {
+		t.Errorf("runners[0].Name = %q, want GE-Proton9-25", runners[0].Name)
+	}
+}
+
+func TestResolveProtonPath_PinnedWins(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	mkRunner(t, filepath.Join(home, ".local", "share", "Steam", "compatibilitytools.d", "GE-Proton9-3"))
+
+	if got := ResolveProtonPath(context.Background(), "/custom/proton"); got != "/custom/proton" {
+		t.Errorf("ResolveProtonPath(pinned) = %q, want the pinned path verbatim", got)
+	}
+}
+
+func TestResolveProtonPath_AutoSelectsNewest(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	mkRunner(t, filepath.Join(home, ".local", "share", "Steam", "compatibilitytools.d", "GE-Proton9-3"))
+	newest := mkRunner(t, filepath.Join(home, ".config", "heroic", "tools", "proton", "GE-Proton10-1"))
+
+	if got := ResolveProtonPath(context.Background(), ""); got != newest {
+		t.Errorf("ResolveProtonPath(auto) = %q, want newest detected %q", got, newest)
+	}
+}
+
+func TestResolveProtonPath_EmptyWhenNoRunners(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	if got := ResolveProtonPath(context.Background(), ""); got != "" {
+		t.Errorf("ResolveProtonPath(auto, no runners) = %q, want empty (umu's own runtime)", got)
+	}
+}
+
+func TestRootSourceLabelsNewLaunchers(t *testing.T) {
+	cases := []struct{ root, want string }{
+		{filepath.Join("/home", "u", ".config", "heroic", "tools", "proton"), "heroic"},
+		{filepath.Join("/home", "u", ".var", "app", "com.heroicgameslauncher.hgl", "config", "heroic", "tools", "wine"), "heroic"},
+		{filepath.Join("/home", "u", ".local", "share", "lutris", "runners", "wine"), "lutris"},
+		{filepath.Join("/home", "u", ".var", "app", "com.usebottles.bottles", "data", "bottles", "runners"), "bottles"},
+		{filepath.Join("/home", "u", ".var", "app", "com.valvesoftware.Steam", "data", "Steam", "compatibilitytools.d"), "steam"},
+		{filepath.Join("/games", "steamlib", "compatibilitytools.d"), "steam"},
+	}
+	for _, c := range cases {
+		if got := rootSource(c.root); got != c.want {
+			t.Errorf("rootSource(%q) = %q, want %q", c.root, got, c.want)
+		}
+	}
+}
+
 func mkdir(t *testing.T, dir string) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {

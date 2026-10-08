@@ -213,11 +213,15 @@ turning it off gives you a fully offline scan. On Linux, the Settings
 window also exposes the umu-launcher integration: enable it to launch
 manually-added Windows binaries (`.exe`, `.bat`, `.cmd`, `.msi`) via
 [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher) when
-`umu-run` is installed. Each game gets its own Proton prefix under
-`~/.local/share/optiscaler-manager/umu-prefixes/<slug>`. Pin a Proton
-build in Settings, or leave it blank to auto-detect from Steam
-`compatibilitytools.d`, Bottles `runners/`, and umu `compatibilitytools`
-(falling through to umu's `UMU-Latest` on first launch).
+`umu-run` is installed. The Proton runner setting is a picker over the
+builds detected on your system — Steam (native, Flatpak, Snap, and extra
+library folders), Bottles, Lutris, Heroic, and umu's own
+`compatibilitytools` — with **Auto (newest detected)** as the default
+(falling through to umu's `UMU-Latest` when nothing is detected). Games
+already living in a launcher prefix (a Bottles/Lutris/Heroic `drive_c`)
+or with an existing Heroic prefix are launched in that prefix; every
+other game gets its own Proton prefix under
+`~/.local/share/optiscaler-manager/umu-prefixes/<slug>`.
 
 ### TUI keymap
 
@@ -236,7 +240,7 @@ build in Settings, or leave it blank to auto-detect from Steam
 | `s` | Toggle sort (default / name) |
 | `R` | Rescan the library |
 | Detail: `i` `v` `u` `p` `l` `c` `R` `r` `o` `d` | Install / switch version / update the NVIDIA DLSS set / restore a DLSS backup (`p` opens the backup list, `enter` picks, then `y` confirm) / launch / cancel / rescan this game / rollback / open OptiScaler.ini / disable-enable the OptiScaler hook |
-| Settings: `tab` `enter` `e` `t` `a` `d` `x` `o` `u` `p` | Switch sources/dirs list / use fork / edit version / edit launch template / add dir or fork / remove dir or fork (`y`/`n`) / clear bundle cache / toggle online game info / toggle umu-launcher / edit umu Proton path |
+| Settings: `tab` `enter` `e` `t` `a` `d` `x` `o` `u` `p` | Switch sources/dirs list / use fork / edit version / edit launch template / add dir or fork / remove dir or fork (`y`/`n`) / clear bundle cache / toggle online game info / toggle umu-launcher / pick umu Proton runner (`enter` picks, `esc` closes) |
 | Confirm modal | `y` proceed, `n` cancel |
 
 ### Command line

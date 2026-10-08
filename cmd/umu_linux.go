@@ -29,15 +29,22 @@ func newUmuLauncher(prefs settings.Settings) ui.UmuLauncherHook {
 	}
 	log.Info().Str("path", path).Str("version", version).Msg("umu-launcher detected")
 	return func(ctx context.Context, row ui.GameRow) error {
-		prefix, err := umu.PrefixFor(row.InstallDir, row.Title)
+		prefix, err := umu.PrefixForGame(row.InstallDir, row.ExePath, row.AppName)
 		if err != nil {
 			return err
 		}
+		// Auto (empty setting) resolves to the newest runner detected
+		// across Steam / Bottles / Lutris / Heroic / umu roots; a pinned
+		// setting wins verbatim. Resolution runs per launch so a runner
+		// installed mid-session is picked up without a restart.
+		proton := umu.ResolveProtonPath(ctx, prefs.UmuProtonPath)
+		log.Debug().Str("game", row.Title).Str("proton", proton).Str("prefix", prefix).
+			Msg("umu launch resolved")
 		opts := umu.LaunchOpts{
 			ExePath:    row.ExePath,
 			GameID:     "umu-default",
 			WinePrefix: prefix,
-			ProtonPath: prefs.UmuProtonPath,
+			ProtonPath: proton,
 			Store:      "",
 			UmuRunPath: path,
 		}

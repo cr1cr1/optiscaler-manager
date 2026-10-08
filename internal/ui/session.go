@@ -22,6 +22,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/steam"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
+	"github.com/cr1cr1/optiscaler-manager/internal/umu"
 )
 
 // toastTTL is how long a toast stays visible.
@@ -194,6 +195,12 @@ type Deps struct {
 	// regular Launcher (which usually fails on a Windows binary without
 	// Proton, but the failure is honest).
 	UmuLauncher UmuLauncherHook
+
+	// UmuRunners lists the locally installed Proton-compatible runners
+	// the settings frontends offer in the umu Proton picker; nil selects
+	// the production scan (umu.FindRunners over umu.RunnerRoots), which
+	// finds nothing off-Linux. Tests inject fixtures.
+	UmuRunners func() []umu.Runner
 
 	// Steam and ProtonDB feed the online lookup phase of Scan; either nil
 	// skips enrichment entirely.

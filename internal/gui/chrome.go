@@ -90,9 +90,14 @@ func (m *model) openSettings() {
 		m.onlineBuf = s.OnlineLookups
 		m.umuEnabledBuf = s.UmuEnabled
 		m.umuProtonBuf = s.UmuProtonPath
+		// Scanned once per open (not per frame): FindRunners walks the
+		// launcher roots on disk. A runner installed while the modal is
+		// open appears on the next open.
+		m.umuRunners = m.sess.UmuRunners()
 	}
 	m.settingsTab = settingsTabGeneral
 	m.settingsContentMinH = 0 // re-measure the tallest tab on each open
+	m.umuProtonOpen = false
 	m.settingsOpen = true
 }
 
@@ -111,7 +116,15 @@ const (
 )
 
 func (m *model) settingsModal() {
-	modal(settingsModalW, func() { m.settingsOpen = false }, func() {
+	modal(settingsModalW, func() {
+		// While the umu Proton picker's popup is open it owns outside
+		// clicks (it floats outside the modal card at root scope);
+		// closing the modal from under it would strand the gesture.
+		if m.umuProtonOpen {
+			return
+		}
+		m.settingsOpen = false
+	}, func() {
 		Container(Attrs(Expand, Gap(sp16), BackgroundVec(bgPanel)), func() {
 			Label("Settings", FontSize(18), TextColorVec(txtMain), FontWeight(WeightBold))
 			m.settingsTabBar()
@@ -243,13 +256,111 @@ func (m *model) settingsGeneralTab() {
 			if m.umuEnabledBuf != m.sess.Settings().UmuEnabled {
 				m.sess.SetUmuEnabled(m.umuEnabledBuf)
 			}
-			muted("Proton path (blank = auto-detect from Steam / Bottles / umu)")
-			themedInput(&m.umuProtonBuf, "", NoIcon, MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH}))
-			if m.umuProtonBuf != m.sess.Settings().UmuProtonPath {
-				m.sess.SetUmuProtonPath(m.umuProtonBuf)
+			muted("Proton runner (Auto = newest detected from Steam / Bottles / Lutris / Heroic / umu)")
+			m.umuProtonPicker()
+		}
+	})
+}
+
+// umuProtonMenuItem is the picker's observability seam (mirrors
+// sortMenuItem): one entry per rendered popup row.
+type umuProtonMenuItem struct {
+	value string
+	label string
+	rect  Rect
+	hl    bool
+}
+
+// umuProtonPicker replaces the old free-text Proton path input with a
+// dropdown over the runners detected at settings-open: a trigger labeled
+// with the current selection and a shared-machinery popup of
+// ui.UmuPickerRows. A pick only updates umuProtonBuf; Apply persists
+// (same discipline as the other General-tab buffers).
+func (m *model) umuProtonPicker() {
+	st := Use[dropdownState]("umu-proton-picker")
+	// Published for the modal's dismiss guard (read after this renders,
+	// same frame) and reset on openSettings.
+	m.umuProtonOpen = st.open
+	if !st.open {
+		m.umuProtonMenuItems = nil
+	}
+	enterPick := false
+	Container(Attrs(Focusable, PointerHand, Row, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(radiusS), BackgroundVec(bgCard), MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH})), func() {
+		FocusOnClick()
+		st.btnID = CurrentId()
+		m.umuProtonTriggerRect = GetScreenRectOf(CurrentId())
+		activated := false
+		if HasFocus() {
+			ModAttrs(func(a *AttrSet) {
+				a.BorderWidth = 2
+				a.BorderColor = focusBorder
+			})
+			if st.open {
+				// The trigger owns menu navigation while open (shared
+				// dropdown keys; all consumed).
+				var spaceToggle bool
+				enterPick, spaceToggle = dropdownMenuKeys(st, len(m.umuProtonMenuItems))
+				if spaceToggle {
+					activated = true
+				}
+			} else if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
+				GetFrameInput().Key = KeyCodeNone
+				activated = true
+			}
+		}
+		Label(ui.UmuPickerLabel(m.umuProtonBuf, m.umuRunners), FontSize(12), TextColorVec(txtMain))
+		dropdownArrow()
+		if PressAction() {
+			activated = true
+		}
+		if activated {
+			st.open = !st.open
+			if st.open {
+				st.hl = -1 // re-initialize the highlight on the popup frame
 			}
 		}
 	})
+	if st.open {
+		rows := ui.UmuPickerRows(m.umuProtonBuf, m.umuRunners)
+		dropdownPopup(st, 0, 460, func(mouseMoved bool) {
+			if st.hl < 0 {
+				// Open-time init: the highlight starts on the ticked
+				// (current selection) row, 0 when nothing is ticked.
+				st.hl = 0
+				for i, r := range rows {
+					if r.Value == m.umuProtonBuf {
+						st.hl = i
+						break
+					}
+				}
+			}
+			m.umuProtonMenuItems = m.umuProtonMenuItems[:0]
+			for i, r := range rows {
+				r := r
+				ticked := r.Value == m.umuProtonBuf
+				dropdownRow(st, i, enterPick, mouseMoved,
+					func(hl bool) {
+						// Fixed-width tick column keeps labels aligned.
+						tick := " "
+						if ticked {
+							tick = "✓"
+						}
+						Label(tick, FontSize(12), TextColorVec(txtMain))
+						Label(r.Label, FontSize(12), TextColorVec(txtMain))
+						m.umuProtonMenuItems = append(m.umuProtonMenuItems, umuProtonMenuItem{value: r.Value, label: r.Label, rect: GetScreenRectOf(CurrentId()), hl: hl})
+					},
+					func(keyboard bool) {
+						m.umuProtonBuf = r.Value
+						if keyboard {
+							FocusImmediateOn(st.btnID)
+						}
+					})
+			}
+		})
+	}
+	// Dismissal AFTER the popup rendered (shared ordering): Esc consumed
+	// so the modal's own Esc handler cannot also close the settings.
+	dropdownDismiss(st, nil)
 }
 
 // settingsOptiscalerTab: everything OptiScaler-specific — the default

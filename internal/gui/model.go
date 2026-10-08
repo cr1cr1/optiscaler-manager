@@ -17,6 +17,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
+	"github.com/cr1cr1/optiscaler-manager/internal/umu"
 )
 
 // renderToPNG is the headless render seam used by smoke tests.
@@ -50,6 +51,10 @@ type model struct {
 	onlineBuf           bool                          // settings-modal online-lookups toggle buffer, primed on open
 	umuEnabledBuf       bool                          // settings-modal umu-launcher toggle buffer, primed on open
 	umuProtonBuf        string                        // settings-modal umu-launcher Proton path buffer, primed on open
+	umuRunners          []umu.Runner                  // detected Proton runners, scanned once per settings open (picker I/O discipline)
+	umuProtonTriggerRect Rect                         // screen rect of the Proton picker trigger (click test seam)
+	umuProtonMenuItems  []umuProtonMenuItem           // open Proton picker rows (menu test seam)
+	umuProtonOpen       bool                          // Proton picker popup open this frame (modal dismiss guard)
 	forkSlugBuf         string                        // settings-modal add-fork slug input
 	forkPatternBuf      string                        // settings-modal add-fork asset-glob input
 	titleEditDir        string                        // detail panel: game whose title is being edited ("" = editor closed, issue 028)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
+	"github.com/cr1cr1/optiscaler-manager/internal/umu"
 )
 
 // guiFakesWithDirs builds a session whose settings carry extra scan dirs.
@@ -262,6 +263,62 @@ func TestGUISettingsUmuSection(t *testing.T) {
 		t.Errorf("persisted UmuProtonPath = %q, want /runners/GE-Proton9-3", s.UmuProtonPath)
 	}
 	t.Logf("umu-launcher settings persisted: enabled=%v proton=%q", s.UmuEnabled, s.UmuProtonPath)
+}
+
+// TestGUISettingsUmuProtonPicker: the Proton setting is a picker over
+// the session's detected runners; picking a runner buffers its path and
+// applySettings persists it.
+func TestGUISettingsUmuProtonPicker(t *testing.T) {
+	runners := []umu.Runner{
+		{Name: "GE-Proton10-1", Path: "/runners/GE-Proton10-1", Source: "heroic", Version: "10.1"},
+		{Name: "GE-Proton9-3", Path: "/runners/GE-Proton9-3", Source: "steam", Version: "9.3"},
+	}
+	root := t.TempDir()
+	sess, _ := guiFakes(t, func(d *ui.Deps) {
+		d.SettingsRoot = root
+		d.Settings = settings.Defaults()
+		d.UmuRunners = func() []umu.Runner { return runners }
+	})
+	m := newModel(Config{Session: sess})
+	m.openSettings()
+
+	if got := ui.UmuPickerLabel(m.umuProtonBuf, m.umuRunners); got != "Auto (newest detected)" {
+		t.Fatalf("picker label %q, want %q", got, "Auto (newest detected)")
+	}
+
+	headlessFrames(t, 1000, 700)
+	keyFrame(KeyCodeNone, 0, m.rootView) // build + register focusables
+	keyFrame(KeyCodeNone, 0, m.rootView) // capture the trigger rect
+	if m.umuProtonTriggerRect.Size[0] == 0 {
+		t.Fatalf("picker trigger rect not recorded: %+v", m.umuProtonTriggerRect)
+	}
+	clickRect(m.umuProtonTriggerRect, m.rootView) // open the popup
+	keyFrame(KeyCodeNone, 0, m.rootView)          // render popup, record rows
+
+	items := m.umuProtonMenuItems
+	if len(items) != 3 {
+		t.Fatalf("picker rows = %d, want 3 (Auto + 2 runners): %+v", len(items), items)
+	}
+	wantLabels := []string{"Auto (newest detected)", "GE-Proton10-1 (heroic)", "GE-Proton9-3 (steam)"}
+	for i, w := range wantLabels {
+		if items[i].label != w {
+			t.Errorf("items[%d].label = %q, want %q", i, items[i].label, w)
+		}
+	}
+
+	clickRect(items[1].rect, m.rootView) // pick the heroic runner
+	if m.umuProtonBuf != "/runners/GE-Proton10-1" {
+		t.Fatalf("umuProtonBuf = %q after pick, want /runners/GE-Proton10-1", m.umuProtonBuf)
+	}
+	m.applySettings()
+	s, err := settings.Load(root)
+	if err != nil {
+		t.Fatalf("settings unreadable after apply: %v", err)
+	}
+	if s.UmuProtonPath != "/runners/GE-Proton10-1" {
+		t.Errorf("persisted UmuProtonPath = %q, want /runners/GE-Proton10-1", s.UmuProtonPath)
+	}
+	t.Logf("umu Proton picker persisted %q", s.UmuProtonPath)
 }
 
 // TestGUISettingsUmuToggleFlipsViaKeyboard: the umu toggle enters the

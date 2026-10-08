@@ -102,6 +102,8 @@ func (m Model) View() string {
 		body = lipgloss.Place(w, contentH, lipgloss.Center, lipgloss.Center, confirmBox(snap.Confirm))
 	} else if m.restore != nil {
 		body = lipgloss.Place(w, contentH, lipgloss.Center, lipgloss.Center, restoreBox(m.restore))
+	} else if m.proton != nil {
+		body = lipgloss.Place(w, contentH, lipgloss.Center, lipgloss.Center, protonBox(m.proton))
 	} else {
 		switch m.screen {
 		case screenDetail:
@@ -234,31 +236,50 @@ func confirmBox(c *ui.Confirmation) string {
 		"\n" + "(other keys are disabled until answered)")
 }
 
-// restoreWindowRows caps the rendered backup list so a long history cannot
+// restoreWindowRows caps the rendered picker list so a long list cannot
 // overflow the centered modal; the window slides with the selection.
 const restoreWindowRows = 8
 
-// restoreBox renders the open restore-backup picker as a centered modal:
-// one row per backup (windowed around the selection), the highlighted
-// entry inverted; esc closes the modal without any action.
+// restoreBox renders the open restore-backup picker as a centered modal.
 func restoreBox(p *restorePick) string {
+	labels := make([]string, len(p.items))
+	for i, item := range p.items {
+		labels[i] = item.Label
+	}
+	return pickerBox("Restore NVIDIA DLSS backup", labels, p.sel, "up/down select · enter restore · esc close")
+}
+
+// protonBox renders the open umu Proton picker as a centered modal.
+func protonBox(p *protonPick) string {
+	labels := make([]string, len(p.items))
+	for i, item := range p.items {
+		labels[i] = item.Label
+	}
+	return pickerBox("umu Proton runner", labels, p.sel, "up/down select · enter pick · esc close")
+}
+
+// pickerBox renders a centered selection modal: title line, one row per
+// label (windowed around the selection so a long list cannot overflow),
+// the highlighted entry inverted, and the hints line. Esc closes the
+// modal without any action (the caller owns the key handling).
+func pickerBox(title string, labels []string, sel int, hints string) string {
 	var b strings.Builder
-	b.WriteString("Restore NVIDIA DLSS backup\n")
-	rows := p.items
+	b.WriteString(title + "\n")
+	rows := labels
 	start := 0
 	if len(rows) > restoreWindowRows {
-		start = max(min(p.sel-restoreWindowRows/2, len(rows)-restoreWindowRows), 0)
+		start = max(min(sel-restoreWindowRows/2, len(rows)-restoreWindowRows), 0)
 		rows = rows[start : start+restoreWindowRows]
 	}
-	for i, item := range rows {
-		if start+i == p.sel {
-			b.WriteString(styleSelected.Render(item.Label))
+	for i, label := range rows {
+		if start+i == sel {
+			b.WriteString(styleSelected.Render(label))
 		} else {
-			b.WriteString(item.Label)
+			b.WriteString(label)
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("\n" + styleMuted.Render("up/down select · enter restore · esc close"))
+	b.WriteString("\n" + styleMuted.Render(hints))
 	return styleModal.Render(b.String())
 }
 

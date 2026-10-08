@@ -583,11 +583,16 @@ decisions the per-version sections above do not cover.
 - **umu-launcher integration** (v0.12, Linux only, opt-in): when
   `UmuEnabled` is on and `umu-run` is on PATH, manual-store games whose
   ExePath is a Windows binary launch through umu instead of the direct
-  exe path. Each game gets a deterministic Proton prefix at
-  `<state-root>/umu-prefixes/<sha1(installDir)[:12]>`; the Proton build is
-  user-pinnable via `UmuProtonPath` (empty = auto-detect from Steam
-  `compatibilitytools.d`, Bottles `runners/`, and umu
-  `compatibilitytools`).
+  exe path. The Proton build is picked from a detected-runner picker
+  (`UmuProtonPath` pins one; empty = Auto, the newest runner detected
+  across Steam — native/Flatpak/Snap/extra libraries — Bottles, Lutris,
+  Heroic, and umu `compatibilitytools`, falling through to umu's own
+  runtime when nothing is found). The prefix reuses an existing
+  launcher prefix when the game already lives in one (an enclosing
+  `drive_c`, or a Heroic prefix matching the game's AppName); otherwise
+  each game gets a deterministic Proton prefix at
+  `<state-root>/umu-prefixes/<sha1(installDir)[:12]>`. Launcher
+  directories are only read, never created into or migrated.
 - **Hook disable/enable toggle** (v0.13): installed games get a
   Disable/Enable affordance (GUI button in the detail panel, "disabled"
   pill on the card; TUI `d` on the detail screen) that renames the injection hook

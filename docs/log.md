@@ -4326,3 +4326,42 @@ only the generic filler, and per-game rescans did NOT bring them back.
   the file appeared"; TestStartHealsDeadCoverPaths: 5s timeout, path not
   healed); green after the fixes; TestSwitchINIBackupIsCrashDurable
   flaked once (passed on both re-runs, untouched by this change).
+
+## 2026-10-08 — issue 47: umu-launcher runtime and prefix autodetection
+
+- Launching through umu no longer depends on a hand-typed
+  `umu_proton_path`: empty (Auto, the default) resolves at launch time
+  to the newest detected Proton via `umu.ResolveProtonPath`; a pinned
+  setting still wins verbatim; nothing detected falls through to umu's
+  own runtime.
+- `RunnerRoots` (replacing the test-only `DefaultRootCandidates`) scans
+  Steam (native, Flatpak, Snap, plus extra library folders parsed from
+  `libraryfolders.vdf`), Bottles, Lutris, Heroic, and umu
+  `compatibilitytools` — existing dirs only, symlink-deduped, XDG
+  overrides honored. Runner validity accepts `toolmanifest.vdf` OR a
+  top-level `proton` script (GE repacks for Lutris/Heroic carry no
+  manifest); `bin/wine`-only builds are skipped. Source labels gained
+  `lutris`/`heroic`.
+- `PrefixForGame` reuses prefixes that already exist: an enclosing
+  `<prefix>/drive_c` for games installed inside a bottle, then a Heroic
+  prefix (`~/Games/Heroic/Prefixes/<AppName>`, native and Flatpak),
+  else the app-managed per-install-dir prefix. Launcher dirs are read
+  only — never created into or migrated.
+- Settings UIs: the free-text Proton path became a picker — Auto
+  (newest detected) + detected runners + a Custom row for an unknown
+  persisted path. GUI reuses the shared dropdown machinery (the settings
+  modal's click-outside dismiss is guarded while the picker popup is
+  open); TUI `p` opens a restore-style modal (`pickerBox` now shared
+  with the DLSS restore picker). Row composition lives once in
+  `ui.UmuPickerRows`, fed by the new `Deps.UmuRunners` seam (nil =
+  production scan; the `Runner` type moved cross-platform with
+  `runners_other.go` stubs so frontends compile off-Linux).
+- TDD: reds witnessed at each increment (RunnerRoots undefined;
+  PROTONPATH="" want auto-detected runner; WINEPREFIX app-managed want
+  enclosing bottle; picker rows/picks failing before implementation).
+  End-to-end coverage via a fake `umu-run` on PATH asserting the
+  captured PROTONPATH/WINEPREFIX env (cmd/umu_linux_test.go).
+- Ponytail pass: deleted the `var _ = fmt.Sprintf` placeholder, folded
+  duplicated picker-row composition into `internal/ui`, and shared the
+  TUI modal renderer between the restore and Proton pickers.
+2026-10-08
