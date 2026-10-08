@@ -4500,3 +4500,28 @@ no such file or directory` — stranding the mod installed forever.
 - Docs: issue 053; detection lists updated in README, scope.md,
   architecture.md.
 
+
+## 2026-10-09 — issue 54: log panel border, monospace, search highlight
+
+- The 052 log panel gains a 1px `border` shell outline, monospace log
+  text (`SetFontFamilies(Monospace...)`), and a search row: field +
+  lupe (`TypZoom`) button left of the right-most `Close`. Enter or the
+  lupe runs `logSearchNext` (case-insensitive, advance-on-repeat with
+  wrap, `VirtualListScrollIntoView` on the ring's LineID); the live
+  buffer is the highlight query.
+- Vendor patch v0.22: `widgets.LogViewSearch` paints every
+  case-insensitive match as a `Background`-only `StyleSpan` through the
+  existing `ShapedTextLayoutStyled` variadic spans hook — no fork of the
+  item view.
+- Focus-on-open grabs the search field, so Esc layers like the title
+  editor (031): first Esc clears/blurs the field, second closes the
+  panel. Test updated to pin the layering.
+- Pixel-level border test (`TestLogPanelBorderPainted`): RenderToPNG is
+  2x device pixels (`HeadlessScale`) and the panel origin is fractional,
+  so the assertion scans the seam rows for the third color instead of
+  sampling one exact pixel. Debug detour: borders painted fine all
+  along; logical-vs-device sampling was the bug in the test.
+- Foreign session raced mid-flight again (dropdown.go/prefix tests
+  broken in the shared tree twice); verification ran in an isolated
+  `tmp/verify-054` worktree with only this issue's files: 32/32 green.
+2026-10-09

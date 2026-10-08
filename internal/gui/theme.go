@@ -97,6 +97,7 @@ var (
 	txtMain     = Vec4{220, 15, 92, 1}
 	txtMuted    = Vec4{220, 10, 62, 1}
 	txtWarn     = Vec4{20, 80, 65, 1}
+	searchHitBg = Vec4{45, 75, 38, 1} // log search hit highlight (issue 054)
 )
 
 // elevateOverlay is the stronger lift for modals, toasts, and popups.

@@ -488,3 +488,25 @@ hammering); the >64MB async read path is unaffected (nil content while in
 flight → transient → retried after the read caches; the load-id guard
 prevents duplicate reads). Reapply after `go mod vendor`: early
 `return img` on empty content, with the marker comment.
+
+## shirei widgets: LogView search-hit highlighting (v0.22)
+
+- **File**: `vendor/go.hasen.dev/shirei/widgets/logview.go`
+  (`LogViewSearch`, `logSearchSpans`, `logView` delegates to
+  `logViewSearch`, one `ShapedTextLayoutStyled` call site gains spans).
+- **Marker**: `// PATCHED by optiscaler-manager (v0.22)`.
+- **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent` checks
+  the marker); behavior pinned by `internal/gui/logpanel_test.go`
+  (`TestLogSearchScrollsMatchIntoView`).
+
+**What.** Upstream `LogView` has no way to highlight a search term. The
+patch adds `LogViewSearch(ring, attrs, listKey, probe, query, hitColor)`:
+every case-insensitive occurrence of `query` in a rendered line becomes a
+`StyleSpan` whose only override is `Background: hitColor` (overlay
+semantics keep the base font/color), passed to the existing variadic
+`spans` parameter of `ShapedTextLayoutStyled`. Scrolling to a match stays
+app-side (`VirtualListScrollIntoView(listKey, ring.LineID(idx))`), as does
+match finding. Reapply after `go mod vendor`: rename `logView`'s body to
+`logViewSearch` with extra `query string, hitColor Vec4` params, delegate
+`logView` with empty query, add `LogViewSearch` + `logSearchSpans`, and
+extend the item-view `ShapedTextLayoutStyled` call.

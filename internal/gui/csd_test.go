@@ -62,6 +62,14 @@ func TestVendorCSDPatchPresent(t *testing.T) {
 	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.21)") {
 		t.Error("vendored images.go lacks the v0.21 missing-file no-pin patch (LoadImage returns a transient pixel-less image instead of registering a zombie); reapply it (docs/vendor-patches.md)")
 	}
+	logview := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "widgets", "logview.go")
+	b, err = os.ReadFile(logview)
+	if err != nil {
+		t.Fatalf("vendored widgets/logview.go unreadable: %v", err)
+	}
+	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.22)") {
+		t.Error("vendored widgets/logview.go lacks the v0.22 search-highlight patch (LogViewSearch paints query matches as Background spans); reapply it (docs/vendor-patches.md)")
+	}
 	renderpng := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "renderpng.go")
 	b, err = os.ReadFile(renderpng)
 	if err != nil {

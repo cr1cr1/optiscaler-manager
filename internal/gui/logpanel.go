@@ -23,6 +23,9 @@ const logRingMaxLines = 576
 func (m *model) toggleLogPanel() {
 	m.logOpen = !m.logOpen
 	m.logAnimStart = time.Now()
+	if m.logOpen {
+		m.logSearchFocusPending = true
+	}
 }
 
 // logAnimating reports whether the panel tween is still running.
@@ -86,6 +89,53 @@ func oneLineStatus(s string) string {
 	return line
 }
 
+// logListKey addresses the log view's virtual list for scroll commands
+// (issue 054).
+const logListKey = "log-list"
+
+// logSearchFind returns the first ring line index at or past start
+// (wrapping) that contains query case-insensitively; -1 when the query
+// is empty or nothing matches (issue 054).
+func (m *model) logSearchFind(query string, start int) int {
+	q := strings.ToLower(query)
+	if q == "" || m.logRing == nil {
+		return -1
+	}
+	n := m.logRing.Len()
+	for i := 0; i < n; i++ {
+		idx := (start + i) % n
+		if strings.Contains(strings.ToLower(m.logRing.Line(idx)), q) {
+			return idx
+		}
+	}
+	return -1
+}
+
+// logSearchNext jumps the log view to the next line matching the search
+// buffer: an unchanged query advances past the current hit and wraps
+// (issue 054). The highlight follows the live buffer, no submit needed.
+func (m *model) logSearchNext() {
+	q := m.logSearchBuf
+	start := 0
+	if q == m.logSearchLast && m.logSearchHitLine >= 0 {
+		start = m.logSearchHitLine + 1
+	}
+	hit := m.logSearchFind(q, start)
+	m.logSearchHitLine = hit
+	m.logSearchLast = q
+	if hit >= 0 {
+		VirtualListScrollIntoView(logListKey, m.logRing.LineID(hit))
+	}
+}
+
+// logTextStyle is the log view's text style: the default monospace stack
+// (issue 054).
+func logTextStyle() TextStyleAttrs {
+	attrs := TextStyleAttrs{TextColor: txtMain, FontSize: 12}
+	attrs.SetFontFamilies(Monospace...)
+	return attrs
+}
+
 // logPanel renders the slide-up log view between the content and the
 // status bar. It stays mounted while open and while the close tween runs;
 // the tween drives FixHeight directly (NoAnimate blocks shirei's own
@@ -100,14 +150,33 @@ func (m *model) logPanel() {
 		RequestNextFrame()
 	}
 	h := logPanelHeight(GetHost().WindowSize[1]) * t
-	Container(Attrs(Expand, FixHeight(h), NoAnimate, Clip, BackgroundVec(bgPanel)), func() {
+	Container(Attrs(Expand, FixHeight(h), NoAnimate, Clip, BackgroundVec(bgPanel), BorderWidth(1), BorderColorVec(border)), func() {
 		m.logPanelRect = GetScreenRectOf(CurrentId())
 		Container(Attrs(Row, CrossMid, Pad2(sp4, sp12), Gap(sp12)), func() {
 			Label("Log", TextColorVec(txtMain), FontSize(12), FontWeight(WeightBold))
 			Filler(1)
-			if focusableButton(NoIcon, "Close") {
-				m.toggleLogPanel()
+			if m.logSearchState == nil {
+				m.logSearchState = &editState{anchor: -1, blink: time.Now(), phase: true, onEnter: m.logSearchNext}
 			}
+			themedInputState(&m.logSearchBuf, "search log", NoIcon, m.logSearchState,
+				MinSize(160, fieldH), MaxSizeVec(Vec2{280, fieldH}))
+			if m.logSearchFocusPending {
+				m.logSearchFocusPending = false
+				FocusImmediateOn(GetLastId())
+			}
+			Container(Attrs(Row), func() {
+				m.logSearchBtnRect = GetScreenRectOf(CurrentId())
+				if focusableButton(TypZoom, "") {
+					m.logSearchNext()
+				}
+			})
+			// Close stays the right-most control (issue 054).
+			Container(Attrs(Row), func() {
+				m.logCloseRect = GetScreenRectOf(CurrentId())
+				if focusableButton(NoIcon, "Close") {
+					m.toggleLogPanel()
+				}
+			})
 		})
 		Container(Attrs(Grow(1), Expand, Pad2(0, sp8), Clip), func() {
 			if m.logRing == nil || m.logRing.Len() == 0 {
@@ -116,7 +185,9 @@ func (m *model) logPanel() {
 			}
 			// LogView is readonly by construction: drag-selects across
 			// lines, copies with Ctrl/Cmd+C, pins to the newest line.
-			LogView(m.logRing, TextStyleAttrs{TextColor: txtMain, FontSize: 12})
+			// LogViewSearch (vendor v0.22) highlights every occurrence of
+			// the live search buffer.
+			LogViewSearch(m.logRing, logTextStyle(), logListKey, &m.logProbe, m.logSearchBuf, searchHitBg)
 		})
 	})
 }

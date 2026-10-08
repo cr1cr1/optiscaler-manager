@@ -1,6 +1,10 @@
 package gui
 
 import (
+	"fmt"
+	"image/png"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -68,9 +72,22 @@ func TestEscClosesLogPanelFirst(t *testing.T) {
 	m.toggleLogPanel()
 	m.logAnimStart = time.Now().Add(-time.Second)
 	keyFrame(KeyCodeNone, 0, m.rootView) // build (drains session state)
-	keyFrame(KeyEscape, 0, m.rootView)   // Esc closes the log panel first
+	keyFrame(KeyCodeNone, 0, m.rootView) // search field focused on open (issue 054)
+
+	// Esc layers like the title editor (issue 031): with the search field
+	// focused, Esc clears/blurs the field; the next Esc closes the panel.
+	m.logSearchBuf = "abc"
+	keyFrame(KeyEscape, 0, m.rootView)
+	if m.logSearchBuf != "" {
+		t.Error("Esc with the search field focused did not clear the buffer")
+	}
+	if !m.logOpen {
+		t.Error("Esc with the search field focused closed the panel instead of clearing the field")
+	}
+	keyFrame(KeyCodeNone, 0, m.rootView) // blur settles
+	keyFrame(KeyEscape, 0, m.rootView)
 	if m.logOpen {
-		t.Error("Esc did not close the log panel")
+		t.Error("Esc after the blur did not close the log panel")
 	}
 }
 
@@ -114,5 +131,122 @@ func TestSyncLogLinesAppendsAndRebuilds(t *testing.T) {
 	m.syncLogLines([]string{"x", "y"})
 	if m.logRing.Len() != 2 || m.logRing.Line(0) != "x" || m.logRing.Line(1) != "y" {
 		t.Fatalf("rebuild wrong: %d lines, first %q", m.logRing.Len(), m.logRing.Line(0))
+	}
+}
+
+// Issue 054: border, monospace, and search with hit highlight.
+
+func TestLogSearchFindAdvancesAndWraps(t *testing.T) {
+	m := newModel(Config{})
+	m.syncLogLines([]string{"alpha", "beta hit", "gamma", "delta hit"})
+	if got := m.logSearchFind("hit", 0); got != 1 {
+		t.Fatalf("find from 0 = %d, want 1", got)
+	}
+	if got := m.logSearchFind("hit", 2); got != 3 {
+		t.Fatalf("find from 2 = %d, want 3", got)
+	}
+	if got := m.logSearchFind("hit", 4); got != 1 {
+		t.Fatalf("find from 4 = %d, want 1 (wrap)", got)
+	}
+	if got := m.logSearchFind("HIT", 0); got != 1 {
+		t.Fatalf("case-insensitive find = %d, want 1", got)
+	}
+	if got := m.logSearchFind("zzz", 0); got != -1 {
+		t.Fatalf("find miss = %d, want -1", got)
+	}
+	if got := m.logSearchFind("", 0); got != -1 {
+		t.Fatalf("empty query = %d, want -1", got)
+	}
+}
+
+func TestLogSearchScrollsMatchIntoView(t *testing.T) {
+	headlessFrames(t, 1100, 700)
+	m := newModel(Config{})
+	lines := make([]string, 0, 200)
+	for i := 0; i < 200; i++ {
+		lines = append(lines, fmt.Sprintf("line %03d", i))
+	}
+	lines[150] = "needle here"
+	m.syncLogLines(lines)
+	m.logOpen = true
+	m.logAnimStart = time.Now().Add(-time.Second)
+	keyFrame(KeyCodeNone, 0, m.rootView) // build
+	keyFrame(KeyCodeNone, 0, m.rootView) // settle pin at the tail
+	if m.logProbe.LastVisible < 20 {
+		t.Fatalf("log view not streaming: %+v", m.logProbe)
+	}
+
+	m.logSearchBuf = "needle"
+	m.logSearchNext()
+	keyFrame(KeyCodeNone, 0, m.rootView) // scroll command lands
+	keyFrame(KeyCodeNone, 0, m.rootView) // capture
+	if m.logSearchHitLine != 150 {
+		t.Errorf("hit line = %d, want 150", m.logSearchHitLine)
+	}
+	if m.logProbe.LastVisible < 150 {
+		t.Errorf("match line 150 not rendered after search: probe %+v", m.logProbe)
+	}
+	if m.logProbe.Pinned {
+		t.Error("tail-follow still pinned after an upward search jump")
+	}
+}
+
+func TestLogPanelHeaderOrderCloseRightmost(t *testing.T) {
+	headlessFrames(t, 1100, 700)
+	m := newModel(Config{})
+	m.syncLogLines([]string{"x"})
+	m.logOpen = true
+	m.logAnimStart = time.Now().Add(-time.Second)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if m.logSearchState == nil || m.logSearchState.boxRect.Size[0] == 0 {
+		t.Fatal("search field not rendered")
+	}
+	field, lupe, closeB := m.logSearchState.boxRect, m.logSearchBtnRect, m.logCloseRect
+	if lupe.Size[0] == 0 || closeB.Size[0] == 0 {
+		t.Fatal("lupe or Close button not rendered")
+	}
+	if !(field.Origin[0] < lupe.Origin[0] && lupe.Origin[0] < closeB.Origin[0]) {
+		t.Errorf("header order wrong: field %v lupe %v close %v", field.Origin[0], lupe.Origin[0], closeB.Origin[0])
+	}
+	panelRight := m.logPanelRect.Origin[0] + m.logPanelRect.Size[0]
+	if closeB.Origin[0]+closeB.Size[0] > panelRight-1 {
+		t.Errorf("Close not right-most: right edge %v, panel right %v", closeB.Origin[0]+closeB.Size[0], panelRight)
+	}
+}
+
+func TestLogPanelBorderPainted(t *testing.T) {
+	m := newModel(Config{})
+	m.syncLogLines([]string{"some log line"})
+	m.logOpen = true
+	m.logAnimStart = time.Now().Add(-time.Second)
+	out := filepath.Join(t.TempDir(), "panel.png")
+	if err := renderToPNG(out, 800, 600, m.rootView); err != nil {
+		t.Fatalf("renderToPNG: %v", err)
+	}
+	f, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	img, err := png.Decode(f)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// RenderToPNG emits HeadlessScale device pixels per logical point; the
+	// fractional panel origin places the 1px border within a few device
+	// rows of the computed edge, so scan the seam for the third color.
+	x := int((m.logPanelRect.Origin[0] + m.logPanelRect.Size[0]/2) * HeadlessScale)
+	y := int(m.logPanelRect.Origin[1] * HeadlessScale)
+	above := img.At(x, y-4)
+	inside := img.At(x, y+8)
+	borderFound := false
+	for dy := -2; dy <= 4; dy++ {
+		if p := img.At(x, y+dy); p != above && p != inside {
+			borderFound = true
+		}
+	}
+	if !borderFound {
+		t.Errorf("no visible border at panel top edge: above %v, inside %v, seam rows all match one of them", above, inside)
 	}
 }
