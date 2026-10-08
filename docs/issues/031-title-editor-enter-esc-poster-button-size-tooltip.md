@@ -46,4 +46,4 @@ motivated the hook design over a post-render switch. Full
 `go test ./...` exit 0 (30 packages), `go vet`/`gofmt` clean.
 Numbering note: planned as 030, renumbered to 031 — the concurrent
 session claimed 030 (title cleanup / cover search) first.
-Commit: see git log.
+Commit: 14b04c7.
