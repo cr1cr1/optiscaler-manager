@@ -21,4 +21,4 @@ as `fourteenGameLibrary` in gridscroll_test.go; both tests call it.
 
 ## Outcome
 
-Done. Net −10 lines, no behavior change. Commit: TBD.
+Done. Net −10 lines, no behavior change. Commit: dcb6146.
