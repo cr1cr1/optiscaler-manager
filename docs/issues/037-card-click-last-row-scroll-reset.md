@@ -44,7 +44,8 @@ Done. TDD red witnessed (`tmp/issue37-red.txt`): clicked last-row card
 absent from the painted window after the panel opened. One-line fix;
 full `go test ./...` green for every package except the foreign
 session's mid-TDD issue-035 rescan tests (`internal/tui` — their red
-phase, untouched by this change). `go vet`/`gofmt` clean. Commit: TBD.
+phase, untouched by this change). `go vet`/`gofmt` clean. Commit:
+ed7eb66.
 
 Deferred probe: the list view's row click has the same shape (Select
 without arming a scroll restore); not reported and not reproducible
