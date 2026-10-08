@@ -57,5 +57,16 @@ Fixes:
 
 ## Outcome
 
-Filled in when the issue closes: what actually happened, the commit
-hash, anything left open.
+Done in commit c07dbb7. Both layers fixed and red-to-green witnessed:
+`TestLoadImageRecoversWhenFileAppears` (gui) and
+`TestStartHealsDeadCoverPaths` (ui) failed before, pass after. Boot now
+re-resolves dead cover paths in a background pass; the vendored LoadImage
+(v0.21 — v0.20 was taken by the foreign session's issue-045 present-sync
+patch mid-flight) no longer pins a pixel-less registration for a missing
+file, so a re-fetch to the same path renders on the next frame, no
+restart needed. Diagnosis on the user's machine showed the rescan
+re-fetch path was healthy all along (files landed at 17:58/18:06/18:08);
+the missing piece was the renderer-side zombie plus the absent boot
+heal. `TestSwitchINIBackupIsCrashDurable` flaked once during verification
+(passed on both re-runs; unrelated to this change). The user's 95 still
+missing posters re-fetch automatically on the next app start.
