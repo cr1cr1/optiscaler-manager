@@ -32,4 +32,4 @@ stripped via the existing `unquoteYAML`) from the native and Flatpak
 Bottles' `_users` dir) are skipped by the existing container walk and
 `drive_c` check. Verified against the reporter's real layout
 (`/mnt/linux1/bottles` with `proton11`/`win-apps`/`wine11` prefixes).
-Commit: e90086d.
+Commit: 478ef7a.
