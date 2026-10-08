@@ -31,6 +31,6 @@ off. The toast must sit above the status bar and never be clipped.
 
 ## Outcome
 
-Done. Toast cards render `oneLineStatus(t.Text)` (full text remains in
+Done in commit c49f89f. Toast cards render `oneLineStatus(t.Text)` (full text remains in
 the log panel) and the stack bottom clears the status bar via its
 captured height + spacer. Commit hash recorded in a follow-up commit.
