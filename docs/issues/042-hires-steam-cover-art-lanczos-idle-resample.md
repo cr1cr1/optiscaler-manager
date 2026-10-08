@@ -47,7 +47,7 @@ the fixture is now 600x900 (sharpen math is width-independent).
 ## Outcome
 
 Done. TDD red witnessed (1x-only fetch). The user's existing cache
-self-heals on next launch via the migration. Commit: TBD.
+self-heals on next launch via the migration. Commit: 71c4cd0.
 
 Deferred: the GPU render path scales in hardware (GL linear) — no
 Lanczos equivalent without shader work; acceptable since the software
