@@ -38,7 +38,7 @@ typing pause.
 
 ## Outcome
 
-Done. `logSearchQuery` is the applied highlight query handed to
+Done in commit a5fec9f. `logSearchQuery` is the applied highlight query handed to
 `LogViewSearch`; `syncLogSearchQuery` (called per frame after the input
 renders) re-arms a 300ms timer on every buffer change, keeps the pulse
 ticker awake while armed, and promotes buffer → query after the pause.
