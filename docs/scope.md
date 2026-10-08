@@ -237,10 +237,13 @@ only with new evidence.
   execute on Linux runners (no wine/darling), so behavior on Windows/macOS is
   verified by compile and by linux-executed parser tests, not by running the
   suite there (W3 decision).
-- Release artifacts are linux/amd64 + windows/amd64. **No macOS builds**:
-  shirei v0.6.7's cocoa backend is cgo + Apple frameworks, which a Linux
-  runner cannot link (needs an Apple SDK). Unlock path is a macos-latest
-  runner; diagnosis lives in `.goreleaser.yml`.
+- Release artifacts are linux/amd64 + windows/amd64. **No macOS builds** —
+  by decision, not by technical blocker (issue 041): the original v0.6.x-era
+  diagnosis (cocoa backend is cgo + Apple frameworks, unlinkable on a Linux
+  runner) is obsolete since shirei v0.8.0, whose cocoa backend is purego;
+  CGO-free darwin amd64+arm64 builds and whole-tree vet pass from Linux
+  (verified 2026-10-08). Enabling darwin in `.goreleaser.yml` is a config
+  change away.
 - Epic launch needs the AppName from the .item manifest; without it the exe
   fallback fires.
 - Launch is fire-and-forget: no process tracking, no "game is running" state.
@@ -322,8 +325,9 @@ evidence.
   scan. (Partially superseded in v0.13: selecting a row re-probes install
   state and external-row versions from disk; covers and committed-row
   versions still wait for a rescan.)
-- macOS remains blocked exactly as in v0.3 (shirei cocoa backend needs an
-  Apple SDK); no macOS support is claimed.
+- macOS release artifacts remain disabled exactly as in v0.3; the old
+  Apple-SDK rationale is obsolete since shirei v0.8.0 (purego cocoa backend)
+  and the disable is now a decision, not a blocker (issue 041).
 
 ## v0.5 scope (PE titles, ProtonDB tiers, progress, async ops, TUI fixes)
 

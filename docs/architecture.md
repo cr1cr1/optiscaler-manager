@@ -216,13 +216,22 @@ gates, toasts) with zero display-toolkit imports; `internal/gui` and
 ## Cross-platform shape (v0.3)
 
 The tree cross-compiles to windows with CGO off (`GOOS=windows go vet ./...`
-is a CI gate). Darwin is package-scoped only: shirei's cocoa backend needs an
-Apple SDK, so CI gates darwin with vet + `go test -c` on the non-GUI packages
-(`internal/discovery`, `internal/launch`). Cross-compiled test binaries are
-never executed (no wine/darling on runners); the gate is compile-only (W3
-decision). Release artifacts: linux/amd64, windows/amd64 (goreleaser, CGO
-off). macOS artifacts wait on a macos-latest release runner — see
-`.goreleaser.yml` for the full diagnosis.
+is a CI gate). Since the shirei v0.8.0 vendor migration the darwin picture
+changed (issue 041): the cocoa backend is purego (objc_msgSend via
+`ebitengine/purego`), so CGO-free darwin amd64+arm64 builds and whole-tree
+vet pass from Linux (verified 2026-10-08). The CI darwin gate is still
+package-scoped (vet + `go test -c` on `internal/discovery`,
+`internal/launch`) and release artifacts remain linux/amd64 + windows/amd64
+— both by decision, not by the old Apple-SDK blocker; widening either is a
+config change away. Cross-compiled test binaries are never executed (no
+wine/darling on runners); the gate is compile-only (W3 decision).
+
+GPU compositing (shirei v0.8.0) is on by default on every backend that has a
+GPU path — Wayland (GLES/dmabuf), Windows (D3D11), macOS (Metal, purego) —
+with the software renderer as init-failure fallback and `SHIREI_GPU=0` as
+the opt-out; this app never sets it. X11 sessions stay on the software
+renderer (upstream ships no X11 GPU backend); Wayland is the GPU path on
+Linux. Headless snapshots always use the software renderer as oracle.
 
 ## Cancellation model (v0.3)
 

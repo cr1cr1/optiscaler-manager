@@ -4202,3 +4202,30 @@ was then verified green (32/32 packages) in a clean worktree at
 e21b35d — both issues' code combined. Lesson recorded: re-diff every
 staged shared file immediately before committing while the parallel
 session is active.
+
+## 2026-10-08 — issue 41: GPU-rendering audit; stale darwin-blocker docs corrected (docs-only)
+
+User request: shirei v0.8 does GPU rendering — enable it by default on all
+platforms. Audit of the vendored shirei v0.8.0 (migrated in a60ea76):
+
+- GPU compositing is ALREADY the default on every backend with a GPU path:
+  Wayland (GLES/dmabuf), Windows (D3D11), macOS (Metal via purego), Android,
+  iOS, Web. Software is only the init-failure fallback or `SHIREI_GPU=0` —
+  which this app never sets. Nothing to enable app-side; prior telemetry
+  (2026-09-11 entry) already proved the GPU path active on the user's
+  Wayland session.
+- X11 stays on the software renderer by upstream design (no X11 GPU backend
+  exists); Wayland is the GPU path on Linux. Not addressable app-side.
+- Real finding: the v0.6.x-era "darwin needs an Apple SDK" rationale is
+  obsolete — v0.8.0's cocoa backend is purego, so `CGO_ENABLED=0`
+  `GOOS=darwin` builds (amd64+arm64) and whole-tree darwin vet pass from
+  Linux (verified locally).
+- User decision: docs-only scope — no release/CI config change. macOS
+  artifacts stay disabled, but by decision, not by blocker; enabling darwin
+  in `.goreleaser.yml` (and widening the CI darwin gate to the whole tree)
+  is a config change away.
+- Docs corrected: scope.md (both "no macOS builds" passages),
+  architecture.md (cross-platform section + a GPU-compositor defaults
+  paragraph). README needed no change ("available for Linux and Windows"
+  stays true). No code/vendor change, so no new tests; full suite re-run
+  green.
