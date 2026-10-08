@@ -45,4 +45,4 @@ survived panel hide, unchanged title written, default cursor). One
 test initially still failed after the `detailPanel` guard: the panel is
 never CALLED when nothing is selected, so the cancel also lives in
 rootView's panel-absent branch. Full `go test ./...` exit 0 (31
-packages), `go vet`/`gofmt` clean. Commit: see git log.
+packages), `go vet`/`gofmt` clean. Commit: fcdc4f8.
