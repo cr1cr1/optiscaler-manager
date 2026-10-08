@@ -82,5 +82,5 @@ sharpening went in at the decode seam:
   doc (created 15:36) predates their file (15:46), so theirs should
   renumber.
 
-Commit: <hash>
+Commit: 1fc0da7
 
