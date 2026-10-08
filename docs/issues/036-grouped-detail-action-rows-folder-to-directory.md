@@ -45,4 +45,4 @@ at 900×800 the second action row falls below the Viewport fold and
 shirei culls it (zero rect) — the narrow subtest now uses a tall
 900×1400 window, same as the other action-row tests. Full
 `go test ./...` exit 0 (32 packages), `go vet`/`gofmt` clean. Commit:
-TBD.
+964f40d.
