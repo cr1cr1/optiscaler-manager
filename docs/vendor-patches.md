@@ -416,3 +416,29 @@ alpha untouched); icons and all other images pass through unchanged.
 wrap both `imageToRGBA(decoded)` call sites in `LoadImage` with
 `applyImageDecodeHook(fpath, …)`. `TestVendorImageDecodeHookPatch` fails
 while the marker is missing.
+
+## shirei: GPU target modifier retry (v0.19)
+
+- **File**: `vendor/go.hasen.dev/shirei/gpurender/gles_linux.go`
+  (`AllocTarget` iterates BO strategies; `glesCreateBO` split into
+  `glesBOStrategies` + `importBO`).
+- **Marker**: `// PATCHED by optiscaler-manager (v0.19)`.
+- **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent` checks
+  the marker, `glesBOStrategies`, and `func importBO(`).
+
+**What.** Upstream `AllocTarget` allocates a gbm buffer via `glesCreateBO`
+(which prefers a LINEAR modifier when advertised, for scanout safety) and
+then imports it as an EGL image + texture + FBO — single shot. On NVIDIA's
+proprietary GBM stack a LINEAR bo allocates fine but is not renderable:
+`glCheckFramebufferStatus` fails, the probe errors with "framebuffer
+incomplete", and the Wayland backend falls back to software rendering for
+the whole session — even though a later strategy (implicit/block-linear
+modifier) would have produced a renderable target. The patch tries every
+BO allocation strategy in the same preference order until one imports as a
+COMPLETE framebuffer; `importBO` keeps the upstream per-failure cleanup
+verbatim. Failure still falls back to software exactly as upstream.
+
+**Reapplying after `go mod vendor`.** Restore the strategy iteration in
+`AllocTarget` over `glesBOStrategies(w, h)` with `importBO` holding the
+post-BO body (planes/fds, modifier, EGL image, texture, FBO check);
+`glesCreateBO` is deleted. The guard fails while the marker is missing.

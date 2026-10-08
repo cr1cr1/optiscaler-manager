@@ -189,10 +189,34 @@ func AllocTarget(w, h int) (*Target, error) {
 	}
 	eglMakeCurrent(eglDpy, 0, 0, eglCtx)
 
-	bo := glesCreateBO(w, h)
-	if bo == 0 {
-		return nil, fmt.Errorf("gbm_bo_create %dx%d failed", w, h)
+	// PATCHED by optiscaler-manager (v0.19): try every BO allocation
+	// strategy until one imports as a COMPLETE framebuffer. NVIDIA's GBM
+	// happily allocates a LINEAR bo (preferred first: scanout-safe) that
+	// glCheckFramebufferStatus then rejects — a single-shot attempt turned
+	// that into a permanent software fallback ("framebuffer incomplete").
+	// Reapply after `go mod vendor` (see docs/vendor-patches.md).
+	var lastErr error
+	for _, mk := range glesBOStrategies(w, h) {
+		bo := mk()
+		if bo == 0 {
+			continue
+		}
+		t, err := importBO(w, h, bo)
+		if err == nil {
+			return t, nil
+		}
+		lastErr = err
 	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("gbm_bo_create %dx%d failed", w, h)
+	}
+	return nil, lastErr
+}
+
+// importBO wraps one gbm buffer object as an EGL image + texture + FBO.
+// Any failure destroys every partial resource including bo. (Patch v0.19:
+// extracted from AllocTarget so the caller can retry across modifiers.)
+func importBO(w, h int, bo uintptr) (*Target, error) {
 	nplane := 1
 	if havePlaneCount && haveFdForPlane {
 		if n := int(gbmBoGetPlaneCount(bo)); n >= 1 && n <= 4 {
@@ -283,38 +307,35 @@ func AllocTarget(w, h int) (*Target, error) {
 	return t, nil
 }
 
-func glesCreateBO(w, h int) uintptr {
+// glesBOStrategies lists the BO allocation attempts in preference order
+// (patch v0.19: extracted from glesCreateBO so AllocTarget can retry the
+// import+FBO stage per strategy). LINEAR first when advertised: window
+// present must send a pair the compositor listed (linux-dmabuf v4+ posts
+// invalid_format otherwise). A full modifier list can make GBM return a
+// CCS/DCC variant that was not advertised.
+func glesBOStrategies(w, h int) []func() uintptr {
 	explicit, implicit := splitMods(allowedMods)
-
-	// LINEAR first when advertised: window present must send a pair the
-	// compositor listed (linux-dmabuf v4+ posts invalid_format otherwise).
-	// A full modifier list can make GBM return a CCS/DCC variant that was
-	// not advertised.
+	var strats []func() uintptr
 	if hasMod(explicit, drmModLinear) {
-		if bo := keepSendable(gbmCreateExplicit(w, h, []uint64{drmModLinear})); bo != 0 {
-			return bo
-		}
-		if bo := keepSendable(gbmBoCreate(gbmDev, uint32(w), uint32(h), drmFormatXRGB8888, uint32(gbmBoUseRendering|gbmBoUseLinear))); bo != 0 {
-			return bo
-		}
+		strats = append(strats,
+			func() uintptr { return keepSendable(gbmCreateExplicit(w, h, []uint64{drmModLinear})) },
+			func() uintptr {
+				return keepSendable(gbmBoCreate(gbmDev, uint32(w), uint32(h), drmFormatXRGB8888, uint32(gbmBoUseRendering|gbmBoUseLinear)))
+			})
 	}
-	if bo := keepSendable(gbmCreateExplicit(w, h, explicit)); bo != 0 {
-		return bo
-	}
+	strats = append(strats, func() uintptr { return keepSendable(gbmCreateExplicit(w, h, explicit)) })
 	for _, m := range explicit {
 		if m == drmModLinear {
 			continue
 		}
-		if bo := keepSendable(gbmCreateExplicit(w, h, []uint64{m})); bo != 0 {
-			return bo
-		}
+		strats = append(strats, func() uintptr { return keepSendable(gbmCreateExplicit(w, h, []uint64{m})) })
 	}
 	if implicit {
-		if bo := keepSendable(gbmBoCreate(gbmDev, uint32(w), uint32(h), drmFormatXRGB8888, uint32(gbmBoUseRendering))); bo != 0 {
-			return bo
-		}
+		strats = append(strats, func() uintptr {
+			return keepSendable(gbmBoCreate(gbmDev, uint32(w), uint32(h), drmFormatXRGB8888, uint32(gbmBoUseRendering)))
+		})
 	}
-	return 0
+	return strats
 }
 
 func gbmCreateExplicit(w, h int, mods []uint64) uintptr {

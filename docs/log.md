@@ -4251,3 +4251,22 @@ poster; it must render at the highest quality available.
   hires migration drops; sharpen math is width-independent).
 - TDD: red witnessed for the 2x-first fetch order (1x-only before);
   migration + fallback + filter tests green; full suite green.
+
+## 2026-10-08 — issue 43: GPU probe retries BO modifiers (framebuffer incomplete)
+
+The user's SHIREI_TRACE_FRAME capture opened with "gpurender: fallback
+to software: framebuffer incomplete" — the GPU probe fails at startup on
+this NVIDIA (615.71.09, Wayland) host and the session renders in
+software throughout.
+
+- Root cause: AllocTarget picks a LINEAR gbm bo (scanout-safe
+  preference) and imports it single-shot; NVIDIA allocates LINEAR but
+  rejects it as a render target → FBO incomplete → permanent software
+  fallback, though a later modifier strategy would have worked. The
+  issue-41 audit showed the GPU path worked here under shirei v0.6.x.
+- Vendor patch v0.19: AllocTarget iterates glesBOStrategies (same
+  preference order, split out of glesCreateBO) until importBO yields a
+  complete framebuffer; upstream per-failure cleanup kept verbatim;
+  total failure still falls back to software as before.
+- Guard: TestVendorCSDPatchPresent checks the v0.19 marker; real
+  verification is on the user's next launch (stderr line gone).

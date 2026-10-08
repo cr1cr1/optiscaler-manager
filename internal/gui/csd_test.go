@@ -111,6 +111,17 @@ func TestVendorCSDPatchPresent(t *testing.T) {
 		t.Error("vendored waylandbackend_linux.go lost the upstream skip-unchanged-frames (SurfacesHash early-return); the v0.15 behavior regressed")
 	}
 
+	gles := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "gpurender", "gles_linux.go")
+	b, err = os.ReadFile(gles)
+	if err != nil {
+		t.Fatalf("vendored gles_linux.go unreadable: %v", err)
+	}
+	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.19)") ||
+		!strings.Contains(string(b), "glesBOStrategies") ||
+		!strings.Contains(string(b), "func importBO(") {
+		t.Error("vendored gles_linux.go lacks the v0.19 modifier-retry patch (AllocTarget retries across BO strategies on framebuffer-incomplete); reapply it (docs/vendor-patches.md)")
+	}
+
 	win32 := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "win32backend", "win32backend_windows.go")
 	b, err = os.ReadFile(win32)
 	if err != nil {
