@@ -39,8 +39,9 @@ read-only with the `drive_c` check. `go test ./...` passes for the
 touched packages; the full suite at commit time also showed failures
 from a parallel session's in-flight uninstall work (internal/ui,
 internal/app — passing at the parent commit) and the pre-existing
-sandbox-blocked `tmp/gpuprobe` probe. Committed as `fe2fc16` — during
+sandbox-blocked `tmp/gpuprobe` probe. Committed as `4ca740d` — during
 this work a parallel session raced the index and issue numbering
 (drafted as 049, theirs claimed 049/050, hence 051); a foreign commit
-`39807fe` briefly captured their in-flight files under this change's
-message and was superseded by their own commits. Open follow-up: none.
+the parallel uninstall work briefly landed under this change's message;
+after both sessions finished, unpushed history was rebased so that work
+reads correctly as `882c517` (issue 50). Open follow-up: none.

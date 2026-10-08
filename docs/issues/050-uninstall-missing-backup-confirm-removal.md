@@ -64,11 +64,10 @@ Ponytail-review applied: -22 lines of wrapper/indirection removed.
 Renumbered 049 → 050 mid-flight: the parallel session claimed 049 (then
 renumbered their own to 051 after the same collision).
 
-Attribution anomaly: a staging race with the parallel session split the
-change across two commits — the code, tests, issue doc and scope.md
-landed in 39807fe (foreign message "umu: ... (issue 51)"), the log.md
-entry in 4d0bd6e ("uninstall: consent gate ... (issue 50)"). Content is
-intact at HEAD; history left unrewritten because the foreign session was
-actively committing.
+Attribution anomaly (resolved): a staging race with the parallel session
+first landed this change under the foreign message "umu: ... (issue 51)";
+after both sessions finished, history (unpushed) was rebased and the
+commit now reads correctly as 882c517.
 
-Commits: 39807fe (code+docs), 4d0bd6e (log). Pin: 51bf2fa.
+Commits: 882c517 (code+docs+tests), f2b6e3e (log entry, issue-45 doc
+restore), 473bf3d (outcome hash pin).
