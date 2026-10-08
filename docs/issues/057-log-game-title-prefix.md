@@ -46,7 +46,7 @@ prefix, painted in a distinct text color.
 
 ## Outcome
 
-Done. Ring is `[]LogEntry{Line, Game}`; `setStatusGame` attaches the row
+Done in commit 553fe22. Ring is `[]LogEntry{Line, Game}`; `setStatusGame` attaches the row
 title at opDone/opFailed/opRefused/opCancelled/launchFailed/doLaunch;
 the GUI renders `Title › line` with the prefix in `logGamePrefix` via
 vendor patch v0.23 (`LogViewSearchExt` per-line extra spans).
