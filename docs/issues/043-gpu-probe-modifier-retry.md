@@ -46,7 +46,7 @@ to software exactly as before.
 
 Patch applied; awaiting user verification: on the next launch the
 `gpurender: fallback to software` stderr line should be gone (the
-backend logs the active GPU via perfLog). Commit: TBD.
+backend logs the active GPU via perfLog). Commit: b02b504.
 
 Deferred: a *runtime* `Render` error mid-session still disables the GPU
 permanently (`slot = nil` in drawFrame); not observed — revisit if the
