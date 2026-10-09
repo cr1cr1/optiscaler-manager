@@ -16,22 +16,26 @@ var testPrefixes = []umu.Prefix{
 // TestUmuPickerRowsComposition: the shared picker rows are the Auto row
 // first (with the caller's label), then the detected prefixes in scan
 // order, plus a Custom row when the pinned path matches no detected
-// prefix.
+// prefix. Rows carry Source and Name separately so the frontends can
+// render "icon + Launcher: prefix" (issue 059).
 func TestUmuPickerRowsComposition(t *testing.T) {
 	labels := func(rows []UmuPickerOption) []string {
 		out := make([]string, len(rows))
 		for i, r := range rows {
-			out[i] = r.Label
+			out[i] = UmuPickerRowLabel(r)
 		}
 		return out
 	}
 
 	auto := UmuPickerRows("Auto (detected)", "", testPrefixes)
-	if got, want := labels(auto), []string{"Auto (detected)", "SomeApp (heroic)", "mybottle (bottles)"}; !slices.Equal(got, want) {
+	if got, want := labels(auto), []string{"Auto (detected)", "Heroic: SomeApp", "Bottles: mybottle"}; !slices.Equal(got, want) {
 		t.Errorf("rows(empty) = %v, want %v", got, want)
 	}
-	if auto[0].Value != "" {
-		t.Errorf("Auto row value = %q, want empty", auto[0].Value)
+	if auto[0].Value != "" || auto[0].Source != "" {
+		t.Errorf("Auto row = %+v, want empty value and source", auto[0])
+	}
+	if auto[1].Source != "heroic" || auto[1].Name != "SomeApp" {
+		t.Errorf("rows[1] = %+v, want Source heroic / Name SomeApp", auto[1])
 	}
 
 	known := UmuPickerRows("Auto (detected)", testPrefixes[1].Path, testPrefixes)
@@ -41,21 +45,32 @@ func TestUmuPickerRowsComposition(t *testing.T) {
 
 	custom := UmuPickerRows("Auto (inherit)", "/elsewhere/prefix", testPrefixes)
 	last := custom[len(custom)-1]
-	if last.Value != "/elsewhere/prefix" || last.Label != "Custom: /elsewhere/prefix" {
-		t.Errorf("Custom row = %+v, want value/label for /elsewhere/prefix", last)
+	if last.Value != "/elsewhere/prefix" || last.Source != "custom" || UmuPickerRowLabel(last) != "Custom: /elsewhere/prefix" {
+		t.Errorf("Custom row = %+v, want value/source/label for /elsewhere/prefix", last)
 	}
-	if custom[0].Label != "Auto (inherit)" {
-		t.Errorf("Auto row label = %q, want the caller's %q", custom[0].Label, "Auto (inherit)")
+	if custom[0].Name != "Auto (inherit)" {
+		t.Errorf("Auto row name = %q, want the caller's %q", custom[0].Name, "Auto (inherit)")
 	}
 
 	if got := UmuPickerLabel("Auto (detected)", "", testPrefixes); got != "Auto (detected)" {
 		t.Errorf("label(empty) = %q, want Auto (detected)", got)
 	}
-	if got := UmuPickerLabel("Auto (detected)", testPrefixes[0].Path, testPrefixes); got != "SomeApp (heroic)" {
-		t.Errorf("label(known) = %q, want SomeApp (heroic)", got)
+	if got := UmuPickerLabel("Auto (detected)", testPrefixes[0].Path, testPrefixes); got != "Heroic: SomeApp" {
+		t.Errorf("label(known) = %q, want Heroic: SomeApp", got)
 	}
 	if got := UmuPickerLabel("Auto (detected)", "/elsewhere/prefix", testPrefixes); got != "Custom: /elsewhere/prefix" {
 		t.Errorf("label(unknown) = %q, want Custom: /elsewhere/prefix", got)
+	}
+
+	names := map[string]string{
+		"steam": "Steam", "bottles": "Bottles", "lutris": "Lutris",
+		"heroic": "Heroic", "playonlinux": "PlayOnLinux",
+		"crossover": "CrossOver", "wine": "Wine", "custom": "Custom",
+	}
+	for source, want := range names {
+		if got := UmuSourceName(source); got != want {
+			t.Errorf("UmuSourceName(%q) = %q, want %q", source, got, want)
+		}
 	}
 }
 

@@ -169,8 +169,9 @@ internal/
                Heroic, and umu compatibilitytools; FindRunners scans
                them for Proton builds (toolmanifest.vdf OR a top-level
                proton script) sorted newest-first; ResolveProtonPath
-               returns the newest detected runner (Proton is always
-               Auto); FindPrefixes detects wine prefixes (dirs with a
+               returns the newest runner of the resolved prefix's
+               launcher (PrefixSource), else the global newest
+               (issue 059); FindPrefixes detects wine prefixes (dirs with a
                drive_c) in Heroic Prefixes/, Bottles bottles/ (plus the
                custom_bottles_path root from Bottles' data.yml), Steam
                compatdata pfx/ (named from the appmanifest), Lutris

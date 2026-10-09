@@ -299,7 +299,7 @@ func TestGUISettingsUmuPrefixPicker(t *testing.T) {
 	if len(items) != 3 {
 		t.Fatalf("picker rows = %d, want 3 (Auto + 2 prefixes): %+v", len(items), items)
 	}
-	wantLabels := []string{"Auto (detected)", "SomeApp (heroic)", "mybottle (bottles)"}
+	wantLabels := []string{"Auto (detected)", "Heroic: SomeApp", "Bottles: mybottle"}
 	for i, w := range wantLabels {
 		if items[i].label != w {
 			t.Errorf("items[%d].label = %q, want %q", i, items[i].label, w)

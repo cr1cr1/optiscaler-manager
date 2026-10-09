@@ -10,6 +10,21 @@ import (
 	"strings"
 )
 
+// PrefixSource returns the FindPrefixes source of the prefix at path
+// ("" when the scan does not know it): the launch hook uses it to pick
+// the runner from the same launcher as the prefix (issue 059).
+func PrefixSource(ctx context.Context, path string) string {
+	if path == "" {
+		return ""
+	}
+	for _, p := range FindPrefixes(ctx) {
+		if p.Path == path {
+			return p.Source
+		}
+	}
+	return ""
+}
+
 // prefixContainer is a directory whose children may be wine prefixes.
 // pfx marks Steam's compatdata layout, where the child holds the prefix
 // in <child>/pfx and is named after the appmanifest when one exists.

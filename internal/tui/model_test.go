@@ -608,7 +608,7 @@ func TestTUISettingsUmuPrefixPicker(t *testing.T) {
 	tm.Type("p")
 	// One marker per frame state: teatest's WaitFor consumes the output
 	// stream, so two waits on the same frame cannot both match.
-	waitFrame(t, tm, "SomeApp (heroic)")
+	waitFrame(t, tm, "Heroic: SomeApp")
 
 	// Row 0 is Auto; one down highlights the heroic prefix.
 	tm.Type("j")
@@ -625,7 +625,7 @@ func TestTUISettingsUmuPrefixPicker(t *testing.T) {
 	// Reopen: the cursor starts on the current pick; up to Auto, enter
 	// clears the default.
 	tm.Type("p")
-	waitFrame(t, tm, "SomeApp (heroic)")
+	waitFrame(t, tm, "Heroic: SomeApp")
 	tm.Type("k")
 	sendKey(tm, tea.KeyEnter)
 	pollUntil(t, "UmuPrefixPath to clear", func() bool {
@@ -685,7 +685,7 @@ func TestTUIDetailPerGamePrefixPin(t *testing.T) {
 
 	// Reopen: cursor on the pin; up to Auto, enter clears it.
 	tm.Type("w")
-	waitFrame(t, tm, "SomeApp (heroic)")
+	waitFrame(t, tm, "Heroic: SomeApp")
 	tm.Type("k")
 	sendKey(tm, tea.KeyEnter)
 	pollUntil(t, "per-game pin to clear", func() bool {

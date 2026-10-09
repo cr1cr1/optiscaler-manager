@@ -16,17 +16,29 @@ type Runner struct {
 }
 
 // ResolveProtonPath picks the Proton build a launch should use. A
-// non-empty pinned path (the user's umu_proton_path setting) wins
-// verbatim. Empty means Auto: the newest runner found across
-// RunnerRoots is used; when nothing is detected the result stays empty
-// and umu-run falls back to its own managed runtime (UMU-Latest).
-func ResolveProtonPath(ctx context.Context, pinned string) string {
+// non-empty pinned path wins verbatim. Empty means Auto, guided by
+// preferSource: when the launch's prefix belongs to a launcher (its
+// FindPrefixes source), the newest runner OF THAT LAUNCHER wins so a
+// Bottles prefix runs on Bottles' runner, not whatever is newest
+// system-wide (issue 059). Launchers without runner roots
+// (PlayOnLinux, CrossOver, ~/.wine, undetected prefixes) and Auto
+// prefixes fall back to the global newest; when nothing is detected the
+// result stays empty and umu-run falls back to its own managed runtime
+// (UMU-Latest).
+func ResolveProtonPath(ctx context.Context, pinned, preferSource string) string {
 	if pinned != "" {
 		return pinned
 	}
 	runners := FindRunners(ctx, RunnerRoots())
 	if len(runners) == 0 {
 		return ""
+	}
+	if preferSource != "" {
+		for _, r := range runners { // newest first
+			if r.Source == preferSource {
+				return r.Path
+			}
+		}
 	}
 	return runners[0].Path
 }

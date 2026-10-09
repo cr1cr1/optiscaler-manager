@@ -301,7 +301,7 @@ func TestResolveProtonPath_PinnedWins(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	mkRunner(t, filepath.Join(home, ".local", "share", "Steam", "compatibilitytools.d", "GE-Proton9-3"))
 
-	if got := ResolveProtonPath(context.Background(), "/custom/proton"); got != "/custom/proton" {
+	if got := ResolveProtonPath(context.Background(), "/custom/proton", ""); got != "/custom/proton" {
 		t.Errorf("ResolveProtonPath(pinned) = %q, want the pinned path verbatim", got)
 	}
 }
@@ -315,8 +315,36 @@ func TestResolveProtonPath_AutoSelectsNewest(t *testing.T) {
 	mkRunner(t, filepath.Join(home, ".local", "share", "Steam", "compatibilitytools.d", "GE-Proton9-3"))
 	newest := mkRunner(t, filepath.Join(home, ".config", "heroic", "tools", "proton", "GE-Proton10-1"))
 
-	if got := ResolveProtonPath(context.Background(), ""); got != newest {
+	if got := ResolveProtonPath(context.Background(), "", ""); got != newest {
 		t.Errorf("ResolveProtonPath(auto) = %q, want newest detected %q", got, newest)
+	}
+}
+
+// TestResolveProtonPath_PrefersPrefixSource: a prefix pinned from
+// launcher X launches with X's own newest runner, not the global
+// newest (issue 059); launchers without runner roots (and Auto) fall
+// back to the global newest.
+func TestResolveProtonPath_PrefersPrefixSource(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	steam := mkRunner(t, filepath.Join(home, ".local", "share", "Steam", "compatibilitytools.d", "GE-Proton99-1"))
+	bottles := mkRunner(t, filepath.Join(home, ".local", "share", "bottles", "runners", "soda-9.0-1"))
+
+	if got := ResolveProtonPath(context.Background(), "", "bottles"); got != bottles {
+		t.Errorf("ResolveProtonPath(prefer bottles) = %q, want the Bottles runner %q", got, bottles)
+	}
+	if got := ResolveProtonPath(context.Background(), "", "steam"); got != steam {
+		t.Errorf("ResolveProtonPath(prefer steam) = %q, want the Steam runner %q", got, steam)
+	}
+	// Launchers without runner roots fall back to the global newest.
+	if got := ResolveProtonPath(context.Background(), "", "playonlinux"); got != steam {
+		t.Errorf("ResolveProtonPath(prefer playonlinux) = %q, want global newest %q", got, steam)
+	}
+	if got := ResolveProtonPath(context.Background(), "", ""); got != steam {
+		t.Errorf("ResolveProtonPath(no preference) = %q, want global newest %q", got, steam)
 	}
 }
 
@@ -326,7 +354,7 @@ func TestResolveProtonPath_EmptyWhenNoRunners(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
 
-	if got := ResolveProtonPath(context.Background(), ""); got != "" {
+	if got := ResolveProtonPath(context.Background(), "", "bottles"); got != "" {
 		t.Errorf("ResolveProtonPath(auto, no runners) = %q, want empty (umu's own runtime)", got)
 	}
 }

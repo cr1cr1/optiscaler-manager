@@ -354,8 +354,10 @@ func (m *model) umuPrefixPicker() {
 							tick = "✓"
 						}
 						Label(tick, FontSize(12), TextColorVec(txtMain))
-						Label(r.Label, FontSize(12), TextColorVec(txtMain))
-						m.umuPrefixMenuItems = append(m.umuPrefixMenuItems, umuPrefixMenuItem{value: r.Value, label: r.Label, rect: GetScreenRectOf(CurrentId()), hl: hl})
+						Icon(umuSourceIcon(r.Source), FontSize(12), TextColorVec(txtMuted))
+						label := ui.UmuPickerRowLabel(r)
+						Label(label, FontSize(12), TextColorVec(txtMain))
+						m.umuPrefixMenuItems = append(m.umuPrefixMenuItems, umuPrefixMenuItem{value: r.Value, label: label, rect: GetScreenRectOf(CurrentId()), hl: hl})
 					},
 					func(keyboard bool) {
 						m.umuPrefixBuf = r.Value
@@ -369,6 +371,31 @@ func (m *model) umuPrefixPicker() {
 	// Dismissal AFTER the popup rendered (shared ordering): Esc consumed
 	// so the modal's own Esc handler cannot also close the settings.
 	dropdownDismiss(st, nil)
+}
+
+// umuSourceIcon maps a prefix source to the menu row's launcher glyph
+// (issue 059): the Auto row ("") gets the sync glyph, an undetected
+// ("custom") pin the cog.
+func umuSourceIcon(source string) IconGlyph {
+	switch source {
+	case "steam":
+		return TypAnchor
+	case "bottles":
+		return TypWine
+	case "lutris":
+		return TypPuzzle
+	case "heroic":
+		return TypFlag
+	case "playonlinux":
+		return TypMediaPlay
+	case "crossover":
+		return TypArrowShuffle
+	case "wine":
+		return TypBeaker
+	case "custom":
+		return TypCog
+	}
+	return TypArrowSync
 }
 
 // prefixMenuMaxRows caps the visible rows of the umu prefix picker
@@ -468,8 +495,10 @@ func (m *model) prefixDropdown(e *ui.GameRow) {
 							tick = "✓"
 						}
 						Label(tick, FontSize(12), TextColorVec(txtMain))
-						Label(r.Label, FontSize(12), TextColorVec(txtMain))
-						m.prefixDDItems = append(m.prefixDDItems, umuPrefixMenuItem{value: r.Value, label: r.Label, rect: GetScreenRectOf(CurrentId()), hl: hl})
+						Icon(umuSourceIcon(r.Source), FontSize(12), TextColorVec(txtMuted))
+						label := ui.UmuPickerRowLabel(r)
+						Label(label, FontSize(12), TextColorVec(txtMain))
+						m.prefixDDItems = append(m.prefixDDItems, umuPrefixMenuItem{value: r.Value, label: label, rect: GetScreenRectOf(CurrentId()), hl: hl})
 					},
 					func(keyboard bool) {
 						m.sess.SetUmuPrefixOverride(dir, r.Value)

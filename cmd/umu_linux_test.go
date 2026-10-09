@@ -159,6 +159,55 @@ func TestUmuLauncherPerGamePinWins(t *testing.T) {
 	}
 }
 
+// TestUmuLauncherRunnerFollowsPrefixSource: a pinned Bottles prefix
+// launches with the newest runner from BOTTLES' runner root, not the
+// global newest (issue 059).
+func TestUmuLauncherRunnerFollowsPrefixSource(t *testing.T) {
+	capture := fakeUmuRun(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("OM_DATA_DIR", t.TempDir())
+
+	// A much newer Steam runner that must NOT win for a Bottles prefix.
+	steamRunner := filepath.Join(home, ".local", "share", "Steam", "compatibilitytools.d", "GE-Proton99-1")
+	bottlesRunner := filepath.Join(home, ".local", "share", "bottles", "runners", "soda-9.0-1")
+	for _, r := range []string{steamRunner, bottlesRunner} {
+		if err := os.MkdirAll(r, 0o755); err != nil {
+			t.Fatalf("mkdir runner: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(r, "proton"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatalf("write proton script: %v", err)
+		}
+	}
+	bottle := filepath.Join(home, ".local", "share", "bottles", "bottles", "mybottle")
+	if err := os.MkdirAll(filepath.Join(bottle, "drive_c"), 0o755); err != nil {
+		t.Fatalf("mkdir bottle: %v", err)
+	}
+
+	hook := newUmuLauncher(func(string) string { return bottle })
+	if hook == nil {
+		t.Fatal("newUmuLauncher returned nil with umu-run on PATH")
+	}
+	row := ui.GameRow{
+		Title:      "Foo",
+		InstallDir: t.TempDir(),
+		ExePath:    filepath.Join(t.TempDir(), "foo.exe"),
+	}
+	if err := hook(context.Background(), row); err != nil {
+		t.Fatalf("hook: %v", err)
+	}
+
+	proton, prefix := readCapture(t, capture)
+	if proton != bottlesRunner {
+		t.Errorf("PROTONPATH = %q, want the Bottles runner %q (not global newest %q)", proton, bottlesRunner, steamRunner)
+	}
+	if prefix != bottle {
+		t.Errorf("WINEPREFIX = %q, want the pinned bottle %q", prefix, bottle)
+	}
+}
+
 // TestUmuLauncherFailureLogsContext: a failing launch returns umu's
 // stderr tail in the error AND logs the full context (game, exe,
 // prefix, proton) so the console shows what was attempted.

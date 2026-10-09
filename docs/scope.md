@@ -593,7 +593,9 @@ decisions the per-version sections above do not cover.
 - **umu-launcher integration** (v0.12, Linux only, opt-in): when
   `UmuEnabled` is on and `umu-run` is on PATH, manual-store games whose
   ExePath is a Windows binary launch through umu instead of the direct
-  exe path. Proton is always Auto: the newest runner detected across
+  exe path. The runner follows the prefix: a prefix owned by Bottles,
+  Lutris, Heroic, or Steam launches with that launcher's newest
+  runner; anything else (and Auto) uses the global newest across
   Steam — native/Flatpak/Snap/extra libraries — Bottles, Lutris,
   Heroic, and umu `compatibilitytools`, falling through to umu's own
   runtime when nothing is found. The wine prefix resolves per game pin

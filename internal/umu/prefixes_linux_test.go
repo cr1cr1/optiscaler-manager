@@ -85,6 +85,24 @@ func TestFindPrefixes_BottlesCustomPath(t *testing.T) {
 	t.Errorf("FindPrefixes missing custom Bottles prefix %q (got %v)", bottle, got)
 }
 
+// TestPrefixSource: the launch hook learns a resolved prefix's owning
+// launcher from the scan so the runner can follow it (issue 059).
+func TestPrefixSource(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	bottle := mkPrefix(t, filepath.Join(home, ".local", "share", "bottles", "bottles", "mybottle"))
+
+	if got := PrefixSource(context.Background(), bottle); got != "bottles" {
+		t.Errorf("PrefixSource(%q) = %q, want bottles", bottle, got)
+	}
+	if got := PrefixSource(context.Background(), filepath.Join(home, "nowhere")); got != "" {
+		t.Errorf("PrefixSource(unknown) = %q, want empty", got)
+	}
+}
+
 func TestFindPrefixes_FlatpakVariants(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

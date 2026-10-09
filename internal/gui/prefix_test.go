@@ -42,7 +42,7 @@ func TestGUIDetailPrefixDropdown(t *testing.T) {
 	if len(items) != 3 {
 		t.Fatalf("dropdown rows = %d, want 3 (Auto + 2 prefixes): %+v", len(items), items)
 	}
-	wantLabels := []string{"Auto (inherit)", "SomeApp (heroic)", "mybottle (bottles)"}
+	wantLabels := []string{"Auto (inherit)", "Heroic: SomeApp", "Bottles: mybottle"}
 	for i, w := range wantLabels {
 		if items[i].label != w {
 			t.Errorf("items[%d].label = %q, want %q", i, items[i].label, w)
@@ -103,8 +103,8 @@ func TestGUIDetailPrefixDropdownScrolls(t *testing.T) {
 	if len(items) != 20 {
 		t.Fatalf("rendered rows = %d, want the 20-row cap", len(items))
 	}
-	if items[0].label != "Auto (inherit)" || items[19].label != "pfx-18 (bottles)" {
-		t.Errorf("initial window = %q .. %q, want Auto .. pfx-18", items[0].label, items[19].label)
+	if items[0].label != "Auto (inherit)" || items[19].label != "Bottles: pfx-18" {
+		t.Errorf("initial window = %q .. %q, want Auto .. Bottles: pfx-18", items[0].label, items[19].label)
 	}
 	menu := m.prefixDDMenuRect
 	pitch := items[1].rect.Origin[1] - items[0].rect.Origin[1]
@@ -121,7 +121,7 @@ func TestGUIDetailPrefixDropdownScrolls(t *testing.T) {
 		keyFrame(KeyDown, 0, m.rootView)
 	}
 	items = m.prefixDDItems
-	if len(items) != 20 || items[19].label != "pfx-24 (bottles)" || !items[19].hl {
+	if len(items) != 20 || items[19].label != "Bottles: pfx-24" || !items[19].hl {
 		t.Fatalf("window did not follow the highlight to the bottom: %+v", items)
 	}
 	if items[0].label == "Auto (inherit)" {

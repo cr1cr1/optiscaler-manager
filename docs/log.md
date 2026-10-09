@@ -4596,3 +4596,24 @@ no such file or directory` — stranding the mod installed forever.
   TempDir cleanup raced a late games-cache write (`unlinkat settings:
   directory not empty`).
 2026-10-09
+
+## 2026-10-09 — issue 59: runner follows the prefix's launcher; picker rows show icon + launcher + prefix
+
+- Report: launches used the same (global-newest) runner regardless of
+  the chosen prefix; picker rows hid the launcher relationship.
+- Runner: `ResolveProtonPath(ctx, pinned, preferSource)` — the newest
+  runner whose `Source` matches the prefix's launcher wins, else the
+  global newest, else umu's runtime. The launch hook resolves the
+  prefix's owner via the new scan-based `PrefixSource(ctx, path)`, so
+  even an auto-resolved enclosing `drive_c` inside a bottle launches
+  on Bottles' runner; `prefix_source` joins the launch log fields.
+- Rows: `UmuPickerOption` carries `Source`+`Name` separately;
+  `UmuPickerRowLabel` renders "Bottles: mybottle",
+  `UmuSourceName` maps ids to display names. GUI rows: tick + Typicons
+  glyph per launcher (`umuSourceIcon`) + label; TUI rows: colored
+  initial per launcher (`umuSourceBadge`) + label.
+- TDD: red first in cmd (PROTONPATH capture), umu (source preference,
+  PrefixSource), ui (row composition), then frontends; teatest waits
+  updated to the new labels. Full suite 32/32 green, vet clean.
+- Docs: issue 059; runner semantics rewritten in README/scope/
+  architecture ("Proton is always Auto" is gone).

@@ -254,9 +254,35 @@ func restoreBox(p *restorePick) string {
 func prefixBox(p *prefixPick) string {
 	labels := make([]string, len(p.items))
 	for i, item := range p.items {
-		labels[i] = item.Label
+		labels[i] = umuSourceBadge(item.Source) + " " + ui.UmuPickerRowLabel(item)
 	}
 	return pickerBox("umu wine prefix", labels, p.sel, "up/down select · enter pick · esc close")
+}
+
+// umuSourceBadge is the TUI menu row's launcher marker (issue 059): a
+// colored initial per launcher (no icon font in the terminal), "A" for
+// the Auto row, "?" for an undetected custom pin.
+func umuSourceBadge(source string) string {
+	letter, color := "A", "8"
+	switch source {
+	case "steam":
+		letter, color = "S", "12"
+	case "bottles":
+		letter, color = "B", "10"
+	case "lutris":
+		letter, color = "L", "11"
+	case "heroic":
+		letter, color = "H", "13"
+	case "playonlinux":
+		letter, color = "P", "14"
+	case "crossover":
+		letter, color = "C", "9"
+	case "wine":
+		letter, color = "W", "5"
+	case "custom":
+		letter, color = "?", "8"
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(letter)
 }
 
 // pickerBox renders a centered selection modal: title line, one row per

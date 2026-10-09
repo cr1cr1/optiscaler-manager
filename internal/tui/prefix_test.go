@@ -43,7 +43,7 @@ func TestTUIPrefixPickerStateMachine(t *testing.T) {
 		t.Errorf("initial sel = %d, want 0 (Auto)", m.prefix.sel)
 	}
 	view := tm.(Model).View()
-	if !strings.Contains(view, "SomeApp (heroic)") {
+	if !strings.Contains(view, "Heroic: SomeApp") {
 		t.Errorf("picker view lacks prefix row:\n%s", view)
 	}
 
@@ -63,7 +63,7 @@ func TestTUIPrefixPickerStateMachine(t *testing.T) {
 		t.Errorf("reopen sel = %d, want 1 (current pick)", m.prefix.sel)
 	}
 	view = tm.(Model).View()
-	if !strings.Contains(view, "SomeApp (heroic)") {
+	if !strings.Contains(view, "Heroic: SomeApp") {
 		t.Errorf("reopened picker view lacks prefix row:\n%s", view)
 	}
 }
@@ -73,7 +73,7 @@ func TestTUIPrefixPickerStateMachine(t *testing.T) {
 func TestPrefixBoxWindowsAtTwenty(t *testing.T) {
 	items := make([]ui.UmuPickerOption, 25)
 	for i := range items {
-		items[i] = ui.UmuPickerOption{Value: fmt.Sprint(i), Label: fmt.Sprintf("pfx-%02d (bottles)", i)}
+		items[i] = ui.UmuPickerOption{Value: fmt.Sprint(i), Source: "bottles", Name: fmt.Sprintf("pfx-%02d", i)}
 	}
 
 	top := prefixBox(&prefixPick{items: items, sel: 0})

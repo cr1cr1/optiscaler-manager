@@ -213,16 +213,20 @@ turning it off gives you a fully offline scan. On Linux, the Settings
 window also exposes the umu-launcher integration: enable it to launch
 manually-added Windows binaries (`.exe`, `.bat`, `.cmd`, `.msi`) via
 [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher) when
-`umu-run` is installed. Launches pick the newest Proton build detected
-on your system automatically (Steam — native, Flatpak, Snap, extra
-library folders — Bottles, Lutris, Heroic, and umu's own
-`compatibilitytools`, falling through to umu's `UMU-Latest` when
-nothing is detected). What you control is the wine **prefix**: the
+`umu-run` is installed. The Proton runner follows the prefix: a prefix
+owned by Bottles, Lutris, Heroic, or Steam launches with that
+launcher's newest detected runner; anything else (and Auto) uses the
+newest runner detected system-wide (Steam — native, Flatpak, Snap,
+extra library folders — Bottles, Lutris, Heroic, and umu's own
+`compatibilitytools`), falling through to umu's `UMU-Latest` when
+nothing is detected. What you control is the wine **prefix**: the
 Settings picker sets the global default from the prefixes detected in
 Heroic `Prefixes/`, Bottles `bottles/`, Steam `compatdata/`, and
 `~/.wine`, and the detail pane (GUI) or `w` on the detail screen (TUI)
-pins a prefix per game — both pickers show 20 rows at a time and
-scroll longer lists — per-game wins over the global default, and
+pins a prefix per game — picker rows read "Launcher: prefix" with the
+launcher's icon (GUI) or a colored initial (TUI), both pickers show 20
+rows at a time and scroll longer lists — per-game wins over the global
+default, and
 **Auto** reuses a prefix the game already lives in (a
 Bottles/Lutris/Heroic `drive_c` or an existing Heroic prefix) before
 falling back to a per-game prefix under

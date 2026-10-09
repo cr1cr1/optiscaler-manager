@@ -19,9 +19,11 @@ import (
 // pinPrefix resolves the effective pinned prefix for an install dir at
 // launch time (session.UmuPrefixFor: per-game pin, else the global
 // default, else "" for the auto chain). It is read per launch so pins
-// changed mid-session apply without a restart. Proton is always Auto:
-// the newest runner detected across the Steam / Bottles / Lutris /
-// Heroic / umu roots (umu's own runtime when nothing is found).
+// changed mid-session apply without a restart. The runner follows the
+// prefix: a prefix owned by a launcher (Bottles/Lutris/Heroic/Steam
+// per the prefix scan) launches with that launcher's newest runner;
+// anything else (and nothing detected) falls back to the global
+// newest, then to umu's own runtime (issue 059).
 //
 // Detection runs once at session construction; we do not re-query
 // umu-run on every launch (cheap as it is, it's a fork+exec and a
@@ -39,8 +41,9 @@ func newUmuLauncher(pinPrefix func(installDir string) string) ui.UmuLauncherHook
 		if err != nil {
 			return err
 		}
-		proton := umu.ResolveProtonPath(ctx, "")
-		log.Debug().Str("game", row.Title).Str("proton", proton).Str("prefix", prefix).
+		prefixSource := umu.PrefixSource(ctx, prefix)
+		proton := umu.ResolveProtonPath(ctx, "", prefixSource)
+		log.Debug().Str("game", row.Title).Str("proton", proton).Str("prefix", prefix).Str("prefix_source", prefixSource).
 			Msg("umu launch resolved")
 		opts := umu.LaunchOpts{
 			ExePath:    row.ExePath,
@@ -58,6 +61,7 @@ func newUmuLauncher(pinPrefix func(installDir string) string) ui.UmuLauncherHook
 				Str("game", row.Title).
 				Str("exe", row.ExePath).
 				Str("prefix", prefix).
+				Str("prefix_source", prefixSource).
 				Str("proton", proton).
 				Msg("umu launch failed")
 			return err
