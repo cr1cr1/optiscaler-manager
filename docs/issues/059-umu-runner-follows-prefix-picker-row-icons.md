@@ -40,4 +40,4 @@ runner) and logs `prefix_source` on the resolved/failure lines.
 map the source to a Typicons glyph (`umuSourceIcon`: Steam=anchor,
 Bottles=wine glass, Lutris=puzzle, Heroic=flag, PlayOnLinux=play,
 CrossOver=shuffle, Wine=beaker, Auto=sync, Custom=cog), TUI rows to a
-colored initial (`umuSourceBadge`). Commit: THIS_COMMIT.
+colored initial (`umuSourceBadge`). Commit: ede9db3.
