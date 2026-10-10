@@ -19,14 +19,15 @@ import (
 
 // fakeUmuRun installs a fake umu-run script on PATH: it answers
 // --version like the real thing and otherwise records the PROTONPATH /
-// WINEPREFIX environment into the file named by UMU_TEST_CAPTURE.
+// WINEPREFIX / GAMEID / STORE environment into the file named by
+// UMU_TEST_CAPTURE.
 func fakeUmuRun(t *testing.T) (capture string) {
 	t.Helper()
 	bin := t.TempDir()
 	capture = filepath.Join(t.TempDir(), "capture")
 	script := "#!/bin/sh\n" +
 		`if [ "$1" = "--version" ]; then echo "umu-launcher version 1.4.4 (Python 3.11.6)"; exit 0; fi` + "\n" +
-		`printf '%s\n%s\n' "$PROTONPATH" "$WINEPREFIX" > "$UMU_TEST_CAPTURE"` + "\n"
+		`printf '%s\n%s\n%s\n%s\n' "$PROTONPATH" "$WINEPREFIX" "$GAMEID" "$STORE" > "$UMU_TEST_CAPTURE"` + "\n"
 	if err := os.WriteFile(filepath.Join(bin, "umu-run"), []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake umu-run: %v", err)
 	}
@@ -36,16 +37,56 @@ func fakeUmuRun(t *testing.T) (capture string) {
 }
 
 func readCapture(t *testing.T, capture string) (proton, prefix string) {
+	proton, prefix, _, _ = readCaptureAll(t, capture)
+	return proton, prefix
+}
+
+// readCaptureGame returns GAMEID and STORE.
+func readCaptureGame(t *testing.T, capture string) (gameID, store string) {
+	_, _, gameID, store = readCaptureAll(t, capture)
+	return gameID, store
+}
+
+// readCaptureAll returns the four captured env values.
+func readCaptureAll(t *testing.T, capture string) (proton, prefix, gameID, store string) {
 	t.Helper()
 	data, err := os.ReadFile(capture)
 	if err != nil {
 		t.Fatalf("read capture: %v", err)
 	}
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("capture = %q, want two lines (PROTONPATH, WINEPREFIX)", string(data))
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("capture = %q, want four lines (PROTONPATH, WINEPREFIX, GAMEID, STORE)", string(data))
 	}
-	return lines[0], lines[1]
+	return lines[0], lines[1], lines[2], lines[3]
+}
+
+// TestUmuLauncherResolvesGameIDStore: the launch-time gameIDFor
+// resolver's result becomes the GAMEID/STORE env (issue 064) so
+// protonfixes apply per-game fixes.
+func TestUmuLauncherResolvesGameIDStore(t *testing.T) {
+	capture := fakeUmuRun(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("OM_DATA_DIR", t.TempDir())
+
+	hook := newUmuLauncher(
+		func(string) string { return "" }, func(string) string { return "" }, func() bool { return true }, "",
+		func(string) string { return "" },
+		func(context.Context, ui.GameRow) (string, string) { return "umu-1174180", "egs" })
+	row := ui.GameRow{
+		Title:      "RDR2",
+		InstallDir: t.TempDir(),
+		ExePath:    filepath.Join(t.TempDir(), "rdr2.exe"),
+	}
+	if _, err := hook(context.Background(), row); err != nil {
+		t.Fatalf("hook: %v", err)
+	}
+	gameID, store := readCaptureGame(t, capture)
+	if gameID != "umu-1174180" || store != "egs" {
+		t.Errorf("GAMEID/STORE = (%q, %q), want (umu-1174180, egs)", gameID, store)
+	}
 }
 
 // TestUmuLauncherAutoDetectsProton: with the Proton path setting left
@@ -69,7 +110,7 @@ func TestUmuLauncherAutoDetectsProton(t *testing.T) {
 		t.Fatalf("write proton script: %v", err)
 	}
 
-	hook := newUmuLauncher(func(string) string { return "" }, func(string) string { return "" }, func() bool { return true }, "", func(string) string { return "" })
+	hook := newUmuLauncher(func(string) string { return "" }, func(string) string { return "" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	if hook == nil {
 		t.Fatal("newUmuLauncher returned nil")
 	}
@@ -106,7 +147,7 @@ func TestUmuLauncherReusesEnclosingPrefix(t *testing.T) {
 		t.Fatalf("mkdir bottle: %v", err)
 	}
 
-	hook := newUmuLauncher(func(string) string { return "" }, func(string) string { return "" }, func() bool { return true }, "", func(string) string { return "" })
+	hook := newUmuLauncher(func(string) string { return "" }, func(string) string { return "" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	if hook == nil {
 		t.Fatal("newUmuLauncher returned nil")
 	}
@@ -151,7 +192,7 @@ func TestUmuLauncherPinnedRunnerWins(t *testing.T) {
 
 	hook := newUmuLauncher(
 		func(string) string { return "" }, func(string) string { return "" }, func() bool { return true }, "",
-		func(string) string { return "/picked/GE-Proton9-20" })
+		func(string) string { return "/picked/GE-Proton9-20" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
@@ -176,7 +217,7 @@ func TestUmuLauncherPerGamePinWins(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("OM_DATA_DIR", t.TempDir())
 
-	hook := newUmuLauncher(func(string) string { return "/pinned/prefix" }, func(string) string { return "umu" }, func() bool { return true }, "", func(string) string { return "" })
+	hook := newUmuLauncher(func(string) string { return "/pinned/prefix" }, func(string) string { return "umu" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	if hook == nil {
 		t.Fatal("newUmuLauncher returned nil with umu-run on PATH")
 	}
@@ -240,7 +281,7 @@ func TestUmuRouteRejectsLauncherOwnedPrefix(t *testing.T) {
 	umuCaptureFile := fakeUmuRun(t)
 	_, bottle := bottlesFixture(t)
 
-	hook := newUmuLauncher(func(string) string { return bottle }, func(string) string { return "umu" }, func() bool { return true }, "", func(string) string { return "" })
+	hook := newUmuLauncher(func(string) string { return bottle }, func(string) string { return "umu" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
@@ -281,7 +322,7 @@ func TestUmuRouteRejectsSteamCompatdata(t *testing.T) {
 		t.Fatalf("write appmanifest: %v", err)
 	}
 
-	hook := newUmuLauncher(func(string) string { return pfx }, func(string) string { return "umu" }, func() bool { return true }, "", func(string) string { return "" })
+	hook := newUmuLauncher(func(string) string { return pfx }, func(string) string { return "umu" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
@@ -313,7 +354,7 @@ func TestUmuRouteAllowsDotWine(t *testing.T) {
 		t.Fatalf("mkdir ~/.wine: %v", err)
 	}
 
-	hook := newUmuLauncher(func(string) string { return dotwine }, func(string) string { return "umu" }, func() bool { return true }, "", func(string) string { return "" })
+	hook := newUmuLauncher(func(string) string { return dotwine }, func(string) string { return "umu" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
@@ -352,7 +393,7 @@ func TestUmuRouterAutoRoutesToBottles(t *testing.T) {
 	cliCapture := fakeCLI(t, "bottles-cli")
 	_, bottle := bottlesFixture(t)
 
-	hook := newUmuLauncher(func(string) string { return bottle }, func(string) string { return "" }, func() bool { return true }, "", func(string) string { return "" })
+	hook := newUmuLauncher(func(string) string { return bottle }, func(string) string { return "" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	if hook == nil {
 		t.Fatal("newUmuLauncher returned nil")
 	}
@@ -388,7 +429,7 @@ func TestUmuRouterAutoUnownedWithoutUmuErrors(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("OM_DATA_DIR", t.TempDir())
 
-	hook := newUmuLauncher(func(string) string { return "" }, func(string) string { return "" }, func() bool { return true }, "", func(string) string { return "" })
+	hook := newUmuLauncher(func(string) string { return "" }, func(string) string { return "" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	if hook == nil {
 		t.Fatal("newUmuLauncher returned nil — the router must exist without umu-run")
 	}
@@ -414,7 +455,7 @@ func TestUmuRouterUnownedUmuDisabledErrors(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("OM_DATA_DIR", t.TempDir())
 
-	hook := newUmuLauncher(func(string) string { return "" }, func(string) string { return "" }, func() bool { return false }, "", func(string) string { return "" })
+	hook := newUmuLauncher(func(string) string { return "" }, func(string) string { return "" }, func() bool { return false }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
@@ -435,7 +476,7 @@ func TestUmuRouterOwnerForcedUnownedErrors(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("OM_DATA_DIR", t.TempDir())
 
-	hook := newUmuLauncher(func(string) string { return "" }, func(string) string { return "owner" }, func() bool { return true }, "", func(string) string { return "" })
+	hook := newUmuLauncher(func(string) string { return "" }, func(string) string { return "owner" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
@@ -462,7 +503,7 @@ func TestUmuRouterAutoOwnedMissingCLIErrors(t *testing.T) {
 	t.Setenv("PATH", bin)
 	_, bottle := bottlesFixture(t)
 
-	hook := newUmuLauncher(func(string) string { return bottle }, func(string) string { return "" }, func() bool { return true }, "", func(string) string { return "" })
+	hook := newUmuLauncher(func(string) string { return bottle }, func(string) string { return "" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
@@ -489,7 +530,7 @@ func TestUmuRouterWritesLaunchLog(t *testing.T) {
 	_, bottle := bottlesFixture(t)
 
 	logDir := t.TempDir()
-	hook := newUmuLauncher(func(string) string { return bottle }, func(string) string { return "" }, func() bool { return true }, logDir, func(string) string { return "" })
+	hook := newUmuLauncher(func(string) string { return bottle }, func(string) string { return "" }, func() bool { return true }, logDir, func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
@@ -542,7 +583,7 @@ func TestUmuLauncherFailureLogsContext(t *testing.T) {
 	log.Logger = zerolog.New(&logBuf)
 	t.Cleanup(func() { log.Logger = prev })
 
-	hook := newUmuLauncher(func(string) string { return "/pinned/prefix" }, func(string) string { return "umu" }, func() bool { return true }, "", func(string) string { return "" })
+	hook := newUmuLauncher(func(string) string { return "/pinned/prefix" }, func(string) string { return "umu" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	if hook == nil {
 		t.Fatal("newUmuLauncher returned nil with umu-run on PATH")
 	}

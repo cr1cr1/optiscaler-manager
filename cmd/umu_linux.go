@@ -43,7 +43,11 @@ import (
 // runnerFor resolves the effective pinned Proton build for an install
 // dir at launch time (session.UmuRunnerFor, issue 063): "" means Auto
 // (newest detected matching the prefix's launcher, else global).
-func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllowed func() bool, logDir string, runnerFor func(installDir string) string) ui.UmuLauncherHook {
+//
+// gameIDFor resolves the GAMEID/STORE pair at launch time
+// (session.UmuGameIDFor, issue 064) so protonfixes apply per-game
+// fixes; it degrades to ("umu-default", "") when unresolvable.
+func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllowed func() bool, logDir string, runnerFor func(installDir string) string, gameIDFor func(ctx context.Context, row ui.GameRow) (string, string)) ui.UmuLauncherHook {
 	umuPath, umuVersion, umuErr := umu.Detect(context.Background())
 	if umuErr != nil {
 		log.Info().Err(umuErr).Msg("umu-run not detected; unowned Windows-binary launches will error unless the prefix owner routes elsewhere")
@@ -77,14 +81,15 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 				return "", fmt.Errorf("prefix %s is managed by %s — umu-run would corrupt it; pin an app-managed/umu prefix or set Launch via: auto/owner", prefix, pfx.Source)
 			}
 			proton := umu.ResolveProtonPath(ctx, runnerFor(row.InstallDir), pfx.Source)
+			gameID, store := gameIDFor(ctx, row)
 			log.Debug().Str("game", row.Title).Str("proton", proton).Str("prefix", prefix).Str("prefix_source", pfx.Source).
-				Str("route", route).Msg("umu launch resolved")
+				Str("route", route).Str("gameid", gameID).Str("store", store).Msg("umu launch resolved")
 			opts := umu.LaunchOpts{
 				ExePath:    row.ExePath,
-				GameID:     "umu-default",
+				GameID:     gameID,
 				WinePrefix: prefix,
 				ProtonPath: proton,
-				Store:      "",
+				Store:      store,
 				UmuRunPath: umuPath,
 				LogDir:     logDir,
 				LogName:    row.Title,

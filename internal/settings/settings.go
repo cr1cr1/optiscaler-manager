@@ -96,6 +96,12 @@ type Settings struct {
 	// (the PrefixOverrides precedent); deleting the key restores the
 	// default resolution.
 	RunnerOverrides map[string]string `json:"runner_overrides,omitempty"`
+	// GameIDOverrides pins the umu GAMEID per canonical install dir
+	// (issue 064) for games the automatic resolution gets wrong —
+	// JSON-edited only, the SteamGridDBKey precedent. The automatic
+	// chain is umu-<SteamAppID> when identified, else a umu-database
+	// lookup for Heroic titles, else "umu-default".
+	GameIDOverrides map[string]string `json:"gameid_overrides,omitempty"`
 	// SteamGridDBKey is the personal SteamGridDB API key enabling the
 	// SteamGridDB cover source (issue 024): grids for games Steam's CDN
 	// has no art for, and alias-aware name search. Empty (default)
@@ -150,6 +156,7 @@ func Load(root string) (Settings, error) {
 		LaunchRouteOverrides map[string]string `json:"launch_route_overrides,omitempty"`
 		UmuRunnerPath        string            `json:"umu_runner_path,omitempty"`
 		RunnerOverrides      map[string]string `json:"runner_overrides,omitempty"`
+		GameIDOverrides      map[string]string `json:"gameid_overrides,omitempty"`
 		SteamGridDBKey       string            `json:"steamgriddb_key,omitempty"`
 		Forks                []Fork            `json:"forks,omitempty"`
 		ActiveFork           string            `json:"active_fork,omitempty"`
@@ -172,6 +179,7 @@ func Load(root string) (Settings, error) {
 		LaunchRouteOverrides: raw.LaunchRouteOverrides,
 		UmuRunnerPath:        raw.UmuRunnerPath,
 		RunnerOverrides:      raw.RunnerOverrides,
+		GameIDOverrides:      raw.GameIDOverrides,
 		SteamGridDBKey:       raw.SteamGridDBKey,
 		Forks:                raw.Forks,
 		ActiveFork:           raw.ActiveFork,

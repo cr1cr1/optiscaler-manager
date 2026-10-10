@@ -17,6 +17,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/sgdb"
 	"github.com/cr1cr1/optiscaler-manager/internal/steam"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
+	"github.com/cr1cr1/optiscaler-manager/internal/umudb"
 	"github.com/cr1cr1/optiscaler-manager/internal/wikidata"
 )
 
@@ -72,6 +73,7 @@ func newSession(d *Deps) *ui.Session {
 	routeFor := func(string) string { return "" }
 	umuAllowed := func() bool { return false }
 	runnerFor := func(string) string { return "" }
+	gameIDFor := func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" }
 	sess := ui.NewSession(ui.Deps{
 		Store:        d.Store,
 		GH:           d.GH,
@@ -87,18 +89,22 @@ func newSession(d *Deps) *ui.Session {
 		PCGW:         pcgwClient,
 		GOG:          gogClient,
 		Launcher:     d.Launcher, // nil selects the platform default
+		UmuGameIDLookup: umudb.New(httpClient, filepath.Join(d.CacheDir, "umudb"),
+			"optiscaler-manager/"+d.Version+" (https://github.com/cr1cr1/optiscaler-manager)").Lookup,
 		UmuLauncher: newUmuLauncher(
 			func(dir string) string { return pinPrefix(dir) },
 			func(dir string) string { return routeFor(dir) },
 			func() bool { return umuAllowed() },
 			filepath.Join(d.DataRoot, "logs"),
 			func(dir string) string { return runnerFor(dir) },
+			func(ctx context.Context, row ui.GameRow) (string, string) { return gameIDFor(ctx, row) },
 		),
 	})
 	pinPrefix = sess.UmuPrefixFor
 	routeFor = sess.LaunchRouteFor
 	umuAllowed = func() bool { return sess.Settings().UmuEnabled }
 	runnerFor = sess.UmuRunnerFor
+	gameIDFor = sess.UmuGameIDFor
 	return sess
 }
 

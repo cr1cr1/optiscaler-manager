@@ -258,7 +258,10 @@ and unrecognized prefixes stay umu-eligible). The Proton build for umu
 launches is selectable too: the Settings "Runner" dropdown (global
 default) and the detail pane (GUI) or `n` on the detail screen (TUI)
 pin any detected build — Steam `compatibilitytools.d`, Bottles/Lutris
-runners, Heroic `tools/proton` — or leave Auto (newest installed). A prefix whose owner can't be launched (CLI missing,
+runners, Heroic `tools/proton` — or leave Auto (newest installed).
+GAMEID/STORE resolve per game so protonfixes apply: `umu-<SteamAppID>`
+for identified games, a umu-database lookup for Heroic titles (cached
+30 days), overridable per game via `gameid_overrides` in settings.json. A prefix whose owner can't be launched (CLI missing,
 unroutable) fails with an error naming the remedy instead of silently
 falling back — and a Windows binary is never exec'd bare (on systems
 with the mono binfmt registration that lands in mono and hangs).

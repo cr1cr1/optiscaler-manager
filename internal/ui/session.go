@@ -228,6 +228,11 @@ type Deps struct {
 	// off-Linux. Tests inject fixtures.
 	UmuRunners func() []umu.Runner
 
+	// UmuGameIDLookup resolves a (store, codename) pair to a umu ID via
+	// the umu-database (issue 064); nil skips the database step of
+	// UmuGameIDFor (offline-by-construction in tests).
+	UmuGameIDLookup func(ctx context.Context, store, codename string) (string, error)
+
 	// Steam and ProtonDB feed the online lookup phase of Scan; either nil
 	// skips enrichment entirely.
 	Steam    *steam.Client

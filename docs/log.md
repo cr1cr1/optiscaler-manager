@@ -4707,3 +4707,20 @@ no such file or directory` — stranding the mod installed forever.
   + `Deps.UmuRunners` provider; only umu launches use the pin —
   owner-CLI launches keep the launcher's own configured runner.
 - Docs: issue 063. Commit: 8e9e158.
+
+## 2026-10-10 — issue 64: GAMEID/STORE resolution for protonfixes (umu-database)
+
+- umu launches no longer hardcode `GAMEID=umu-default` + empty STORE:
+  the chain is per-game override (`gameid_overrides`, JSON-edited) →
+  `umu-<SteamAppID>` for identified games → umu-database lookup for
+  Heroic titles → `umu-default`; STORE maps epic→egs / gog→gog /
+  steam→steam / manual→"".
+- New `internal/umudb`: `umu_api.php?store&codename` client with a
+  30-day on-disk cache (hits and `ErrNoMatch` misses; transport
+  failures never cached — lookups degrade, never block). API schema
+  verified against the umu-database README + a live probe.
+- Smoke test beforehand validated 061–063 in the wild: Resonance
+  launched via umu with an app-managed prefix, auto runner
+  (ge-proton11-7 from Bottles' root), full per-launch log — the game
+  itself crashes game-side (out of launcher scope).
+- Docs: issue 064. Commit: THIS_COMMIT.
