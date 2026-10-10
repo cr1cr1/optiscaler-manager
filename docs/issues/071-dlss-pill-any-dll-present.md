@@ -61,4 +61,4 @@ Implemented as designed.
 - Docs: scope.md (pill gate + three-file bullets), README.md.
 - `go test ./...` 35/35 ok, vet + gofmt clean.
 
-Commit: THIS_COMMIT.
+Commit: 3ca87eb.

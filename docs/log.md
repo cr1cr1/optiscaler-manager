@@ -4831,4 +4831,4 @@ no such file or directory` — stranding the mod installed forever.
   a truly DLL-less game; the bare/unreadable-DLL case now asserts the
   control renders.
 - Docs: issue 071, scope (pill gate + three-file bullets), README.
-- Commit: THIS_COMMIT.
+- Commit: 3ca87eb.
