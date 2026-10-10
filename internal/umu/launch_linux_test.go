@@ -337,6 +337,23 @@ func TestLaunch_NoLogDirKeepsOldBehavior(t *testing.T) {
 	}
 }
 
+// TestLaunch_ProtonVerbOverride: opts.Verb replaces the default
+// waitforexitandrun (issue 066: second process into a busy prefix
+// launches with runinprefix instead of waiting).
+func TestLaunch_ProtonVerbOverride(t *testing.T) {
+	rec := &fakeLauncher{}
+	opts := LaunchOpts{
+		ExePath: "/g/foo.exe", WinePrefix: "/p", UmuRunPath: "/usr/bin/umu-run",
+		Verb: "runinprefix",
+	}
+	if err := Launch(context.Background(), rec.run, opts); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if got := envMap(rec.captured.Env)["PROTON_VERB"]; got != "runinprefix" {
+		t.Errorf("PROTON_VERB = %q, want runinprefix", got)
+	}
+}
+
 func envMap(env []string) map[string]string {
 	m := map[string]string{}
 	for _, kv := range env {

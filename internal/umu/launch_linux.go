@@ -65,10 +65,14 @@ func Launch(ctx context.Context, launcher Launcher, opts LaunchOpts) error {
 		gameID = "umu-default"
 	}
 
+	verb := opts.Verb
+	if verb == "" {
+		verb = "waitforexitandrun"
+	}
 	delta := []string{
 		"GAMEID=" + gameID,
 		"WINEPREFIX=" + opts.WinePrefix,
-		"PROTON_VERB=waitforexitandrun",
+		"PROTON_VERB=" + verb,
 		"STORE=" + opts.Store,
 		"UMU_LOG=1",
 	}

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -67,6 +68,13 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 	} else {
 		log.Info().Str("path", umuPath).Str("version", umuVersion).Msg("umu-launcher detected")
 	}
+	// Busy prefixes (issue 066): the first launch into a prefix uses
+	// waitforexitandrun; while a game we launched still runs there,
+	// further launches use runinprefix — waiting would block until the
+	// first game's wineserver exits. umu.Launch blocks until exit, so
+	// the registry entry's lifetime matches the game's.
+	var verbMu sync.Mutex
+	busy := map[string]int{}
 	return func(ctx context.Context, row ui.GameRow) (string, error) {
 		route := routeFor(row.InstallDir)
 		prefix, err := umu.ResolvePrefix(pinPrefix(row.InstallDir), row.InstallDir, row.ExePath, row.AppName)
@@ -114,8 +122,23 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 				log.Info().Str("game", row.Title).Msg("umu runtime not downloaded — first launch fetches it, expect a long run")
 			}
 			gameID, store := gameIDFor(ctx, row)
+			verbMu.Lock()
+			verb := "waitforexitandrun"
+			if busy[prefix] > 0 {
+				verb = "runinprefix"
+			}
+			busy[prefix]++
+			verbMu.Unlock()
+			defer func() {
+				verbMu.Lock()
+				busy[prefix]--
+				if busy[prefix] <= 0 {
+					delete(busy, prefix)
+				}
+				verbMu.Unlock()
+			}()
 			log.Debug().Str("game", row.Title).Str("proton", proton).Str("prefix", prefix).Str("prefix_source", pfx.Source).
-				Str("route", route).Str("gameid", gameID).Str("store", store).Msg("umu launch resolved")
+				Str("route", route).Str("gameid", gameID).Str("store", store).Str("verb", verb).Msg("umu launch resolved")
 			opts := umu.LaunchOpts{
 				ExePath:    row.ExePath,
 				GameID:     gameID,
@@ -125,6 +148,7 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 				UmuRunPath: umuPath,
 				LogDir:     logDir,
 				LogName:    row.Title,
+				Verb:       verb,
 			}
 			if err := umu.Launch(ctx, nil, opts); err != nil {
 				// The error already carries umu's stderr tail; the fields

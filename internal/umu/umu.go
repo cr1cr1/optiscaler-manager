@@ -43,6 +43,11 @@ type LaunchOpts struct {
 	Store      string
 	UmuRunPath string
 	ExtraEnv   map[string]string
+	// Verb overrides PROTON_VERB (issue 066): empty means
+	// "waitforexitandrun" (the first process into a prefix waits for
+	// any running wineserver); the launch router passes "runinprefix"
+	// for concurrent launches into a busy prefix.
+	Verb string
 	// LogDir enables per-launch logging (issue 061): the child's full
 	// stdout/stderr land in a file under LogDir named after LogName
 	// (the game title), headed by the exact argv and env delta.

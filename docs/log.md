@@ -4738,3 +4738,16 @@ no such file or directory` — stranding the mod installed forever.
 - Fixture fallout: launch tests create real exes (touchExe), valid
   pinned runners, writable prefixes; fakeUmuRun stubs the probe.
 - Docs: issue 065. Commit: c7a0878.
+
+## 2026-10-10 — issue 66: PROTON_VERB policy for concurrent same-prefix launches
+
+- First launch into a prefix: `waitforexitandrun`; while a game we
+  launched still runs there: `runinprefix` — a second process no
+  longer waits (looks hung) on the first game's wineserver.
+- The busy-prefix registry lives in the router closure; its lifetime
+  is the blocking umu.Launch call, so it matches the game's.
+  Owner-CLI launches unaffected; games launched outside the app are
+  untracked (documented).
+- Deterministic test: gated fake umu-run overlaps two launches and
+  asserts the verb sequence wait → runinprefix → wait.
+- Docs: issue 066. Commit: THIS_COMMIT.

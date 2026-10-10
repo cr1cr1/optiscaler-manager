@@ -185,6 +185,96 @@ func touchExe(t *testing.T) string {
 	return exe
 }
 
+// TestUmuVerbPolicyConcurrentPrefix: the FIRST launch into a prefix
+// uses waitforexitandrun; a second launch while the first still runs
+// uses runinprefix (issue 066 — waiting would hang until the first
+// game's wineserver exits); after it exits the verb resets.
+func TestUmuVerbPolicyConcurrentPrefix(t *testing.T) {
+	// Fake umu-run appends PROTON_VERB to a shared capture, then waits
+	// on a gate file so launches overlap deterministically.
+	bin := t.TempDir()
+	capture := filepath.Join(t.TempDir(), "verbs")
+	gate := filepath.Join(t.TempDir(), "gate")
+	script := "#!/bin/sh\n" +
+		`if [ "$1" = "--version" ]; then echo "umu-launcher version 1.4.4 (Python 3.11.6)"; exit 0; fi` + "\n" +
+		`echo "$PROTON_VERB" >> "$UMU_TEST_CAPTURE"` + "\n" +
+		`while [ ! -f "$UMU_TEST_GATE" ]; do sleep 0.02; done` + "\n"
+	if err := os.WriteFile(filepath.Join(bin, "umu-run"), []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake umu-run: %v", err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("UMU_TEST_CAPTURE", capture)
+	t.Setenv("UMU_TEST_GATE", gate)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("OM_DATA_DIR", t.TempDir())
+	if err := os.MkdirAll(filepath.Join(home, ".local", "share", "umu", "steamrt3"), 0o755); err != nil {
+		t.Fatalf("mkdir runtime: %v", err)
+	}
+	prevProbe := umuNetProbe
+	umuNetProbe = func(context.Context) error { return nil }
+	t.Cleanup(func() { umuNetProbe = prevProbe })
+
+	pin := t.TempDir()
+	hook := newUmuLauncher(func(string) string { return pin }, func(string) string { return "" }, func() bool { return true }, "",
+		func(string) string { return "" },
+		func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
+	row := ui.GameRow{Title: "Foo", InstallDir: t.TempDir(), ExePath: touchExe(t)}
+
+	verbs := func() []string {
+		data, _ := os.ReadFile(capture)
+		return strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	}
+	waitLines := func(n int) {
+		t.Helper()
+		for deadline := time.Now().Add(5 * time.Second); ; {
+			if data, _ := os.ReadFile(capture); len(strings.Split(strings.TrimRight(string(data), "\n"), "\n")) >= n && len(data) > 0 {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("capture never reached %d lines: %v", n, verbs())
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	first := make(chan error, 1)
+	go func() { _, err := hook(context.Background(), row); first <- err }()
+	waitLines(1)
+
+	second := make(chan error, 1)
+	go func() { _, err := hook(context.Background(), row); second <- err }()
+	waitLines(2)
+
+	got := verbs()
+	if got[0] != "waitforexitandrun" {
+		t.Errorf("first launch verb = %q, want waitforexitandrun", got[0])
+	}
+	if got[1] != "runinprefix" {
+		t.Errorf("concurrent launch verb = %q, want runinprefix", got[1])
+	}
+
+	if err := os.WriteFile(gate, []byte("go"), 0o644); err != nil {
+		t.Fatalf("open gate: %v", err)
+	}
+	for _, ch := range []chan error{first, second} {
+		if err := <-ch; err != nil {
+			t.Fatalf("hook: %v", err)
+		}
+	}
+
+	// Both games exited: the next launch waits again.
+	if _, err := hook(context.Background(), row); err != nil {
+		t.Fatalf("third hook: %v", err)
+	}
+	waitLines(3)
+	if got := verbs()[2]; got != "waitforexitandrun" {
+		t.Errorf("post-exit launch verb = %q, want waitforexitandrun", got)
+	}
+}
+
 // TestUmuLauncherResolvesGameIDStore: the launch-time gameIDFor
 // resolver's result becomes the GAMEID/STORE env (issue 064) so
 // protonfixes apply per-game fixes.
