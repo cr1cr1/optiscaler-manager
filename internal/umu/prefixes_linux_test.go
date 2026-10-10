@@ -267,6 +267,39 @@ func TestStderrTail(t *testing.T) {
 	}
 }
 
+// TestFindPrefixes_BottlesNameFromBottleYML: the bottle's OwnerRef is
+// the configured Name from bottle.yml, NOT the directory name —
+// Bottles lowercases dirs ("wine11") while bottles-cli needs the
+// configured name ("Wine11"), case-sensitively (issue 069, observed
+// on the dev box: "Bottle wine11 not found").
+func TestFindPrefixes_BottlesNameFromBottleYML(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	bottle := mkPrefix(t, filepath.Join(home, ".local", "share", "bottles", "bottles", "wine11"))
+	writeFile(t, filepath.Join(bottle, "bottle.yml"), "Arch: win64\nName: Wine11\n")
+	plain := mkPrefix(t, filepath.Join(home, ".local", "share", "bottles", "bottles", "mybottle"))
+
+	got := FindPrefixes(context.Background())
+	var wine, noCfg *Prefix
+	for i := range got {
+		switch got[i].Path {
+		case bottle:
+			wine = &got[i]
+		case plain:
+			noCfg = &got[i]
+		}
+	}
+	if wine == nil || wine.OwnerRef != "Wine11" {
+		t.Errorf("wine11 prefix = %+v, want OwnerRef Wine11 (from bottle.yml)", wine)
+	}
+	if noCfg == nil || noCfg.OwnerRef != "mybottle" {
+		t.Errorf("mybottle prefix = %+v, want OwnerRef mybottle (dir-name fallback)", noCfg)
+	}
+}
+
 func TestFindPrefixes_SteamNamesFromAppmanifest(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

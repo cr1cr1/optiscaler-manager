@@ -4780,3 +4780,21 @@ no such file or directory` — stranding the mod installed forever.
   (wineserver -k is the manual cleanup); owner-CLI double-launch
   unguarded.
 - Docs: issue 068. Commit: 41dacb7.
+
+## 2026-10-10 — issue 69: real-world backend verification + wineserver stop cleanup
+
+- Bottles backend verified E2E on the dev box: 007 First Light
+  launches and renders via `bottles-cli run -b Wine11 -e <exe>`.
+  Drove two fixes fixtures could not find:
+  - Bottle OwnerRef comes from bottle.yml `Name:` — Bottles
+    lowercases dirs (wine11) but bottles-cli matches case-sensitively
+    ("Bottle wine11 not found" observed live).
+  - Stops kill the prefix's wineserver: group kills miss wine
+    processes (wineserver re-sessions its clients — confirmed live).
+    The Bottles stopper runs the configured runner's wineserver -k
+    (direct runner-dir lookup — plain wine builds are rejected by the
+    proton scan); the umu cancel path runs KillWineserver with the
+    launch runner (bin/ and files/bin/ layouts).
+- Lutris: binary present but unconfigured; Heroic: not installed —
+  both backends stay fixture-tested.
+- Docs: issue 069. Commit: THIS_COMMIT.

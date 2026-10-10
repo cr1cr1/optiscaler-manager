@@ -6,6 +6,9 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -16,6 +19,28 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 	"github.com/cr1cr1/optiscaler-manager/internal/umu"
 )
+
+// bottlesRunnerPath resolves a bottle's configured runner (bottle.yml
+// "Runner:") to its directory under the bottles runner roots (issue
+// 069) — the wineserver that owns the bottle's processes lives there.
+// A direct directory lookup, not the proton-only runner scan:
+// bottles also runs plain wine builds (kron4ek et al.).
+func bottlesRunnerPath(_ context.Context, bottleDir string) string {
+	name := umu.BottleRunner(bottleDir)
+	if name == "" {
+		return ""
+	}
+	for _, root := range umu.RunnerRoots() {
+		if !strings.Contains(root, "bottles") {
+			continue
+		}
+		dir := filepath.Join(root, name)
+		if st, err := os.Stat(dir); err == nil && st.IsDir() {
+			return dir
+		}
+	}
+	return ""
+}
 
 // umuNetProbe checks network reachability for the runtime-download
 // preflight (issue 065). A package var so tests can stub it.
@@ -92,23 +117,37 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 	// Owner-CLI pids (issue 068): the detached CLIs by install dir, so
 	// the stopper can kill their process groups. Entries for games
 	// that exited on their own go stale — the stopper drops them.
+	// Prefix/source ride along for the wineserver cleanup (issue 069:
+	// group kills miss wine processes — wineserver re-sessions its
+	// clients — so a Bottles stop also kills the bottle's wineserver
+	// via its configured runner).
+	type ownerProc struct {
+		pid            int
+		prefix, source string
+	}
 	var pidMu sync.Mutex
-	ownerPids := map[string]int{}
+	ownerProcs := map[string]ownerProc{}
 	stop := func(dir string) bool {
 		pidMu.Lock()
-		pid, ok := ownerPids[dir]
+		proc, ok := ownerProcs[dir]
 		if ok {
-			delete(ownerPids, dir)
+			delete(ownerProcs, dir)
 		}
 		pidMu.Unlock()
 		if !ok {
 			return false
 		}
-		if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
-			log.Debug().Err(err).Int("pid", pid).Str("dir", dir).Msg("owner stop: process group already gone")
-			return false
+		if err := syscall.Kill(-proc.pid, syscall.SIGKILL); err != nil {
+			log.Debug().Err(err).Int("pid", proc.pid).Str("dir", dir).Msg("owner stop: process group already gone")
 		}
-		log.Info().Int("pid", pid).Str("dir", dir).Msg("owner launch stopped (process group killed)")
+		if proc.source == "bottles" {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if runner := bottlesRunnerPath(ctx, proc.prefix); runner != "" {
+				umu.KillWineserver(ctx, runner, proc.prefix)
+			}
+		}
+		log.Info().Int("pid", proc.pid).Str("dir", dir).Msg("owner launch stopped (process group killed)")
 		return true
 	}
 	return func(ctx context.Context, row ui.GameRow) (string, error) {
@@ -198,6 +237,15 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 					Str("prefix_source", pfx.Source).
 					Str("proton", proton).
 					Msg("umu launch failed")
+				if ctx.Err() != nil {
+					// Stopped (issue 068): the group kill misses wine
+					// processes — wineserver re-sessions its clients
+					// (issue 069) — so kill the prefix's wineserver
+					// with the launch runner's own binary.
+					cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+					defer cancel()
+					umu.KillWineserver(cleanupCtx, proton, prefix)
+				}
 				return "", err
 			}
 			return "umu-launcher", nil
@@ -222,7 +270,7 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 				return "", err
 			}
 			pidMu.Lock()
-			ownerPids[row.InstallDir] = pid
+			ownerProcs[row.InstallDir] = ownerProc{pid: pid, prefix: prefix, source: pfx.Source}
 			pidMu.Unlock()
 			log.Debug().Str("game", row.Title).Str("owner", pfx.Source).
 				Str("owner_ref", pfx.OwnerRef).Str("prefix", prefix).

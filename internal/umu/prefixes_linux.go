@@ -135,7 +135,13 @@ func FindPrefixes(_ context.Context) []Prefix {
 			ownerRef := ""
 			switch c.source {
 			case "bottles":
-				ownerRef = e.Name() // bottle name == dir name
+				// The configured bottle name (bottle.yml) — Bottles
+				// lowercases dirs but bottles-cli matches names
+				// case-sensitively (issue 069); dir name as fallback.
+				ownerRef = bottleName(dir)
+				if ownerRef == "" {
+					ownerRef = e.Name()
+				}
 			case "heroic":
 				ownerRef = heroicApps[dir]
 				if ownerRef == "" {
@@ -223,6 +229,38 @@ func lutrisYAMLConfig(path string) (name, prefix string) {
 		}
 	}
 	return name, prefix
+}
+
+// bottleName reads the configured bottle name from a bottle's
+// bottle.yml (top-level "Name: …" line; quotes stripped). "" when
+// unreadable — the caller falls back to the directory name.
+func bottleName(bottleDir string) string {
+	data, err := os.ReadFile(filepath.Join(bottleDir, "bottle.yml"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if name, ok := strings.CutPrefix(line, "Name:"); ok {
+			return strings.Trim(strings.TrimSpace(name), `"'`)
+		}
+	}
+	return ""
+}
+
+// BottleRunner reads a bottle's configured runner (bottle.yml
+// top-level "Runner: …" line), e.g. for the wineserver cleanup on
+// stop (issue 069). "" when unreadable.
+func BottleRunner(bottleDir string) string {
+	data, err := os.ReadFile(filepath.Join(bottleDir, "bottle.yml"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if runner, ok := strings.CutPrefix(line, "Runner:"); ok {
+			return strings.Trim(strings.TrimSpace(runner), `"'`)
+		}
+	}
+	return ""
 }
 
 // bottlesCustomPath reads Bottles' data.yml and returns the

@@ -669,7 +669,23 @@ func TestUmuRouterStopperKillsOwnerGroup(t *testing.T) {
 		t.Fatalf("write fake bottles-cli: %v", err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	_, bottle := bottlesFixture(t)
+	home, bottle := bottlesFixture(t)
+
+	// The stop must also kill the bottle's wineserver (issue 069):
+	// bottle.yml names the runner, whose fake wineserver records the
+	// invocation.
+	if err := os.WriteFile(filepath.Join(bottle, "bottle.yml"), []byte("Name: mybottle\nRunner: soda-9.0-1\n"), 0o644); err != nil {
+		t.Fatalf("write bottle.yml: %v", err)
+	}
+	wsCapture := filepath.Join(t.TempDir(), "ws-capture")
+	wsDir := filepath.Join(home, ".local", "share", "bottles", "runners", "soda-9.0-1", "bin")
+	if err := os.MkdirAll(wsDir, 0o755); err != nil {
+		t.Fatalf("mkdir runner bin: %v", err)
+	}
+	wsScript := "#!/bin/sh\n" + `printf '%s|%s\n' "$1" "$WINEPREFIX" > "` + wsCapture + `"` + "\n"
+	if err := os.WriteFile(filepath.Join(wsDir, "wineserver"), []byte(wsScript), 0o755); err != nil {
+		t.Fatalf("write fake wineserver: %v", err)
+	}
 
 	installDir := t.TempDir()
 	hook, stop := newUmuLauncher(func(string) string { return bottle }, func(string) string { return "" }, func() bool { return true }, "",
@@ -721,6 +737,15 @@ func TestUmuRouterStopperKillsOwnerGroup(t *testing.T) {
 	}
 	if stop(installDir) {
 		t.Error("second stop = true, want false (entry dropped)")
+	}
+
+	// The bottle's wineserver was killed with the bottle as WINEPREFIX.
+	data, err := os.ReadFile(wsCapture)
+	if err != nil {
+		t.Fatalf("wineserver never invoked on stop: %v", err)
+	}
+	if got := strings.TrimRight(string(data), "\n"); got != "-k|"+bottle {
+		t.Errorf("wineserver invocation = %q, want %q", got, "-k|"+bottle)
 	}
 }
 
