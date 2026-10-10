@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,6 +32,44 @@ func seedGUIGamesCache(t *testing.T, root string, rows []ui.GameRow) {
 	}
 	if err := os.WriteFile(filepath.Join(root, "games.json"), data, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestGUIDetailLaunchLogButton: the detail panel always shows the
+// Launch log affordance (issue 070); with no logs it toasts instead
+// of erroring.
+func TestGUIDetailLaunchLogButton(t *testing.T) {
+	root := t.TempDir()
+	sess, _ := guiFakes(t, func(d *ui.Deps) {
+		d.SettingsRoot = root
+		d.LogsDir = t.TempDir()
+	})
+	row := scanOneRow(t, sess)
+	m := newModel(Config{Session: sess})
+	sess.Select(row.InstallDir)
+
+	headlessFrames(t, 1600, 1400)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	keyFrame(KeyCodeNone, 0, m.rootView)
+	if m.launchLogBtnRect.Size[0] == 0 {
+		t.Fatal("Launch log button not rendered in the detail panel")
+	}
+
+	clickRect(m.launchLogBtnRect, m.rootView)
+	found := false
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		for _, to := range sess.Snapshot().Toasts {
+			if strings.Contains(to.Text, "no launch log") {
+				found = true
+			}
+		}
+		if found {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no-log toast never appeared: %+v", sess.Snapshot().Toasts)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

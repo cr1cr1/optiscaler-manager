@@ -355,6 +355,46 @@ func TestSessionLaunchStopOwnerCLI(t *testing.T) {
 	}
 }
 
+// TestSessionOpenLaunchLog: the newest per-launch log opens in the
+// file handler; a game with no launches gets a toast (issue 070).
+func TestSessionOpenLaunchLog(t *testing.T) {
+	e := newTestEnv(t)
+	logsDir := t.TempDir()
+	e.sess.deps.LogsDir = logsDir
+	opened := ""
+	e.sess.openExternal = func(path string) error { opened = path; return nil }
+
+	dir := "/games/manual/WinGame"
+	addRow(e.sess, GameRow{Title: "Win Game", InstallDir: dir, Store: domain.StoreManual})
+
+	// No launches yet: a toast, no open.
+	e.sess.OpenLaunchLog(dir)
+	if opened != "" {
+		t.Errorf("opened %q with no logs present", opened)
+	}
+	st := e.sess.Snapshot()
+	found := false
+	for _, to := range st.Toasts {
+		if strings.Contains(to.Text, "no launch log") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("toasts %+v lack the no-log notice", st.Toasts)
+	}
+
+	// Two logs: the newest (by timestamped name) opens.
+	for _, name := range []string{"win-game-20261010-120000.000000.log", "win-game-20261010-130000.000000.log"} {
+		writeUIFile(t, filepath.Join(logsDir, name), "log")
+	}
+	e.sess.OpenLaunchLog(dir)
+	if !strings.HasSuffix(opened, "win-game-20261010-130000.000000.log") {
+		t.Errorf("opened %q, want the newest log", opened)
+	}
+
+	e.sess.OpenLaunchLog("/no/such/game") // unknown game: toast, no panic
+}
+
 // TestSessionLaunchRoute: the global LaunchRoute default persists, a
 // per-game override wins, clearing restores the default, and an empty
 // value means Auto (issue 060).

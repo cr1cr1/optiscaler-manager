@@ -4798,3 +4798,14 @@ no such file or directory` — stranding the mod installed forever.
 - Lutris: binary present but unconfigured; Heroic: not installed —
   both backends stay fixture-tested.
 - Docs: issue 069. Commit: a1a1122.
+
+## 2026-10-10 — issue 70: open the per-launch log from the frontends
+
+- Session.OpenLaunchLog opens the newest per-launch log via the
+  openExternal seam (terminal editor on Linux); Deps.LogsDir wires
+  <data root>/logs; missing logs toast.
+- GUI: "Launch log" button in the detail action row; TUI: `L` on the
+  detail screen.
+- Housekeeping alongside: 66 commits pushed to origin (the whole
+  umu arc 047–069 had never been pushed).
+- Docs: issue 070. Commit: THIS_COMMIT.

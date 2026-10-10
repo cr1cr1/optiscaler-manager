@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"sort"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/launchlog"
 	"github.com/cr1cr1/optiscaler-manager/internal/termopen"
 )
 
@@ -39,8 +40,32 @@ func openFolder(dir string) error {
 	}
 }
 
-// OpenGameFolder opens the game's binary dir in the OS file manager: the
-// injection dir when the row knows it (that is where the game exe and the
+// OpenLaunchLog opens the game's newest per-launch log (issue 070) in
+// the platform's file handler (a terminal editor on Linux) — the
+// launch diagnostics written under Deps.LogsDir (issue 061). A game
+// with no launches yet gets a toast, not an error.
+func (s *Session) OpenLaunchLog(gameDir string) {
+	row := s.findRow(gameDir)
+	if row == nil {
+		s.toast("game not found", true)
+		return
+	}
+	s.mu.Lock()
+	logsDir := s.deps.LogsDir
+	s.mu.Unlock()
+	matches, _ := filepath.Glob(filepath.Join(logsDir, launchlog.Slug(row.Title)+"-*.log"))
+	if len(matches) == 0 {
+		s.toast("no launch log for "+row.Title+" yet", true)
+		return
+	}
+	// Timestamped names sort oldest → newest; take the last.
+	sort.Strings(matches)
+	if err := s.openExternal(matches[len(matches)-1]); err != nil {
+		s.toast("cannot open launch log: "+err.Error(), true)
+	}
+}
+
+// OpenGameFolder opens the game's binary dir in the OS file manager: the// injection dir when the row knows it (that is where the game exe and the
 // OptiScaler files live), else the game root. Install state is irrelevant
 // — the folder exists either way.
 func (s *Session) OpenGameFolder(gameDir string) {

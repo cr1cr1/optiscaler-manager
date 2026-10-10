@@ -423,6 +423,7 @@ func (m *model) detailPanel() {
 	m.envApplyRect = Rect{}
 	m.envInputID = nil
 	m.stopBtnRect = Rect{}
+	m.launchLogBtnRect = Rect{}
 	// The grid rendered first and captured its own tech row; the panel owns
 	// the seam while open so a missing panel row reads as zero.
 	m.techPillRowRect = Rect{}
@@ -622,6 +623,14 @@ func (m *model) detailPanel() {
 					m.rescanBtnRect = GetScreenRectOf(CurrentId())
 					if focusableButton(SymRefresh, "Rescan") {
 						m.sess.RescanGame(e.InstallDir)
+					}
+				})
+				// Newest per-launch log in the file handler (issue 070;
+				// the session toasts when there is none).
+				Container(Attrs(Row), func() {
+					m.launchLogBtnRect = GetScreenRectOf(CurrentId())
+					if focusableButton(NoIcon, "Launch log") {
+						m.sess.OpenLaunchLog(e.InstallDir)
 					}
 				})
 				// Stop a running supervised launch (issue 068): the

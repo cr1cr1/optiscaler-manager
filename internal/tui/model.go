@@ -659,6 +659,9 @@ func (m Model) detailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.stageCycle(dir)
 	case "l":
 		m.sess.Launch(dir)
+	case "L":
+		// Newest per-launch log in the file handler (issue 070).
+		m.sess.OpenLaunchLog(dir)
 	case "c":
 		m.sess.CancelOp(dir)
 	case "R":

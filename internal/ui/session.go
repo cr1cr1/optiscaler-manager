@@ -239,6 +239,11 @@ type Deps struct {
 	// launch context, cancelled via CancelOp. nil = unsupported.
 	UmuStop func(gameDir string) bool
 
+	// LogsDir holds the per-launch log files (issue 061) that
+	// OpenLaunchLog (issue 070) browses. Production wires
+	// <data root>/logs; empty degrades to "no launch log yet" toasts.
+	LogsDir string
+
 	// Steam and ProtonDB feed the online lookup phase of Scan; either nil
 	// skips enrichment entirely.
 	Steam    *steam.Client

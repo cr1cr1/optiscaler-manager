@@ -103,6 +103,7 @@ func newSession(d *Deps) *ui.Session {
 			"optiscaler-manager/"+d.Version+" (https://github.com/cr1cr1/optiscaler-manager)").Lookup,
 		UmuLauncher: umuHook,
 		UmuStop:     umuStop,
+		LogsDir:     filepath.Join(d.DataRoot, "logs"),
 	})
 	pinPrefix = sess.UmuPrefixFor
 	routeFor = sess.LaunchRouteFor

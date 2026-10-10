@@ -104,6 +104,7 @@ type model struct {
 	envBtnRect            Rect                          // screen rect of the detail panel's Env button (click test seam)
 	envApplyRect          Rect                          // screen rect of the env editor's Apply button (click test seam)
 	stopBtnRect           Rect                          // screen rect of the detail panel's Stop button for a running launch (click test seam, issue 068)
+	launchLogBtnRect      Rect                          // screen rect of the detail panel's Launch log button (click test seam, issue 070)
 	forkSlugBuf           string                        // settings-modal add-fork slug input
 	forkPatternBuf        string                        // settings-modal add-fork asset-glob input
 	titleEditDir          string                        // detail panel: game whose title is being edited ("" = editor closed, issue 028)
