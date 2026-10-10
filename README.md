@@ -251,7 +251,10 @@ unrecognized — go through `umu-run` (which requires the umu toggle on
 and `umu-run` installed). This is the default **Auto** launch route;
 the Settings dropdown sets the global route and the detail pane (GUI)
 or `e` on the detail screen (TUI) pins a per-game override (`umu` /
-`owner`). A prefix whose owner can't be launched (CLI missing,
+`owner`). Even a forced `umu` route refuses a launcher-owned prefix —
+umu-run mutates any Proton prefix it launches, so that combination
+fails with an error naming the owner instead of corrupting it (`~/.wine`
+and unrecognized prefixes stay umu-eligible). A prefix whose owner can't be launched (CLI missing,
 unroutable) fails with an error naming the remedy instead of silently
 falling back — and a Windows binary is never exec'd bare (on systems
 with the mono binfmt registration that lands in mono and hangs).

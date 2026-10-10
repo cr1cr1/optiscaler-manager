@@ -61,6 +61,17 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 			if umuErr != nil {
 				return "", fmt.Errorf("umu-run unavailable (%v) — install umu-launcher or pin a launcher-owned prefix (Bottles/Lutris/Heroic)", umuErr)
 			}
+			// Guard (issue 062): umu mutates any Proton prefix it
+			// launches (DLL symlinks, pfx/ layout), so it must never
+			// run against a prefix OWNED BY ANOTHER LAUNCHER — that
+			// corrupts the owner's bottle/compatdata (observed: Bottles
+			// prefixes needed repair). ~/.wine and unrecognized dirs
+			// have no launcher owner and stay umu-eligible. Auto never
+			// reaches this path with an owned prefix (issue 060 routes
+			// those to the owner CLI); only a forced umu route can.
+			if owned && pfx.Source != "wine" {
+				return "", fmt.Errorf("prefix %s is managed by %s — umu-run would corrupt it; pin an app-managed/umu prefix or set Launch via: auto/owner", prefix, pfx.Source)
+			}
 			proton := umu.ResolveProtonPath(ctx, "", pfx.Source)
 			log.Debug().Str("game", row.Title).Str("proton", proton).Str("prefix", prefix).Str("prefix_source", pfx.Source).
 				Str("route", route).Msg("umu launch resolved")

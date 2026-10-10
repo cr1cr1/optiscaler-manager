@@ -4672,3 +4672,20 @@ no such file or directory` — stranding the mod installed forever.
   groundwork for the umu launch debugging loop (Resonance as the
   testground).
 - Docs: issue 061. Commit: 6000655.
+
+## 2026-10-10 — issue 62: umu route never runs against a launcher-owned prefix
+
+- Forced `Launch via: umu` with a prefix owned by another launcher
+  (Bottles/Lutris/Heroic/Steam/PlayOnLinux/CrossOver per the scan) is
+  now a launch error naming prefix, owner, and remedy — umu-run is
+  never invoked. `~/.wine` and unrecognized dirs stay umu-eligible.
+- Rationale: umu mutates any Proton prefix it launches; auto-routing
+  (issue 060) only covered the auto path, a forced umu route could
+  still corrupt foreign prefixes.
+- The issue-059 router-level test (forced umu + Bottles prefix) was
+  premise-invalid and deleted; runner-follows-source remains covered
+  at `ResolveProtonPath`.
+- Bonus from the debugging loop (issue 061 logs): first instrumented
+  Resonance launch proved the plumbing end-to-end — router, env,
+  per-launch log, prefix guard context all visible.
+- Docs: issue 062. Commit: THIS_COMMIT.

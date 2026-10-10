@@ -160,57 +160,6 @@ func TestUmuLauncherPerGamePinWins(t *testing.T) {
 	}
 }
 
-// TestUmuLauncherRunnerFollowsPrefixSource: a pinned Bottles prefix
-// launches with the newest runner from BOTTLES' runner root, not the
-// global newest (issue 059).
-func TestUmuLauncherRunnerFollowsPrefixSource(t *testing.T) {
-	capture := fakeUmuRun(t)
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_DATA_HOME", "")
-	t.Setenv("XDG_CONFIG_HOME", "")
-	t.Setenv("OM_DATA_DIR", t.TempDir())
-
-	// A much newer Steam runner that must NOT win for a Bottles prefix.
-	steamRunner := filepath.Join(home, ".local", "share", "Steam", "compatibilitytools.d", "GE-Proton99-1")
-	bottlesRunner := filepath.Join(home, ".local", "share", "bottles", "runners", "soda-9.0-1")
-	for _, r := range []string{steamRunner, bottlesRunner} {
-		if err := os.MkdirAll(r, 0o755); err != nil {
-			t.Fatalf("mkdir runner: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(r, "proton"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-			t.Fatalf("write proton script: %v", err)
-		}
-	}
-	bottle := filepath.Join(home, ".local", "share", "bottles", "bottles", "mybottle")
-	if err := os.MkdirAll(filepath.Join(bottle, "drive_c"), 0o755); err != nil {
-		t.Fatalf("mkdir bottle: %v", err)
-	}
-
-	// Force the umu route: under auto a Bottles-owned prefix launches
-	// via bottles-cli instead (issue 060).
-	hook := newUmuLauncher(func(string) string { return bottle }, func(string) string { return "umu" }, func() bool { return true }, "")
-	if hook == nil {
-		t.Fatal("newUmuLauncher returned nil")
-	}
-	row := ui.GameRow{
-		Title:      "Foo",
-		InstallDir: t.TempDir(),
-		ExePath:    filepath.Join(t.TempDir(), "foo.exe"),
-	}
-	if _, err := hook(context.Background(), row); err != nil {
-		t.Fatalf("hook: %v", err)
-	}
-
-	proton, prefix := readCapture(t, capture)
-	if proton != bottlesRunner {
-		t.Errorf("PROTONPATH = %q, want the Bottles runner %q (not global newest %q)", proton, bottlesRunner, steamRunner)
-	}
-	if prefix != bottle {
-		t.Errorf("WINEPREFIX = %q, want the pinned bottle %q", prefix, bottle)
-	}
-}
-
 // fakeCLI installs a fake CLI on PATH recording its argv into the file
 // named by CLI_TEST_CAPTURE (the launchercli test pattern, reused at
 // this level to prove the router picks the owner backend).
@@ -240,6 +189,104 @@ func readCLIArgv(t *testing.T, capture string) []string {
 			t.Fatalf("capture %s never written", capture)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestUmuRouteRejectsLauncherOwnedPrefix: a FORCED umu route with a
+// launcher-owned prefix (here Bottles) is a launch error naming the
+// owner and the remedy — umu mutates any Proton prefix it launches
+// (DLL symlinks, pfx/ layout), so running it against a foreign prefix
+// corrupts that launcher's bottle (issue 062). Auto never reaches this
+// path: owned prefixes route to the owner CLI (issue 060).
+func TestUmuRouteRejectsLauncherOwnedPrefix(t *testing.T) {
+	umuCaptureFile := fakeUmuRun(t)
+	_, bottle := bottlesFixture(t)
+
+	hook := newUmuLauncher(func(string) string { return bottle }, func(string) string { return "umu" }, func() bool { return true }, "")
+	row := ui.GameRow{
+		Title:      "Foo",
+		InstallDir: t.TempDir(),
+		ExePath:    filepath.Join(t.TempDir(), "foo.exe"),
+	}
+	_, err := hook(context.Background(), row)
+	if err == nil {
+		t.Fatal("forced umu route with a Bottles prefix: want error, got nil")
+	}
+	for _, want := range []string{"bottles", "corrupt", "auto"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+	if _, statErr := os.Stat(umuCaptureFile); !os.IsNotExist(statErr) {
+		t.Error("umu-run was invoked against a Bottles-owned prefix")
+	}
+}
+
+// TestUmuRouteRejectsSteamCompatdata: Steam compatdata belongs to
+// Steam — a forced umu route with a pinned compatdata prefix errors
+// the same way (issue 062).
+func TestUmuRouteRejectsSteamCompatdata(t *testing.T) {
+	umuCaptureFile := fakeUmuRun(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("OM_DATA_DIR", t.TempDir())
+	// A compatdata prefix with an appmanifest makes it Steam-owned.
+	steamapps := filepath.Join(home, ".steam", "steam", "steamapps")
+	pfx := filepath.Join(steamapps, "compatdata", "12345", "pfx")
+	if err := os.MkdirAll(filepath.Join(pfx, "drive_c"), 0o755); err != nil {
+		t.Fatalf("mkdir compatdata: %v", err)
+	}
+	manifest := filepath.Join(steamapps, "appmanifest_12345.acf")
+	if err := os.WriteFile(manifest, []byte(`"AppState" { "appid" "12345" "name" "Foo Game" }`), 0o644); err != nil {
+		t.Fatalf("write appmanifest: %v", err)
+	}
+
+	hook := newUmuLauncher(func(string) string { return pfx }, func(string) string { return "umu" }, func() bool { return true }, "")
+	row := ui.GameRow{
+		Title:      "Foo",
+		InstallDir: t.TempDir(),
+		ExePath:    filepath.Join(t.TempDir(), "foo.exe"),
+	}
+	_, err := hook(context.Background(), row)
+	if err == nil {
+		t.Fatal("forced umu route with Steam compatdata: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "steam") {
+		t.Errorf("error %q lacks the owner name (steam)", err)
+	}
+	if _, statErr := os.Stat(umuCaptureFile); !os.IsNotExist(statErr) {
+		t.Error("umu-run was invoked against Steam compatdata")
+	}
+}
+
+// TestUmuRouteAllowsDotWine: ~/.wine has no launcher owner — a forced
+// umu route may use it (issue 062).
+func TestUmuRouteAllowsDotWine(t *testing.T) {
+	capture := fakeUmuRun(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("OM_DATA_DIR", t.TempDir())
+	dotwine := filepath.Join(home, ".wine")
+	if err := os.MkdirAll(filepath.Join(dotwine, "drive_c"), 0o755); err != nil {
+		t.Fatalf("mkdir ~/.wine: %v", err)
+	}
+
+	hook := newUmuLauncher(func(string) string { return dotwine }, func(string) string { return "umu" }, func() bool { return true }, "")
+	row := ui.GameRow{
+		Title:      "Foo",
+		InstallDir: t.TempDir(),
+		ExePath:    filepath.Join(t.TempDir(), "foo.exe"),
+	}
+	if _, err := hook(context.Background(), row); err != nil {
+		t.Fatalf("forced umu route with ~/.wine: %v", err)
+	}
+	_, prefix := readCapture(t, capture)
+	if prefix != dotwine {
+		t.Errorf("WINEPREFIX = %q, want %q", prefix, dotwine)
 	}
 }
 
