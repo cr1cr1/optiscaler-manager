@@ -33,4 +33,4 @@ nothing could set it per game.
 
 `newUmuLauncher` grew to seven positional params — the DEBT comment
 (flagged since issue 064) now says the next growth turns it into a
-resolver struct. Commit: THIS_COMMIT.
+resolver struct. Commit: aab6aec.

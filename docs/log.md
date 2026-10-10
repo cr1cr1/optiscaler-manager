@@ -4762,4 +4762,4 @@ no such file or directory` — stranding the mod installed forever.
   inline Apply/Cancel editor, the title editor's discipline.
 - Debt note: newUmuLauncher is at seven positional params; the next
   growth becomes a resolver struct.
-- Docs: issue 067. Commit: THIS_COMMIT.
+- Docs: issue 067. Commit: aab6aec.
