@@ -26,4 +26,4 @@ the missing piece was the per-launch FILE affordance.
 
 Small by design: the affordance reuses the browse seams; the launch
 log itself (header + full output) stays the source of truth. Commit:
-THIS_COMMIT.
+dee8e88.

@@ -4808,4 +4808,4 @@ no such file or directory` — stranding the mod installed forever.
   detail screen.
 - Housekeeping alongside: 66 commits pushed to origin (the whole
   umu arc 047–069 had never been pushed).
-- Docs: issue 070. Commit: THIS_COMMIT.
+- Docs: issue 070. Commit: dee8e88.
