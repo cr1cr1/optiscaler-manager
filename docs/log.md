@@ -4750,4 +4750,4 @@ no such file or directory` — stranding the mod installed forever.
   untracked (documented).
 - Deterministic test: gated fake umu-run overlaps two launches and
   asserts the verb sequence wait → runinprefix → wait.
-- Docs: issue 066. Commit: THIS_COMMIT.
+- Docs: issue 066. Commit: 3d98141.

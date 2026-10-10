@@ -30,4 +30,4 @@ for the first game's wineserver and look hung.
 The registry lives in the hook closure (one per session); owner-CLI
 launches are unaffected (the launcher's own verb handling applies).
 Games launched outside the app are not tracked — documented
-limitation. Commit: THIS_COMMIT.
+limitation. Commit: 3d98141.
