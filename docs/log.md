@@ -4688,4 +4688,4 @@ no such file or directory` — stranding the mod installed forever.
 - Bonus from the debugging loop (issue 061 logs): first instrumented
   Resonance launch proved the plumbing end-to-end — router, env,
   per-launch log, prefix guard context all visible.
-- Docs: issue 062. Commit: THIS_COMMIT.
+- Docs: issue 062. Commit: 978660c.

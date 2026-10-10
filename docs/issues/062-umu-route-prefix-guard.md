@@ -31,4 +31,4 @@ The guard lives in the router's umu branch (cmd/umu_linux.go), keyed
 on `LookupPrefix`'s ownership scan. The issue-059 router-level test
 (forced umu + Bottles prefix picks the Bottles runner) was
 premise-invalid and deleted; runner-follows-prefix-source stays
-covered at the `ResolveProtonPath` level. Commit: THIS_COMMIT.
+covered at the `ResolveProtonPath` level. Commit: 978660c.
