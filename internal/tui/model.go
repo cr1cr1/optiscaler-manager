@@ -44,6 +44,7 @@ const (
 	inputAddForkPattern
 	inputSetTitle
 	inputSetCover
+	inputSetEnv
 )
 
 // settingsFocus names the settings-screen list j/k/a/d act on: the scan
@@ -709,6 +710,12 @@ func (m Model) detailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.sess.UmuPlatform() {
 			m.runner = openRunnerPick(m.sess, dir, true)
 		}
+	case "E":
+		// Per-game launch env editor (issue 067), Linux only: the
+		// current pin pre-filled, empty clears.
+		if m.sess.UmuPlatform() {
+			m.openInput(inputSetEnv, "launch env (KEY=VALUE …, empty clears): ", ui.FormatEnv(m.sess.UmuEnvFor(dir)))
+		}
 	case "A":
 		if m.sess.CoverOverrideActive(dir) {
 			m.sess.ClearCoverOverride(dir)
@@ -886,6 +893,15 @@ func (m *Model) commitInput() tea.Cmd {
 		if v != "" {
 			m.sess.SetCoverOverride(m.detailDir, v)
 		}
+	case inputSetEnv:
+		env, err := ui.ParseEnv(v)
+		if err != nil {
+			// Keep the text for fixing: the input reopens as-is.
+			m.sess.Toast(err.Error(), true)
+			m.openInput(inputSetEnv, "launch env (KEY=VALUE …, empty clears): ", v)
+			return nil
+		}
+		m.sess.SetUmuEnvOverride(m.detailDir, env)
 	}
 	m.mode = inputNone
 	m.input.SetValue("")

@@ -74,6 +74,7 @@ func newSession(d *Deps) *ui.Session {
 	umuAllowed := func() bool { return false }
 	runnerFor := func(string) string { return "" }
 	gameIDFor := func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" }
+	envFor := func(string) map[string]string { return nil }
 	sess := ui.NewSession(ui.Deps{
 		Store:        d.Store,
 		GH:           d.GH,
@@ -98,6 +99,7 @@ func newSession(d *Deps) *ui.Session {
 			filepath.Join(d.DataRoot, "logs"),
 			func(dir string) string { return runnerFor(dir) },
 			func(ctx context.Context, row ui.GameRow) (string, string) { return gameIDFor(ctx, row) },
+			func(dir string) map[string]string { return envFor(dir) },
 		),
 	})
 	pinPrefix = sess.UmuPrefixFor
@@ -105,6 +107,7 @@ func newSession(d *Deps) *ui.Session {
 	umuAllowed = func() bool { return sess.Settings().UmuEnabled }
 	runnerFor = sess.UmuRunnerFor
 	gameIDFor = sess.UmuGameIDFor
+	envFor = sess.UmuEnvFor
 	return sess
 }
 

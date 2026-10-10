@@ -4751,3 +4751,15 @@ no such file or directory` — stranding the mod installed forever.
 - Deterministic test: gated fake umu-run overlaps two launches and
   asserts the verb sequence wait → runinprefix → wait.
 - Docs: issue 066. Commit: 3d98141.
+
+## 2026-10-10 — issue 67: per-game launch env map (DXVK_*/PROTON_* passthrough)
+
+- Settings `env_overrides` (per-game open dictionary) flows into umu
+  launches as ExtraEnv; edit format "KEY=VALUE KEY=VALUE"
+  (ParseEnv/FormatEnv in internal/ui).
+- TUI: `E` on the detail screen edits the pin (invalid text toasts and
+  keeps editing; empty clears). GUI: detail panel "Env (n)" button →
+  inline Apply/Cancel editor, the title editor's discipline.
+- Debt note: newUmuLauncher is at seven positional params; the next
+  growth becomes a resolver struct.
+- Docs: issue 067. Commit: THIS_COMMIT.

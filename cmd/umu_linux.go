@@ -61,7 +61,13 @@ var umuNetProbe = func(ctx context.Context) error {
 // gameIDFor resolves the GAMEID/STORE pair at launch time
 // (session.UmuGameIDFor, issue 064) so protonfixes apply per-game
 // fixes; it degrades to ("umu-default", "") when unresolvable.
-func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllowed func() bool, logDir string, runnerFor func(installDir string) string, gameIDFor func(ctx context.Context, row ui.GameRow) (string, string)) ui.UmuLauncherHook {
+//
+// envFor resolves the per-game extra env map at launch time
+// (session.UmuEnvFor, issue 067); nil/empty means no extras.
+//
+// DEBT: seven positional params — the next growth turns this into a
+// resolver struct (flagged since issue 064).
+func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllowed func() bool, logDir string, runnerFor func(installDir string) string, gameIDFor func(ctx context.Context, row ui.GameRow) (string, string), envFor func(installDir string) map[string]string) ui.UmuLauncherHook {
 	umuPath, umuVersion, umuErr := umu.Detect(context.Background())
 	if umuErr != nil {
 		log.Info().Err(umuErr).Msg("umu-run not detected; unowned Windows-binary launches will error unless the prefix owner routes elsewhere")
@@ -149,6 +155,7 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 				LogDir:     logDir,
 				LogName:    row.Title,
 				Verb:       verb,
+				ExtraEnv:   envFor(row.InstallDir),
 			}
 			if err := umu.Launch(ctx, nil, opts); err != nil {
 				// The error already carries umu's stderr tail; the fields

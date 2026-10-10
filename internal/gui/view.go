@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"fmt"
 	"strings"
 
 	. "go.hasen.dev/shirei"
@@ -396,6 +397,9 @@ func (m *model) detailPanel() {
 	if m.titleEditDir != "" && (e == nil || e.InstallDir != m.titleEditDir) {
 		m.cancelTitleEdit()
 	}
+	if m.envEditDir != "" && (e == nil || e.InstallDir != m.envEditDir) {
+		m.cancelEnvEdit()
+	}
 	if e == nil {
 		if m.sess != nil {
 			m.sess.Select("")
@@ -415,6 +419,9 @@ func (m *model) detailPanel() {
 	m.launchBtnRect = Rect{}
 	m.rescanBtnRect = Rect{}
 	m.titleInputID = nil
+	m.envBtnRect = Rect{}
+	m.envApplyRect = Rect{}
+	m.envInputID = nil
 	// The grid rendered first and captured its own tech row; the panel owns
 	// the seam while open so a missing panel row reads as zero.
 	m.techPillRowRect = Rect{}
@@ -624,6 +631,39 @@ func (m *model) detailPanel() {
 						m.sess.SetLaunchRouteOverride(e.InstallDir, v)
 					}, &m.routeDDTriggerRect, &m.routeDDItems, nil)
 					m.runnerDropdown(e)
+					// Per-game launch env editor (issue 067): an inline
+					// input with explicit Apply/Cancel (the title
+					// editor's discipline); the closed form is a button
+					// counting the pinned vars.
+					if m.envEditDir == e.InstallDir {
+						themedInputState(&m.envBuf, "KEY=VALUE … (empty clears)", NoIcon, m.envEditState,
+							MinSize(140, fieldH), MaxSizeVec(Vec2{panelW - 2*sp16, fieldH}))
+						m.envInputID = GetLastId()
+						if m.envFocusPending {
+							m.envFocusPending = false
+							FocusImmediateOn(m.envInputID)
+						}
+						Container(Attrs(Row), func() {
+							m.envApplyRect = GetScreenRectOf(CurrentId())
+							if m.panelHeaderButton(NoIcon, "Apply") {
+								m.applyEnvEdit()
+							}
+						})
+						if m.panelHeaderButton(NoIcon, "Cancel") {
+							m.cancelEnvEdit()
+						}
+					} else {
+						Container(Attrs(Row), func() {
+							m.envBtnRect = GetScreenRectOf(CurrentId())
+							label := "Env"
+							if n := len(m.sess.UmuEnvFor(e.InstallDir)); n > 0 {
+								label = fmt.Sprintf("Env (%d)", n)
+							}
+							if focusableButton(NoIcon, label) {
+								m.startEnvEdit(*e)
+							}
+						})
+					}
 				}
 				// Manual identification fixes (issue 028): the title pin and
 				// poster upload moved to the header and the poster itself

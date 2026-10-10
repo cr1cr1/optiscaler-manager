@@ -96,6 +96,13 @@ type model struct {
 	runnerDDTriggerRect   Rect                          // screen rect of the per-game runner dropdown (click test seam)
 	runnerDDItems         []umuPrefixMenuItem           // open per-game runner dropdown rows (menu test seam)
 	runnerDDRunners       []umu.Runner                  // detected runners scanned on the dropdown's opening frame
+	envEditDir            string                        // detail panel: game whose launch env is being edited ("" = editor closed, issue 067)
+	envBuf                string                        // detail panel: env editor buffer
+	envFocusPending       bool                          // deferred focus grab for the env input (title editor idiom)
+	envEditState          *editState                    // env editor's own edit state (Enter→apply / Esc→cancel); nil unless editing
+	envInputID            ContainerId                   // env editor input's box (focus seam)
+	envBtnRect            Rect                          // screen rect of the detail panel's Env button (click test seam)
+	envApplyRect          Rect                          // screen rect of the env editor's Apply button (click test seam)
 	forkSlugBuf           string                        // settings-modal add-fork slug input
 	forkPatternBuf        string                        // settings-modal add-fork asset-glob input
 	titleEditDir          string                        // detail panel: game whose title is being edited ("" = editor closed, issue 028)

@@ -217,7 +217,7 @@ func (m Model) footerView(w int) string {
 	var hints string
 	switch m.screen {
 	case screenDetail:
-		hints = "i install · v version · l launch · w prefix · e route · n runner · t title · a poster · c cancel · r rollback · o open INI · esc back"
+		hints = "i install · v version · l launch · w prefix · e route · n runner · E env · t title · a poster · c cancel · r rollback · o open INI · esc back"
 	case screenSettings:
 		hints = "e version · t template · a add · d remove · o online info · u umu · p umu prefix · r umu route · n umu runner · x clear cache"
 	case screenHelp, screenAbout:

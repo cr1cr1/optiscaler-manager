@@ -102,6 +102,11 @@ type Settings struct {
 	// chain is umu-<SteamAppID> when identified, else a umu-database
 	// lookup for Heroic titles, else "umu-default".
 	GameIDOverrides map[string]string `json:"gameid_overrides,omitempty"`
+	// EnvOverrides pins extra launch env vars per canonical install
+	// dir (issue 067): an open dictionary (DXVK_*, PROTON_*,
+	// WINEDLLOVERRIDES, …) passed through to the launched process.
+	// Deleting the key restores the plain environment.
+	EnvOverrides map[string]map[string]string `json:"env_overrides,omitempty"`
 	// SteamGridDBKey is the personal SteamGridDB API key enabling the
 	// SteamGridDB cover source (issue 024): grids for games Steam's CDN
 	// has no art for, and alias-aware name search. Empty (default)
@@ -142,24 +147,25 @@ func Load(root string) (Settings, error) {
 	// Decode through a pointer for OnlineLookups so a legacy file without
 	// the key defaults to true while an explicit false stays false.
 	var raw struct {
-		DefaultVersion       string            `json:"default_version"`
-		LaunchTemplate       string            `json:"launch_template"`
-		ExtraDirs            []string          `json:"extra_dirs,omitempty"`
-		OnlineLookups        *bool             `json:"online_lookups"`
-		TitleOverrides       map[string]string `json:"title_overrides,omitempty"`
-		CoverOverrides       map[string]string `json:"cover_overrides,omitempty"`
-		CardSize             CardSize          `json:"card_size,omitempty"`
-		UmuEnabled           *bool             `json:"umu_enabled"`
-		UmuPrefixPath        string            `json:"umu_prefix_path,omitempty"`
-		PrefixOverrides      map[string]string `json:"prefix_overrides,omitempty"`
-		LaunchRoute          string            `json:"launch_route,omitempty"`
-		LaunchRouteOverrides map[string]string `json:"launch_route_overrides,omitempty"`
-		UmuRunnerPath        string            `json:"umu_runner_path,omitempty"`
-		RunnerOverrides      map[string]string `json:"runner_overrides,omitempty"`
-		GameIDOverrides      map[string]string `json:"gameid_overrides,omitempty"`
-		SteamGridDBKey       string            `json:"steamgriddb_key,omitempty"`
-		Forks                []Fork            `json:"forks,omitempty"`
-		ActiveFork           string            `json:"active_fork,omitempty"`
+		DefaultVersion       string                       `json:"default_version"`
+		LaunchTemplate       string                       `json:"launch_template"`
+		ExtraDirs            []string                     `json:"extra_dirs,omitempty"`
+		OnlineLookups        *bool                        `json:"online_lookups"`
+		TitleOverrides       map[string]string            `json:"title_overrides,omitempty"`
+		CoverOverrides       map[string]string            `json:"cover_overrides,omitempty"`
+		CardSize             CardSize                     `json:"card_size,omitempty"`
+		UmuEnabled           *bool                        `json:"umu_enabled"`
+		UmuPrefixPath        string                       `json:"umu_prefix_path,omitempty"`
+		PrefixOverrides      map[string]string            `json:"prefix_overrides,omitempty"`
+		LaunchRoute          string                       `json:"launch_route,omitempty"`
+		LaunchRouteOverrides map[string]string            `json:"launch_route_overrides,omitempty"`
+		UmuRunnerPath        string                       `json:"umu_runner_path,omitempty"`
+		RunnerOverrides      map[string]string            `json:"runner_overrides,omitempty"`
+		GameIDOverrides      map[string]string            `json:"gameid_overrides,omitempty"`
+		EnvOverrides         map[string]map[string]string `json:"env_overrides,omitempty"`
+		SteamGridDBKey       string                       `json:"steamgriddb_key,omitempty"`
+		Forks                []Fork                       `json:"forks,omitempty"`
+		ActiveFork           string                       `json:"active_fork,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return Defaults(), fmt.Errorf("settings: parse: %w", err)
@@ -180,6 +186,7 @@ func Load(root string) (Settings, error) {
 		UmuRunnerPath:        raw.UmuRunnerPath,
 		RunnerOverrides:      raw.RunnerOverrides,
 		GameIDOverrides:      raw.GameIDOverrides,
+		EnvOverrides:         raw.EnvOverrides,
 		SteamGridDBKey:       raw.SteamGridDBKey,
 		Forks:                raw.Forks,
 		ActiveFork:           raw.ActiveFork,
