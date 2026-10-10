@@ -4779,4 +4779,4 @@ no such file or directory` — stranding the mod installed forever.
 - Limitations: wineserver stragglers may escape the group kill
   (wineserver -k is the manual cleanup); owner-CLI double-launch
   unguarded.
-- Docs: issue 068. Commit: THIS_COMMIT.
+- Docs: issue 068. Commit: 41dacb7.

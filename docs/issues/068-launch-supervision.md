@@ -38,4 +38,4 @@ cleanup); owner-CLI double-launch is not guarded (the pid proves
 spawn, not survival); a stopped mid-download umu first-run may leave a
 partial runtime (umu re-resumes). Zombie-aware /proc checks in tests
 (Released children are reaped on init's schedule). Commit:
-THIS_COMMIT.
+41dacb7.
