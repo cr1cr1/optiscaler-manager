@@ -283,16 +283,25 @@ func (m *Model) confirmCycle() {
 	}
 }
 
-// hasDLSS reports whether the row is DLSS-ready: the complete three-file
-// NVIDIA runtime set is present, so update and restore can run. A bare
-// "DLSS" pill (version-stripped DLLs) is ready; a DLSS-FG-only game is not.
+// hasDLSS reports whether the row carries a DLSS component — a DLSS DLL is
+// present, versioned or bare — so update and restore can run. The backend
+// installs the complete target set over a partial one (issue 018), so set
+// completeness (DLSSReady) no longer gates the actions (issue 071). A
+// DLSS-FG-only game has no update path and stays gated out.
 func hasDLSS(r ui.GameRow) bool {
-	return r.DLSSReady
+	for _, c := range r.Components {
+		if c == "DLSS" || strings.HasPrefix(c, "DLSS ") {
+			return true
+		}
+	}
+	return false
 }
 
-// canRestore is the single gate for opening the restore picker: the row is
-// DLSS-ready and at least one cached backup exists — the same condition
-// under which the detail menu renders the action enabled.
+// canRestore is the single gate for opening the restore picker: the row
+// carries a DLSS component and at least one cached backup exists — the
+// same condition under which the detail menu renders the action enabled.
+// (Backups only ever exist for complete sets — snapshots are
+// all-or-nothing — but a set can lose a DLL after the backup was taken.)
 func (m *Model) canRestore(row ui.GameRow) bool {
 	return hasDLSS(row) && len(m.backups) > 0
 }

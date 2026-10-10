@@ -173,9 +173,10 @@ func (m *model) versionPillWidths(e *ui.GameRow) []float32 {
 // componentPillW estimates one component pill's width, mirroring
 // componentPill: the DLSS control renders "DLSS:" + version (+ update
 // target) in two segments; the fallback and all other pills are bare
-// badges.
+// badges. The control follows pill presence, not set completeness
+// (issue 071), so the estimate does too.
 func (m *model) componentPillW(e *ui.GameRow, label string) float32 {
-	if isDLSSPill(label) && m.sess != nil && e.DLSSReady && !m.sess.OpBusy(e.InstallDir) {
+	if isDLSSPill(label) && m.sess != nil && !m.sess.OpBusy(e.InstallDir) {
 		version := strings.TrimSpace(strings.TrimPrefix(label, "DLSS"))
 		if target := dlssUpdateTarget(e, m.state.DLSSLatest.Version, m.state.DLSSCached); target != "" {
 			if version != "" {

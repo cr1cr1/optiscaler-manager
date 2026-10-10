@@ -4809,3 +4809,26 @@ no such file or directory` — stranding the mod installed forever.
 - Housekeeping alongside: 66 commits pushed to origin (the whole
   umu arc 047–069 had never been pushed).
 - Docs: issue 070. Commit: dee8e88.
+
+## 2026-10-11 — issue 71: DLSS pill clickable for any game with a DLSS DLL
+
+- User report: clicking the `DLSS <version>` pill did nothing — on cards
+  and in the detail panel, for all games. Headless probe through the full
+  root view proved the control functional at HEAD; the real library's
+  games cache delivered the diagnosis: 34 rows render a DLSS pill but only
+  6 carry the complete three-file NVIDIA set. Since `6024fe4` the pill
+  gated interactivity on `DLSSReady`, so 28 games showed an identical-
+  looking static badge.
+- Fix: the gate follows the pill's existence (a DLSS DLL present,
+  versioned or bare) in GUI (`dlssControl`, `componentPillW`) and TUI
+  (`hasDLSS` → hint dimming, `canRestore`). The backend installs the
+  complete target set over a partial one since issue 018, so the gate
+  only hid the feature. `DLSSReady` stays as an informational row field.
+- Red-first: `TestDLSSControl_IncompleteSetIsInteractive` (GUI, incl.
+  estimator parity), flipped TUI pins (hints enabled for incomplete sets;
+  restore picker opens when a backup exists even after the set lost a
+  DLL). `TestDLSSControl_RendersOnCardsAndPanel`'s negative case fixed to
+  a truly DLL-less game; the bare/unreadable-DLL case now asserts the
+  control renders.
+- Docs: issue 071, scope (pill gate + three-file bullets), README.
+- Commit: THIS_COMMIT.

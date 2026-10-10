@@ -63,9 +63,13 @@ func dlssUpdateTarget(e *ui.GameRow, online, cached string) string {
 // "DLSS:" keeps the component green, the version renders in main text
 // color. Pressing the version area starts the three-DLL NVIDIA update; the
 // small arrow opens the backup-set restore menu. Non-DLSS pills and busy
-// games fall back to the static badgePill.
+// games fall back to the static badgePill. The control follows the pill's
+// existence — a DLSS DLL is present, versioned or bare — NOT the complete
+// three-file set (issue 071): the backend installs the complete target set
+// over a partial one (issue 018), so gating on DLSSReady hid the update
+// from exactly the games that need it.
 func (m *model) dlssControl(e *ui.GameRow, label string) {
-	if m.sess == nil || !e.DLSSReady || !isDLSSPill(label) || m.sess.OpBusy(e.InstallDir) {
+	if m.sess == nil || !isDLSSPill(label) || m.sess.OpBusy(e.InstallDir) {
 		if m.openDLSSDir == e.InstallDir {
 			m.openDLSSDir = "" // the control is gone; never leave a ghost menu
 		}

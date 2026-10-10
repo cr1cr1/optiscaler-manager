@@ -478,11 +478,12 @@ func TestProgressViewZeroTotalNoPanic(t *testing.T) {
 }
 
 // TestDetailViewDLSSHintsTrackComponents: the u/p NVIDIA actions render
-// enabled exactly when the row is DLSS-ready — the complete three-file
-// NVIDIA runtime set is present (components parse for every row with an
-// injection dir, external installs included), so a hand-installed game with
-// the NVIDIA set must not see the dimmed "needs the NVIDIA DLL set"
-// variant. A bare "DLSS" pill (version-stripped DLLs) is ready too.
+// enabled exactly when the row carries a DLSS component — a DLSS DLL is
+// present, versioned or bare (components parse for every row with an
+// injection dir, external installs included). Since issue 071 an
+// incomplete runtime set no longer dims the hints: the backend installs
+// the complete target set over it (issue 018). Only a row with no DLSS
+// component at all sees the dimmed "needs the NVIDIA DLL set" variant.
 func TestDetailViewDLSSHintsTrackComponents(t *testing.T) {
 	base := ui.GameRow{
 		Title:        "DLSS Game",
@@ -518,13 +519,23 @@ func TestDetailViewDLSSHintsTrackComponents(t *testing.T) {
 		}
 	})
 
-	t.Run("unready row keeps the dimmed hint", func(t *testing.T) {
+	t.Run("incomplete set shows enabled u/p (issue 071)", func(t *testing.T) {
 		row := base
-		row.Components = []string{"DLSS 3.7.20"}
+		row.Components = []string{"DLSS 3.7.20"} // nvngx_dlss.dll only; DLSSReady false
+		out := detailModelFor(t, row).detailView(100, 40)
+		plain := sgrRE.ReplaceAllString(out, "")
+		if strings.Contains(plain, "needs the NVIDIA DLL set") {
+			t.Errorf("incomplete-set row rendered the dimmed hint: %q", plain)
+		}
+	})
+
+	t.Run("row without DLSS keeps the dimmed hint", func(t *testing.T) {
+		row := base
+		row.Components = []string{"FSR 3.1"}
 		out := detailModelFor(t, row).detailView(100, 40)
 		plain := sgrRE.ReplaceAllString(out, "")
 		if !strings.Contains(plain, "needs the NVIDIA DLL set") {
-			t.Errorf("unready row lost the dimmed hint: %q", plain)
+			t.Errorf("DLSS-less row lost the dimmed hint: %q", plain)
 		}
 	})
 }

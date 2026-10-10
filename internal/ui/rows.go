@@ -65,8 +65,10 @@ type GameRow struct {
 	// DLSSVersion is the raw PE version of nvngx_dlss.dll ("1.2.3.4" form,
 	// "" unreadable/absent): the applied version the frontends compare
 	// against the session's DLSSLatest to mark an update as available.
-	// DLSSReady reports the complete three-file runtime set — only ready
-	// rows render the DLSS pill as the interactive update control.
+	// DLSSReady reports the complete three-file runtime set. Informational
+	// only since issue 071: the interactive update control follows the
+	// pill's existence (a DLSS DLL is present), because the backend
+	// installs the complete set over a partial one (issue 018).
 	DLSSVersion string
 	DLSSReady   bool
 }

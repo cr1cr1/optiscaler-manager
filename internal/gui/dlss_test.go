@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -105,18 +106,34 @@ func TestDLSSControl_RendersOnCardsAndPanel(t *testing.T) {
 	}
 	t.Logf("card control rects: update %+v arrow %+v", m.dlssUpdateRect, m.dlssArrowRect)
 
-	// A game without the NVIDIA set renders no control: use a model whose
-	// row lacks DLSS components (plain guiFakes row has unparseable dll).
+	// A game whose lone DLL is version-unreadable (bare "DLSS" pill, set
+	// incomplete) still renders the control — bare-label parity reaches
+	// partial sets too (issue 071). A game with NO DLSS dll renders neither.
 	plainSess, plainRoot := guiFakes(t)
 	plain := scanOneRow(t, plainSess)
 	pm := newModel(Config{Session: plainSess})
-	_ = plainRoot
 	plainView := cardView(pm, plain)
 	GetInputState().MousePoint = Vec2{-50, -50}
 	keyFrame(KeyCodeNone, 0, plainView)
 	keyFrame(KeyCodeNone, 0, plainView)
+	if pm.dlssUpdateRect.Size[0] == 0 || pm.dlssArrowRect.Size[0] == 0 {
+		t.Errorf("bare-pill game rendered no DLSS control: %+v / %+v", pm.dlssUpdateRect, pm.dlssArrowRect)
+	}
+	if err := os.Remove(filepath.Join(plainRoot, "bin", "nvngx_dlss.dll")); err != nil {
+		t.Fatal(err)
+	}
+	plain = scanOneRow(t, plainSess)
+	for _, c := range plain.Components {
+		if isDLSSPill(c) {
+			t.Fatalf("dll-less game still has a DLSS pill: %v", plain.Components)
+		}
+	}
+	pm = newModel(Config{Session: plainSess})
+	plainView = cardView(pm, plain)
+	keyFrame(KeyCodeNone, 0, plainView)
+	keyFrame(KeyCodeNone, 0, plainView)
 	if pm.dlssUpdateRect.Size[0] != 0 || pm.dlssArrowRect.Size[0] != 0 {
-		t.Errorf("plain game rendered a DLSS control: %+v / %+v", pm.dlssUpdateRect, pm.dlssArrowRect)
+		t.Errorf("dll-less game rendered a DLSS control: %+v / %+v", pm.dlssUpdateRect, pm.dlssArrowRect)
 	}
 }
 
@@ -443,6 +460,66 @@ func TestDLSSRestoreMenu_FullFlow(t *testing.T) {
 		if got := dlssVersionOnDisk(t, gameRoot, name); got != want {
 			t.Errorf("%s after restore = %q, want %q", name, got, want)
 		}
+	}
+}
+
+// TestDLSSControl_IncompleteSetIsInteractive (issue 071): a game carrying
+// only part of the NVIDIA set (nvngx_dlss.dll alone — the shape of most
+// real installs) still gets the interactive update/restore control. The
+// backend tolerates incomplete sets since issue 018, so gating the pill on
+// the complete three-file set (DLSSReady) hid the update from exactly the
+// games that need it: the pill looked identical but ignored clicks. The
+// update lands the complete published set and, per 018, writes no rollback
+// snapshot of the incomplete set.
+func TestDLSSControl_IncompleteSetIsInteractive(t *testing.T) {
+	sess, gameRoot, _ := dlssGUIFakes(t, nil)
+	bin := filepath.Join(gameRoot, "bin")
+	for _, name := range dlss.Files[1:] { // drop nvngx_dlssd.dll + nvngx_dlssg.dll
+		if err := os.Remove(filepath.Join(bin, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	row := scanOneRow(t, sess)
+	if row.DLSSReady {
+		t.Fatal("setup: incomplete set marked ready")
+	}
+	label := ""
+	for _, c := range row.Components {
+		if isDLSSPill(c) {
+			label = c
+		}
+	}
+	if label == "" {
+		t.Fatalf("setup: incomplete set rendered no DLSS pill: components %v", row.Components)
+	}
+
+	m := newModel(Config{Session: sess})
+	// The card-height estimator mirrors the control for ready and
+	// incomplete rows alike, so losing a DLL never jumps the card grid.
+	ready := row
+	ready.DLSSReady = true
+	if a, b := m.componentPillW(&row, label), m.componentPillW(&ready, label); a != b {
+		t.Errorf("componentPillW(%q) = %v for the incomplete set, %v ready", label, a, b)
+	}
+
+	headlessFrames(t, 400, 800)
+	GetInputState().MousePoint = Vec2{-50, -50}
+	view := cardView(m, row)
+	keyFrame(KeyCodeNone, 0, view)
+	keyFrame(KeyCodeNone, 0, view)
+	ur := m.dlssUpdateRect
+	if ur.Size[0] == 0 || m.dlssArrowRect.Size[0] == 0 {
+		t.Fatalf("incomplete-set game rendered no DLSS control: update %+v arrow %+v", ur, m.dlssArrowRect)
+	}
+	clickRect(ur, view)
+	waitSessEvent(t, sess, ui.EvOpDone)
+	for _, name := range dlss.Files {
+		if got := dlssVersionOnDisk(t, gameRoot, name); got != "310.5.3.0" {
+			t.Errorf("%s after click = %q, want 310.5.3.0 (complete set installed)", name, got)
+		}
+	}
+	if snaps := sess.DLSSSnapshots(row.InstallDir); len(snaps) != 0 {
+		t.Errorf("incomplete-set update wrote %d snapshots, want 0 (issue 018)", len(snaps))
 	}
 }
 

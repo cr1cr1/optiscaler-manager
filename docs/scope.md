@@ -656,14 +656,18 @@ decisions the per-version sections above do not cover.
 ## v0.14 scope (NVIDIA DLSS runtime updater)
 
 - **On-demand installs, startup pre-warm**: the DLSS version pill (GUI
-  card and detail panel) doubles as the update control; nothing is
+  card and detail panel) doubles as the update control — interactive for
+  every game whose directory carries a DLSS DLL, versioned or bare
+  (issue 071; set completeness is not a gate); nothing is
   INSTALLED into a game without a press, and no NVIDIA bytes ship with
   this app. The startup check pre-downloads the latest published set
   into the download cache (v0.15), so a press is cache-first from the
   first moment.
 - **Three-file transaction**: `nvngx_dlss.dll`, `nvngx_dlssd.dll`,
-  `nvngx_dlssg.dll` update together; the complete existing set is
-  required (no injection of components a game never shipped).
+  `nvngx_dlssg.dll` update together. A partial current set does not
+  block the update (issue 018): the missing members are installed with
+  the rest and no rollback snapshot is written — snapshots are
+  all-or-nothing, so an incomplete set has no rollback value.
 - **Immutable-commit source**: NVIDIA/DLSS `main` resolves to a commit
   SHA via the GitHub API; files come from
   `lib/Windows_x86_64/rel/<name>` at that exact commit. No mutable-URL

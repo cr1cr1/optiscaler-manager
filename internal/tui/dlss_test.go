@@ -300,10 +300,12 @@ func TestTUIDetailRestoreDimmedWithoutBackups(t *testing.T) {
 	}
 }
 
-// TestTUIRestorePickGatedOnDLSSReady: 'p' opens the picker only while the
-// row is DLSS-ready — the same condition the detail menu's enabled state
-// renders — even when the update left a real backup behind.
-func TestTUIRestorePickGatedOnDLSSReady(t *testing.T) {
+// TestTUIRestorePickOpenForIncompleteSetWithBackup (issue 071): a game
+// whose current set lost a DLL still opens the restore picker when a
+// backup exists — restoring is exactly how such a game gets its complete
+// set back (the backend restores over incomplete sets since issue 018).
+// Readiness no longer gates the picker; the backup list does.
+func TestTUIRestorePickOpenForIncompleteSetWithBackup(t *testing.T) {
 	sess, _, bin := dlssEnv(t)
 	dir := gameDirOf(sess)
 	m := Model{sess: sess, screen: screenGames, cursor: 0}
@@ -330,8 +332,8 @@ func TestTUIRestorePickGatedOnDLSSReady(t *testing.T) {
 	})
 
 	m = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
-	if m.restore != nil {
-		t.Error("'p' opened a restore modal for a not-DLSS-ready row")
+	if m.restore == nil {
+		t.Error("'p' did not open the restore picker for an incomplete-set row with a backup")
 	}
 }
 
