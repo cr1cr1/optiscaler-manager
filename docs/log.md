@@ -4706,4 +4706,4 @@ no such file or directory` — stranding the mod installed forever.
 - Shared composition in internal/ui (`UmuRunnerRows`/`UmuRunnerLabel`)
   + `Deps.UmuRunners` provider; only umu launches use the pin —
   owner-CLI launches keep the launcher's own configured runner.
-- Docs: issue 063. Commit: THIS_COMMIT.
+- Docs: issue 063. Commit: 8e9e158.

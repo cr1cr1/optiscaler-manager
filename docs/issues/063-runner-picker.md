@@ -39,4 +39,4 @@ a new `Deps.UmuRunners` provider (nil = production disk scan). The GUI
 route picker was generalized into `optionsPicker` (options as a
 function, so the detail dropdown scans on the opening frame and still
 renders fully); the TUI reuses the prefixPick modal. Commit:
-THIS_COMMIT.
+8e9e158.
