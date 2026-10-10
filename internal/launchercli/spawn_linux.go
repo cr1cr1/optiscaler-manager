@@ -14,21 +14,22 @@ import (
 )
 
 // Launch spawns the owning launcher's CLI detached (own session, Start
-// + Release — never Wait, mirroring internal/launch's game spawner).
-// Errors name the missing CLI and the remedy; a successful return only
-// proves the CLI was started.
+// + Release — never Wait, mirroring internal/launch's game spawner) and
+// returns its pid so the router's stopper can kill the process GROUP
+// later (issue 068). Errors name the missing CLI and the remedy; a
+// successful return only proves the CLI was started.
 //
 // With opts.LogDir set, the child's stdout/stderr are captured to a
 // per-launch file (issue 061) headed by the exact argv — the file is
 // where silent launcher failures get diagnosed. The file is closed
 // right after Start; the child holds its own inherited descriptors.
-func Launch(_ context.Context, opts Opts) error {
+func Launch(_ context.Context, opts Opts) (pid int, err error) {
 	argv, err := Command(opts.Source, opts.Ref, opts.Exe, opts.Flatpak)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if _, err := exec.LookPath(argv[0]); err != nil {
-		return fmt.Errorf("launchercli: %s not on PATH — install it or set Launch via: umu", cliBinary(opts.Source, opts.Flatpak))
+		return 0, fmt.Errorf("launchercli: %s not on PATH — install it or set Launch via: umu", cliBinary(opts.Source, opts.Flatpak))
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -53,7 +54,8 @@ func Launch(_ context.Context, opts Opts) error {
 		if logPath != "" {
 			err = fmt.Errorf("%w\nfull log: %s", err, logPath)
 		}
-		return err
+		return 0, err
 	}
-	return cmd.Process.Release()
+	pid = cmd.Process.Pid
+	return pid, cmd.Process.Release()
 }

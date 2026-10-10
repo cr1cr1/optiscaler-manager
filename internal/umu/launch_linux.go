@@ -11,6 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
@@ -88,6 +90,19 @@ func Launch(ctx context.Context, launcher Launcher, opts LaunchOpts) error {
 	cmd := exec.CommandContext(ctx, opts.UmuRunPath,
 		append([]string{opts.ExePath}, opts.Args...)...)
 	cmd.Env = env
+	// Supervision (issue 068): the child gets its own session so the
+	// WHOLE tree (umu-run → pressure-vessel → wine → game) shares one
+	// process group, and cancelling the context kills the group — the
+	// default CommandContext Cancel kills only the direct child and
+	// would orphan the game. WaitDelay bounds the wait for output
+	// pipes a killed grandchild might hold open (wineserver
+	// stragglers inside the container may still escape; see the issue
+	// doc).
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = 10 * time.Second
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 

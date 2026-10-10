@@ -73,9 +73,12 @@ func TestLaunchArgv(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			capture := fakeCLI(t, c.fakeBin)
-			err := Launch(context.Background(), Opts{Source: c.source, Ref: c.ref, Exe: c.exe, Flatpak: c.flatpak})
+			pid, err := Launch(context.Background(), Opts{Source: c.source, Ref: c.ref, Exe: c.exe, Flatpak: c.flatpak})
 			if err != nil {
 				t.Fatalf("Launch: %v", err)
+			}
+			if pid <= 0 {
+				t.Errorf("pid = %d, want a live pid (issue 068 stopper)", pid)
 			}
 			got := readArgv(t, capture)
 			if strings.Join(got, " ") != strings.Join(c.wantArgv, " ") {
@@ -90,15 +93,15 @@ func TestLaunchArgv(t *testing.T) {
 func TestLaunchErrors(t *testing.T) {
 	t.Setenv("PATH", t.TempDir()) // no CLIs at all
 
-	if err := Launch(context.Background(), Opts{Source: "bottles", Ref: "mybottle", Exe: "/games/foo.exe"}); err == nil ||
+	if _, err := Launch(context.Background(), Opts{Source: "bottles", Ref: "mybottle", Exe: "/games/foo.exe"}); err == nil ||
 		!strings.Contains(err.Error(), "bottles-cli") {
 		t.Errorf("missing bottles-cli error = %v, want it naming bottles-cli", err)
 	}
-	if err := Launch(context.Background(), Opts{Source: "steam"}); err == nil ||
+	if _, err := Launch(context.Background(), Opts{Source: "steam"}); err == nil ||
 		!strings.Contains(err.Error(), "Steam") {
 		t.Errorf("steam error = %v, want it naming Steam", err)
 	}
-	if err := Launch(context.Background(), Opts{Source: "bottles", Exe: "/games/foo.exe"}); err == nil {
+	if _, err := Launch(context.Background(), Opts{Source: "bottles", Exe: "/games/foo.exe"}); err == nil {
 		t.Error("empty bottle ref: want error, got nil")
 	}
 }
@@ -118,7 +121,7 @@ func TestLaunchWritesPerLaunchLog(t *testing.T) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	logDir := t.TempDir()
-	err := Launch(context.Background(), Opts{
+	_, err := Launch(context.Background(), Opts{
 		Source: "bottles", Ref: "mybottle", Exe: "/games/foo.exe",
 		LogDir: logDir, LogName: "Foo",
 	})

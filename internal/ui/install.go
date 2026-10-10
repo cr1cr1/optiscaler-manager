@@ -357,17 +357,29 @@ func (s *Session) finishOp(gameDir string) {
 	s.mu.Unlock()
 }
 
-// CancelOp cancels the in-flight install/uninstall/rollback for gameDir and
-// reports whether one was running.
+// CancelOp cancels the in-flight install/uninstall/rollback for gameDir,
+// a running routed launch (issue 068 — umu launches run under a launch
+// context, owner-CLI launches via the deps stopper), and reports
+// whether anything was stopped.
 func (s *Session) CancelOp(gameDir string) bool {
 	s.mu.Lock()
 	cancel, ok := s.opCancels[gameDir]
+	if !ok {
+		cancel, ok = s.launchRuns[gameDir]
+	}
 	s.mu.Unlock()
 	if ok {
 		log.Info().Str("gameDir", gameDir).Msg("cancelling op")
 		cancel()
+		return true
 	}
-	return ok
+	s.mu.Lock()
+	stop := s.deps.UmuStop
+	s.mu.Unlock()
+	if stop != nil && stop(gameDir) {
+		return true
+	}
+	return false
 }
 
 // OpBusy reports whether gameDir has an op in flight. Frontends gate

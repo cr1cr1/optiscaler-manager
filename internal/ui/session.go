@@ -233,6 +233,12 @@ type Deps struct {
 	// UmuGameIDFor (offline-by-construction in tests).
 	UmuGameIDLookup func(ctx context.Context, store, codename string) (string, error)
 
+	// UmuStop kills a running owner-CLI launch's process group by
+	// install dir (issue 068) and reports whether a signal was sent.
+	// umu launches need no stopper — they run under the session's
+	// launch context, cancelled via CancelOp. nil = unsupported.
+	UmuStop func(gameDir string) bool
+
 	// Steam and ProtonDB feed the online lookup phase of Scan; either nil
 	// skips enrichment entirely.
 	Steam    *steam.Client
@@ -277,6 +283,7 @@ type Session struct {
 	st         State
 	now        func() time.Time
 	opCancels  map[string]context.CancelFunc // in-flight op per game dir
+	launchRuns map[string]context.CancelFunc // running routed launches per game dir (issue 068)
 	cacheMu    sync.Mutex                    // serializes games-cache writes
 	logEntries []LogEntry                    // capped status history with game titles (issues 052, 057), guarded by mu
 
@@ -353,6 +360,7 @@ func NewSession(deps Deps) *Session {
 		st:           State{Mode: ViewGrid, StatusLine: "Ready"},
 		now:          time.Now,
 		opCancels:    map[string]context.CancelFunc{},
+		launchRuns:   map[string]context.CancelFunc{},
 		openExternal: openExternal,
 		openFolder:   openFolder,
 		pickDir:      pickdir.Pick,

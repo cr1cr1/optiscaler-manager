@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeLauncher is the test seam for the Launcher callback. It captures
@@ -351,6 +352,72 @@ func TestLaunch_ProtonVerbOverride(t *testing.T) {
 	}
 	if got := envMap(rec.captured.Env)["PROTON_VERB"]; got != "runinprefix" {
 		t.Errorf("PROTON_VERB = %q, want runinprefix", got)
+	}
+}
+
+// TestLaunch_CancelKillsProcessGroup: cancelling the launch context
+// kills the WHOLE process group (issue 068) — umu-run, pressure-
+// vessel, wine, and the game are one tree; killing only the direct
+// child would orphan the game.
+func TestLaunch_CancelKillsProcessGroup(t *testing.T) {
+	// Fake umu-run: record its pid and pgid, spawn a grandchild
+	// (the "game"), then wait forever.
+	bin := t.TempDir()
+	pidFile := filepath.Join(t.TempDir(), "pids")
+	script := "#!/bin/sh\n" +
+		`sleep 300 &` + "\n" +
+		`echo $$ > "` + pidFile + `"` + "\n" +
+		`echo $! >> "` + pidFile + `"` + "\n" +
+		`wait` + "\n"
+	umuRun := filepath.Join(bin, "umu-run")
+	if err := os.WriteFile(umuRun, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake umu-run: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Launch(ctx, nil, LaunchOpts{
+			ExePath: "/g/foo.exe", WinePrefix: "/p", UmuRunPath: umuRun,
+		})
+	}()
+
+	var parent, child string
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if data, err := os.ReadFile(pidFile); err == nil {
+			lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+			if len(lines) == 2 {
+				parent, child = lines[0], lines[1]
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("fake umu-run never wrote its pids")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("cancelled Launch returned nil error")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Launch did not return after cancel")
+	}
+
+	alive := func(pid string) bool {
+		_, err := os.Stat("/proc/" + pid)
+		return err == nil
+	}
+	for deadline := time.Now().Add(5 * time.Second); alive(parent) || alive(child); {
+		if time.Now().After(deadline) {
+			t.Errorf("process group survived cancel (parent %s alive %v, child %s alive %v)",
+				parent, alive(parent), child, alive(child))
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 

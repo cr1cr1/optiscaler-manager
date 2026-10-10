@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -67,7 +68,14 @@ var umuNetProbe = func(ctx context.Context) error {
 //
 // DEBT: seven positional params — the next growth turns this into a
 // resolver struct (flagged since issue 064).
-func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllowed func() bool, logDir string, runnerFor func(installDir string) string, gameIDFor func(ctx context.Context, row ui.GameRow) (string, string), envFor func(installDir string) map[string]string) ui.UmuLauncherHook {
+//
+// Returns the hook and a stopper for owner-CLI launches (issue 068):
+// the CLI was spawned detached with its own session, so the stopper
+// kills its process GROUP by pid. umu launches need no stopper here —
+// they run under the session's launch context, cancelled via
+// Session.CancelOp. The stopper reports whether a signal was sent;
+// a dead entry is dropped.
+func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllowed func() bool, logDir string, runnerFor func(installDir string) string, gameIDFor func(ctx context.Context, row ui.GameRow) (string, string), envFor func(installDir string) map[string]string) (ui.UmuLauncherHook, func(dir string) bool) {
 	umuPath, umuVersion, umuErr := umu.Detect(context.Background())
 	if umuErr != nil {
 		log.Info().Err(umuErr).Msg("umu-run not detected; unowned Windows-binary launches will error unless the prefix owner routes elsewhere")
@@ -81,6 +89,28 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 	// the registry entry's lifetime matches the game's.
 	var verbMu sync.Mutex
 	busy := map[string]int{}
+	// Owner-CLI pids (issue 068): the detached CLIs by install dir, so
+	// the stopper can kill their process groups. Entries for games
+	// that exited on their own go stale — the stopper drops them.
+	var pidMu sync.Mutex
+	ownerPids := map[string]int{}
+	stop := func(dir string) bool {
+		pidMu.Lock()
+		pid, ok := ownerPids[dir]
+		if ok {
+			delete(ownerPids, dir)
+		}
+		pidMu.Unlock()
+		if !ok {
+			return false
+		}
+		if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
+			log.Debug().Err(err).Int("pid", pid).Str("dir", dir).Msg("owner stop: process group already gone")
+			return false
+		}
+		log.Info().Int("pid", pid).Str("dir", dir).Msg("owner launch stopped (process group killed)")
+		return true
+	}
 	return func(ctx context.Context, row ui.GameRow) (string, error) {
 		route := routeFor(row.InstallDir)
 		prefix, err := umu.ResolvePrefix(pinPrefix(row.InstallDir), row.InstallDir, row.ExePath, row.AppName)
@@ -177,10 +207,11 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 			if !owned {
 				return "", fmt.Errorf("prefix %s has no owning launcher — pin a Bottles/Lutris/Heroic prefix or set Launch via: umu", prefix)
 			}
-			if err := launchercli.Launch(ctx, launchercli.Opts{
+			pid, err := launchercli.Launch(ctx, launchercli.Opts{
 				Source: pfx.Source, Ref: pfx.OwnerRef, Exe: row.ExePath,
 				Flatpak: pfx.Flatpak, LogDir: logDir, LogName: row.Title,
-			}); err != nil {
+			})
+			if err != nil {
 				log.Error().Err(err).
 					Str("game", row.Title).
 					Str("exe", row.ExePath).
@@ -190,8 +221,12 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 					Msg("owner launch failed")
 				return "", err
 			}
+			pidMu.Lock()
+			ownerPids[row.InstallDir] = pid
+			pidMu.Unlock()
 			log.Debug().Str("game", row.Title).Str("owner", pfx.Source).
 				Str("owner_ref", pfx.OwnerRef).Str("prefix", prefix).
+				Int("pid", pid).
 				Msg("launch routed to prefix owner")
 			return pfx.Source, nil
 		}
@@ -207,5 +242,5 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 			}
 			return launchUmu()
 		}
-	}
+	}, stop
 }

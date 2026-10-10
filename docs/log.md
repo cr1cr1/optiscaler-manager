@@ -4763,3 +4763,20 @@ no such file or directory` — stranding the mod installed forever.
 - Debt note: newUmuLauncher is at seven positional params; the next
   growth becomes a resolver struct.
 - Docs: issue 067. Commit: aab6aec.
+
+## 2026-10-10 — issue 68: process supervision for launches (stop, exit reporting)
+
+- umu launches run under a per-game launch context: Setsid + group
+  kill on cancel (+ WaitDelay for pipe-holding grandchildren);
+  LaunchBusy/double-launch guard; CancelOp falls through install op →
+  launch slot → deps stopper. Statuses: Running → exited / Stopped /
+  Failed.
+- launchercli.Launch returns the pid; the router's new second return
+  is a stopper group-killing owner-CLI launches (Deps.UmuStop).
+- GUI: detail Stop button while a launch runs; TUI: `c` stops
+  launches. Zombie-aware /proc checks in tests (Released children are
+  reaped on init's schedule).
+- Limitations: wineserver stragglers may escape the group kill
+  (wineserver -k is the manual cleanup); owner-CLI double-launch
+  unguarded.
+- Docs: issue 068. Commit: THIS_COMMIT.

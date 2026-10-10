@@ -261,6 +261,100 @@ func TestSessionLaunch_ReportsChosenBackend(t *testing.T) {
 	}
 }
 
+// TestSessionLaunchSupervision: a routed launch registers a running
+// slot for its whole lifetime — LaunchBusy reports it, a second
+// Launch is refused, CancelOp stops it ("Stopped", no Failed), the
+// slot releases, and a later clean exit reports "exited" (issue 068).
+func TestSessionLaunchSupervision(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.GOOS = "linux"
+	e.sess.deps.SettingsRoot = t.TempDir()
+
+	var mu sync.Mutex
+	calls := 0
+	started := make(chan struct{}, 2)
+	unblock := make(chan struct{})
+	e.sess.deps.UmuLauncher = func(ctx context.Context, row GameRow) (string, error) {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		started <- struct{}{}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-unblock:
+			return "umu-launcher", nil
+		}
+	}
+
+	dir := "/games/manual/WinGame"
+	addRow(e.sess, GameRow{Title: "Win Game", InstallDir: dir, Store: domain.StoreManual, ExePath: dir + "/game.exe"})
+
+	e.sess.Launch(dir)
+	<-started
+	if !e.sess.LaunchBusy(dir) {
+		t.Fatal("LaunchBusy = false while the game runs")
+	}
+
+	e.sess.Launch(dir) // double-launch: refused
+	mu.Lock()
+	if calls != 1 {
+		t.Errorf("hook calls = %d after double-launch, want 1", calls)
+	}
+	mu.Unlock()
+	pollUITill(t, "double-launch toast", func() bool {
+		for _, to := range e.sess.Snapshot().Toasts {
+			if strings.Contains(to.Text, "already running") {
+				return true
+			}
+		}
+		return false
+	})
+
+	if !e.sess.CancelOp(dir) {
+		t.Fatal("CancelOp = false, want the launch stopped")
+	}
+	waitEvent(t, e.sess, EvOpDone)
+	pollUITill(t, "stopped status", func() bool {
+		return strings.Contains(e.sess.Snapshot().StatusLine, "Stopped")
+	})
+	if e.sess.LaunchBusy(dir) {
+		t.Error("LaunchBusy still true after stop — the slot must release")
+	}
+	for _, to := range e.sess.Snapshot().Toasts {
+		if strings.HasPrefix(to.Text, "Failed:") {
+			t.Errorf("stop produced a Failed toast: %+v", to)
+		}
+	}
+
+	// Relaunch after stop; a clean exit reports "exited".
+	close(unblock)
+	e.sess.Launch(dir)
+	<-started
+	waitEvent(t, e.sess, EvOpDone)
+	pollUITill(t, "exited status", func() bool {
+		return strings.Contains(e.sess.Snapshot().StatusLine, "exited")
+	})
+}
+
+// TestSessionLaunchStopOwnerCLI: with no op and no umu launch slot,
+// CancelOp falls through to the deps stopper (owner-CLI launches,
+// issue 068).
+func TestSessionLaunchStopOwnerCLI(t *testing.T) {
+	e := newTestEnv(t)
+	stopped := map[string]bool{}
+	e.sess.deps.UmuStop = func(dir string) bool { return stopped[dir] }
+	dir := "/games/manual/WinGame"
+
+	if e.sess.CancelOp(dir) {
+		t.Error("CancelOp = true with nothing running")
+	}
+	stopped[dir] = true
+	if !e.sess.CancelOp(dir) {
+		t.Error("CancelOp = false, want the deps stopper consulted")
+	}
+}
+
 // TestSessionLaunchRoute: the global LaunchRoute default persists, a
 // per-game override wins, clearing restores the default, and an empty
 // value means Auto (issue 060).

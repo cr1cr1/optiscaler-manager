@@ -422,6 +422,7 @@ func (m *model) detailPanel() {
 	m.envBtnRect = Rect{}
 	m.envApplyRect = Rect{}
 	m.envInputID = nil
+	m.stopBtnRect = Rect{}
 	// The grid rendered first and captured its own tech row; the panel owns
 	// the seam while open so a missing panel row reads as zero.
 	m.techPillRowRect = Rect{}
@@ -623,6 +624,18 @@ func (m *model) detailPanel() {
 						m.sess.RescanGame(e.InstallDir)
 					}
 				})
+				// Stop a running supervised launch (issue 068): the
+				// launch slot lives for the game's lifetime (umu
+				// backend); CancelOp also reaches owner-CLI launches
+				// through the deps stopper.
+				if m.sess.LaunchBusy(e.InstallDir) {
+					Container(Attrs(Row), func() {
+						m.stopBtnRect = GetScreenRectOf(CurrentId())
+						if focusableButton(NoIcon, "Stop") {
+							m.sess.CancelOp(e.InstallDir)
+						}
+					})
+				}
 				// Per-game umu wine-prefix pin (issue 048), launch-route
 				// override (issue 060), and runner pin (issue 063), Linux only.
 				if m.sess.UmuPlatform() {

@@ -12,11 +12,41 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/umu"
 )
 
-// Launch requests a fire-and-forget game launch: it never blocks, never
-// waits on the child, and a successful request proves nothing about the
-// game actually running — hence "Launch requested", never "launched".
+// Launch requests a game launch: it never blocks the caller. Routed
+// Windows binaries (umu / owner CLI) run supervised — the slot marks
+// the game running and CancelOp stops it (issue 068); other targets
+// stay fire-and-forget ("Launch requested", never "launched").
 func (s *Session) Launch(gameDir string) {
 	go s.doLaunch(gameDir)
+}
+
+// registerLaunch marks a routed launch as running (false when one
+// already runs — the double-launch guard).
+func (s *Session) registerLaunch(gameDir string, cancel context.CancelFunc) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, running := s.launchRuns[gameDir]; running {
+		return false
+	}
+	s.launchRuns[gameDir] = cancel
+	return true
+}
+
+// finishLaunch releases the launch slot for gameDir.
+func (s *Session) finishLaunch(gameDir string) {
+	s.mu.Lock()
+	delete(s.launchRuns, gameDir)
+	s.mu.Unlock()
+}
+
+// LaunchBusy reports whether a routed launch for gameDir is running
+// (the umu backend's lifetime is the game's). Frontends gate Stop
+// affordances on it.
+func (s *Session) LaunchBusy(gameDir string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, running := s.launchRuns[gameDir]
+	return running
 }
 
 func (s *Session) doLaunch(gameDir string) {
@@ -38,13 +68,35 @@ func (s *Session) doLaunch(gameDir string) {
 	// (mono) and hangs. The hook routes to the prefix owner's CLI or
 	// umu-run per the route setting (issue 060) and owns env-var setup
 	// and stderr-scanning for umu's exit-0-on-fatal-error quirk.
+	//
+	// Supervision (issue 068): the launch registers a context for its
+	// whole lifetime — the umu backend blocks until the game exits, so
+	// the slot marks the game running, guards against double-launch,
+	// and CancelOp stops the process group ("Stopped"). Owner-CLI
+	// backends return at spawn; their stop goes through deps.UmuStop.
 	if s.shouldRouteWinBinary(row) {
-		via, err := s.deps.UmuLauncher(context.Background(), *row)
-		if err != nil {
-			s.launchFailed(err, gameDir)
+		ctx, cancel := context.WithCancel(context.Background())
+		if !s.registerLaunch(gameDir, cancel) {
+			s.toast(row.Title+" is already running", true)
 			return
 		}
-		what := "Launch requested: " + row.Title + " (via " + via + ")"
+		defer s.finishLaunch(gameDir)
+		s.setStatusGame(gameDir, "Running: "+row.Title)
+		via, err := s.deps.UmuLauncher(ctx, *row)
+		var what string
+		switch {
+		case ctx.Err() != nil:
+			what = "Stopped: " + row.Title
+		case err != nil:
+			s.launchFailed(err, gameDir)
+			return
+		case via == "umu-launcher":
+			// The blocking backend returning nil means the game exited
+			// on its own.
+			what = row.Title + " exited"
+		default:
+			what = "Launch requested: " + row.Title + " (via " + via + ")"
+		}
 		s.setStatusGame(gameDir, what)
 		s.toast(what, false)
 		s.emit(Event{Kind: EvOpDone, Text: what, GameDir: gameDir})
