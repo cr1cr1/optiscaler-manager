@@ -18,6 +18,13 @@ type Prefix struct {
 	Name   string
 	Path   string
 	Source string
+	// OwnerRef identifies the prefix to its owning launcher's CLI
+	// (bottle name, Lutris slug, Heroic app name); "" when unroutable
+	// (Steam compatdata, PlayOnLinux, CrossOver, ~/.wine, unknown).
+	// Flatpak marks prefixes under a Flatpak app's ~/.var/app root so
+	// the router uses the flatpak-spawn argv form (issue 060).
+	OwnerRef string
+	Flatpak  bool
 }
 
 // ResolvePrefix returns the WINEPREFIX a launch should use: the pinned

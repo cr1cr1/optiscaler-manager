@@ -215,9 +215,9 @@ func (m Model) footerView(w int) string {
 	var hints string
 	switch m.screen {
 	case screenDetail:
-		hints = "i install · v version · l launch · w prefix · t title · a poster · c cancel · r rollback · o open INI · esc back"
+		hints = "i install · v version · l launch · w prefix · e route · t title · a poster · c cancel · r rollback · o open INI · esc back"
 	case screenSettings:
-		hints = "e version · t template · a add · d remove · o online info · u umu · p umu prefix · x clear cache"
+		hints = "e version · t template · a add · d remove · o online info · u umu · p umu prefix · r umu route · x clear cache"
 	case screenHelp, screenAbout:
 		hints = "q quit"
 	default:
@@ -627,6 +627,11 @@ func (m Model) settingsView(w, contentH int) string {
 		prefix = styleMuted.Render("auto")
 	}
 	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("umu default prefix:"), trunc(prefix, w-20))
+	route := s.LaunchRoute
+	if route == "" {
+		route = styleMuted.Render("auto")
+	}
+	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("umu launch route:"), trunc(route, w-20))
 
 	b.WriteString("\n" + styleHeader.Render("OptiScaler sources"))
 	b.WriteString("\n" + styleMuted.Render("  tab: switch list · enter: use · a: add · d: remove") + "\n")

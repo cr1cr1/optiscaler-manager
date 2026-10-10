@@ -610,7 +610,14 @@ decisions the per-version sections above do not cover.
   at `<state-root>/umu-prefixes/<sha1(installDir)[:12]>`. Launcher
   directories are only read, never created into or migrated. Launch
   failures carry umu's stderr tail and are logged with the game, exe,
-  prefix, and runner.
+  prefix, and runner. One prefix = one owner (issue 060): the launch
+  route (per-game override → global default → auto) sends
+  launcher-owned prefixes to the owner's CLI (`bottles-cli run -b`,
+  `lutris lutris:rungame/<slug>`, `heroic launch <app>`; flatpak argv
+  forms), unroutable owners fail with a naming error, and only unowned
+  prefixes go to umu-run — the umu toggle gates just that backend, and
+  a Windows binary is never exec'd bare (binfmt hands PEs to mono and
+  hangs).
 - **Hook disable/enable toggle** (v0.13): installed games get a
   Disable/Enable affordance (GUI button in the detail panel, "disabled"
   pill on the card; TUI `d` on the detail screen) that renames the injection hook

@@ -4617,3 +4617,36 @@ no such file or directory` — stranding the mod installed forever.
   updated to the new labels. Full suite 32/32 green, vet clean.
 - Docs: issue 059; runner semantics rewritten in README/scope/
   architecture ("Proton is always Auto" is gone).
+
+## 2026-10-10 — issue 60: launcher-owned launch routing (umu vs owner CLIs)
+
+- Root cause of the hang report: with umu disabled, a manual Windows
+  exe was exec'd RAW by the launch spawner; the kernel's binfmt
+  (`/usr/lib/binfmt.d/mono.conf`: every MZ → /usr/bin/mono) handed the
+  game to mono, which hung. Raw PE exec is now unreachable on Linux.
+- Design approved via brainstorming (spec committed at
+  docs/superpowers/specs/2026-10-10-launcher-owned-launch-routing-design.md):
+  one prefix = one owner, and the owner launches it.
+- Scan: `Prefix.OwnerRef`/`Flatpak` — bottle name for Bottles, Lutris
+  slug from the config filename (trailing `-<timestamp>` stripped),
+  Heroic app from GamesConfig `winePrefix` mapping (closes the issue
+  48 follow-up), flatpak flag from `~/.var/app` roots. `LookupPrefix`
+  replaced `PrefixSource`.
+- New `internal/launchercli`: pure argv builders + detached spawn for
+  bottles-cli/lutris/heroic (native + flatpak forms); unroutable
+  owners (Steam compatdata, PlayOnLinux, CrossOver) error by design.
+- Router: the cmd hook (Deps.UmuLauncher) is always wired on Linux —
+  route = per-game override → global `LaunchRoute` → auto; auto sends
+  owned prefixes to the owner CLI (unroutable = launch error, the
+  user's chosen "block"), unowned to umu-run (error when the toggle is
+  off or umu-run missing). `UmuLauncherHook` returns the backend name
+  for the status line ("via bottles").
+- UI: settings dropdown (GUI) / `r` cycle (TUI) for the global route;
+  detail-panel dropdown (GUI) / `e` cycle (TUI) for per-game pins.
+- TDD throughout: red-first in launchercli (argv capture), cmd (route
+  matrix incl. mono-guard error), ui (settings precedence + gate),
+  gui/tui controls. Gotcha found by test: the dev box's real
+  bottles-cli leaked through PATH into the missing-CLI test — PATH is
+  now isolated there.
+- Docs: issue 060, spec marked implemented, README "one prefix, one
+  owner" paragraph, scope.md, architecture.md.

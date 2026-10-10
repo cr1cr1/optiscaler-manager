@@ -82,6 +82,12 @@ type model struct {
 	prefixDDMenuRect      Rect                          // screen rect of the per-game prefix dropdown's popup panel (scroll-cap test seam, issue 056)
 	prefixDDItems         []umuPrefixMenuItem           // open per-game prefix dropdown rows (menu test seam)
 	prefixDDPrefixes      []umu.Prefix                  // detected prefixes scanned on the dropdown's opening frame
+	umuRouteBuf           string                        // settings-modal launch-route buffer, primed on open (issue 060)
+	umuRouteTriggerRect   Rect                          // screen rect of the launch-route dropdown trigger (click test seam)
+	umuRouteMenuItems     []umuPrefixMenuItem           // open launch-route dropdown rows (menu test seam)
+	umuRouteOpen          bool                          // launch-route popup open this frame (modal dismiss guard)
+	routeDDTriggerRect    Rect                          // screen rect of the per-game launch-route dropdown (click test seam)
+	routeDDItems          []umuPrefixMenuItem           // open per-game launch-route rows (menu test seam)
 	forkSlugBuf           string                        // settings-modal add-fork slug input
 	forkPatternBuf        string                        // settings-modal add-fork asset-glob input
 	titleEditDir          string                        // detail panel: game whose title is being edited ("" = editor closed, issue 028)
@@ -342,6 +348,7 @@ func (m *model) applySettings() {
 	m.sess.SetLaunchTemplate(m.templateBuf)
 	m.sess.SetUmuEnabled(m.umuEnabledBuf)
 	m.sess.SetUmuPrefixPath(m.umuPrefixBuf)
+	m.sess.SetLaunchRoute(m.umuRouteBuf)
 }
 
 // exit flushes a pending settings-modal edit through the session's

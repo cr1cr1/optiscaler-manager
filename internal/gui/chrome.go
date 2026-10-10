@@ -91,6 +91,7 @@ func (m *model) openSettings() {
 		m.onlineBuf = s.OnlineLookups
 		m.umuEnabledBuf = s.UmuEnabled
 		m.umuPrefixBuf = s.UmuPrefixPath
+		m.umuRouteBuf = s.LaunchRoute
 		// Scanned once per open (not per frame): FindPrefixes walks the
 		// launcher roots on disk. A prefix created while the modal is
 		// open appears on the next open.
@@ -118,10 +119,10 @@ const (
 
 func (m *model) settingsModal() {
 	modal(settingsModalW, func() {
-		// While the umu Proton picker's popup is open it owns outside
-		// clicks (it floats outside the modal card at root scope);
-		// closing the modal from under it would strand the gesture.
-		if m.umuPrefixOpen {
+		// While the umu pickers' popups are open they own outside
+		// clicks (they float outside the modal card at root scope);
+		// closing the modal from under one would strand the gesture.
+		if m.umuPrefixOpen || m.umuRouteOpen {
 			return
 		}
 		m.settingsOpen = false
@@ -259,6 +260,8 @@ func (m *model) settingsGeneralTab() {
 			}
 			muted("Default wine prefix (Auto = reuse detected prefixes from Steam / Bottles / Heroic)")
 			m.umuPrefixPicker()
+			muted("Launch route (Auto = the prefix owner's launcher, e.g. bottles-cli)")
+			m.routePicker("settings-launch-route", "Launch route: "+routeLabel(m.umuRouteBuf), m.umuRouteBuf, "", func(v string) { m.umuRouteBuf = v }, &m.umuRouteTriggerRect, &m.umuRouteMenuItems, &m.umuRouteOpen)
 		}
 	})
 }
@@ -512,6 +515,133 @@ func (m *model) prefixDropdown(e *ui.GameRow) {
 	}
 	m.prefixDDMenuRect = GetResolvedRectOf(st.menuID)
 	dropdownDismiss(st, func() { m.openDropdownDir = "" })
+}
+
+// umuRouteOptions are the launch-route picker's rows (issue 060):
+// Auto follows the resolved prefix's owner, "umu" forces umu-run,
+// "owner" forces the owning launcher's CLI.
+var umuRouteOptions = []struct {
+	value string
+	label string
+}{
+	{"", "Auto (route to the prefix owner)"},
+	{"umu", "umu-run only"},
+	{"owner", "Prefix owner's CLI only"},
+}
+
+// routeLabel is a route value's short form for closed triggers.
+func routeLabel(route string) string {
+	switch route {
+	case "umu":
+		return "umu-run"
+	case "owner":
+		return "owner CLI"
+	}
+	return "Auto"
+}
+
+// routePicker renders the 3-row launch-route dropdown (issue 060) for
+// the settings modal (global default; the pick only buffers) and the
+// detail panel (per-game override; applies immediately). dir is the
+// per-game coordination key ("" in settings); openFlag is the settings
+// modal's dismiss guard (nil in the detail panel). Otherwise it follows
+// the shared dropdown discipline: trigger owns nav keys while open,
+// popup at root scope, Esc/outside-click dismisses.
+func (m *model) routePicker(id, trigger, pin, dir string, onPick func(string), triggerRect *Rect, items *[]umuPrefixMenuItem, openFlag *bool) {
+	st := Use[dropdownState](id)
+	if openFlag != nil {
+		*openFlag = st.open
+	}
+	if dir != "" {
+		if st.open && m.openDropdownDir != dir {
+			st.open = false
+		}
+	}
+	if !st.open {
+		*items = nil
+	}
+	enterPick := false
+	Container(Attrs(Focusable, PointerHand, Row, CrossMid, Gap(sp4), Pad2(3, 6), Corners(radiusS), BackgroundVec(bgCard)), func() {
+		FocusOnClick()
+		st.btnID = CurrentId()
+		*triggerRect = GetScreenRectOf(CurrentId())
+		activated := false
+		if HasFocus() {
+			ModAttrs(func(a *AttrSet) {
+				a.BorderWidth = 2
+				a.BorderColor = focusBorder
+			})
+			if st.open {
+				var spaceToggle bool
+				enterPick, spaceToggle = dropdownMenuKeys(st, len(umuRouteOptions))
+				if spaceToggle {
+					activated = true
+				}
+			} else if GetFrameInput().Key == KeyEnter || GetFrameInput().Key == KeySpace {
+				GetFrameInput().Key = KeyCodeNone
+				activated = true
+			}
+		}
+		Label(trigger, FontSize(11), TextColorVec(txtMain))
+		dropdownArrow()
+		if PressAction() {
+			activated = true
+		}
+		if activated {
+			st.open = !st.open
+			if st.open {
+				if dir != "" {
+					m.openDropdownDir = dir
+				}
+				st.hl = -1
+			} else if dir != "" && m.openDropdownDir == dir {
+				m.openDropdownDir = ""
+			}
+		}
+	})
+	if st.open {
+		dropdownPopup(st, 0, 360, func(mouseMoved bool) {
+			if st.hl < 0 {
+				// Open-time init: highlight the current value's row.
+				st.hl = 0
+				for i, o := range umuRouteOptions {
+					if o.value == pin {
+						st.hl = i
+						break
+					}
+				}
+			}
+			*items = (*items)[:0]
+			for i, o := range umuRouteOptions {
+				o := o
+				ticked := o.value == pin
+				dropdownRow(st, i, enterPick, mouseMoved,
+					func(hl bool) {
+						tick := " "
+						if ticked {
+							tick = "✓"
+						}
+						Label(tick, FontSize(12), TextColorVec(txtMain))
+						Label(o.label, FontSize(12), TextColorVec(txtMain))
+						*items = append(*items, umuPrefixMenuItem{value: o.value, label: o.label, rect: GetScreenRectOf(CurrentId()), hl: hl})
+					},
+					func(keyboard bool) {
+						onPick(o.value)
+						if dir != "" {
+							m.openDropdownDir = ""
+						}
+						if keyboard {
+							FocusImmediateOn(st.btnID)
+						}
+					})
+			}
+		})
+	}
+	dropdownDismiss(st, func() {
+		if dir != "" && m.openDropdownDir == dir {
+			m.openDropdownDir = ""
+		}
+	})
 }
 
 // settingsOptiscalerTab: everything OptiScaler-specific — the default

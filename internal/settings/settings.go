@@ -74,6 +74,16 @@ type Settings struct {
 	// UmuPrefixPath default and the whole auto chain; deleting the key
 	// restores the default resolution.
 	PrefixOverrides map[string]string `json:"prefix_overrides,omitempty"`
+	// LaunchRoute is the global default launch backend for manual
+	// Windows-binary games (issue 060): "" = auto (the prefix owner's
+	// CLI when the prefix is launcher-owned, else umu), "umu" = always
+	// umu-run, "owner" = always the owner's CLI. Per-game overrides in
+	// LaunchRouteOverrides win over this default.
+	LaunchRoute string `json:"launch_route,omitempty"`
+	// LaunchRouteOverrides pins the launch route per canonical install
+	// dir (the PrefixOverrides precedent); deleting the key restores
+	// the default resolution.
+	LaunchRouteOverrides map[string]string `json:"launch_route_overrides,omitempty"`
 	// SteamGridDBKey is the personal SteamGridDB API key enabling the
 	// SteamGridDB cover source (issue 024): grids for games Steam's CDN
 	// has no art for, and alias-aware name search. Empty (default)
@@ -114,37 +124,41 @@ func Load(root string) (Settings, error) {
 	// Decode through a pointer for OnlineLookups so a legacy file without
 	// the key defaults to true while an explicit false stays false.
 	var raw struct {
-		DefaultVersion  string            `json:"default_version"`
-		LaunchTemplate  string            `json:"launch_template"`
-		ExtraDirs       []string          `json:"extra_dirs,omitempty"`
-		OnlineLookups   *bool             `json:"online_lookups"`
-		TitleOverrides  map[string]string `json:"title_overrides,omitempty"`
-		CoverOverrides  map[string]string `json:"cover_overrides,omitempty"`
-		CardSize        CardSize          `json:"card_size,omitempty"`
-		UmuEnabled      *bool             `json:"umu_enabled"`
-		UmuPrefixPath   string            `json:"umu_prefix_path,omitempty"`
-		PrefixOverrides map[string]string `json:"prefix_overrides,omitempty"`
-		SteamGridDBKey  string            `json:"steamgriddb_key,omitempty"`
-		Forks           []Fork            `json:"forks,omitempty"`
-		ActiveFork      string            `json:"active_fork,omitempty"`
+		DefaultVersion       string            `json:"default_version"`
+		LaunchTemplate       string            `json:"launch_template"`
+		ExtraDirs            []string          `json:"extra_dirs,omitempty"`
+		OnlineLookups        *bool             `json:"online_lookups"`
+		TitleOverrides       map[string]string `json:"title_overrides,omitempty"`
+		CoverOverrides       map[string]string `json:"cover_overrides,omitempty"`
+		CardSize             CardSize          `json:"card_size,omitempty"`
+		UmuEnabled           *bool             `json:"umu_enabled"`
+		UmuPrefixPath        string            `json:"umu_prefix_path,omitempty"`
+		PrefixOverrides      map[string]string `json:"prefix_overrides,omitempty"`
+		LaunchRoute          string            `json:"launch_route,omitempty"`
+		LaunchRouteOverrides map[string]string `json:"launch_route_overrides,omitempty"`
+		SteamGridDBKey       string            `json:"steamgriddb_key,omitempty"`
+		Forks                []Fork            `json:"forks,omitempty"`
+		ActiveFork           string            `json:"active_fork,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return Defaults(), fmt.Errorf("settings: parse: %w", err)
 	}
 	s := Settings{
-		DefaultVersion:  raw.DefaultVersion,
-		LaunchTemplate:  raw.LaunchTemplate,
-		ExtraDirs:       raw.ExtraDirs,
-		OnlineLookups:   true,
-		TitleOverrides:  raw.TitleOverrides,
-		CoverOverrides:  raw.CoverOverrides,
-		CardSize:        raw.CardSize,
-		UmuEnabled:      false,
-		UmuPrefixPath:   raw.UmuPrefixPath,
-		PrefixOverrides: raw.PrefixOverrides,
-		SteamGridDBKey:  raw.SteamGridDBKey,
-		Forks:           raw.Forks,
-		ActiveFork:      raw.ActiveFork,
+		DefaultVersion:       raw.DefaultVersion,
+		LaunchTemplate:       raw.LaunchTemplate,
+		ExtraDirs:            raw.ExtraDirs,
+		OnlineLookups:        true,
+		TitleOverrides:       raw.TitleOverrides,
+		CoverOverrides:       raw.CoverOverrides,
+		CardSize:             raw.CardSize,
+		UmuEnabled:           false,
+		UmuPrefixPath:        raw.UmuPrefixPath,
+		PrefixOverrides:      raw.PrefixOverrides,
+		LaunchRoute:          raw.LaunchRoute,
+		LaunchRouteOverrides: raw.LaunchRouteOverrides,
+		SteamGridDBKey:       raw.SteamGridDBKey,
+		Forks:                raw.Forks,
+		ActiveFork:           raw.ActiveFork,
 	}
 	if raw.OnlineLookups != nil {
 		s.OnlineLookups = *raw.OnlineLookups

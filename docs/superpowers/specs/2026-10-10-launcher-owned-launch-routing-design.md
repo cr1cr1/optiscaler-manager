@@ -1,7 +1,7 @@
 ---
 title: Launcher-owned launch routing (umu vs owner CLIs)
 description: Manual Windows games launch through the launcher that owns their prefix (bottles-cli, lutris, heroic), with umu-run only for unowned prefixes; raw PE exec is removed.
-status: approved
+status: implemented (issue 060)
 ---
 
 # Launcher-owned launch routing — design

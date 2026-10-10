@@ -1,0 +1,15 @@
+//go:build !linux
+
+package launchercli
+
+import (
+	"context"
+	"fmt"
+	"runtime"
+)
+
+// Launch is unreachable off Linux (the router only exists there); the
+// stub keeps the package compiling cross-platform.
+func Launch(_ context.Context, _, _, _ string, _ bool) error {
+	return fmt.Errorf("launchercli: launcher CLIs are a Linux concept, not %s", runtime.GOOS)
+}

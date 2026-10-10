@@ -11,6 +11,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/launch"
+	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/umu"
 )
 
@@ -150,21 +151,27 @@ func TestSessionLaunchNotifiesOnSpawnFailure(t *testing.T) {
 }
 
 // umuCapture records the row handed to the injected UmuLauncher hook.
-// Mirrors launchCapture for the umu-launcher path.
+// Mirrors launchCapture for the umu-launcher path. via is what the
+// router reports as the chosen backend ("umu-launcher", "bottles", …).
 type umuCapture struct {
 	mu    sync.Mutex
 	calls int
 	row   GameRow
+	via   string
 	err   error
 }
 
 func (u *umuCapture) hook() UmuLauncherHook {
-	return func(_ context.Context, row GameRow) error {
+	return func(_ context.Context, row GameRow) (string, error) {
 		u.mu.Lock()
 		defer u.mu.Unlock()
 		u.calls++
 		u.row = row
-		return u.err
+		via := u.via
+		if via == "" {
+			via = "umu-launcher"
+		}
+		return via, u.err
 	}
 }
 
@@ -203,9 +210,12 @@ func TestSessionLaunch_ManualWindowsGameUsesUmuWhenEnabled(t *testing.T) {
 	}
 }
 
-// TestSessionLaunch_ManualWindowsGameFallsBackWhenUmuDisabled: the
-// setting is the gate; default off means the regular Launcher runs.
-func TestSessionLaunch_ManualWindowsGameFallsBackWhenUmuDisabled(t *testing.T) {
+// TestSessionLaunch_ManualWindowsGameRoutesEvenWhenUmuDisabled: the
+// router hook owns the launch decision for Windows binaries (issue
+// 060); UmuEnabled only gates the umu backend INSIDE the router. Raw
+// PE exec through the regular Launcher never happens on Linux (it
+// lands in the kernel's binfmt, e.g. mono, and hangs).
+func TestSessionLaunch_ManualWindowsGameRoutesEvenWhenUmuDisabled(t *testing.T) {
 	e := newTestEnv(t)
 	e.sess.deps.GOOS = "linux"
 	e.sess.deps.SettingsRoot = t.TempDir()
@@ -223,11 +233,79 @@ func TestSessionLaunch_ManualWindowsGameFallsBackWhenUmuDisabled(t *testing.T) {
 	e.sess.Launch(dir)
 	waitEvent(t, e.sess, EvOpDone)
 
-	if ucap.calls != 0 {
-		t.Errorf("UmuLauncher.calls = %d, want 0 (feature disabled)", ucap.calls)
+	if ucap.calls != 1 {
+		t.Errorf("UmuLauncher.calls = %d, want 1 (router owns PE launches)", ucap.calls)
 	}
-	if cap.calls != 1 {
-		t.Errorf("regular Launcher.calls = %d, want 1 (fallback)", cap.calls)
+	if cap.calls != 0 {
+		t.Errorf("regular Launcher.calls = %d, want 0 (never raw-exec a PE)", cap.calls)
+	}
+}
+
+// TestSessionLaunch_ReportsChosenBackend: the router's via string
+// names the backend in the status/toast (issue 060).
+func TestSessionLaunch_ReportsChosenBackend(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.GOOS = "linux"
+	e.sess.deps.SettingsRoot = t.TempDir()
+	ucap := &umuCapture{via: "bottles"}
+	e.sess.deps.UmuLauncher = ucap.hook()
+
+	dir := "/games/manual/WinGame"
+	addRow(e.sess, GameRow{Title: "Win Game", InstallDir: dir, Store: domain.StoreManual, ExePath: dir + "/game.exe"})
+
+	e.sess.Launch(dir)
+	waitEvent(t, e.sess, EvOpDone)
+	st := e.sess.Snapshot().StatusLine
+	if !strings.Contains(st, "via bottles") {
+		t.Errorf("status %q lacks the chosen backend", st)
+	}
+}
+
+// TestSessionLaunchRoute: the global LaunchRoute default persists, a
+// per-game override wins, clearing restores the default, and an empty
+// value means Auto (issue 060).
+func TestSessionLaunchRoute(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	e.sess.Scan(t.Context())
+	waitScanDone(t, e.sess)
+	dir := e.gameRoot
+
+	e.sess.SetLaunchRoute("owner")
+	if got := e.sess.Settings().LaunchRoute; got != "owner" {
+		t.Errorf("LaunchRoute = %q, want owner", got)
+	}
+	if got := e.sess.LaunchRouteFor(dir); got != "owner" {
+		t.Errorf("LaunchRouteFor = %q, want owner", got)
+	}
+
+	e.sess.SetLaunchRouteOverride(dir, "umu")
+	if got := e.sess.LaunchRoutePin(dir); got != "umu" {
+		t.Errorf("LaunchRoutePin = %q, want umu", got)
+	}
+	if got := e.sess.LaunchRouteFor(dir); got != "umu" {
+		t.Errorf("LaunchRouteFor = %q, want per-game umu", got)
+	}
+	s, err := settings.Load(e.sess.deps.SettingsRoot)
+	if err != nil {
+		t.Fatalf("settings unreadable: %v", err)
+	}
+	if s.LaunchRoute != "owner" || s.LaunchRouteOverrides[canonicalDir(dir)] != "umu" {
+		t.Errorf("persisted = %+v, want owner + per-game umu", s)
+	}
+
+	e.sess.SetLaunchRouteOverride(dir, "")
+	if got := e.sess.LaunchRouteFor(dir); got != "owner" {
+		t.Errorf("LaunchRouteFor after clear = %q, want owner", got)
+	}
+	e.sess.SetLaunchRoute("")
+	if got := e.sess.LaunchRouteFor(dir); got != "" {
+		t.Errorf("LaunchRouteFor = %q, want empty (Auto)", got)
+	}
+
+	e.sess.SetLaunchRouteOverride("/no/such/game", "umu")
+	if len(e.sess.Settings().LaunchRouteOverrides) != 0 {
+		t.Errorf("override persisted for unknown game: %v", e.sess.Settings().LaunchRouteOverrides)
 	}
 }
 

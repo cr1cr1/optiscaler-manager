@@ -92,3 +92,54 @@ func TestPrefixBoxWindowsAtTwenty(t *testing.T) {
 		t.Errorf("bottom window still shows row 4 — the window must scroll:\n%s", bottom)
 	}
 }
+
+// TestTUIRouteCycleKeys: r on settings cycles the global launch route
+// (auto → umu → owner → auto) and e on the detail screen cycles the
+// per-game override without touching the global default (issue 060).
+func TestTUIRouteCycleKeys(t *testing.T) {
+	e := newTestEnv(t, func(d *ui.Deps) {
+		d.SettingsRoot = t.TempDir()
+	})
+	var tm tea.Model = New(e.sess, "test")
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	key := func(s string) {
+		t.Helper()
+		m, _ := tm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)})
+		tm = m
+	}
+
+	e.sess.Scan(t.Context())
+	pollUntil(t, "scan finds GameOne", func() bool {
+		return len(e.sess.Snapshot().Rows) > 0
+	})
+
+	key("2") // settings screen
+	for i, want := range []string{"umu", "owner", ""} {
+		key("r")
+		if got := e.sess.Settings().LaunchRoute; got != want {
+			t.Errorf("after %d r presses LaunchRoute = %q, want %q", i+1, got, want)
+		}
+	}
+	view := tm.(Model).View()
+	if !strings.Contains(view, "umu launch route:") {
+		t.Errorf("settings view lacks the route row:\n%s", view)
+	}
+
+	// Detail screen: e cycles the per-game override.
+	key("1") // games
+	enter, _ := tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	tm = enter // detail screen
+	key("e")
+	if got := e.sess.LaunchRoutePin(e.gameRoot); got != "umu" {
+		t.Errorf("LaunchRoutePin = %q after e, want umu", got)
+	}
+	if got := e.sess.Settings().LaunchRoute; got != "" {
+		t.Errorf("global LaunchRoute = %q after per-game cycle, want untouched", got)
+	}
+	key("e")
+	key("e")
+	if got := e.sess.LaunchRoutePin(e.gameRoot); got != "" {
+		t.Errorf("LaunchRoutePin = %q after 3 e presses, want cleared (auto)", got)
+	}
+}

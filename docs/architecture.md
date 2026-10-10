@@ -170,7 +170,7 @@ internal/
                them for Proton builds (toolmanifest.vdf OR a top-level
                proton script) sorted newest-first; ResolveProtonPath
                returns the newest runner of the resolved prefix's
-               launcher (PrefixSource), else the global newest
+               launcher, else the global newest
                (issue 059); FindPrefixes detects wine prefixes (dirs with a
                drive_c) in Heroic Prefixes/, Bottles bottles/ (plus the
                custom_bottles_path root from Bottles' data.yml), Steam
@@ -192,6 +192,18 @@ internal/
                default in settings, per-game pin in the detail views);
                both pickers cap at 20 visible rows and scroll the rest
                (GUI windowed popup, TUI sliding window, issue 056).
+               Prefix also carries OwnerRef/Flatpak (bottle name,
+               Lutris slug, Heroic app via GamesConfig winePrefix) for
+               the launch router (issue 060).
+   launchercli/ owner-CLI launch backends (Linux only, issue 060):
+               pure argv builders + detached spawn for bottles-cli
+               (run -b <bottle> -e <exe>), lutris (rungame/<slug>),
+               heroic (launch <app>), flatpak forms via flatpak run;
+               unroutable owners error naming the remedy. The cmd hook
+               (Deps.UmuLauncher) is the router: per-game/global route
+               override → auto = owner CLI when the prefix is owned,
+               else umu-run; the UmuEnabled toggle gates only the umu
+               backend and raw PE exec never reaches launch/.
    launch/     per-store per-OS command table (pure Command fn) + detached
                spawn (build-tagged spawners; Start + Process.Release, never
                Wait). Steam steam://rungameid (Proton is Steam's business),

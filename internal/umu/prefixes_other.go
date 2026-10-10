@@ -8,5 +8,5 @@ import "context"
 // concept and the launch path that consumes them is Linux-only.
 func FindPrefixes(_ context.Context) []Prefix { return nil }
 
-// PrefixSource finds nothing off-Linux (see FindPrefixes).
-func PrefixSource(_ context.Context, _ string) string { return "" }
+// LookupPrefix finds nothing off-Linux (see FindPrefixes).
+func LookupPrefix(_ context.Context, _ string) (Prefix, bool) { return Prefix{}, false }

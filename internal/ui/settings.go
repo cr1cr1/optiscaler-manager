@@ -181,6 +181,63 @@ func (s *Session) UmuPrefixFor(gameDir string) string {
 	return st.UmuPrefixPath
 }
 
+// SetLaunchRoute sets the global default launch route ("", "umu",
+// "owner"; "" = Auto). Persisted (issue 060).
+func (s *Session) SetLaunchRoute(route string) {
+	msg := "launch route: auto"
+	if route != "" {
+		msg = "launch route: " + route
+	}
+	s.updateSettings(func(st *settings.Settings) bool {
+		st.LaunchRoute = route
+		return true
+	}, msg, "")
+}
+
+// SetLaunchRouteOverride pins the launch route for one game (keyed by
+// canonical install dir, the PrefixOverrides precedent); an empty route
+// clears the pin. Persisted.
+func (s *Session) SetLaunchRouteOverride(gameDir, route string) {
+	dir := canonicalDir(gameDir)
+	if s.findRow(dir) == nil {
+		s.toast("unknown game: "+gameDir, true)
+		return
+	}
+	s.updateSettings(func(st *settings.Settings) bool {
+		if route == "" {
+			delete(st.LaunchRouteOverrides, dir)
+		} else {
+			if st.LaunchRouteOverrides == nil {
+				st.LaunchRouteOverrides = map[string]string{}
+			}
+			st.LaunchRouteOverrides[dir] = route
+		}
+		return true
+	}, "", "")
+	msg := "launch route cleared: " + s.findRow(dir).Title
+	if route != "" {
+		msg = "launch route: " + route + " (" + s.findRow(dir).Title + ")"
+	}
+	s.toast(msg, false)
+}
+
+// LaunchRoutePin returns the per-game pinned route for dir ("" when the
+// game has no override — the per-game control's current value).
+func (s *Session) LaunchRoutePin(gameDir string) string {
+	return s.Settings().LaunchRouteOverrides[canonicalDir(gameDir)]
+}
+
+// LaunchRouteFor returns the effective launch route for a game: the
+// per-game override when set, else the global LaunchRoute default, else
+// "" (Auto). The launch router reads this at launch time (issue 060).
+func (s *Session) LaunchRouteFor(gameDir string) string {
+	st := s.Settings()
+	if r := st.LaunchRouteOverrides[canonicalDir(gameDir)]; r != "" {
+		return r
+	}
+	return st.LaunchRoute
+}
+
 // SetActiveFork selects the OptiScaler distribution source installs and
 // switches download from (persisted). The GitHub client is rebuilt
 // through the NewGH factory, and the fork-scoped memos (startup latest

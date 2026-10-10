@@ -31,17 +31,20 @@ func (s *Session) doLaunch(gameDir string) {
 		return
 	}
 
-	// umu-launcher short-circuit: when the feature is enabled AND an
-	// umu hook is wired (production: umu-run detected) AND the target
-	// is umu-eligible (Linux + umu store + Windows binary), bypass
-	// the regular Launcher entirely. The hook owns env-var setup and
-	// stderr-scanning for umu's exit-0-on-fatal-error quirk.
-	if s.shouldUseUmu(row) {
-		if err := s.deps.UmuLauncher(context.Background(), *row); err != nil {
+	// Windows-binary short-circuit: when a router hook is wired
+	// (production: always on Linux) AND the target is umu-eligible
+	// (Linux + umu store + Windows binary), bypass the regular
+	// Launcher entirely — raw PE exec lands in the kernel's binfmt
+	// (mono) and hangs. The hook routes to the prefix owner's CLI or
+	// umu-run per the route setting (issue 060) and owns env-var setup
+	// and stderr-scanning for umu's exit-0-on-fatal-error quirk.
+	if s.shouldRouteWinBinary(row) {
+		via, err := s.deps.UmuLauncher(context.Background(), *row)
+		if err != nil {
 			s.launchFailed(err, gameDir)
 			return
 		}
-		what := "Launch requested: " + row.Title + " (via umu-launcher)"
+		what := "Launch requested: " + row.Title + " (via " + via + ")"
 		s.setStatusGame(gameDir, what)
 		s.toast(what, false)
 		s.emit(Event{Kind: EvOpDone, Text: what, GameDir: gameDir})
@@ -69,20 +72,19 @@ func (s *Session) UmuPlatform() bool {
 	return goos == "linux"
 }
 
-// shouldUseUmu reports whether the umu-launcher path should be taken
-// for this launch. The checks are: the setting is on, a hook is wired,
-// we're on Linux, the row is a game the regular Launcher can only run
-// through Windows-store verbs (manual, or Heroic-discovered Epic/GOG —
-// their Linux store URLs are best-effort at best), and its ExePath is a
+// shouldRouteWinBinary reports whether the Windows-binary launch
+// router takes this launch. The checks are: a hook is wired, we're on
+// Linux, the row is a game the regular Launcher can only run through
+// Windows-store verbs (manual, or Heroic-discovered Epic/GOG — their
+// Linux store URLs are best-effort at best), and its ExePath is a
 // Windows binary (PE MZ header or .exe/.bat/.cmd/.msi extension).
-func (s *Session) shouldUseUmu(row *GameRow) bool {
+// UmuEnabled is intentionally NOT a gate: it only controls the umu
+// backend inside the router (issue 060).
+func (s *Session) shouldRouteWinBinary(row *GameRow) bool {
 	if s.deps.UmuLauncher == nil {
 		return false
 	}
 	if !s.UmuPlatform() {
-		return false
-	}
-	if !s.Settings().UmuEnabled {
 		return false
 	}
 	switch row.Store {

@@ -4,34 +4,40 @@ package umu
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 )
 
-// PrefixSource returns the FindPrefixes source of the prefix at path
-// ("" when the scan does not know it): the launch hook uses it to pick
-// the runner from the same launcher as the prefix (issue 059).
-func PrefixSource(ctx context.Context, path string) string {
+// LookupPrefix returns the FindPrefixes entry for the prefix at path
+// (not-ok when the scan does not know it): the launch hook uses the
+// source to pick the runner from the same launcher as the prefix
+// (issue 059) and the owner ref/flatpak flag to route the launch to
+// the owning launcher's CLI (issue 060).
+func LookupPrefix(ctx context.Context, path string) (Prefix, bool) {
 	if path == "" {
-		return ""
+		return Prefix{}, false
 	}
 	for _, p := range FindPrefixes(ctx) {
 		if p.Path == path {
-			return p.Source
+			return p, true
 		}
 	}
-	return ""
+	return Prefix{}, false
 }
 
 // prefixContainer is a directory whose children may be wine prefixes.
 // pfx marks Steam's compatdata layout, where the child holds the prefix
 // in <child>/pfx and is named after the appmanifest when one exists.
+// flatpak marks roots under a Flatpak app's ~/.var/app tree so the
+// launch router invokes the Flatpak CLI form (issue 060).
 type prefixContainer struct {
-	root   string
-	source string
-	pfx    bool
+	root    string
+	source  string
+	pfx     bool
+	flatpak bool
 }
 
 // FindPrefixes scans the known prefix locations for existing wine
@@ -60,38 +66,38 @@ func FindPrefixes(_ context.Context) []Prefix {
 	var containers []prefixContainer
 	if home != "" {
 		containers = append(containers,
-			prefixContainer{filepath.Join(home, "Games", "Heroic", "Prefixes"), "heroic", false},
-			prefixContainer{filepath.Join(home, ".var", "app", "com.heroicgameslauncher.hgl", "Games", "Heroic", "Prefixes"), "heroic", false},
-			prefixContainer{filepath.Join(home, ".var", "app", "com.usebottles.bottles", "data", "bottles", "bottles"), "bottles", false},
-			prefixContainer{filepath.Join(home, ".PlayOnLinux", "wineprefix"), "playonlinux", false},
-			prefixContainer{filepath.Join(home, ".cxoffice"), "crossover", false},
+			prefixContainer{filepath.Join(home, "Games", "Heroic", "Prefixes"), "heroic", false, false},
+			prefixContainer{filepath.Join(home, ".var", "app", "com.heroicgameslauncher.hgl", "Games", "Heroic", "Prefixes"), "heroic", false, true},
+			prefixContainer{filepath.Join(home, ".var", "app", "com.usebottles.bottles", "data", "bottles", "bottles"), "bottles", false, true},
+			prefixContainer{filepath.Join(home, ".PlayOnLinux", "wineprefix"), "playonlinux", false, false},
+			prefixContainer{filepath.Join(home, ".cxoffice"), "crossover", false, false},
 		)
 	}
 	if xdgData != "" {
 		containers = append(containers,
-			prefixContainer{filepath.Join(xdgData, "bottles", "bottles"), "bottles", false},
+			prefixContainer{filepath.Join(xdgData, "bottles", "bottles"), "bottles", false, false},
 		)
 	}
 	// Bottles with a user-chosen bottles directory: data.yml (next to the
 	// default bottles/ root, native or Flatpak) names it via
 	// custom_bottles_path, and prefixes live directly under it (issue 053).
-	for _, dataYML := range []string{
+	for i, dataYML := range []string{
 		filepath.Join(xdgData, "bottles", "data.yml"),
 		filepath.Join(home, ".var", "app", "com.usebottles.bottles", "data", "bottles", "data.yml"),
 	} {
 		if root := bottlesCustomPath(dataYML); root != "" {
-			containers = append(containers, prefixContainer{root, "bottles", false})
+			containers = append(containers, prefixContainer{root, "bottles", false, i == 1})
 		}
 	}
 	for _, r := range steamLibraryRoots(home, xdgData) {
 		containers = append(containers,
-			prefixContainer{filepath.Join(r, "steamapps", "compatdata"), "steam", true},
+			prefixContainer{filepath.Join(r, "steamapps", "compatdata"), "steam", true, false},
 		)
 	}
 
 	var out []Prefix
 	seen := map[string]bool{}
-	add := func(name, path, source string) {
+	add := func(name, path, source, ownerRef string, flatpak bool) {
 		if !isWinePrefix(path) {
 			return
 		}
@@ -103,8 +109,12 @@ func FindPrefixes(_ context.Context) []Prefix {
 			return
 		}
 		seen[key] = true
-		out = append(out, Prefix{Name: name, Path: path, Source: source})
+		out = append(out, Prefix{Name: name, Path: path, Source: source, OwnerRef: ownerRef, Flatpak: flatpak})
 	}
+	// Heroic's GamesConfig maps explicit winePrefix paths to app names
+	// for the owner ref (issue 060); unmapped prefixes fall back to the
+	// directory name.
+	heroicApps := heroicWinePrefixes(home, xdgConfig)
 	for _, c := range containers {
 		entries, err := os.ReadDir(c.root)
 		if err != nil {
@@ -122,10 +132,21 @@ func FindPrefixes(_ context.Context) []Prefix {
 					name = n
 				}
 			}
-			add(name, dir, c.source)
+			ownerRef := ""
+			switch c.source {
+			case "bottles":
+				ownerRef = e.Name() // bottle name == dir name
+			case "heroic":
+				ownerRef = heroicApps[dir]
+				if ownerRef == "" {
+					ownerRef = e.Name()
+				}
+			}
+			add(name, dir, c.source, ownerRef, c.flatpak)
 		}
 	}
 	for _, cfgDir := range lutrisConfigDirs(home, xdgConfig) {
+		flatpak := strings.Contains(cfgDir, string(filepath.Separator)+".var"+string(filepath.Separator))
 		entries, err := os.ReadDir(cfgDir)
 		if err != nil {
 			continue
@@ -138,14 +159,15 @@ func FindPrefixes(_ context.Context) []Prefix {
 			if prefix == "" {
 				continue
 			}
+			stem := strings.TrimSuffix(e.Name(), ".yml")
 			if name == "" {
-				name = strings.TrimSuffix(e.Name(), ".yml")
+				name = stem
 			}
-			add(name, prefix, "lutris")
+			add(name, prefix, "lutris", lutrisSlug(stem), flatpak)
 		}
 	}
 	if home != "" {
-		add("default", filepath.Join(home, ".wine"), "wine")
+		add("default", filepath.Join(home, ".wine"), "wine", "", false)
 	}
 	return out
 }
@@ -235,4 +257,59 @@ func unquoteYAML(s string) string {
 func isWinePrefix(dir string) bool {
 	st, err := os.Stat(filepath.Join(dir, "drive_c"))
 	return err == nil && st.IsDir()
+}
+
+// lutrisSlug derives the Lutris game slug from a per-game config
+// filename stem: Lutris names the files <slug>-<unix-timestamp>.yml,
+// so a trailing "-<digits>" is stripped when present.
+func lutrisSlug(stem string) string {
+	if i := strings.LastIndex(stem, "-"); i > 0 {
+		if suf := stem[i+1:]; suf != "" {
+			digits := true
+			for _, r := range suf {
+				if r < '0' || r > '9' {
+					digits = false
+					break
+				}
+			}
+			if digits {
+				return stem[:i]
+			}
+		}
+	}
+	return stem
+}
+
+// heroicWinePrefixes maps explicit winePrefix paths from Heroic's
+// GamesConfig (*.json, native and Flatpak config dirs) to app names
+// (the json filename stem). Heroic writes flat per-game settings; two
+// flat keys don't justify a schema beyond the one field.
+func heroicWinePrefixes(home, xdgConfig string) map[string]string {
+	out := map[string]string{}
+	for _, dir := range []string{
+		filepath.Join(xdgConfig, "heroic", "GamesConfig"),
+		filepath.Join(home, ".var", "app", "com.heroicgameslauncher.hgl", "config", "heroic", "GamesConfig"),
+	} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				continue
+			}
+			var cfg struct {
+				WinePrefix string `json:"winePrefix"`
+			}
+			if json.Unmarshal(data, &cfg) != nil || cfg.WinePrefix == "" {
+				continue
+			}
+			out[cfg.WinePrefix] = strings.TrimSuffix(e.Name(), ".json")
+		}
+	}
+	return out
 }

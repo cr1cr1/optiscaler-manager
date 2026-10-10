@@ -246,13 +246,16 @@ type Deps struct {
 	GOOS string
 }
 
-// UmuLauncherHook launches a manual or Heroic Epic/GOG Windows binary via
-// umu-run.
-// Returning nil means the launch was requested; a non-nil error is
-// surfaced as a launch failure (EvOpFailed + warn toast). The hook
-// must NOT fall back to the regular Launcher — that's the caller's job
-// when the hook itself is nil.
-type UmuLauncherHook func(ctx context.Context, row GameRow) error
+// UmuLauncherHook is the Windows-binary launch router (issue 060):
+// Returning a nil error means the launch was requested; a non-nil
+// error is surfaced as a launch failure (EvOpFailed + warn toast). The
+// hook must NOT fall back to the regular Launcher — raw PE exec on
+// Linux lands in the kernel's binfmt (mono) and hangs.
+// despite the name it owns every manual/Heroic-store PE launch on
+// Linux, routing to the prefix owner's CLI (bottles-cli, lutris,
+// heroic) or to umu-run per the route setting. via names the chosen
+// backend for the status line.
+type UmuLauncherHook func(ctx context.Context, row GameRow) (via string, err error)
 
 // Session is the frontend-agnostic interactive core.
 type Session struct {

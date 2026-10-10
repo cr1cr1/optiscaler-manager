@@ -87,7 +87,9 @@ func TestFindPrefixes_BottlesCustomPath(t *testing.T) {
 
 // TestPrefixSource: the launch hook learns a resolved prefix's owning
 // launcher from the scan so the runner can follow it (issue 059).
-func TestPrefixSource(t *testing.T) {
+// LookupPrefix returns the whole Prefix (owner ref + flatpak flag) for
+// the launch router (issue 060).
+func TestLookupPrefix(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", "")
@@ -95,11 +97,70 @@ func TestPrefixSource(t *testing.T) {
 
 	bottle := mkPrefix(t, filepath.Join(home, ".local", "share", "bottles", "bottles", "mybottle"))
 
-	if got := PrefixSource(context.Background(), bottle); got != "bottles" {
-		t.Errorf("PrefixSource(%q) = %q, want bottles", bottle, got)
+	p, ok := LookupPrefix(context.Background(), bottle)
+	if !ok || p.Source != "bottles" {
+		t.Errorf("LookupPrefix(%q) = %+v, %v, want bottles prefix", bottle, p, ok)
 	}
-	if got := PrefixSource(context.Background(), filepath.Join(home, "nowhere")); got != "" {
-		t.Errorf("PrefixSource(unknown) = %q, want empty", got)
+	if _, ok := LookupPrefix(context.Background(), filepath.Join(home, "nowhere")); ok {
+		t.Error("LookupPrefix(unknown) found something, want not-ok")
+	}
+}
+
+// TestFindPrefixes_OwnerRefs: prefixes carry enough owner identity for
+// the launch router to invoke the owning launcher's CLI (issue 060):
+// the bottle name for Bottles, the game slug for Lutris, the Heroic
+// app name (GamesConfig winePrefix mapping, else the dir name), and a
+// Flatpak flag when the prefix lives under a Flatpak app's root.
+func TestFindPrefixes_OwnerRefs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	nativeBottle := mkPrefix(t, filepath.Join(home, ".local", "share", "bottles", "bottles", "mybottle"))
+	flatBottle := mkPrefix(t, filepath.Join(home, ".var", "app", "com.usebottles.bottles", "data", "bottles", "bottles", "flatbottle"))
+	heroicDir := mkPrefix(t, filepath.Join(home, "Games", "Heroic", "Prefixes", "Fortnite"))
+	heroicUnmapped := mkPrefix(t, filepath.Join(home, "Games", "Heroic", "Prefixes", "SideGame"))
+	flatHeroic := mkPrefix(t, filepath.Join(home, ".var", "app", "com.heroicgameslauncher.hgl", "Games", "Heroic", "Prefixes", "FlatGame"))
+	writeFile(t, filepath.Join(home, ".config", "heroic", "GamesConfig", "Fortnite.json"),
+		`{"appName":"Fortnite","winePrefix":"`+heroicDir+`"}`)
+	lutrisPfx := mkPrefix(t, filepath.Join(home, "Games", "lutris-game", "pfx"))
+	writeFile(t, filepath.Join(home, ".config", "lutris", "games", "my-game-1681234567.yml"),
+		"name: My Game\ngame:\n  prefix: "+lutrisPfx+"\n")
+	flatLutrisPfx := mkPrefix(t, filepath.Join(home, "Games", "flat-lutris", "pfx"))
+	writeFile(t, filepath.Join(home, ".var", "app", "net.lutris.Lutris", "config", "lutris", "games", "flat-game-1681234999.yml"),
+		"name: Flat Game\ngame:\n  prefix: "+flatLutrisPfx+"\n")
+	steamPfx := mkPrefix(t, filepath.Join(home, ".steam", "steam", "steamapps", "compatdata", "12345", "pfx"))
+	wine := mkPrefix(t, filepath.Join(home, ".wine"))
+
+	got := FindPrefixes(context.Background())
+	byPath := map[string]Prefix{}
+	for _, p := range got {
+		byPath[p.Path] = p
+	}
+	checks := []struct {
+		path, ref string
+		flatpak   bool
+	}{
+		{nativeBottle, "mybottle", false},
+		{flatBottle, "flatbottle", true},
+		{heroicDir, "Fortnite", false},      // GamesConfig mapping
+		{heroicUnmapped, "SideGame", false}, // fallback: dir name
+		{flatHeroic, "FlatGame", true},
+		{lutrisPfx, "my-game", false}, // slug: filename stem minus -<digits>
+		{flatLutrisPfx, "flat-game", true},
+		{steamPfx, "", false}, // unroutable by design
+		{wine, "", false},
+	}
+	for _, c := range checks {
+		p, ok := byPath[c.path]
+		if !ok {
+			t.Errorf("missing prefix %q (got %v)", c.path, got)
+			continue
+		}
+		if p.OwnerRef != c.ref || p.Flatpak != c.flatpak {
+			t.Errorf("prefix %q = {OwnerRef:%q Flatpak:%v}, want {%q %v}", c.path, p.OwnerRef, p.Flatpak, c.ref, c.flatpak)
+		}
 	}
 }
 

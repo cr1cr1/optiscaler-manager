@@ -69,6 +69,8 @@ func newSession(d *Deps) *ui.Session {
 	// global default) at launch time; the indirection lets the session
 	// (constructed below) become the resolver once it exists.
 	pinPrefix := func(string) string { return "" }
+	routeFor := func(string) string { return "" }
+	umuAllowed := func() bool { return false }
 	sess := ui.NewSession(ui.Deps{
 		Store:        d.Store,
 		GH:           d.GH,
@@ -84,9 +86,15 @@ func newSession(d *Deps) *ui.Session {
 		PCGW:         pcgwClient,
 		GOG:          gogClient,
 		Launcher:     d.Launcher, // nil selects the platform default
-		UmuLauncher:  newUmuLauncher(func(dir string) string { return pinPrefix(dir) }),
+		UmuLauncher: newUmuLauncher(
+			func(dir string) string { return pinPrefix(dir) },
+			func(dir string) string { return routeFor(dir) },
+			func() bool { return umuAllowed() },
+		),
 	})
 	pinPrefix = sess.UmuPrefixFor
+	routeFor = sess.LaunchRouteFor
+	umuAllowed = func() bool { return sess.Settings().UmuEnabled }
 	return sess
 }
 

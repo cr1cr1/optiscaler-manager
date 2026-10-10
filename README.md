@@ -239,6 +239,21 @@ Lutris per-game configs, PlayOnLinux `wineprefix/`, CrossOver
 failures log the game, binary, prefix, runner, and umu's stderr tail
 to the console.
 
+**One prefix, one owner.** A prefix managed by another launcher is
+launched by that launcher, never by umu: a game pinned to (or living
+inside) a Bottles prefix runs through `bottles-cli run -b <bottle> -e
+<exe>`, Lutris through `lutris lutris:rungame/<slug>`, Heroic through
+`heroic launch <app>` (Flatpak installs use their `flatpak run` forms).
+Only unowned prefixes — the app-managed per-game ones, `~/.wine`, or
+unrecognized — go through `umu-run` (which requires the umu toggle on
+and `umu-run` installed). This is the default **Auto** launch route;
+the Settings dropdown sets the global route and the detail pane (GUI)
+or `e` on the detail screen (TUI) pins a per-game override (`umu` /
+`owner`). A prefix whose owner can't be launched (CLI missing,
+unroutable) fails with an error naming the remedy instead of silently
+falling back — and a Windows binary is never exec'd bare (on systems
+with the mono binfmt registration that lands in mono and hangs).
+
 ### TUI keymap
 
 | Key | Action |

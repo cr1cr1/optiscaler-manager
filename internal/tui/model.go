@@ -85,6 +85,17 @@ func openPrefixPick(sess *ui.Session, dir string, perGame bool) *prefixPick {
 	return &prefixPick{dir: dir, items: items, sel: sel}
 }
 
+// nextRoute cycles the launch route: "" (auto) → "umu" → "owner" → "".
+func nextRoute(route string) string {
+	switch route {
+	case "":
+		return "umu"
+	case "umu":
+		return "owner"
+	}
+	return ""
+}
+
 // Model is the bubbletea model bound to one ui.Session: one flat model with
 // per-screen update/view handlers.
 type Model struct {
@@ -639,6 +650,11 @@ func (m Model) detailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.sess.UmuPlatform() {
 			m.prefix = openPrefixPick(m.sess, dir, true)
 		}
+	case "e":
+		// Per-game launch-route cycle (issue 060), Linux only.
+		if m.sess.UmuPlatform() {
+			m.sess.SetLaunchRouteOverride(dir, nextRoute(m.sess.LaunchRoutePin(dir)))
+		}
 	case "A":
 		if m.sess.CoverOverrideActive(dir) {
 			m.sess.ClearCoverOverride(dir)
@@ -737,6 +753,9 @@ func (m Model) settingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "p":
 		// Global default prefix picker (issue 048), cursor on current.
 		m.prefix = openPrefixPick(m.sess, "", false)
+	case "r":
+		// Global launch-route cycle (issue 060): auto → umu → owner.
+		m.sess.SetLaunchRoute(nextRoute(m.sess.Settings().LaunchRoute))
 	case "x":
 		m.sess.ClearBundleCache()
 	}
