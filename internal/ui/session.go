@@ -222,6 +222,12 @@ type Deps struct {
 	// fixtures.
 	UmuPrefixes func() []umu.Prefix
 
+	// UmuRunners lists the Proton builds detected on disk that the
+	// runner pickers offer (issue 063); nil selects the production scan
+	// (umu.FindRunners over umu.RunnerRoots), which finds nothing
+	// off-Linux. Tests inject fixtures.
+	UmuRunners func() []umu.Runner
+
 	// Steam and ProtonDB feed the online lookup phase of Scan; either nil
 	// skips enrichment entirely.
 	Steam    *steam.Client

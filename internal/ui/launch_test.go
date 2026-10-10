@@ -309,6 +309,55 @@ func TestSessionLaunchRoute(t *testing.T) {
 	}
 }
 
+// TestSessionUmuRunner: the global UmuRunnerPath default persists, a
+// per-game override wins, clearing restores the default, and an empty
+// value means Auto (newest installed) — the LaunchRoute precedent
+// (issue 063).
+func TestSessionUmuRunner(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.SettingsRoot = t.TempDir()
+	e.sess.Scan(t.Context())
+	waitScanDone(t, e.sess)
+	dir := e.gameRoot
+
+	e.sess.SetUmuRunnerPath("/runners/global-proton")
+	if got := e.sess.Settings().UmuRunnerPath; got != "/runners/global-proton" {
+		t.Errorf("UmuRunnerPath = %q, want /runners/global-proton", got)
+	}
+	if got := e.sess.UmuRunnerFor(dir); got != "/runners/global-proton" {
+		t.Errorf("UmuRunnerFor = %q, want the global default", got)
+	}
+
+	e.sess.SetUmuRunnerOverride(dir, "/runners/per-game-proton")
+	if got := e.sess.UmuRunnerPin(dir); got != "/runners/per-game-proton" {
+		t.Errorf("UmuRunnerPin = %q, want /runners/per-game-proton", got)
+	}
+	if got := e.sess.UmuRunnerFor(dir); got != "/runners/per-game-proton" {
+		t.Errorf("UmuRunnerFor = %q, want per-game pin", got)
+	}
+	s, err := settings.Load(e.sess.deps.SettingsRoot)
+	if err != nil {
+		t.Fatalf("settings unreadable: %v", err)
+	}
+	if s.UmuRunnerPath != "/runners/global-proton" || s.RunnerOverrides[canonicalDir(dir)] != "/runners/per-game-proton" {
+		t.Errorf("persisted = %+v, want global + per-game runner", s)
+	}
+
+	e.sess.SetUmuRunnerOverride(dir, "")
+	if got := e.sess.UmuRunnerFor(dir); got != "/runners/global-proton" {
+		t.Errorf("UmuRunnerFor after clear = %q, want the global default", got)
+	}
+	e.sess.SetUmuRunnerPath("")
+	if got := e.sess.UmuRunnerFor(dir); got != "" {
+		t.Errorf("UmuRunnerFor = %q, want empty (Auto)", got)
+	}
+
+	e.sess.SetUmuRunnerOverride("/no/such/game", "/runners/x")
+	if len(e.sess.Settings().RunnerOverrides) != 0 {
+		t.Errorf("override persisted for unknown game: %v", e.sess.Settings().RunnerOverrides)
+	}
+}
+
 // TestSessionLaunch_ManualWindowsGameFallsBackWhenNoUmuLauncher: the
 // hook being nil (production default on non-Linux or when umu-run isn't
 // installed) means regular Launcher runs even if UmuEnabled is on.

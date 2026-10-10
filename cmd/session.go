@@ -71,6 +71,7 @@ func newSession(d *Deps) *ui.Session {
 	pinPrefix := func(string) string { return "" }
 	routeFor := func(string) string { return "" }
 	umuAllowed := func() bool { return false }
+	runnerFor := func(string) string { return "" }
 	sess := ui.NewSession(ui.Deps{
 		Store:        d.Store,
 		GH:           d.GH,
@@ -91,11 +92,13 @@ func newSession(d *Deps) *ui.Session {
 			func(dir string) string { return routeFor(dir) },
 			func() bool { return umuAllowed() },
 			filepath.Join(d.DataRoot, "logs"),
+			func(dir string) string { return runnerFor(dir) },
 		),
 	})
 	pinPrefix = sess.UmuPrefixFor
 	routeFor = sess.LaunchRouteFor
 	umuAllowed = func() bool { return sess.Settings().UmuEnabled }
+	runnerFor = sess.UmuRunnerFor
 	return sess
 }
 

@@ -238,6 +238,77 @@ func (s *Session) LaunchRouteFor(gameDir string) string {
 	return st.LaunchRoute
 }
 
+// UmuRunners returns the detected Proton builds the runner pickers
+// offer (issue 063), from the injected deps provider or the production
+// disk scan.
+func (s *Session) UmuRunners() []umu.Runner {
+	s.mu.Lock()
+	fn := s.deps.UmuRunners
+	s.mu.Unlock()
+	if fn != nil {
+		return fn()
+	}
+	return umu.FindRunners(context.Background(), umu.RunnerRoots())
+}
+
+// SetUmuRunnerPath sets the global default Proton build for umu
+// launches. An empty value means Auto (newest detected). Persisted.
+func (s *Session) SetUmuRunnerPath(path string) {
+	msg := "umu runner: auto"
+	if path != "" {
+		msg = "umu runner: " + path
+	}
+	s.updateSettings(func(st *settings.Settings) bool {
+		st.UmuRunnerPath = path
+		return true
+	}, msg, "")
+}
+
+// SetUmuRunnerOverride pins the Proton build for one game (keyed by
+// canonical install dir, the PrefixOverrides precedent); an empty path
+// clears the pin. Persisted.
+func (s *Session) SetUmuRunnerOverride(gameDir, path string) {
+	dir := canonicalDir(gameDir)
+	if s.findRow(dir) == nil {
+		s.toast("unknown game: "+gameDir, true)
+		return
+	}
+	s.updateSettings(func(st *settings.Settings) bool {
+		if path == "" {
+			delete(st.RunnerOverrides, dir)
+		} else {
+			if st.RunnerOverrides == nil {
+				st.RunnerOverrides = map[string]string{}
+			}
+			st.RunnerOverrides[dir] = path
+		}
+		return true
+	}, "", "")
+	msg := "umu runner cleared: " + s.findRow(dir).Title
+	if path != "" {
+		msg = "umu runner: " + path
+	}
+	s.toast(msg, false)
+}
+
+// UmuRunnerPin returns the per-game pinned runner for dir ("" when the
+// game has no override — the per-game picker's current value).
+func (s *Session) UmuRunnerPin(gameDir string) string {
+	return s.Settings().RunnerOverrides[canonicalDir(gameDir)]
+}
+
+// UmuRunnerFor returns the effective pinned runner for a game: the
+// per-game override when set, else the global UmuRunnerPath default,
+// else "" (Auto). The launch router reads this at launch time
+// (issue 063).
+func (s *Session) UmuRunnerFor(gameDir string) string {
+	st := s.Settings()
+	if p := st.RunnerOverrides[canonicalDir(gameDir)]; p != "" {
+		return p
+	}
+	return st.UmuRunnerPath
+}
+
 // SetActiveFork selects the OptiScaler distribution source installs and
 // switches download from (persisted). The GitHub client is rebuilt
 // through the NewGH factory, and the fork-scoped memos (startup latest

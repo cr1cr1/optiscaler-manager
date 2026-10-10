@@ -84,6 +84,18 @@ type Settings struct {
 	// dir (the PrefixOverrides precedent); deleting the key restores
 	// the default resolution.
 	LaunchRouteOverrides map[string]string `json:"launch_route_overrides,omitempty"`
+	// UmuRunnerPath is the global default Proton build for umu launches
+	// (issue 063): a runner directory from one of the detected roots
+	// (Steam compatibilitytools.d, Bottles/Lutris runners, Heroic
+	// tools/proton). Empty (default) means Auto: the newest detected
+	// build, else umu-run's own default. Per-game pins in
+	// RunnerOverrides win over this default. Only umu launches use it —
+	// owner-CLI launches run on the launcher's own configured runner.
+	UmuRunnerPath string `json:"umu_runner_path,omitempty"`
+	// RunnerOverrides pins the Proton build per canonical install dir
+	// (the PrefixOverrides precedent); deleting the key restores the
+	// default resolution.
+	RunnerOverrides map[string]string `json:"runner_overrides,omitempty"`
 	// SteamGridDBKey is the personal SteamGridDB API key enabling the
 	// SteamGridDB cover source (issue 024): grids for games Steam's CDN
 	// has no art for, and alias-aware name search. Empty (default)
@@ -136,6 +148,8 @@ func Load(root string) (Settings, error) {
 		PrefixOverrides      map[string]string `json:"prefix_overrides,omitempty"`
 		LaunchRoute          string            `json:"launch_route,omitempty"`
 		LaunchRouteOverrides map[string]string `json:"launch_route_overrides,omitempty"`
+		UmuRunnerPath        string            `json:"umu_runner_path,omitempty"`
+		RunnerOverrides      map[string]string `json:"runner_overrides,omitempty"`
 		SteamGridDBKey       string            `json:"steamgriddb_key,omitempty"`
 		Forks                []Fork            `json:"forks,omitempty"`
 		ActiveFork           string            `json:"active_fork,omitempty"`
@@ -156,6 +170,8 @@ func Load(root string) (Settings, error) {
 		PrefixOverrides:      raw.PrefixOverrides,
 		LaunchRoute:          raw.LaunchRoute,
 		LaunchRouteOverrides: raw.LaunchRouteOverrides,
+		UmuRunnerPath:        raw.UmuRunnerPath,
+		RunnerOverrides:      raw.RunnerOverrides,
 		SteamGridDBKey:       raw.SteamGridDBKey,
 		Forks:                raw.Forks,
 		ActiveFork:           raw.ActiveFork,

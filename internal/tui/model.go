@@ -85,6 +85,27 @@ func openPrefixPick(sess *ui.Session, dir string, perGame bool) *prefixPick {
 	return &prefixPick{dir: dir, items: items, sel: sel}
 }
 
+// openRunnerPick builds the runner picker with the cursor on the
+// current value (issue 063), the openPrefixPick precedent: the global
+// default (perGame=false) or a game's pin.
+func openRunnerPick(sess *ui.Session, dir string, perGame bool) *prefixPick {
+	autoLabel := "Auto (newest installed)"
+	current := sess.Settings().UmuRunnerPath
+	if perGame {
+		autoLabel = "Auto (inherit)"
+		current = sess.UmuRunnerPin(dir)
+	}
+	items := ui.UmuRunnerRows(autoLabel, current, sess.UmuRunners())
+	sel := 0
+	for i, it := range items {
+		if it.Value == current {
+			sel = i
+			break
+		}
+	}
+	return &prefixPick{dir: dir, items: items, sel: sel}
+}
+
 // nextRoute cycles the launch route: "" (auto) → "umu" → "owner" → "".
 func nextRoute(route string) string {
 	switch route {
@@ -123,6 +144,7 @@ type Model struct {
 	backups         []stagedItem // detail dir's DLSS backups (menu + modal)
 	restore         *restorePick // open restore-backup modal
 	prefix          *prefixPick  // open umu prefix picker modal
+	runner          *prefixPick  // open umu runner picker modal (issue 063)
 }
 
 // restorePick is the open restore-backup modal: the detail dir, its cached
@@ -472,6 +494,33 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// The umu runner picker is modal, the prefix picker's discipline
+	// (issue 063): only its navigation keys are accepted until it
+	// closes.
+	if m.runner != nil {
+		switch msg.String() {
+		case "j", "down":
+			if m.runner.sel < len(m.runner.items)-1 {
+				m.runner.sel++
+			}
+		case "k", "up":
+			if m.runner.sel > 0 {
+				m.runner.sel--
+			}
+		case "enter":
+			pick := m.runner
+			m.runner = nil
+			if pick.dir == "" {
+				m.sess.SetUmuRunnerPath(pick.items[pick.sel].Value)
+			} else {
+				m.sess.SetUmuRunnerOverride(pick.dir, pick.items[pick.sel].Value)
+			}
+		case "esc":
+			m.runner = nil
+		}
+		return m, nil
+	}
+
 	// The restore-backup picker is modal: only its navigation keys are
 	// accepted until it is closed, so no staged pick, screen switch, or
 	// quit can fire underneath it.
@@ -655,6 +704,11 @@ func (m Model) detailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.sess.UmuPlatform() {
 			m.sess.SetLaunchRouteOverride(dir, nextRoute(m.sess.LaunchRoutePin(dir)))
 		}
+	case "n":
+		// Per-game umu runner picker (issue 063), Linux only.
+		if m.sess.UmuPlatform() {
+			m.runner = openRunnerPick(m.sess, dir, true)
+		}
 	case "A":
 		if m.sess.CoverOverrideActive(dir) {
 			m.sess.ClearCoverOverride(dir)
@@ -756,6 +810,9 @@ func (m Model) settingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		// Global launch-route cycle (issue 060): auto → umu → owner.
 		m.sess.SetLaunchRoute(nextRoute(m.sess.Settings().LaunchRoute))
+	case "n":
+		// Global umu runner picker (issue 063), cursor on current.
+		m.runner = openRunnerPick(m.sess, "", false)
 	case "x":
 		m.sess.ClearBundleCache()
 	}

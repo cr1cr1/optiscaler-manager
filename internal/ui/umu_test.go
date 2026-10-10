@@ -13,6 +13,76 @@ var testPrefixes = []umu.Prefix{
 	{Name: "mybottle", Path: "/home/me/.local/share/bottles/bottles/mybottle", Source: "bottles"},
 }
 
+var testRunners = []umu.Runner{
+	{Name: "UMU-Proton-10.0-4", Path: "/runners/UMU-Proton-10.0-4", Source: "steam"},
+	{Name: "soda-9.0-1", Path: "/runners/soda-9.0-1", Source: "bottles"},
+}
+
+// TestUmuRunnerRowsComposition: the runner picker rows mirror the
+// prefix picker (issue 063): Auto row first, detected runners in scan
+// order rendered "Launcher: runner", plus a Custom row for a pin that
+// matches no detected runner.
+func TestUmuRunnerRowsComposition(t *testing.T) {
+	labels := func(rows []UmuPickerOption) []string {
+		out := make([]string, len(rows))
+		for i, r := range rows {
+			out[i] = UmuPickerRowLabel(r)
+		}
+		return out
+	}
+
+	auto := UmuRunnerRows("Auto (newest)", "", testRunners)
+	if got, want := labels(auto), []string{"Auto (newest)", "Steam: UMU-Proton-10.0-4", "Bottles: soda-9.0-1"}; !slices.Equal(got, want) {
+		t.Errorf("rows(empty) = %v, want %v", got, want)
+	}
+
+	known := UmuRunnerRows("Auto (newest)", testRunners[1].Path, testRunners)
+	if len(known) != 3 {
+		t.Errorf("rows(known pin) = %d rows, want 3 (no Custom row)", len(known))
+	}
+
+	custom := UmuRunnerRows("Auto (inherit)", "/elsewhere/proton", testRunners)
+	last := custom[len(custom)-1]
+	if last.Value != "/elsewhere/proton" || last.Source != "custom" {
+		t.Errorf("Custom row = %+v, want value/source for /elsewhere/proton", last)
+	}
+
+	if got := UmuRunnerLabel("Auto (newest)", "", testRunners); got != "Auto (newest)" {
+		t.Errorf("label(empty) = %q, want Auto (newest)", got)
+	}
+	if got := UmuRunnerLabel("Auto (newest)", testRunners[0].Path, testRunners); got != "Steam: UMU-Proton-10.0-4" {
+		t.Errorf("label(known) = %q, want Steam: UMU-Proton-10.0-4", got)
+	}
+	if got := UmuRunnerLabel("Auto (newest)", "/elsewhere/proton", testRunners); got != "Custom: /elsewhere/proton" {
+		t.Errorf("label(unknown) = %q, want Custom: /elsewhere/proton", got)
+	}
+}
+
+// TestSessionUmuRunners_UsesInjectedProvider: the frontends read the
+// runner picker entries from the injected deps provider verbatim.
+func TestSessionUmuRunners_UsesInjectedProvider(t *testing.T) {
+	e := newTestEnv(t)
+	e.sess.deps.UmuRunners = func() []umu.Runner { return testRunners }
+
+	got := e.sess.UmuRunners()
+	if len(got) != len(testRunners) || got[0] != testRunners[0] || got[1] != testRunners[1] {
+		t.Errorf("UmuRunners() = %v, want %v", got, testRunners)
+	}
+}
+
+// TestSessionUmuRunners_NilProviderFallsBackToScan: without an injected
+// provider the production scan runs; on an empty HOME it finds nothing.
+func TestSessionUmuRunners_NilProviderFallsBackToScan(t *testing.T) {
+	e := newTestEnv(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	if got := e.sess.UmuRunners(); len(got) != 0 {
+		t.Errorf("UmuRunners() = %v, want none on an empty HOME", got)
+	}
+}
+
 // TestUmuPickerRowsComposition: the shared picker rows are the Auto row
 // first (with the caller's label), then the detected prefixes in scan
 // order, plus a Custom row when the pinned path matches no detected

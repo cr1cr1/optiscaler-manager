@@ -203,7 +203,14 @@ internal/
                (Deps.UmuLauncher) is the router: per-game/global route
                override → auto = owner CLI when the prefix is owned,
                else umu-run; the UmuEnabled toggle gates only the umu
-               backend and raw PE exec never reaches launch/.
+               backend and raw PE exec never reaches launch/. A forced
+               umu route refuses a launcher-owned prefix (issue 062:
+               umu mutates any prefix it launches, so that combination
+               is an error, not corruption). The Proton build is
+               user-pinnable (issue 063: global UmuRunnerPath +
+               per-game RunnerOverrides → ResolveProtonPath's pinned
+               parameter, pickers in both frontends fed by
+               Deps.UmuRunners).
    launchlog/ per-launch log files (issue 061): slugged timestamped
                file under <data-root>/logs headed by the exact argv and
                the env delta, then the child's full stdout/stderr (umu

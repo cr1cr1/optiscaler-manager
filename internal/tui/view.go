@@ -104,6 +104,8 @@ func (m Model) View() string {
 		body = lipgloss.Place(w, contentH, lipgloss.Center, lipgloss.Center, restoreBox(m.restore))
 	} else if m.prefix != nil {
 		body = lipgloss.Place(w, contentH, lipgloss.Center, lipgloss.Center, prefixBox(m.prefix))
+	} else if m.runner != nil {
+		body = lipgloss.Place(w, contentH, lipgloss.Center, lipgloss.Center, runnerBox(m.runner))
 	} else {
 		switch m.screen {
 		case screenDetail:
@@ -215,9 +217,9 @@ func (m Model) footerView(w int) string {
 	var hints string
 	switch m.screen {
 	case screenDetail:
-		hints = "i install · v version · l launch · w prefix · e route · t title · a poster · c cancel · r rollback · o open INI · esc back"
+		hints = "i install · v version · l launch · w prefix · e route · n runner · t title · a poster · c cancel · r rollback · o open INI · esc back"
 	case screenSettings:
-		hints = "e version · t template · a add · d remove · o online info · u umu · p umu prefix · r umu route · x clear cache"
+		hints = "e version · t template · a add · d remove · o online info · u umu · p umu prefix · r umu route · n umu runner · x clear cache"
 	case screenHelp, screenAbout:
 		hints = "q quit"
 	default:
@@ -252,11 +254,23 @@ func restoreBox(p *restorePick) string {
 
 // prefixBox renders the open umu prefix picker as a centered modal.
 func prefixBox(p *prefixPick) string {
+	return pickerOptionsBox("umu wine prefix", p)
+}
+
+// runnerBox renders the open umu runner picker as a centered modal
+// (issue 063).
+func runnerBox(p *prefixPick) string {
+	return pickerOptionsBox("umu Proton runner", p)
+}
+
+// pickerOptionsBox renders a umu options picker (prefix or runner): a
+// badge per launcher source plus the "Launcher: name" row label.
+func pickerOptionsBox(title string, p *prefixPick) string {
 	labels := make([]string, len(p.items))
 	for i, item := range p.items {
 		labels[i] = umuSourceBadge(item.Source) + " " + ui.UmuPickerRowLabel(item)
 	}
-	return pickerBox("umu wine prefix", labels, p.sel, "up/down select · enter pick · esc close")
+	return pickerBox(title, labels, p.sel, "up/down select · enter pick · esc close")
 }
 
 // umuSourceBadge is the TUI menu row's launcher marker (issue 059): a
@@ -632,6 +646,11 @@ func (m Model) settingsView(w, contentH int) string {
 		route = styleMuted.Render("auto")
 	}
 	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("umu launch route:"), trunc(route, w-20))
+	runner := s.UmuRunnerPath
+	if runner == "" {
+		runner = styleMuted.Render("auto")
+	}
+	fmt.Fprintf(&b, "%s %s\n", styleHeader.Render("umu runner:"), trunc(runner, w-20))
 
 	b.WriteString("\n" + styleHeader.Render("OptiScaler sources"))
 	b.WriteString("\n" + styleMuted.Render("  tab: switch list · enter: use · a: add · d: remove") + "\n")

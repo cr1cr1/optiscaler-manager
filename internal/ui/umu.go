@@ -57,6 +57,38 @@ func UmuPickerLabel(autoLabel, current string, prefixes []umu.Prefix) string {
 	return "Custom: " + current
 }
 
+// UmuRunnerRows composes the shared runner picker rows (issue 063),
+// the UmuPickerRows precedent: the Auto row first (autoLabel differs
+// per context), then the detected Proton builds in scan order, plus a
+// Custom row when the pinned path matches no detected runner.
+func UmuRunnerRows(autoLabel, current string, runners []umu.Runner) []UmuPickerOption {
+	rows := []UmuPickerOption{{Value: "", Source: "", Name: autoLabel}}
+	known := current == ""
+	for _, r := range runners {
+		rows = append(rows, UmuPickerOption{Value: r.Path, Source: r.Source, Name: r.Name})
+		known = known || r.Path == current
+	}
+	if !known {
+		rows = append(rows, UmuPickerOption{Value: current, Source: "custom", Name: current})
+	}
+	return rows
+}
+
+// UmuRunnerLabel is the closed runner picker's read-out, the
+// UmuPickerLabel precedent: the Auto label when nothing is pinned,
+// "Launcher: runner" for a known pin, Custom otherwise.
+func UmuRunnerLabel(autoLabel, current string, runners []umu.Runner) string {
+	if current == "" {
+		return autoLabel
+	}
+	for _, r := range runners {
+		if r.Path == current {
+			return UmuSourceName(r.Source) + ": " + r.Name
+		}
+	}
+	return "Custom: " + current
+}
+
 // UmuSourceName maps a prefix source id to its display name; unknown
 // ids render verbatim.
 func UmuSourceName(source string) string {

@@ -616,13 +616,14 @@ func (m *model) detailPanel() {
 						m.sess.RescanGame(e.InstallDir)
 					}
 				})
-				// Per-game umu wine-prefix pin (issue 048) and launch-route
-				// override (issue 060), Linux only.
+				// Per-game umu wine-prefix pin (issue 048), launch-route
+				// override (issue 060), and runner pin (issue 063), Linux only.
 				if m.sess.UmuPlatform() {
 					m.prefixDropdown(e)
 					m.routePicker("detail-launch-route", "Launch: "+routeLabel(m.sess.LaunchRoutePin(e.InstallDir)), m.sess.LaunchRoutePin(e.InstallDir), e.InstallDir, func(v string) {
 						m.sess.SetLaunchRouteOverride(e.InstallDir, v)
 					}, &m.routeDDTriggerRect, &m.routeDDItems, nil)
+					m.runnerDropdown(e)
 				}
 				// Manual identification fixes (issue 028): the title pin and
 				// poster upload moved to the header and the poster itself

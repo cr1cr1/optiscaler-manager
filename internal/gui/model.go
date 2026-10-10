@@ -88,6 +88,14 @@ type model struct {
 	umuRouteOpen          bool                          // launch-route popup open this frame (modal dismiss guard)
 	routeDDTriggerRect    Rect                          // screen rect of the per-game launch-route dropdown (click test seam)
 	routeDDItems          []umuPrefixMenuItem           // open per-game launch-route rows (menu test seam)
+	umuRunnerBuf          string                        // settings-modal umu runner buffer, primed on open (issue 063)
+	umuRunners            []umu.Runner                  // detected Proton builds, scanned once per settings open (picker I/O discipline)
+	umuRunnerTriggerRect  Rect                          // screen rect of the runner dropdown trigger (click test seam)
+	umuRunnerMenuItems    []umuPrefixMenuItem           // open runner dropdown rows (menu test seam)
+	umuRunnerOpen         bool                          // runner popup open this frame (modal dismiss guard)
+	runnerDDTriggerRect   Rect                          // screen rect of the per-game runner dropdown (click test seam)
+	runnerDDItems         []umuPrefixMenuItem           // open per-game runner dropdown rows (menu test seam)
+	runnerDDRunners       []umu.Runner                  // detected runners scanned on the dropdown's opening frame
 	forkSlugBuf           string                        // settings-modal add-fork slug input
 	forkPatternBuf        string                        // settings-modal add-fork asset-glob input
 	titleEditDir          string                        // detail panel: game whose title is being edited ("" = editor closed, issue 028)
@@ -349,6 +357,7 @@ func (m *model) applySettings() {
 	m.sess.SetUmuEnabled(m.umuEnabledBuf)
 	m.sess.SetUmuPrefixPath(m.umuPrefixBuf)
 	m.sess.SetLaunchRoute(m.umuRouteBuf)
+	m.sess.SetUmuRunnerPath(m.umuRunnerBuf)
 }
 
 // exit flushes a pending settings-modal edit through the session's

@@ -4689,3 +4689,21 @@ no such file or directory` — stranding the mod installed forever.
   Resonance launch proved the plumbing end-to-end — router, env,
   per-launch log, prefix guard context all visible.
 - Docs: issue 062. Commit: 978660c.
+
+## 2026-10-10 — issue 63: runner picker for umu launches (global + per-game)
+
+- Settings `UmuRunnerPath` + `RunnerOverrides` (precedence per-game →
+  global → Auto newest detected), the LaunchRoute precedent; the
+  router passes the pin to `ResolveProtonPath` (pinned wins verbatim).
+- GUI: "Runner" dropdowns in Settings (buffered) and the detail panel
+  (immediate); the route picker was generalized into `optionsPicker`
+  (options as a function so the detail dropdown scans on the opening
+  frame). Rows render "Launcher: runner"; Auto first, Custom row for
+  undetected pins.
+- TUI: `n` opens the runner picker modal (global on settings,
+  per-game on detail), reusing the prefixPick machinery (badges,
+  20-row windowing).
+- Shared composition in internal/ui (`UmuRunnerRows`/`UmuRunnerLabel`)
+  + `Deps.UmuRunners` provider; only umu launches use the pin —
+  owner-CLI launches keep the launcher's own configured runner.
+- Docs: issue 063. Commit: THIS_COMMIT.

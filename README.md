@@ -254,7 +254,11 @@ or `e` on the detail screen (TUI) pins a per-game override (`umu` /
 `owner`). Even a forced `umu` route refuses a launcher-owned prefix —
 umu-run mutates any Proton prefix it launches, so that combination
 fails with an error naming the owner instead of corrupting it (`~/.wine`
-and unrecognized prefixes stay umu-eligible). A prefix whose owner can't be launched (CLI missing,
+and unrecognized prefixes stay umu-eligible). The Proton build for umu
+launches is selectable too: the Settings "Runner" dropdown (global
+default) and the detail pane (GUI) or `n` on the detail screen (TUI)
+pin any detected build — Steam `compatibilitytools.d`, Bottles/Lutris
+runners, Heroic `tools/proton` — or leave Auto (newest installed). A prefix whose owner can't be launched (CLI missing,
 unroutable) fails with an error naming the remedy instead of silently
 falling back — and a Windows binary is never exec'd bare (on systems
 with the mono binfmt registration that lands in mono and hangs).

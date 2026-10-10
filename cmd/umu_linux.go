@@ -39,7 +39,11 @@ import (
 //
 // logDir enables per-launch log files (issue 061) for both backends —
 // empty disables. Production wires <data root>/logs.
-func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllowed func() bool, logDir string) ui.UmuLauncherHook {
+//
+// runnerFor resolves the effective pinned Proton build for an install
+// dir at launch time (session.UmuRunnerFor, issue 063): "" means Auto
+// (newest detected matching the prefix's launcher, else global).
+func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllowed func() bool, logDir string, runnerFor func(installDir string) string) ui.UmuLauncherHook {
 	umuPath, umuVersion, umuErr := umu.Detect(context.Background())
 	if umuErr != nil {
 		log.Info().Err(umuErr).Msg("umu-run not detected; unowned Windows-binary launches will error unless the prefix owner routes elsewhere")
@@ -72,7 +76,7 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 			if owned && pfx.Source != "wine" {
 				return "", fmt.Errorf("prefix %s is managed by %s — umu-run would corrupt it; pin an app-managed/umu prefix or set Launch via: auto/owner", prefix, pfx.Source)
 			}
-			proton := umu.ResolveProtonPath(ctx, "", pfx.Source)
+			proton := umu.ResolveProtonPath(ctx, runnerFor(row.InstallDir), pfx.Source)
 			log.Debug().Str("game", row.Title).Str("proton", proton).Str("prefix", prefix).Str("prefix_source", pfx.Source).
 				Str("route", route).Msg("umu launch resolved")
 			opts := umu.LaunchOpts{

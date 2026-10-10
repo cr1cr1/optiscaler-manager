@@ -9,6 +9,7 @@ import (
 
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
+	"github.com/cr1cr1/optiscaler-manager/internal/umu"
 )
 
 // modal is widgets.Modal with a dark card: upstream hardcodes a white
@@ -92,14 +93,17 @@ func (m *model) openSettings() {
 		m.umuEnabledBuf = s.UmuEnabled
 		m.umuPrefixBuf = s.UmuPrefixPath
 		m.umuRouteBuf = s.LaunchRoute
+		m.umuRunnerBuf = s.UmuRunnerPath
 		// Scanned once per open (not per frame): FindPrefixes walks the
 		// launcher roots on disk. A prefix created while the modal is
 		// open appears on the next open.
 		m.umuPrefixes = m.sess.UmuPrefixes()
+		m.umuRunners = m.sess.UmuRunners()
 	}
 	m.settingsTab = settingsTabGeneral
 	m.settingsContentMinH = 0 // re-measure the tallest tab on each open
 	m.umuPrefixOpen = false
+	m.umuRunnerOpen = false
 	m.settingsOpen = true
 }
 
@@ -122,7 +126,7 @@ func (m *model) settingsModal() {
 		// While the umu pickers' popups are open they own outside
 		// clicks (they float outside the modal card at root scope);
 		// closing the modal from under one would strand the gesture.
-		if m.umuPrefixOpen || m.umuRouteOpen {
+		if m.umuPrefixOpen || m.umuRouteOpen || m.umuRunnerOpen {
 			return
 		}
 		m.settingsOpen = false
@@ -262,6 +266,10 @@ func (m *model) settingsGeneralTab() {
 			m.umuPrefixPicker()
 			muted("Launch route (Auto = the prefix owner's launcher, e.g. bottles-cli)")
 			m.routePicker("settings-launch-route", "Launch route: "+routeLabel(m.umuRouteBuf), m.umuRouteBuf, "", func(v string) { m.umuRouteBuf = v }, &m.umuRouteTriggerRect, &m.umuRouteMenuItems, &m.umuRouteOpen)
+			muted("Proton runner for umu launches (Auto = newest installed)")
+			m.optionsPicker("settings-umu-runner", "Runner: "+ui.UmuRunnerLabel("Auto (newest installed)", m.umuRunnerBuf, m.umuRunners), m.umuRunnerBuf, "",
+				func() []pickerOption { return runnerOptions("Auto (newest installed)", m.umuRunnerBuf, m.umuRunners) },
+				func(v string) { m.umuRunnerBuf = v }, &m.umuRunnerTriggerRect, &m.umuRunnerMenuItems, &m.umuRunnerOpen, nil)
 		}
 	})
 }
@@ -517,13 +525,14 @@ func (m *model) prefixDropdown(e *ui.GameRow) {
 	dropdownDismiss(st, func() { m.openDropdownDir = "" })
 }
 
+// pickerOption is one row of the generic options dropdown: value is
+// what gets persisted, label the rendered text.
+type pickerOption struct{ value, label string }
+
 // umuRouteOptions are the launch-route picker's rows (issue 060):
 // Auto follows the resolved prefix's owner, "umu" forces umu-run,
 // "owner" forces the owning launcher's CLI.
-var umuRouteOptions = []struct {
-	value string
-	label string
-}{
+var umuRouteOptions = []pickerOption{
 	{"", "Auto (route to the prefix owner)"},
 	{"umu", "umu-run only"},
 	{"owner", "Prefix owner's CLI only"},
@@ -540,14 +549,54 @@ func routeLabel(route string) string {
 	return "Auto"
 }
 
-// routePicker renders the 3-row launch-route dropdown (issue 060) for
-// the settings modal (global default; the pick only buffers) and the
-// detail panel (per-game override; applies immediately). dir is the
-// per-game coordination key ("" in settings); openFlag is the settings
-// modal's dismiss guard (nil in the detail panel). Otherwise it follows
-// the shared dropdown discipline: trigger owns nav keys while open,
-// popup at root scope, Esc/outside-click dismisses.
+// routePicker renders the 3-row launch-route dropdown (issue 060) via
+// the shared options machinery.
 func (m *model) routePicker(id, trigger, pin, dir string, onPick func(string), triggerRect *Rect, items *[]umuPrefixMenuItem, openFlag *bool) {
+	m.optionsPicker(id, trigger, pin, dir, func() []pickerOption { return umuRouteOptions }, onPick, triggerRect, items, openFlag, nil)
+}
+
+// runnerOptions composes the runner picker's rows (issue 063): Auto +
+// the detected Proton builds rendered "Launcher: runner" (+ a Custom
+// row for an undetected pin), the prefix picker's UmuPickerRows
+// discipline.
+func runnerOptions(autoLabel, pin string, runners []umu.Runner) []pickerOption {
+	rows := ui.UmuRunnerRows(autoLabel, pin, runners)
+	opts := make([]pickerOption, len(rows))
+	for i, r := range rows {
+		opts[i] = pickerOption{value: r.Value, label: ui.UmuPickerRowLabel(r)}
+	}
+	return opts
+}
+
+// runnerDropdown is the detail panel's per-game runner selector (issue
+// 063), the prefixDropdown precedent: a compact trigger (runner
+// basename, zero I/O while closed) and a popup scanned on the opening
+// frame. A pick persists immediately through SetUmuRunnerOverride.
+func (m *model) runnerDropdown(e *ui.GameRow) {
+	pin := m.sess.UmuRunnerPin(e.InstallDir)
+	trigger := "Runner: Auto"
+	if pin != "" {
+		trigger = "Runner: " + filepath.Base(pin)
+	}
+	m.optionsPicker("detail-umu-runner", trigger, pin, e.InstallDir,
+		func() []pickerOption { return runnerOptions("Auto (inherit)", pin, m.runnerDDRunners) },
+		func(v string) { m.sess.SetUmuRunnerOverride(e.InstallDir, v) },
+		&m.runnerDDTriggerRect, &m.runnerDDItems, nil,
+		func() { m.runnerDDRunners = m.sess.UmuRunners() })
+}
+
+// optionsPicker renders a dropdown for an arbitrary option list (issue
+// 060 route picker, generalized in issue 063 for the runner pickers):
+// the settings modal (global default; the pick only buffers) and the
+// detail panel (per-game override; applies immediately). optionsFn is
+// evaluated during render (after onOpen fires), so a caller scanning
+// on open renders fully on the opening frame. dir is the per-game
+// coordination key ("" in settings); openFlag is the settings modal's
+// dismiss guard (nil in the detail panel); onOpen runs once per
+// open transition (nil ok). It follows the shared dropdown discipline:
+// trigger owns nav keys while open, popup at root scope, Esc/outside-
+// click dismisses; long lists scroll a 20-row window (issue 056).
+func (m *model) optionsPicker(id, trigger, pin, dir string, optionsFn func() []pickerOption, onPick func(string), triggerRect *Rect, items *[]umuPrefixMenuItem, openFlag *bool, onOpen func()) {
 	st := Use[dropdownState](id)
 	if openFlag != nil {
 		*openFlag = st.open
@@ -573,7 +622,7 @@ func (m *model) routePicker(id, trigger, pin, dir string, onPick func(string), t
 			})
 			if st.open {
 				var spaceToggle bool
-				enterPick, spaceToggle = dropdownMenuKeys(st, len(umuRouteOptions))
+				enterPick, spaceToggle = dropdownMenuKeys(st, len(optionsFn()))
 				if spaceToggle {
 					activated = true
 				}
@@ -594,17 +643,21 @@ func (m *model) routePicker(id, trigger, pin, dir string, onPick func(string), t
 					m.openDropdownDir = dir
 				}
 				st.hl = -1
+				if onOpen != nil {
+					onOpen()
+				}
 			} else if dir != "" && m.openDropdownDir == dir {
 				m.openDropdownDir = ""
 			}
 		}
 	})
 	if st.open {
-		dropdownPopup(st, 0, 360, func(mouseMoved bool) {
+		options := optionsFn()
+		dropdownPopupCapped(st, 0, 360, len(options), prefixMenuMaxRows, func(start, end int, mouseMoved bool) {
 			if st.hl < 0 {
 				// Open-time init: highlight the current value's row.
 				st.hl = 0
-				for i, o := range umuRouteOptions {
+				for i, o := range options {
 					if o.value == pin {
 						st.hl = i
 						break
@@ -612,8 +665,8 @@ func (m *model) routePicker(id, trigger, pin, dir string, onPick func(string), t
 				}
 			}
 			*items = (*items)[:0]
-			for i, o := range umuRouteOptions {
-				o := o
+			for i := start; i < end; i++ {
+				o := options[i]
 				ticked := o.value == pin
 				dropdownRow(st, i, enterPick, mouseMoved,
 					func(hl bool) {
