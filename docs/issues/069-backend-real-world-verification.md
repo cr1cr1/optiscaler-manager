@@ -36,4 +36,4 @@ thing on the dev box found two real bugs the fixtures could not.
 (GE-Proton `bin/` and UMU-Proton `files/bin/` layouts) added; the
 stopper registry carries prefix+source. The per-launch log again
 proved itself: the wrong-case failure was one log read. Commit:
-THIS_COMMIT.
+a1a1122.

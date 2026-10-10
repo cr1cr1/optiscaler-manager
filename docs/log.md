@@ -4797,4 +4797,4 @@ no such file or directory` — stranding the mod installed forever.
     launch runner (bin/ and files/bin/ layouts).
 - Lutris: binary present but unconfigured; Heroic: not installed —
   both backends stay fixture-tested.
-- Docs: issue 069. Commit: THIS_COMMIT.
+- Docs: issue 069. Commit: a1a1122.
