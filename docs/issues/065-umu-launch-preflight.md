@@ -37,4 +37,4 @@ network hangs for minutes with no output.
 Test fixtures had to grow up: launch tests now create real exe files
 (`touchExe`), valid pinned runners, and writable prefixes; the probe
 is stubbed in `fakeUmuRun` so no test touches the network. Commit:
-THIS_COMMIT.
+c7a0878.

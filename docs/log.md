@@ -4737,4 +4737,4 @@ no such file or directory` — stranding the mod installed forever.
   minutes.
 - Fixture fallout: launch tests create real exes (touchExe), valid
   pinned runners, writable prefixes; fakeUmuRun stubs the probe.
-- Docs: issue 065. Commit: THIS_COMMIT.
+- Docs: issue 065. Commit: c7a0878.
