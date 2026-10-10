@@ -38,4 +38,4 @@ builder + detached spawn (fake-CLI argv capture tests). The cmd hook
 became the router (always wired on Linux, even without umu-run);
 `ui.UmuLauncherHook` returns the backend name for the status line; the
 ui gate dropped the UmuEnabled check so PE launches never reach the
-raw-exec Launcher. Commit: THIS_COMMIT.
+raw-exec Launcher. Commit: 1222566.
