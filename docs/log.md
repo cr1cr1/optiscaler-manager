@@ -4724,3 +4724,17 @@ no such file or directory` — stranding the mod installed forever.
   (ge-proton11-7 from Bottles' root), full per-launch log — the game
   itself crashes game-side (out of launcher scope).
 - Docs: issue 064. Commit: 28583b4.
+
+## 2026-10-10 — issue 65: preflight checks for umu launches
+
+- umu launches fail fast naming the broken piece: invalid runner (no
+  executable proton script), unwritable prefix (temp-file probe on
+  the deepest existing ancestor — umu writes pfx.lock at the root),
+  stale exe ("rescan the game"), or first-run runtime download with
+  no network (2s TCP probe, stubbed in tests).
+- Motivation from the debug loop: a read-only prefix surfaced as an
+  OSError traceback deep in umu's Python; offline first-run hangs for
+  minutes.
+- Fixture fallout: launch tests create real exes (touchExe), valid
+  pinned runners, writable prefixes; fakeUmuRun stubs the probe.
+- Docs: issue 065. Commit: THIS_COMMIT.

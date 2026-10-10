@@ -5,6 +5,8 @@ package optiscalermanager
 import (
 	"context"
 	"fmt"
+	"net"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
@@ -12,6 +14,17 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/ui"
 	"github.com/cr1cr1/optiscaler-manager/internal/umu"
 )
+
+// umuNetProbe checks network reachability for the runtime-download
+// preflight (issue 065). A package var so tests can stub it.
+var umuNetProbe = func(ctx context.Context) error {
+	d := net.Dialer{Timeout: 2 * time.Second}
+	conn, err := d.DialContext(ctx, "tcp", "umu.openwinecomponents.org:443")
+	if err != nil {
+		return err
+	}
+	return conn.Close()
+}
 
 // newUmuLauncher returns the ui-layer hook that routes Windows-binary
 // launches for umu-eligible manual and Heroic Epic/GOG games (issue
@@ -80,7 +93,26 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 			if owned && pfx.Source != "wine" {
 				return "", fmt.Errorf("prefix %s is managed by %s — umu-run would corrupt it; pin an app-managed/umu prefix or set Launch via: auto/owner", prefix, pfx.Source)
 			}
+			// Preflight (issue 065): fail fast naming the broken piece
+			// instead of dying inside umu-run's Python — invalid
+			// runner, unwritable prefix, stale exe, or a first-run
+			// runtime download with no network.
 			proton := umu.ResolveProtonPath(ctx, runnerFor(row.InstallDir), pfx.Source)
+			if err := umu.CheckProton(proton); err != nil {
+				return "", err
+			}
+			if err := umu.CheckPrefixWritable(prefix); err != nil {
+				return "", err
+			}
+			if err := umu.CheckExe(row.ExePath); err != nil {
+				return "", err
+			}
+			if !umu.RuntimePresent() {
+				if err := umuNetProbe(ctx); err != nil {
+					return "", fmt.Errorf("umu runtime not downloaded yet and network unreachable (%v) — first launch needs network or a pre-populated runtime", err)
+				}
+				log.Info().Str("game", row.Title).Msg("umu runtime not downloaded — first launch fetches it, expect a long run")
+			}
 			gameID, store := gameIDFor(ctx, row)
 			log.Debug().Str("game", row.Title).Str("proton", proton).Str("prefix", prefix).Str("prefix_source", pfx.Source).
 				Str("route", route).Str("gameid", gameID).Str("store", store).Msg("umu launch resolved")

@@ -5,6 +5,7 @@ package optiscalermanager
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,6 +34,11 @@ func fakeUmuRun(t *testing.T) (capture string) {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("UMU_TEST_CAPTURE", capture)
+	// No real network in tests: the runtime-download probe defaults to
+	// reachable; tests that exercise it re-stub explicitly.
+	prevProbe := umuNetProbe
+	umuNetProbe = func(context.Context) error { return nil }
+	t.Cleanup(func() { umuNetProbe = prevProbe })
 	return capture
 }
 
@@ -61,6 +67,124 @@ func readCaptureAll(t *testing.T, capture string) (proton, prefix, gameID, store
 	return lines[0], lines[1], lines[2], lines[3]
 }
 
+// TestUmuPreflightRuntimeOrNetwork: with the Steam Linux Runtime not
+// yet downloaded (first-ever umu run), an unreachable network is an
+// up-front error naming both — otherwise umu hangs on the download
+// (issue 065). A reachable probe (or a present runtime) launches.
+func TestUmuPreflightRuntimeOrNetwork(t *testing.T) {
+	fakeUmuRun(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("OM_DATA_DIR", t.TempDir())
+
+	prevProbe := umuNetProbe
+	t.Cleanup(func() { umuNetProbe = prevProbe })
+	umuNetProbe = func(context.Context) error { return errors.New("dial tcp: no route to host") }
+
+	newHook := func() ui.UmuLauncherHook {
+		return newUmuLauncher(func(string) string { return "" }, func(string) string { return "" }, func() bool { return true }, "",
+			func(string) string { return "" },
+			func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
+	}
+	row := ui.GameRow{Title: "Foo", InstallDir: t.TempDir(), ExePath: touchExe(t)}
+
+	_, err := newHook()(context.Background(), row)
+	if err == nil {
+		t.Fatal("runtime missing + network down: want error, got nil")
+	}
+	for _, want := range []string{"runtime", "network"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+
+	// Network reachable: the first-run download proceeds.
+	umuNetProbe = func(context.Context) error { return nil }
+	if _, err := newHook()(context.Background(), row); err != nil {
+		t.Fatalf("runtime missing + network up: %v", err)
+	}
+
+	// Runtime present: no probe at all (broken probe would fail here).
+	rt := filepath.Join(home, ".local", "share", "umu", "steamrt3")
+	if err := os.MkdirAll(rt, 0o755); err != nil {
+		t.Fatalf("mkdir runtime: %v", err)
+	}
+	umuNetProbe = func(context.Context) error {
+		return errors.New("must not be called — the runtime is present")
+	}
+	if _, err := newHook()(context.Background(), row); err != nil {
+		t.Fatalf("runtime present: %v", err)
+	}
+}
+
+// TestUmuPreflightRejectsBrokenInputs: an invalid pinned runner, an
+// unwritable pinned prefix, or a missing exe fail BEFORE umu-run is
+// spawned, with errors naming the broken piece (issue 065).
+func TestUmuPreflightRejectsBrokenInputs(t *testing.T) {
+	umuCaptureFile := fakeUmuRun(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("OM_DATA_DIR", t.TempDir())
+	rt := filepath.Join(home, ".local", "share", "umu", "steamrt3")
+	if err := os.MkdirAll(rt, 0o755); err != nil {
+		t.Fatalf("mkdir runtime: %v", err)
+	}
+
+	// Invalid pinned runner: a dir without an executable proton script.
+	badRunner := t.TempDir()
+	hook := newUmuLauncher(func(string) string { return "" }, func(string) string { return "" }, func() bool { return true }, "",
+		func(string) string { return badRunner },
+		func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
+	row := ui.GameRow{Title: "Foo", InstallDir: t.TempDir(), ExePath: touchExe(t)}
+	if _, err := hook(context.Background(), row); err == nil || !strings.Contains(err.Error(), "proton") {
+		t.Errorf("invalid runner: %v, want error naming proton", err)
+	}
+
+	// Unwritable pinned prefix.
+	ro := filepath.Join(t.TempDir(), "pfx")
+	if err := os.MkdirAll(filepath.Join(ro, "drive_c"), 0o755); err != nil {
+		t.Fatalf("mkdir ro prefix: %v", err)
+	}
+	if err := os.Chmod(ro, 0o555); err != nil {
+		t.Fatalf("chmod ro prefix: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(ro, 0o755) }) // let TempDir cleanup remove it
+	hook = newUmuLauncher(func(string) string { return ro }, func(string) string { return "" }, func() bool { return true }, "",
+		func(string) string { return "" },
+		func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
+	if _, err := hook(context.Background(), row); err == nil || !strings.Contains(err.Error(), "not writable") {
+		t.Errorf("unwritable prefix: %v, want error naming not writable", err)
+	}
+
+	// Missing exe (all else valid).
+	hook = newUmuLauncher(func(string) string { return "" }, func(string) string { return "" }, func() bool { return true }, "",
+		func(string) string { return "" },
+		func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
+	goneRow := ui.GameRow{Title: "Foo", InstallDir: t.TempDir(), ExePath: filepath.Join(t.TempDir(), "gone.exe")}
+	if _, err := hook(context.Background(), goneRow); err == nil || !strings.Contains(err.Error(), "gone.exe") {
+		t.Errorf("missing exe: %v, want error naming the exe", err)
+	}
+
+	if _, statErr := os.Stat(umuCaptureFile); !os.IsNotExist(statErr) {
+		t.Error("umu-run was invoked despite preflight failures")
+	}
+}
+
+// touchExe creates a dummy exe for launch fixtures (preflight
+// requires the file to exist, issue 065).
+func touchExe(t *testing.T) string {
+	t.Helper()
+	exe := filepath.Join(t.TempDir(), "foo.exe")
+	if err := os.WriteFile(exe, []byte("MZ"), 0o644); err != nil {
+		t.Fatalf("write exe: %v", err)
+	}
+	return exe
+}
+
 // TestUmuLauncherResolvesGameIDStore: the launch-time gameIDFor
 // resolver's result becomes the GAMEID/STORE env (issue 064) so
 // protonfixes apply per-game fixes.
@@ -78,7 +202,7 @@ func TestUmuLauncherResolvesGameIDStore(t *testing.T) {
 	row := ui.GameRow{
 		Title:      "RDR2",
 		InstallDir: t.TempDir(),
-		ExePath:    filepath.Join(t.TempDir(), "rdr2.exe"),
+		ExePath:    touchExe(t),
 	}
 	if _, err := hook(context.Background(), row); err != nil {
 		t.Fatalf("hook: %v", err)
@@ -117,7 +241,7 @@ func TestUmuLauncherAutoDetectsProton(t *testing.T) {
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: filepath.Join(t.TempDir(), "Foo"),
-		ExePath:    filepath.Join(t.TempDir(), "Foo", "foo.exe"),
+		ExePath:    touchExe(t),
 	}
 	if _, err := hook(context.Background(), row); err != nil {
 		t.Fatalf("hook: %v", err)
@@ -146,6 +270,12 @@ func TestUmuLauncherReusesEnclosingPrefix(t *testing.T) {
 	if err := os.MkdirAll(install, 0o755); err != nil {
 		t.Fatalf("mkdir bottle: %v", err)
 	}
+	// The exe lives inside the bottle: the enclosing-drive_c detection
+	// keys on it.
+	exe := filepath.Join(install, "foo.exe")
+	if err := os.WriteFile(exe, []byte("MZ"), 0o644); err != nil {
+		t.Fatalf("write exe: %v", err)
+	}
 
 	hook := newUmuLauncher(func(string) string { return "" }, func(string) string { return "" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	if hook == nil {
@@ -154,7 +284,7 @@ func TestUmuLauncherReusesEnclosingPrefix(t *testing.T) {
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: install,
-		ExePath:    filepath.Join(install, "foo.exe"),
+		ExePath:    exe,
 	}
 	if _, err := hook(context.Background(), row); err != nil {
 		t.Fatalf("hook: %v", err)
@@ -190,20 +320,29 @@ func TestUmuLauncherPinnedRunnerWins(t *testing.T) {
 		t.Fatalf("write proton script: %v", err)
 	}
 
+	// The pinned runner must exist and be valid (preflight, issue 065).
+	picked := filepath.Join(t.TempDir(), "GE-Proton9-20")
+	if err := os.MkdirAll(picked, 0o755); err != nil {
+		t.Fatalf("mkdir picked runner: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(picked, "proton"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write proton script: %v", err)
+	}
+
 	hook := newUmuLauncher(
 		func(string) string { return "" }, func(string) string { return "" }, func() bool { return true }, "",
-		func(string) string { return "/picked/GE-Proton9-20" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
+		func(string) string { return picked }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
-		ExePath:    filepath.Join(t.TempDir(), "foo.exe"),
+		ExePath:    touchExe(t),
 	}
 	if _, err := hook(context.Background(), row); err != nil {
 		t.Fatalf("hook: %v", err)
 	}
 	proton, _ := readCapture(t, capture)
-	if proton != "/picked/GE-Proton9-20" {
-		t.Errorf("PROTONPATH = %q, want the pinned /picked/GE-Proton9-20 (not auto %q)", proton, autoRunner)
+	if proton != picked {
+		t.Errorf("PROTONPATH = %q, want the pinned %q (not auto %q)", proton, picked, autoRunner)
 	}
 }
 
@@ -217,14 +356,15 @@ func TestUmuLauncherPerGamePinWins(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("OM_DATA_DIR", t.TempDir())
 
-	hook := newUmuLauncher(func(string) string { return "/pinned/prefix" }, func(string) string { return "umu" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
+	pin := t.TempDir() // writable, unrecognized (unowned) prefix
+	hook := newUmuLauncher(func(string) string { return pin }, func(string) string { return "umu" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	if hook == nil {
 		t.Fatal("newUmuLauncher returned nil with umu-run on PATH")
 	}
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
-		ExePath:    filepath.Join(t.TempDir(), "foo.exe"),
+		ExePath:    touchExe(t),
 	}
 	if _, err := hook(context.Background(), row); err != nil {
 		t.Fatalf("hook: %v", err)
@@ -234,8 +374,8 @@ func TestUmuLauncherPerGamePinWins(t *testing.T) {
 	if proton != "" {
 		t.Errorf("PROTONPATH = %q, want empty (no runners installed)", proton)
 	}
-	if prefix != "/pinned/prefix" {
-		t.Errorf("WINEPREFIX = %q, want the pinned /pinned/prefix", prefix)
+	if prefix != pin {
+		t.Errorf("WINEPREFIX = %q, want the pinned %q", prefix, pin)
 	}
 }
 
@@ -285,7 +425,7 @@ func TestUmuRouteRejectsLauncherOwnedPrefix(t *testing.T) {
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
-		ExePath:    filepath.Join(t.TempDir(), "foo.exe"),
+		ExePath:    touchExe(t),
 	}
 	_, err := hook(context.Background(), row)
 	if err == nil {
@@ -326,7 +466,7 @@ func TestUmuRouteRejectsSteamCompatdata(t *testing.T) {
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
-		ExePath:    filepath.Join(t.TempDir(), "foo.exe"),
+		ExePath:    touchExe(t),
 	}
 	_, err := hook(context.Background(), row)
 	if err == nil {
@@ -358,7 +498,7 @@ func TestUmuRouteAllowsDotWine(t *testing.T) {
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
-		ExePath:    filepath.Join(t.TempDir(), "foo.exe"),
+		ExePath:    touchExe(t),
 	}
 	if _, err := hook(context.Background(), row); err != nil {
 		t.Fatalf("forced umu route with ~/.wine: %v", err)
@@ -436,7 +576,7 @@ func TestUmuRouterAutoUnownedWithoutUmuErrors(t *testing.T) {
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
-		ExePath:    filepath.Join(t.TempDir(), "foo.exe"),
+		ExePath:    touchExe(t),
 	}
 	_, err := hook(context.Background(), row)
 	if err == nil || !strings.Contains(err.Error(), "umu-run") {
@@ -459,7 +599,7 @@ func TestUmuRouterUnownedUmuDisabledErrors(t *testing.T) {
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
-		ExePath:    filepath.Join(t.TempDir(), "foo.exe"),
+		ExePath:    touchExe(t),
 	}
 	_, err := hook(context.Background(), row)
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
@@ -480,7 +620,7 @@ func TestUmuRouterOwnerForcedUnownedErrors(t *testing.T) {
 	row := ui.GameRow{
 		Title:      "Foo",
 		InstallDir: t.TempDir(),
-		ExePath:    filepath.Join(t.TempDir(), "foo.exe"),
+		ExePath:    touchExe(t),
 	}
 	if _, err := hook(context.Background(), row); err == nil {
 		t.Error("owner route with unowned prefix: want error, got nil")
@@ -583,14 +723,15 @@ func TestUmuLauncherFailureLogsContext(t *testing.T) {
 	log.Logger = zerolog.New(&logBuf)
 	t.Cleanup(func() { log.Logger = prev })
 
-	hook := newUmuLauncher(func(string) string { return "/pinned/prefix" }, func(string) string { return "umu" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
+	pin := t.TempDir() // writable, unrecognized (unowned) prefix
+	hook := newUmuLauncher(func(string) string { return pin }, func(string) string { return "umu" }, func() bool { return true }, "", func(string) string { return "" }, func(context.Context, ui.GameRow) (string, string) { return "umu-default", "" })
 	if hook == nil {
 		t.Fatal("newUmuLauncher returned nil with umu-run on PATH")
 	}
 	row := ui.GameRow{
 		Title:      "Broken Game",
 		InstallDir: t.TempDir(),
-		ExePath:    "/games/broken/broken.exe",
+		ExePath:    touchExe(t),
 	}
 	_, err := hook(context.Background(), row)
 	if err == nil {
@@ -600,7 +741,7 @@ func TestUmuLauncherFailureLogsContext(t *testing.T) {
 		t.Errorf("error %q lacks umu's stderr tail", err)
 	}
 	out := logBuf.String()
-	for _, want := range []string{"umu launch failed", "Broken Game", "/games/broken/broken.exe", "/pinned/prefix"} {
+	for _, want := range []string{"umu launch failed", "Broken Game", row.ExePath, pin} {
 		if !strings.Contains(out, want) {
 			t.Errorf("log output lacks %q:\n%s", want, out)
 		}
