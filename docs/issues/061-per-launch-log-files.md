@@ -37,4 +37,4 @@ platformRunner" comment on the umu runner was corrected — the umu path
 blocks on `cmd.Run()`, which is what makes full stderr capture there
 possible. GUI log-panel integration deliberately untouched (owned by a
 parallel effort); the log directory is the stable contract. Commit:
-THIS_COMMIT.
+6000655.

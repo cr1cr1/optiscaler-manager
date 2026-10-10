@@ -4671,4 +4671,4 @@ no such file or directory` — stranding the mod installed forever.
 - Motivation: "the logs are crap and insufficient" — this is the
   groundwork for the umu launch debugging loop (Resonance as the
   testground).
-- Docs: issue 061. Commit: THIS_COMMIT.
+- Docs: issue 061. Commit: 6000655.
