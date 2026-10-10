@@ -36,4 +36,4 @@ API schema verified against the umu-database repo README and a live
 probe (`("egs","Heather")` → `umu-1174180`, miss → `[]`). The hook
 gained a sixth resolver (`gameIDFor`) — the parameter list is now
 debt-worthy of a resolver struct if it grows again. Commit:
-THIS_COMMIT.
+28583b4.

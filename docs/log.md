@@ -4723,4 +4723,4 @@ no such file or directory` — stranding the mod installed forever.
   launched via umu with an app-managed prefix, auto runner
   (ge-proton11-7 from Bottles' root), full per-launch log — the game
   itself crashes game-side (out of launcher scope).
-- Docs: issue 064. Commit: THIS_COMMIT.
+- Docs: issue 064. Commit: 28583b4.
