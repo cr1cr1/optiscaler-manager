@@ -4650,3 +4650,25 @@ no such file or directory` — stranding the mod installed forever.
   now isolated there.
 - Docs: issue 060, spec marked implemented, README "one prefix, one
   owner" paragraph, scope.md, architecture.md.
+
+## 2026-10-10 — issue 61: per-launch log files for umu and owner-CLI launches
+
+- New `internal/launchlog`: per-launch log files (slugged game name +
+  timestamp) with a header recording the exact argv and the env delta
+  the launcher set — never the full inherited environment.
+- umu launches capture full stdout+stderr to the file (previously
+  stdout was discarded and only a stderr tail survived) and run with
+  `UMU_LOG=1`; owner-CLI launches (bottles-cli/lutris/heroic) capture
+  the detached child's output the same way.
+- Failure errors name the file (`full log: <path>`) so toasts and the
+  console point at the diagnostics; production wires
+  `<data root>/logs`. A log file that cannot be created degrades to a
+  warning, never a failed launch.
+- `launchercli.Launch` now takes an `Opts` struct; `newUmuLauncher`
+  takes the log dir. Corrected the stale "platformRunner detaches"
+  comment — the umu path blocks on `cmd.Run()`, which is exactly what
+  makes full stderr capture possible there.
+- Motivation: "the logs are crap and insufficient" — this is the
+  groundwork for the umu launch debugging loop (Resonance as the
+  testground).
+- Docs: issue 061. Commit: THIS_COMMIT.

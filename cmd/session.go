@@ -90,6 +90,7 @@ func newSession(d *Deps) *ui.Session {
 			func(dir string) string { return pinPrefix(dir) },
 			func(dir string) string { return routeFor(dir) },
 			func() bool { return umuAllowed() },
+			filepath.Join(d.DataRoot, "logs"),
 		),
 	})
 	pinPrefix = sess.UmuPrefixFor

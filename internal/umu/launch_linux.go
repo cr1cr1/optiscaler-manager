@@ -7,9 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/rs/zerolog/log"
+
+	"github.com/cr1cr1/optiscaler-manager/internal/launchlog"
 )
 
 // Launcher is the runner seam. The default production value is built by
@@ -17,17 +22,23 @@ import (
 // captures cmd.Env / cmd.Args and returns canned stderr + exit codes.
 type Launcher func(ctx context.Context, cmd *exec.Cmd) error
 
-// defaultLauncher is the production runner: it executes cmd as-is.
-// Detachment is the caller's responsibility (see launch/spawn_linux.go);
-// the umu integration detaches in spawn_linux.go's platformRunner
-// wrapper, not here.
+// defaultLauncher is the production runner: it executes cmd as-is,
+// blocking until the child exits. Callers that need detachment inject
+// their own Launcher (the seam exists for that and for tests).
 func defaultLauncher(ctx context.Context, cmd *exec.Cmd) error { return cmd.Run() }
 
 // Launch invokes umu-run with the supplied options. The child runs with
 // a synthesized environment: parent env plus umu control vars (GAMEID,
-// WINEPREFIX, PROTONPATH if set, STORE, PROTON_VERB=waitforexitandrun).
-// PROTONPATH is omitted entirely when empty so umu falls back to its
-// default token.
+// WINEPREFIX, PROTONPATH if set, STORE, PROTON_VERB=waitforexitandrun,
+// UMU_LOG=1). UMU_LOG makes umu verbose; with LogDir set that verbosity
+// costs nothing and fills the per-launch log. PROTONPATH is omitted
+// entirely when empty so umu falls back to its default token.
+//
+// With opts.LogDir set, the child's full stdout and stderr are
+// captured to a per-launch file (see internal/launchlog) headed by the
+// exact argv and env delta; failure errors then name the file. stderr
+// additionally keeps flowing into the in-memory buffer that drives the
+// tail diagnostics below.
 //
 // umu's __main__ wraps execution in try/except BaseException, so fatal
 // setup failures (no Proton, invalid PROTONPATH, offline first-run)
@@ -54,25 +65,42 @@ func Launch(ctx context.Context, launcher Launcher, opts LaunchOpts) error {
 		gameID = "umu-default"
 	}
 
-	env := append([]string{}, os.Environ()...)
-	env = append(env,
-		"GAMEID="+gameID,
-		"WINEPREFIX="+opts.WinePrefix,
+	delta := []string{
+		"GAMEID=" + gameID,
+		"WINEPREFIX=" + opts.WinePrefix,
 		"PROTON_VERB=waitforexitandrun",
-		"STORE="+opts.Store,
-	)
+		"STORE=" + opts.Store,
+		"UMU_LOG=1",
+	}
 	if opts.ProtonPath != "" {
-		env = append(env, "PROTONPATH="+opts.ProtonPath)
+		delta = append(delta, "PROTONPATH="+opts.ProtonPath)
 	}
 	for k, v := range opts.ExtraEnv {
-		env = append(env, k+"="+v)
+		delta = append(delta, k+"="+v)
 	}
+	env := append([]string{}, os.Environ()...)
+	env = append(env, delta...)
 
 	cmd := exec.CommandContext(ctx, opts.UmuRunPath,
 		append([]string{opts.ExePath}, opts.Args...)...)
 	cmd.Env = env
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
+
+	logPath := ""
+	if opts.LogDir != "" {
+		p, f, err := launchlog.Create(opts.LogDir, opts.LogName)
+		if err != nil {
+			// Logging must never block a launch.
+			log.Warn().Err(err).Str("dir", opts.LogDir).Msg("launch log unavailable")
+		} else {
+			defer f.Close()
+			logPath = p
+			launchlog.WriteHeader(f, cmd.Args, delta)
+			cmd.Stdout = f
+			cmd.Stderr = io.MultiWriter(f, &stderr)
+		}
+	}
 
 	runErr := launcher(ctx, cmd)
 
@@ -81,12 +109,22 @@ func Launch(ctx context.Context, launcher Launcher, opts LaunchOpts) error {
 		if runErr == nil {
 			runErr = errors.New("umu: fatal stderr detected with clean exit")
 		}
-		return errors.Join(ErrUmuSetupFailed, withStderrTail(runErr, tail))
+		return errors.Join(ErrUmuSetupFailed, withLogPath(withStderrTail(runErr, tail), logPath))
 	}
-	if runErr != nil && tail != "" {
-		return withStderrTail(runErr, tail)
+	if runErr != nil {
+		return withLogPath(withStderrTail(runErr, tail), logPath)
 	}
-	return runErr
+	return nil
+}
+
+// withLogPath appends the per-launch log file to err so a toast or
+// console error tells the user where the full diagnostics live. An
+// empty path (logging disabled) leaves err untouched.
+func withLogPath(err error, path string) error {
+	if err == nil || path == "" {
+		return err
+	}
+	return fmt.Errorf("%w\nfull log: %s", err, path)
 }
 
 // withStderrTail wraps err with umu's stderr tail so the real failure

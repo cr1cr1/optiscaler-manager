@@ -5,7 +5,9 @@ package umu
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -257,6 +259,81 @@ func TestLaunch_InjectsExtraEnv(t *testing.T) {
 	}
 	if env["DXVK_FRAME_LOG"] != "1" {
 		t.Errorf("DXVK_FRAME_LOG = %q, want 1", env["DXVK_FRAME_LOG"])
+	}
+}
+
+// TestLaunch_WritesPerLaunchLog: with LogDir set, the full stdout AND
+// stderr land in a per-launch file headed by the exact argv and the env
+// delta (issue 061), UMU_LOG=1 is on so umu is verbose, and a failure
+// error names the log file.
+func TestLaunch_WritesPerLaunchLog(t *testing.T) {
+	logDir := t.TempDir()
+	rec := &fakeLauncher{exitCode: 1}
+	launcher := func(_ context.Context, cmd *exec.Cmd) error {
+		rec.captured = cmd
+		if cmd.Stdout != nil {
+			_, _ = cmd.Stdout.Write([]byte("umu stdout noise\n"))
+		}
+		if cmd.Stderr != nil {
+			_, _ = cmd.Stderr.Write([]byte("Proton: prefix is broken\n"))
+		}
+		return &fakeExitError{code: 1}
+	}
+	err := Launch(context.Background(), launcher, LaunchOpts{
+		ExePath:    "/games/Resonance/resonance.exe",
+		WinePrefix: "/pfx",
+		UmuRunPath: "/usr/bin/umu-run",
+		LogDir:     logDir,
+		LogName:    "Resonance",
+	})
+	if err == nil {
+		t.Fatal("Launch with exit 1 returned nil error")
+	}
+
+	matches, globErr := filepath.Glob(filepath.Join(logDir, "resonance-*.log"))
+	if globErr != nil || len(matches) != 1 {
+		t.Fatalf("log files = %v, %v; want exactly one resonance-*.log", matches, globErr)
+	}
+	data, readErr := os.ReadFile(matches[0])
+	if readErr != nil {
+		t.Fatalf("read log: %v", readErr)
+	}
+	content := string(data)
+	for _, want := range []string{
+		"# argv: /usr/bin/umu-run /games/Resonance/resonance.exe",
+		"GAMEID=umu-default",
+		"WINEPREFIX=/pfx",
+		"PROTON_VERB=waitforexitandrun",
+		"UMU_LOG=1",
+		"umu stdout noise",
+		"Proton: prefix is broken",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("log %s lacks %q:\n%s", matches[0], want, content)
+		}
+	}
+	if !strings.Contains(err.Error(), matches[0]) {
+		t.Errorf("error %q lacks the log path %s", err, matches[0])
+	}
+	if got := envMap(rec.captured.Env)["UMU_LOG"]; got != "1" {
+		t.Errorf("UMU_LOG = %q, want 1 (verbose umu into the log file)", got)
+	}
+}
+
+// TestLaunch_NoLogDirKeepsOldBehavior: without LogDir nothing changes —
+// no file, stdout discarded, stderr buffer drives the tail.
+func TestLaunch_NoLogDirKeepsOldBehavior(t *testing.T) {
+	rec := &fakeLauncher{exitCode: 1, stderr: "boom\n"}
+	err := Launch(context.Background(), rec.run, LaunchOpts{
+		ExePath:    "/g/foo.exe",
+		WinePrefix: "/p",
+		UmuRunPath: "/usr/bin/umu-run",
+	})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Errorf("err = %v, want the stderr tail", err)
+	}
+	if strings.Contains(err.Error(), "full log:") {
+		t.Errorf("err = %v, want no log path without LogDir", err)
 	}
 }
 

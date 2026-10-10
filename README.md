@@ -235,9 +235,11 @@ prefixes come from Heroic `Prefixes/`, Bottles `bottles/` (plus the
 `custom_bottles_path` root from Bottles' `data.yml`), Steam
 `compatdata/` (labeled with the game title from the appmanifest),
 Lutris per-game configs, PlayOnLinux `wineprefix/`, CrossOver
-`~/.cxoffice`, and `~/.wine`. Launch
-failures log the game, binary, prefix, runner, and umu's stderr tail
-to the console.
+`~/.cxoffice`, and `~/.wine`. Every launch — umu or owner CLI — writes a per-launch log under
+`~/.local/share/optiscaler-manager/logs/<game>-<timestamp>.log` with
+the exact argv, the env vars set (umu runs with `UMU_LOG=1`), and the
+child's full stdout/stderr; launch failures name that file and log the
+game, binary, prefix, and runner to the console.
 
 **One prefix, one owner.** A prefix managed by another launcher is
 launched by that launcher, never by umu: a game pinned to (or living

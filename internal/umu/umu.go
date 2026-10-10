@@ -43,6 +43,14 @@ type LaunchOpts struct {
 	Store      string
 	UmuRunPath string
 	ExtraEnv   map[string]string
+	// LogDir enables per-launch logging (issue 061): the child's full
+	// stdout/stderr land in a file under LogDir named after LogName
+	// (the game title), headed by the exact argv and env delta.
+	// Empty LogDir keeps the old stderr-tail-only behavior. A log
+	// file that cannot be created degrades to a warning, never a
+	// failed launch.
+	LogDir  string
+	LogName string
 }
 
 // versionRegex matches the first three dotted numeric components after

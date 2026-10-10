@@ -73,7 +73,8 @@ func TestLaunchArgv(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			capture := fakeCLI(t, c.fakeBin)
-			if err := Launch(context.Background(), c.source, c.ref, c.exe, c.flatpak); err != nil {
+			err := Launch(context.Background(), Opts{Source: c.source, Ref: c.ref, Exe: c.exe, Flatpak: c.flatpak})
+			if err != nil {
 				t.Fatalf("Launch: %v", err)
 			}
 			got := readArgv(t, capture)
@@ -89,16 +90,66 @@ func TestLaunchArgv(t *testing.T) {
 func TestLaunchErrors(t *testing.T) {
 	t.Setenv("PATH", t.TempDir()) // no CLIs at all
 
-	if err := Launch(context.Background(), "bottles", "mybottle", "/games/foo.exe", false); err == nil ||
+	if err := Launch(context.Background(), Opts{Source: "bottles", Ref: "mybottle", Exe: "/games/foo.exe"}); err == nil ||
 		!strings.Contains(err.Error(), "bottles-cli") {
 		t.Errorf("missing bottles-cli error = %v, want it naming bottles-cli", err)
 	}
-	if err := Launch(context.Background(), "steam", "", "", false); err == nil ||
+	if err := Launch(context.Background(), Opts{Source: "steam"}); err == nil ||
 		!strings.Contains(err.Error(), "Steam") {
 		t.Errorf("steam error = %v, want it naming Steam", err)
 	}
-	if err := Launch(context.Background(), "bottles", "", "/games/foo.exe", false); err == nil {
+	if err := Launch(context.Background(), Opts{Source: "bottles", Exe: "/games/foo.exe"}); err == nil {
 		t.Error("empty bottle ref: want error, got nil")
+	}
+}
+
+// TestLaunchWritesPerLaunchLog: with LogDir set, the detached child's
+// stdout/stderr land in a per-launch file headed by the exact argv
+// (issue 061) — the file is where silent launcher failures get
+// diagnosed.
+func TestLaunchWritesPerLaunchLog(t *testing.T) {
+	bin := t.TempDir()
+	script := "#!/bin/sh\n" +
+		`echo "bottles-cli starting $3"` + "\n" +
+		`echo "bottles-cli warning: something" >&2` + "\n"
+	if err := os.WriteFile(filepath.Join(bin, "bottles-cli"), []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake bottles-cli: %v", err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	logDir := t.TempDir()
+	err := Launch(context.Background(), Opts{
+		Source: "bottles", Ref: "mybottle", Exe: "/games/foo.exe",
+		LogDir: logDir, LogName: "Foo",
+	})
+	if err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+
+	// The spawn is detached: poll until the child has written its output.
+	var content string
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		matches, _ := filepath.Glob(filepath.Join(logDir, "foo-*.log"))
+		if len(matches) == 1 {
+			data, _ := os.ReadFile(matches[0])
+			content = string(data)
+			if strings.Contains(content, "bottles-cli starting mybottle") {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("log never captured child output; last content:\n%s", content)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for _, want := range []string{
+		"# argv: bottles-cli run -b mybottle -e /games/foo.exe",
+		"bottles-cli starting mybottle",
+		"bottles-cli warning: something",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("log lacks %q:\n%s", want, content)
+		}
 	}
 }
 

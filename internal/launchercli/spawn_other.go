@@ -10,6 +10,6 @@ import (
 
 // Launch is unreachable off Linux (the router only exists there); the
 // stub keeps the package compiling cross-platform.
-func Launch(_ context.Context, _, _, _ string, _ bool) error {
+func Launch(_ context.Context, _ Opts) error {
 	return fmt.Errorf("launchercli: launcher CLIs are a Linux concept, not %s", runtime.GOOS)
 }

@@ -36,7 +36,10 @@ import (
 // umu detection runs once at construction; the hook is always wired on
 // Linux, with or without umu-run, so owner routing works with the umu
 // feature toggle off (the toggle only gates the umu backend).
-func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllowed func() bool) ui.UmuLauncherHook {
+//
+// logDir enables per-launch log files (issue 061) for both backends —
+// empty disables. Production wires <data root>/logs.
+func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllowed func() bool, logDir string) ui.UmuLauncherHook {
 	umuPath, umuVersion, umuErr := umu.Detect(context.Background())
 	if umuErr != nil {
 		log.Info().Err(umuErr).Msg("umu-run not detected; unowned Windows-binary launches will error unless the prefix owner routes elsewhere")
@@ -68,6 +71,8 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 				ProtonPath: proton,
 				Store:      "",
 				UmuRunPath: umuPath,
+				LogDir:     logDir,
+				LogName:    row.Title,
 			}
 			if err := umu.Launch(ctx, nil, opts); err != nil {
 				// The error already carries umu's stderr tail; the fields
@@ -89,7 +94,10 @@ func newUmuLauncher(pinPrefix, routeFor func(installDir string) string, umuAllow
 			if !owned {
 				return "", fmt.Errorf("prefix %s has no owning launcher — pin a Bottles/Lutris/Heroic prefix or set Launch via: umu", prefix)
 			}
-			if err := launchercli.Launch(ctx, pfx.Source, pfx.OwnerRef, row.ExePath, pfx.Flatpak); err != nil {
+			if err := launchercli.Launch(ctx, launchercli.Opts{
+				Source: pfx.Source, Ref: pfx.OwnerRef, Exe: row.ExePath,
+				Flatpak: pfx.Flatpak, LogDir: logDir, LogName: row.Title,
+			}); err != nil {
 				log.Error().Err(err).
 					Str("game", row.Title).
 					Str("exe", row.ExePath).

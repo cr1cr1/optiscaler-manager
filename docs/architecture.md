@@ -204,6 +204,12 @@ internal/
                override → auto = owner CLI when the prefix is owned,
                else umu-run; the UmuEnabled toggle gates only the umu
                backend and raw PE exec never reaches launch/.
+   launchlog/ per-launch log files (issue 061): slugged timestamped
+               file under <data-root>/logs headed by the exact argv and
+               the env delta, then the child's full stdout/stderr (umu
+               runs with UMU_LOG=1; owner-CLI children are detached,
+               the file is closed after Start). Failure errors name the
+               file.
    launch/     per-store per-OS command table (pure Command fn) + detached
                spawn (build-tagged spawners; Start + Process.Release, never
                Wait). Steam steam://rungameid (Proton is Steam's business),

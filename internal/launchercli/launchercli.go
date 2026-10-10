@@ -8,6 +8,22 @@ package launchercli
 
 import "fmt"
 
+// Opts describes a single owner-CLI launch (issue 060; logging added
+// in issue 061). Source is the umu.Prefix source (bottles/lutris/
+// heroic), Ref the prefix's OwnerRef (bottle name, Lutris slug, Heroic
+// app name), Exe the game executable (Bottles only — Lutris and Heroic
+// launch their configured game), Flatpak selects the flatpak-spawn
+// argv form. LogDir/LogName mirror umu.LaunchOpts: a per-launch log
+// file capturing the detached child's stdout/stderr.
+type Opts struct {
+	Source  string
+	Ref     string
+	Exe     string
+	Flatpak bool
+	LogDir  string
+	LogName string
+}
+
 // Command builds the argv that launches via the owning launcher's CLI.
 // source is the umu.Prefix source (bottles/lutris/heroic), ref the
 // prefix's OwnerRef (bottle name, Lutris slug, Heroic app name), exe
