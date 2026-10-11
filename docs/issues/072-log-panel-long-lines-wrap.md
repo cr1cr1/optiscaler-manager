@@ -85,4 +85,4 @@ reproduction before any fix (probes deleted after use).
 - Docs: vendor-patches.md (v0.24 entry), scope.md (Chrome bullet).
 - `go test ./...` 35/35 ok, vet + gofmt clean.
 
-Commit: THIS_COMMIT.
+Commit: a763e8b.

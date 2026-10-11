@@ -4854,4 +4854,4 @@ wrapper only broke between segments, so unbreakable tokens never wrapped.
   ellipsis, unwrapped 600-char token, 2988 px list width in a 928 px
   column. Post-fix PNG render verified visually.
 - Docs: issue 072, vendor-patches (v0.24), scope.
-- Commit: THIS_COMMIT.
+- Commit: a763e8b.
