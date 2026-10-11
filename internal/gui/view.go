@@ -424,6 +424,10 @@ func (m *model) detailPanel() {
 	m.envInputID = nil
 	m.stopBtnRect = Rect{}
 	m.launchLogBtnRect = Rect{}
+	m.shaderClearRect = Rect{}
+	m.shaderClearAllRect = Rect{}
+	m.shaderWarmRect = Rect{}
+	m.shaderEnvRect = Rect{}
 	// The grid rendered first and captured its own tech row; the panel owns
 	// the seam while open so a missing panel row reads as zero.
 	m.techPillRowRect = Rect{}
@@ -585,10 +589,21 @@ func (m *model) detailPanel() {
 				return
 			}
 			if m.sess.OpBusy(e.InstallDir) {
-				Container(Attrs(Row, Gap(sp8), CrossMid), func() {
-					spinnerGlyph()
-					muted("Working…")
-				})
+				// A live warm run reports its own progress (bytes
+				// grown) instead of the generic Working line; Cancel
+				// below stops the game through the existing stop path.
+				if prog, ok := m.sess.WarmState(e.InstallDir); ok {
+					Container(Attrs(Row, Gap(sp8), CrossMid), func() {
+						spinnerGlyph()
+						muted("Warming shaders: +" + ui.FormatBytes(prog.BytesGrown) +
+							" (" + ui.FormatDuration(prog.Elapsed) + ")")
+					})
+				} else {
+					Container(Attrs(Row, Gap(sp8), CrossMid), func() {
+						spinnerGlyph()
+						muted("Working…")
+					})
+				}
 				if focusableButton(SymILeft, "Cancel") {
 					m.sess.CancelOp(e.InstallDir)
 				}
@@ -716,6 +731,9 @@ func (m *model) detailPanel() {
 					})
 				}
 			})
+			// Shader-cache compilation management (issue 078): status,
+			// clear, env presets, and warm for the selected game.
+			m.shaderSection(e)
 			scrollBars()
 		})
 	})

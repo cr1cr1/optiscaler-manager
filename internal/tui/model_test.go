@@ -90,6 +90,7 @@ func newTestEnv(t *testing.T, mutate func(*ui.Deps)) *testEnv {
 		Covers:       covers.NewWithBase(nil, filepath.Join(root, "covers"), e.srv.URL+"/cdn/%s", e.srv.URL+"/search/"),
 		CacheDir:     filepath.Join(root, "cache"),
 		SteamRoot:    steamRoot,
+		HomeDir:      t.TempDir(), // hermetic: never the real driver caches
 		SettingsRoot: filepath.Join(root, "settings"),
 	}
 	if mutate != nil {

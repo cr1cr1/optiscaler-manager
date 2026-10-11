@@ -549,6 +549,12 @@ func (m Model) detailView(w, contentH int) string {
 		if row.CompatPrefix != "" {
 			fmt.Fprintf(&b, "Proton: %s\n", row.CompatPrefix)
 		}
+		// Shader-cache status (issue 078): the same discovery the GUI
+		// section renders, one line — actions stay GUI-only (no click
+		// targets here; TUI keybindings are a follow-up).
+		if m.sess != nil {
+			fmt.Fprintf(&b, "Shader caches: %s\n", ui.SummarizeShaderCaches(m.sess.ShaderCaches(row.InstallDir)))
+		}
 		// Startup DLSS availability check: the published version the next
 		// update brings and what the download cache already holds, so the
 		// user knows whether pressing the badge hits the cache or network.

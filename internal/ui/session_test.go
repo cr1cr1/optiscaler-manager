@@ -27,6 +27,7 @@ type testEnv struct {
 	steamRoot  string
 	gameRoot   string
 	bin        string
+	home       string
 	srv        *httptest.Server
 	opened     []string
 	bundleHits int64 // atomic: /bundle (bundle download) requests served
@@ -65,21 +66,21 @@ func newTestEnv(t *testing.T) *testEnv {
 	writeUIFile(t, filepath.Join(e.bin, "nvngx_dlss.dll"), "DLSS")
 
 	ghClient := gh.NewWithBaseURL(nil, filepath.Join(root, "cache"), e.srv.URL)
+	// Hermetic home: shader-cache discovery must never see the
+	// developer's real driver caches (gigabytes, machine-specific).
+	e.home = t.TempDir()
 	e.sess = NewSession(Deps{
 		Store:     store.New(root),
 		GH:        ghClient,
 		Covers:    covers.NewWithBase(nil, filepath.Join(root, "covers"), e.srv.URL+"/cdn/%s", e.srv.URL+"/search/"),
 		CacheDir:  filepath.Join(root, "cache"),
 		SteamRoot: e.steamRoot,
+		HomeDir:   e.home,
 	})
 	e.sess.openExternal = func(path string) error {
 		e.opened = append(e.opened, path)
 		return nil
 	}
-	// Hermetic home: shader-cache discovery must never see the
-	// developer's real driver caches (gigabytes, machine-specific).
-	home := t.TempDir()
-	e.sess.homeDir = func() (string, error) { return home, nil }
 	return e
 }
 

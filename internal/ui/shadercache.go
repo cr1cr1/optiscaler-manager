@@ -103,7 +103,7 @@ func (s *Session) ClearShaderCache(gameDir, path string) {
 			return
 		}
 		s.invalidateShaderCache(gameDir)
-		done := fmt.Sprintf("Cleared shader cache (%s)", formatBytes(ref.SizeBytes))
+		done := fmt.Sprintf("Cleared shader cache (%s)", FormatBytes(ref.SizeBytes))
 		s.setStatusGame(gameDir, done)
 		s.toast(done, false)
 		s.emit(Event{Kind: EvOpDone, Text: done, GameDir: gameDir})
@@ -117,7 +117,7 @@ func (s *Session) ClearShaderCache(gameDir, path string) {
 			GameDir:   gameDir,
 			clearPath: path,
 			Message: fmt.Sprintf("This cache is shared by ALL games (%s). Clear it anyway?",
-				formatBytes(ref.SizeBytes)),
+				FormatBytes(ref.SizeBytes)),
 		})
 	}
 }
@@ -146,7 +146,7 @@ func (s *Session) ClearGameShaderCaches(gameDir string) {
 		freed += r.SizeBytes
 	}
 	s.invalidateShaderCache(gameDir)
-	done := fmt.Sprintf("Cleared %d shader caches (%s)", cleared, formatBytes(freed))
+	done := fmt.Sprintf("Cleared %d shader caches (%s)", cleared, FormatBytes(freed))
 	s.setStatusGame(gameDir, done)
 	s.toast(done, false)
 	s.emit(Event{Kind: EvOpDone, Text: done, GameDir: gameDir})
@@ -368,6 +368,24 @@ type warmRun struct {
 	grown int64
 }
 
+// HasTrackableShaderCache reports whether the pane should offer Warm:
+// a DXVK/vkd3d file or an engine-owned dir the watchdog can watch
+// grow. Display-grade (memoized); StartWarm re-checks fresh before
+// launching.
+func (s *Session) HasTrackableShaderCache(gameDir string) bool {
+	row := s.findRow(gameDir)
+	if row == nil {
+		return false
+	}
+	for _, r := range s.ShaderCaches(gameDir) {
+		switch r.Kind {
+		case shadercache.KindDXVK, shadercache.KindVKD3D, shadercache.KindUnclaimed:
+			return true
+		}
+	}
+	return false
+}
+
 // warmBytesForWatch sums the per-game caches a watchdog may watch grow:
 // claimed files plus the engine-owned dirs (growth there is warming
 // evidence too — we never delete them, only observe). Steam precache
@@ -473,13 +491,13 @@ func (s *Session) StartWarm(gameDir string) {
 		default:
 			s.invalidateShaderCache(dir)
 			s.opDone(fmt.Sprintf("Warmed: +%s in %s (%s)",
-				formatBytes(res.BytesGrown), formatDuration(res.Elapsed), res.StopReason), dir)
+				FormatBytes(res.BytesGrown), FormatDuration(res.Elapsed), res.StopReason), dir)
 		}
 	}()
 }
 
-// formatBytes renders a byte count in the pane's units.
-func formatBytes(b int64) string {
+// FormatBytes renders a byte count in the panes' units.
+func FormatBytes(b int64) string {
 	const unit = 1024
 	if b < unit {
 		return fmt.Sprintf("%d B", b)
@@ -492,8 +510,44 @@ func formatBytes(b int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
-// formatDuration renders M:SS for warm toasts.
-func formatDuration(d time.Duration) string {
+// FormatDuration renders M:SS for warm progress and toasts.
+func FormatDuration(d time.Duration) string {
 	s := int64(d.Round(time.Second).Seconds())
 	return fmt.Sprintf("%d:%02d", s/60, s%60)
+}
+
+// SummarizeShaderCaches renders the one-line TUI status: managed files
+// with bytes, then the read-only corners (precache, unmanaged,
+// shared). Empty reads "none found" — the pane's rows-only rule in
+// one line.
+func SummarizeShaderCaches(refs []shadercache.Ref) string {
+	if len(refs) == 0 {
+		return "none found"
+	}
+	var files int
+	var managed, foz, unmanaged, shared int64
+	for _, r := range refs {
+		switch r.Kind {
+		case shadercache.KindDXVK, shadercache.KindVKD3D:
+			files++
+			managed += r.SizeBytes
+		case shadercache.KindSteamFoz:
+			foz += r.SizeBytes
+		case shadercache.KindUnclaimed:
+			unmanaged += r.SizeBytes
+		case shadercache.KindMesa, shadercache.KindNvidia:
+			shared += r.SizeBytes
+		}
+	}
+	out := fmt.Sprintf("%d files, %s", files, FormatBytes(managed))
+	if foz > 0 {
+		out += ", Steam precache " + FormatBytes(foz)
+	}
+	if unmanaged > 0 {
+		out += ", " + FormatBytes(unmanaged) + " not managed"
+	}
+	if shared > 0 {
+		out += ", " + FormatBytes(shared) + " shared"
+	}
+	return out
 }

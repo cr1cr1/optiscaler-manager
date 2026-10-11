@@ -105,9 +105,7 @@ func TestClearGameShaderCaches(t *testing.T) {
 // consent gate; declining keeps every byte, accepting clears it.
 func TestClearSharedCacheConsent(t *testing.T) {
 	e := newTestEnv(t)
-	home := t.TempDir()
-	e.sess.homeDir = func() (string, error) { return home, nil }
-	mesaFile := filepath.Join(home, ".cache", "mesa_shader_cache", "f")
+	mesaFile := filepath.Join(e.home, ".cache", "mesa_shader_cache", "f")
 	writeUIFile(t, mesaFile, "MESADATA")
 	dir := scanGameOne(t, e)
 

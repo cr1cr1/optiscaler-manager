@@ -54,6 +54,7 @@ func guiFakes(t *testing.T, opts ...func(*ui.Deps)) (*ui.Session, string) {
 		Covers:       covers.NewWithBase(nil, filepath.Join(root, "covers"), srv.URL+"/cdn/%s", srv.URL+"/search/"),
 		CacheDir:     filepath.Join(root, "cache"),
 		SteamRoot:    steamRoot,
+		HomeDir:      t.TempDir(),                     // hermetic: never the real driver caches
 		SettingsRoot: filepath.Join(root, "settings"), // realistic default; mutators may override
 	}
 	for _, o := range opts {

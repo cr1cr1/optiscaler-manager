@@ -108,6 +108,10 @@ type model struct {
 	envApplyRect          Rect                          // screen rect of the env editor's Apply button (click test seam)
 	stopBtnRect           Rect                          // screen rect of the detail panel's Stop button for a running launch (click test seam, issue 068)
 	launchLogBtnRect      Rect                          // screen rect of the detail panel's Launch log button (click test seam, issue 070)
+	shaderClearRect       Rect                          // screen rect of the shader section's first Clear button (click test seam, issue 078)
+	shaderClearAllRect    Rect                          // screen rect of the shader section's Clear-all button (click test seam, issue 078)
+	shaderWarmRect        Rect                          // screen rect of the shader section's Warm button (click test seam, issue 078)
+	shaderEnvRect         Rect                          // screen rect of the shader section's first env preset toggle (click test seam, issue 078)
 	forkSlugBuf           string                        // settings-modal add-fork slug input
 	forkPatternBuf        string                        // settings-modal add-fork asset-glob input
 	titleEditDir          string                        // detail panel: game whose title is being edited ("" = editor closed, issue 028)

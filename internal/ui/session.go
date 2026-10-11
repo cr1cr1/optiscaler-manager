@@ -292,6 +292,12 @@ type Deps struct {
 	// GOOS selects the target platform behavior (empty = runtime.GOOS);
 	// ProtonDB enrichment and cached proton tiers are linux-only.
 	GOOS string
+
+	// HomeDir overrides the home directory shader-cache discovery
+	// measures the shared driver caches under (issue 078); empty
+	// selects the process home. Tests inject temp dirs for hermetic,
+	// machine-independent discovery.
+	HomeDir string
 }
 
 // UmuLauncherHook is the Windows-binary launch router (issue 060):
@@ -401,6 +407,10 @@ func NewSession(deps Deps) *Session {
 			log.Warn().Err(err).Str("root", deps.SettingsRoot).Msg("settings root not creatable")
 		}
 	}
+	homeDir := os.UserHomeDir
+	if deps.HomeDir != "" {
+		homeDir = func() (string, error) { return deps.HomeDir, nil }
+	}
 	return &Session{
 		deps:         deps,
 		events:       make(chan Event, 64),
@@ -413,7 +423,7 @@ func NewSession(deps Deps) *Session {
 		pickDir:      pickdir.Pick,
 		pickFile:     pickdir.PickFile,
 		removeAll:    os.RemoveAll,
-		homeDir:      os.UserHomeDir,
+		homeDir:      homeDir,
 		shaderMemos:  map[string][]shadercache.Ref{},
 		warmRuns:     map[string]*warmRun{},
 	}
