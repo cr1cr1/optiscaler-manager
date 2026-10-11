@@ -72,4 +72,4 @@ game uninstalled and unswitched.
 - Docs: scope.md (backup paragraph now states the switch semantics).
 - `go test ./...` 35/35 ok, vet + gofmt clean.
 
-Commit: THIS_COMMIT.
+Commit: 26c6eb3.

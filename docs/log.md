@@ -4872,4 +4872,4 @@ continuation could never resume the chain (dead end either way).
 - Reds witnessed on both paths; relocation verified intact for the fork
   case.
 - Docs: issue 073, scope (backup paragraph).
-- Commit: THIS_COMMIT.
+- Commit: 26c6eb3.
