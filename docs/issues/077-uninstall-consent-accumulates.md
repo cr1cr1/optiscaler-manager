@@ -43,4 +43,4 @@ corrected a wrong assumption: the changed-files gate fires FIRST (the
 refusal check precedes the backup probe in the overwritten loop). Full
 suite 35/35 green, vet + gofmt clean.
 
-Commit: THIS_COMMIT.
+Commit: ba90d63.

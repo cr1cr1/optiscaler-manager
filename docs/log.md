@@ -4959,4 +4959,4 @@ again forever.
   changed-files gate fires FIRST (the refusal check precedes the backup
   probe inside the overwritten loop).
 - Docs: issue 077, scope (install/backup bullet).
-- Commit: THIS_COMMIT.
+- Commit: ba90d63.
