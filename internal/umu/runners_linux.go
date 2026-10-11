@@ -14,7 +14,9 @@ import (
 
 // RunnerRoots returns the existing directories worth scanning for
 // Proton-compatible runners: Steam (native, Flatpak, Snap, plus extra
-// library folders from steamapps/libraryfolders.vdf), Bottles, Lutris,
+// library folders from steamapps/libraryfolders.vdf — both their
+// compatibilitytools.d and their steamapps/common, which holds the
+// official Proton apps, issue 075), Bottles, Lutris,
 // Heroic, and umu's own compatibilitytools. Missing dirs are skipped,
 // and entries that resolve to the same directory through symlinks are
 // deduplicated. XDG_DATA_HOME / XDG_CONFIG_HOME overrides are honored.
@@ -63,6 +65,7 @@ func RunnerRoots() []string {
 		)
 	}
 	candidates = append(candidates, steamLibraryCompatTools(home, xdgData)...)
+	candidates = append(candidates, steamLibraryCommon(home, xdgData)...)
 
 	var roots []string
 	seen := map[string]bool{}
@@ -130,6 +133,17 @@ func steamLibraryCompatTools(home, xdgData string) []string {
 	return out
 }
 
+// steamLibraryCommon returns <root-or-library>/steamapps/common for
+// every Steam root candidate and extra library folder: Valve's official
+// Proton builds install there as apps, next to the games (issue 075).
+func steamLibraryCommon(home, xdgData string) []string {
+	var out []string
+	for _, r := range steamLibraryRoots(home, xdgData) {
+		out = append(out, filepath.Join(r, "steamapps", "common"))
+	}
+	return out
+}
+
 // libraryPathRe extracts the "path" values from libraryfolders.vdf.
 // The VDF is line-oriented enough in practice that a regex beats pulling
 // in a parser; escaped backslashes (Windows-style paths) are collapsed.
@@ -159,6 +173,10 @@ func FindRunners(_ context.Context, roots []string) []Runner {
 	var all []tagged
 	for i, root := range roots {
 		source := rootSource(root)
+		// steamapps/common holds games and the SteamLinuxRuntime
+		// containers next to the official Proton apps, so it gets a
+		// tighter gate than runnerValid (issue 075).
+		steamCommon := strings.HasSuffix(filepath.Clean(root), filepath.Join("steamapps", "common"))
 		entries, err := os.ReadDir(root)
 		if err != nil {
 			continue
@@ -168,7 +186,11 @@ func FindRunners(_ context.Context, roots []string) []Runner {
 				continue
 			}
 			dir := filepath.Join(root, e.Name())
-			if !runnerValid(dir) {
+			if steamCommon {
+				if !steamCommonRunner(dir, e.Name()) {
+					continue
+				}
+			} else if !runnerValid(dir) {
 				continue
 			}
 			all = append(all, tagged{
@@ -198,9 +220,11 @@ func FindRunners(_ context.Context, roots []string) []Runner {
 func rootSource(root string) string {
 	r := filepath.Clean(root)
 	switch {
-	case strings.HasSuffix(r, "compatibilitytools.d"):
+	case strings.HasSuffix(r, "compatibilitytools.d"),
+		strings.HasSuffix(r, filepath.Join("steamapps", "common")):
 		// Steam is the only launcher using compatibilitytools.d (native,
-		// Flatpak, Snap, and extra library folders alike).
+		// Flatpak, Snap, and extra library folders alike); steamapps/common
+		// holds the official Proton apps (issue 075).
 		return "steam"
 	case strings.HasSuffix(r, filepath.Join("bottles", "runners")):
 		return "bottles"
@@ -223,6 +247,19 @@ func rootSource(root string) string {
 func runnerValid(dir string) bool {
 	if _, err := os.Stat(filepath.Join(dir, "toolmanifest.vdf")); err == nil {
 		return true
+	}
+	st, err := os.Stat(filepath.Join(dir, "proton"))
+	return err == nil && !st.IsDir()
+}
+
+// steamCommonRunner gates steamapps/common entries (issue 075): the
+// official Proton apps install there alongside games and the
+// SteamLinuxRuntime/Proton-EAC/BattlEye containers, so a "proton" name
+// prefix plus the top-level proton script identifies an actual Proton
+// build — toolmanifest.vdf alone would also match the container runtimes.
+func steamCommonRunner(dir, name string) bool {
+	if !strings.HasPrefix(strings.ToLower(name), "proton") {
+		return false
 	}
 	st, err := os.Stat(filepath.Join(dir, "proton"))
 	return err == nil && !st.IsDir()

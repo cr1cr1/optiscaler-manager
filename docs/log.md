@@ -4893,3 +4893,21 @@ Proton 9.0).
   record-walker double-advance; real-file probe confirmed all five names.
 - Docs: issue 074, scope (umu bullet).
 - Commit: 5545ec8.
+
+## 2026-10-11 — issue 75: runners list includes Steam's official Proton builds
+
+User request: add all Steam runners from the well-known locations and the
+extra libraries to the Runners list. Root cause of their absence: only
+compatibilitytools.d was scanned; Valve's Proton builds are Steam apps
+under steamapps/common.
+
+- `RunnerRoots` now also yields every root/library's `steamapps/common`;
+  `FindRunners` gates those to proton*-named dirs with the `proton`
+  script (keeps out games, SteamLinuxRuntime and the anti-cheat
+  runtimes); `rootSource` labels them "steam".
+- Red witnessed (EAC runtime + sniper accepted, Source "other"); real-
+  machine probe lists `Proton - Experimental` from the extra library.
+- Flake note: `TestClearCoverOverrideRestoresChain` TempDir cleanup raced
+  an async cache write on one run; rerun 35/35 green. Pre-existing.
+- Docs: issue 075, scope (umu bullet).
+- Commit: THIS_COMMIT.

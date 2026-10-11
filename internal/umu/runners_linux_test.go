@@ -389,3 +389,66 @@ func writeFile(t *testing.T, path, body string) {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
+
+func TestRunnerRoots_IncludesSteamCommonDirs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	steam := filepath.Join(home, ".steam", "steam")
+	common := filepath.Join(steam, "steamapps", "common")
+	mkdir(t, common)
+	lib := filepath.Join(t.TempDir(), "steamlib")
+	writeFile(t, filepath.Join(steam, "steamapps", "libraryfolders.vdf"),
+		`"libraryfolders" { "0" { "path" "`+lib+`" } }`)
+	libCommon := filepath.Join(lib, "steamapps", "common")
+	mkdir(t, libCommon)
+
+	got := RunnerRoots()
+	gotSet := map[string]bool{}
+	for _, g := range got {
+		gotSet[g] = true
+	}
+	for _, w := range []string{common, libCommon} {
+		if !gotSet[w] {
+			t.Errorf("RunnerRoots() missing steam common root %q (got %v)", w, got)
+		}
+	}
+}
+
+func TestFindRunners_SteamCommonProtonGate(t *testing.T) {
+	// A steamapps/common root holds games and container runtimes next to
+	// the official Proton apps; only Proton* dirs with the top-level
+	// proton script are runners (issue 075).
+	common := filepath.Join(t.TempDir(), "steamapps", "common")
+
+	proton9 := filepath.Join(common, "Proton 9.0")
+	writeFile(t, filepath.Join(proton9, "proton"), "#!/bin/sh\n")
+	experimental := filepath.Join(common, "Proton - Experimental")
+	writeFile(t, filepath.Join(experimental, "proton"), "#!/bin/sh\n")
+	// EAC runtime: Proton-named but no proton script — not a runner.
+	eac := filepath.Join(common, "Proton EasyAntiCheat Runtime")
+	writeFile(t, filepath.Join(eac, "toolmanifest.vdf"), `"manifest" { "version" "0" }`)
+	// Container runtime: toolmanifest.vdf would pass runnerValid.
+	sniper := filepath.Join(common, "SteamLinuxRuntime_sniper")
+	writeFile(t, filepath.Join(sniper, "toolmanifest.vdf"), `"manifest" { "version" "0" }`)
+	// Plain game dirs.
+	mkdir(t, filepath.Join(common, "Some Game"))
+
+	runners := FindRunners(context.Background(), []string{common})
+	var names []string
+	for _, r := range runners {
+		names = append(names, r.Name)
+		if r.Source != "steam" {
+			t.Errorf("runner %q Source = %q, want steam", r.Name, r.Source)
+		}
+	}
+	if len(runners) != 2 {
+		t.Fatalf("len(runners) = %d (%v), want 2 (Proton 9.0, Proton - Experimental)", len(runners), names)
+	}
+	// Sorted newest first: 9.0 beats Experimental's versionless "0".
+	if runners[0].Name != "Proton 9.0" || runners[1].Name != "Proton - Experimental" {
+		t.Errorf("runners = %v, want [Proton 9.0, Proton - Experimental]", names)
+	}
+}

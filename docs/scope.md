@@ -602,7 +602,11 @@ decisions the per-version sections above do not cover.
   exe path. The runner follows the prefix: a prefix owned by Bottles,
   Lutris, Heroic, or Steam launches with that launcher's newest
   runner; anything else (and Auto) uses the global newest across
-  Steam — native/Flatpak/Snap/extra libraries — Bottles, Lutris,
+  Steam — native/Flatpak/Snap/extra libraries, both their
+  `compatibilitytools.d` and the official Proton apps under
+  `steamapps/common` (Proton-named dirs with the `proton` script;
+  games and the SteamLinuxRuntime/anti-cheat containers are gated
+  out, issue 075) — Bottles, Lutris,
   Heroic, and umu `compatibilitytools`, falling through to umu's own
   runtime when nothing is found. The wine prefix resolves per game pin
   → global default → auto chain: `PrefixOverrides` pins a prefix per
