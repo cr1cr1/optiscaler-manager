@@ -4892,4 +4892,4 @@ Proton 9.0).
 - Reds witnessed (empty map, `Name = "312520"`); two-record test caught a
   record-walker double-advance; real-file probe confirmed all five names.
 - Docs: issue 074, scope (umu bullet).
-- Commit: THIS_COMMIT.
+- Commit: 5545ec8.

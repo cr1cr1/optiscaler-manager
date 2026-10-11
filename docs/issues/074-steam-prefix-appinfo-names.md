@@ -29,14 +29,14 @@ ids (appid 0 shared prefix, >2³¹ non-Steam shortcut ids) keep the raw id.
 
 ## Acceptance
 
-- [ ] A compatdata prefix with no appmanifest but an appinfo.vdf entry is
+- [x] A compatdata prefix with no appmanifest but an appinfo.vdf entry is
       listed under the game's display name in the prefix dropdowns
       (settings picker and per-game picker share `UmuPickerRowLabel`).
-- [ ] An appmanifest name still wins over appinfo.vdf when both exist.
-- [ ] A compatdata prefix with neither keeps the raw appid; a missing or
+- [x] An appmanifest name still wins over appinfo.vdf when both exist.
+- [x] A compatdata prefix with neither keeps the raw appid; a missing or
       corrupt appinfo.vdf changes nothing (no error surfaced).
-- [ ] Both the legacy and string-pool appinfo.vdf layouts parse.
-- [ ] `go test ./...`, `go vet`, `gofmt` green; docs updated.
+- [x] Both the legacy and string-pool appinfo.vdf layouts parse.
+- [x] `go test ./...`, `go vet`, `gofmt` green; docs updated.
 
 ## Outcome
 
@@ -67,4 +67,4 @@ record end.
   `UmuPickerRowLabel`, so the source fix covers all three.
 - Docs: scope (umu bullet naming chain).
 
-Commit: THIS_COMMIT
+Commit: 5545ec8
