@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	"github.com/rs/zerolog/log"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/app"
 	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
+	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 )
 
 // UpdateDLSS starts an explicit update of the three-file NVIDIA runtime set
@@ -200,6 +202,12 @@ func (s *Session) refreshComponentVersions(gameDir string) {
 	components, raw := app.ComponentVersions(row.InjectionDir)
 	labels := componentLabels(components)
 	ready := dlss.Complete(row.InjectionDir)
+	// Same DLSS-dir rule as the scan probe (issue 081): readiness and
+	// the applied version describe the set the updater manages.
+	if dd, err := app.ResolveDLSSDir(gameDir); err == nil {
+		raw, _ = pever.FileVersion(filepath.Join(dd, dlss.Files[0]))
+		ready = dlss.Complete(dd)
+	}
 	s.mu.Lock()
 	for i := range s.st.Rows {
 		if s.st.Rows[i].InstallDir == gameDir {

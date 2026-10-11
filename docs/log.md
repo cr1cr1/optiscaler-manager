@@ -5018,3 +5018,25 @@ directory silently disagreed.
   once; rerun 36/36 green. Pre-existing.
 - Docs: issue 079, scope (manager-state principle bullet).
 - Commit: ab18b21.
+
+## 2026-10-11 — issue 081: DLSS updates target the OptiScaler directory
+
+- User report: with OptiScaler installed, a DLSS upgrade must place the
+  three runtime DLLs where `dlssg_to_fsr3_amd_is_better.dll` lives — the
+  `OptiScaler/` subdir for the dlssnr fork — while the updater always
+  wrote to the exe-heuristic injection dir, orphaning a duplicate set
+  the game never loads.
+- `app.ResolveDLSSDir` (new): dir of `dlssg_to_fsr3_amd_is_better.dll`
+  (case-insensitive; backup stores skipped; ties → smallest path), else
+  the `ResolveInstallDir` fallback. The three `app` DLSS ops
+  (update/restore/snapshots) resolve through it.
+- Probe follows the writer: scan `enrichVersions` and the post-op UI
+  refresh read `DLSSVersion`/`DLSSReady` from the DLSS dir, so the pill
+  shows the managed set's version. Component labels keep the recursive
+  injection-dir walk.
+- TDD, seams agreed up front (writer + probe): red witnessed on both
+  (update wrote the game root; NR-layout game read not-ready), then
+  green slice by slice. Fallback and resolver edge cases pinned
+  (backup-skip, tie-break, no-anchor).
+- Docs: issue 081, scope (v0.14 OptiScaler-dir bullet).
+- Commit: THIS_COMMIT.

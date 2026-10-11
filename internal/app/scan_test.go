@@ -229,6 +229,58 @@ func TestLibraryEntryDLSSReadiness(t *testing.T) {
 	}
 }
 
+// TestLibraryEntryDLSSReadsOptiScalerDir: the DLSS pill follows the
+// updater's destination (issue 081) — the directory holding
+// dlssg_to_fsr3_amd_is_better.dll — not the injection dir. The NR-layout
+// game reads ready from its OptiScaler/ subdir despite a decoy DLL in the
+// root; a game whose set never moved next to its dlssg reads not-ready,
+// exactly where the updater would install.
+func TestLibraryEntryDLSSReadsOptiScalerDir(t *testing.T) {
+	steamRoot := mkSteamRoot(t)
+
+	nr := mkSteamGame(t, steamRoot, "302", "NR Game", "NRGame")
+	writeScanFile(t, filepath.Join(nr, "nrgame.exe"), []byte("GAME"))
+	writeScanFile(t, filepath.Join(nr, "nvngx_dlss.dll"), testutil.FixedVersionPE(9, 9, 9, 0))
+	nrOpti := filepath.Join(nr, "OptiScaler")
+	writeScanFile(t, filepath.Join(nrOpti, "dlssg_to_fsr3_amd_is_better.dll"), []byte("FG"))
+	for i, name := range dlss.Files {
+		writeScanFile(t, filepath.Join(nrOpti, name), testutil.FixedVersionPE(1, 0, uint16(i), 0))
+	}
+
+	shadow := mkSteamGame(t, steamRoot, "303", "Shadow Game", "ShadowGame")
+	writeScanFile(t, filepath.Join(shadow, "shadowgame.exe"), []byte("GAME"))
+	writeScanFile(t, filepath.Join(shadow, "OptiScaler", "dlssg_to_fsr3_amd_is_better.dll"), []byte("FG"))
+	for i, name := range dlss.Files {
+		writeScanFile(t, filepath.Join(shadow, name), testutil.FixedVersionPE(3, 7, uint16(20+i), 0))
+	}
+
+	entries, err := ScanAllLibraries(context.Background(), nil, ScanAllOptions{SteamRoot: steamRoot})
+	if err != nil {
+		t.Fatalf("ScanAllLibraries: %v", err)
+	}
+	byName := entriesByName(entries)
+	n, ok := byName["NR Game"]
+	if !ok {
+		t.Fatal("NR game missing")
+	}
+	if !n.DLSSReady {
+		t.Error("NR game with a complete set beside dlssg_to_fsr3 must be update-ready")
+	}
+	if n.DLSSVersion != "1.0.0.0" {
+		t.Errorf("NR DLSSVersion = %q, want the OptiScaler-dir set 1.0.0.0, not the root decoy", n.DLSSVersion)
+	}
+	s, ok := byName["Shadow Game"]
+	if !ok {
+		t.Fatal("shadow game missing")
+	}
+	if s.DLSSReady {
+		t.Error("set in the injection root while dlssg_to_fsr3 lives in OptiScaler/ must not read ready")
+	}
+	if s.DLSSVersion != "" {
+		t.Errorf("shadow DLSSVersion = %q, want empty (the updater manages the OptiScaler dir)", s.DLSSVersion)
+	}
+}
+
 func TestLibraryEntryComponentVersions(t *testing.T) {
 	steamRoot := mkSteamRoot(t)
 

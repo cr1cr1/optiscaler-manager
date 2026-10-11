@@ -715,6 +715,13 @@ decisions the per-version sections above do not cover.
   block the update (issue 018): the missing members are installed with
   the rest and no rollback snapshot is written — snapshots are
   all-or-nothing, so an incomplete set has no rollback value.
+- **OptiScaler-dir destination (issue 081)**: the set installs where
+  `dlssg_to_fsr3_amd_is_better.dll` lives when OptiScaler is installed
+  (the `OptiScaler/` subdir for the dlssnr fork, the injection dir
+  itself for standard layouts), else the resolved injection dir. Backup
+  stores never qualify as the destination. The pill's readiness/version
+  probe reads that same dir, so the displayed version is always the
+  managed set's.
 - **Immutable-commit source**: NVIDIA/DLSS `main` resolves to a commit
   SHA via the GitHub API; files come from
   `lib/Windows_x86_64/rel/<name>` at that exact commit. No mutable-URL

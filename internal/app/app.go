@@ -318,6 +318,17 @@ func enrichVersions(e *LibraryEntry, m *domain.Manifest) {
 	}
 	e.ComponentVersions, e.DLSSVersion = ComponentVersions(e.InjectionDir)
 	e.DLSSReady = dlss.Complete(e.InjectionDir)
+	// The DLSS pill follows the updater's destination (issue 081): with
+	// OptiScaler installed the runtime set lives beside
+	// dlssg_to_fsr3_amd_is_better.dll, so readiness and the applied
+	// version probe the DLSS dir — the version displayed is the version
+	// of the set the updater manages. Component labels keep the
+	// injection-dir walk (it is recursive; subdir copies still surface).
+	// An unresolvable DLSS dir keeps the injection-dir facts above.
+	if dd, err := ResolveDLSSDir(e.Game.InstallDir); err == nil {
+		e.DLSSVersion, _ = pever.FileVersion(filepath.Join(dd, dlss.Files[0]))
+		e.DLSSReady = dlss.Complete(dd)
+	}
 }
 
 // ComponentVersions parses each detected upscaler DLL under dir and maps it
