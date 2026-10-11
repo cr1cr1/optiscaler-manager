@@ -85,20 +85,38 @@ injectable interval + fake backend.
 
 ## Acceptance
 
-- [ ] Details pane shows a shader-cache section per game: known caches
+- [x] Details pane shows a shader-cache section per game: known caches
       with size/age/Clear, globals greyed-shared, unclaimed info-only.
-- [ ] Per-game Clear removes only claimed files; global Clear asks via
+- [x] Per-game Clear removes only claimed files; global Clear asks via
       the confirm modal; decline leaves bytes untouched.
-- [ ] Env presets persist through the existing env store and surface in
+- [x] Env presets persist through the existing env store and surface in
       the env editor; off never deletes.
-- [ ] Warm launches via the game's launch route, reports MB + elapsed,
+- [x] Warm launches via the game's launch route, reports MB + elapsed,
       ends on quiescence/cap/cancel, stop reuses the Stop path.
-- [ ] `CompilerBackend` seam in place with `LaunchWatchBackend`;
+- [x] `CompilerBackend` seam in place with `LaunchWatchBackend`;
       fossilize follow-up issue filed.
-- [ ] `go test ./...`, `go vet`, `gofmt` green; scope/architecture docs
+- [x] `go test ./...`, `go vet`, `gofmt` green; scope/architecture docs
       updated if decisions settle there.
 
 ## Outcome
 
-Design approved 2026-10-11 (all seven sections). Awaiting
-implementation plan. Commit: TBD.
+Implemented as designed, in slices: `d04fd9e` discovery package,
+`f4e99db` session ops/consent/env/warm-backend, `ae8de8e` GUI section
++ TUI status + `Deps.HomeDir` seam, `d7e509a` backend unit tests,
+`e286250` review fixes. Ponytail-review accepted 2 findings: the
+watchdog now measures game-only (no 5s home-tree re-walks) and the
+consented shared clear re-validates the path at answer time (TOCTOU);
+rest confirmed no-change (stop ordering, claimed-only deletes,
+memo discipline, discovery walk).
+
+Decisions on the plan's open points: Warm refuses fire-and-forget
+routes (`shouldRouteWinBinary` default — no supervised slot, no
+watchdog); TUI ships read-only status (actions need keybindings —
+follow-up); no dead fossilize stub shipped. Left open: issue 080
+(fossilize-replay validation on host GPU), TUI warm/clear keys.
+ Reds witnessed per slice (missing package, undefined section
+rects, toggle-state expectation corrected to checkbox semantics,
+nested-claim fix, hermetic-HOME leak of the real 2.6 GB GLCache
+into session tests).
+- Commit: e286250.
+- Pin: e286250.

@@ -317,6 +317,18 @@ evidence.
   row (upsert, sort, disambiguate, persist) on the per-game op registry
   (Working…/Cancel affordance). A game no source resolves keeps its
   row — pruning stays the global scan's job.
+- **Per-game shader caches** (issue 078): the detail panel manages
+  shader compilation caches KISS — discovered known files (DXVK
+  state, vkd3d) with size/age/Clear, shared Mesa/NVIDIA blobs shown
+  global and cleared only behind the consent modal, unknown-format
+  engine dirs sized but never touched, Steam precache read-only.
+  Env presets (`DXVK_STATE_CACHE`, `__GL_SHADER_DISK_CACHE`,
+  `MESA_SHADER_CACHE_MAX_SIZE`) write the existing per-game env pin
+  (off stops growth, never deletes). **Warm** launch-and-records
+  through the game's route behind the `CompilerBackend` seam
+  (quiescence/timeout/exit/cancel, MB + time progress, supervised
+  launches only); fossilize-replay is issue 080. TUI shows the
+  one-line status; its actions are a follow-up.
 - **GUI polish**: theme tokens (spacing, radii, elevation, expanded
   palette), card/row hover states, deterministic gradient cover
   placeholders (glyph + title initial, FNV-hashed hue) replacing the tiny

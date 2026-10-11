@@ -4960,3 +4960,32 @@ again forever.
   probe inside the overwritten loop).
 - Docs: issue 077, scope (install/backup bullet).
 - Commit: ba90d63.
+
+## 2026-10-11 — issue 078: per-game shader cache management in the details pane
+
+Clean-room from SCSKiller's product shape (discovery → status →
+actions; its Windows engine stays behind). KISS scope: status + clear,
+env presets, launch-and-record warm.
+
+- `internal/shadercache`: `Discover` claims exact-known files
+  (`*.dxvk-cache`, `vkd3d-proton.cache`, shallow prefix), sizes
+  unknown-format engine dirs as info-only `Unclaimed` (never cleared),
+  measures Steam foz read-only + Mesa/NVIDIA globals; one pass, pane
+  order, never fails a scan.
+- Session: memoized `ShaderCaches` (invalidated by clear/warm/rescan),
+  claimed-only deletes, `ConfirmSharedCache` consent gate (zero
+  frontend plumbing), env presets over `EnvOverrides`
+  (`DXVK_STATE_CACHE`, `__GL_SHADER_DISK_CACHE`,
+  `MESA_SHADER_CACHE_MAX_SIZE`; off stops growth, never deletes),
+  `CompilerBackend` + `LaunchWatchBackend` (quiescence/timeout/
+  exit/cancel) behind the op shell; Warm refuses unsupervised routes.
+- GUI section (rows only when present, Clear-all, toggles, Warm +
+  live progress in the OpBusy branch); TUI one-line status
+  (`SummarizeShaderCaches`), actions GUI-only for now.
+- Spike verdict stands: `fossilize_replay` ships with Steam but replay
+  is unvalidated on the proprietary-NVIDIA host → issue 080.
+- Ponytail-review: game-only warm measurer, shared-clear TOCTOU
+  re-validation; rest no-change.
+- Docs: issues 078 (design→outcome), 080 (fossilize follow-up), scope
+  (details-pane bullet).
+- Commits: d04fd9e, f4e99db, ae8de8e, d7e509a, e286250.
