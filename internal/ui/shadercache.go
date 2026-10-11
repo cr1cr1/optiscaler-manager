@@ -282,6 +282,9 @@ func (b LaunchWatchBackend) defaults() LaunchWatchBackend {
 // session wrapper always stops the session it started.
 func (b LaunchWatchBackend) Warm(ctx context.Context, target WarmTarget, onProgress func(int64, time.Duration)) (WarmResult, error) {
 	b = b.defaults()
+	if onProgress == nil {
+		onProgress = func(int64, time.Duration) {}
+	}
 	start := b.Measure(target.Dir)
 	t0 := time.Now()
 	elapsed := func() time.Duration { return time.Since(t0) }
