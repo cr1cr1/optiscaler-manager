@@ -63,4 +63,4 @@ Source "other"; `RunnerRoots` lacked the common roots.
   35/35 green. Pre-existing race, not touched here.
 - Docs: scope (umu bullet runner enumeration).
 
-Commit: THIS_COMMIT
+Commit: 1c40733

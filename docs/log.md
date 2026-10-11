@@ -4910,4 +4910,4 @@ under steamapps/common.
 - Flake note: `TestClearCoverOverrideRestoresChain` TempDir cleanup raced
   an async cache write on one run; rerun 35/35 green. Pre-existing.
 - Docs: issue 075, scope (umu bullet).
-- Commit: THIS_COMMIT.
+- Commit: 1c40733.
