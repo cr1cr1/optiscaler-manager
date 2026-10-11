@@ -4938,4 +4938,4 @@ retry re-failed on the same file with no way past it from any frontend.
   green. Same load-flake class as the known
   `TestClearCoverOverrideRestoresChain` TempDir race.
 - Docs: issue 076, scope (install/backup bullet).
-- Commit: THIS_COMMIT.
+- Commit: b577831.

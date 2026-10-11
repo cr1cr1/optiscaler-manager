@@ -56,4 +56,4 @@ Flake noted: `TestVersionDropdownMenuOffersLatest` timed out once on a
 20s wall-clock row wait in an untouched path; rerun green (pre-existing
 load flake).
 
-Commit: THIS_COMMIT.
+Commit: b577831.
