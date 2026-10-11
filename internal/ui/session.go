@@ -152,6 +152,14 @@ type installConsent struct {
 	eacOK, cachedOK, largeOK bool
 }
 
+// uninstallConsent accumulates the consent-gate overrides a paused
+// uninstall has collected so far (missing backup, changed files), so
+// resuming at a later gate never re-asks an earlier one — without it the
+// two gates ping-pong forever when both conditions hold (issue 077).
+type uninstallConsent struct {
+	missingOK, changedOK bool
+}
+
 // Confirmation is a pending consent request. Installs never proceed past
 // these points until AnswerConfirm(true) — the frontend renders the prompt.
 type Confirmation struct {
@@ -168,6 +176,9 @@ type Confirmation struct {
 	// consent is the install's accumulated overrides at pause time
 	// (ConfirmEAC/ConfirmCachedRelease/ConfirmLargeBackup+OpInstall).
 	consent installConsent
+	// uconsent is the uninstall's accumulated overrides at pause time
+	// (ConfirmMissingBackup/ConfirmChangedFiles).
+	uconsent uninstallConsent
 }
 
 // Toast is a transient notification.

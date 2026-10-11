@@ -97,7 +97,10 @@ here are closed; reopen only with new evidence.
   foreign bytes — created files take the normal created fate, overwritten
   files still get their SHA-verified original restored (CLI:
   `uninstall --force-changed`) — and declining leaves everything
-  untouched. The version-switch chain keeps refusing foreign-modified
+  untouched. Both consent gates accumulate on the paused confirmation
+  (`uninstallConsent`, mirroring the install gates): when a file is both
+  foreign-modified and unrestorable, accepting each gate once completes
+  the uninstall instead of re-asking the other forever (issue 077). The version-switch chain keeps refusing foreign-modified
   files (issue 010). For missing backups the version-switch chain (incl.
   fork switches) instead warns and proceeds (issue 073): the user already
   chose the destructive operation, and the lost originals are

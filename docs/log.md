@@ -4939,3 +4939,24 @@ retry re-failed on the same file with no way past it from any frontend.
   `TestClearCoverOverrideRestoresChain` TempDir race.
 - Docs: issue 076, scope (install/backup bullet).
 - Commit: b577831.
+
+## 2026-10-11 — issue 77: uninstall consent gates accumulate across pauses
+
+User report: issue 76's new dialog "prompts but loops" — the
+"restoring original with consent" warning repeating every second.
+Root cause: when BOTH uninstall consent conditions hold (foreign-modified
+file AND its backup lost — the exact Witcher 3 state), the gates
+ping-pong: each AnswerConfirm resume re-entered runUninstallOpt with
+only its own override, dropping the other, so the other gate fired
+again forever.
+
+- `uninstallConsent{missingOK, changedOK}` carried on
+  `Confirmation.uconsent` (mirroring `installConsent`); each accept ORs
+  its override in; re-pauses carry the accumulation. Two gates, two
+  clicks, done.
+- Red witnessed precisely: "a third gate fired after both consents".
+  The red run also corrected a wrong gate-order assumption: the
+  changed-files gate fires FIRST (the refusal check precedes the backup
+  probe inside the overwritten loop).
+- Docs: issue 077, scope (install/backup bullet).
+- Commit: THIS_COMMIT.

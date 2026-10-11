@@ -112,9 +112,13 @@ func (s *Session) AnswerConfirm(accept bool) {
 	case ConfirmDLSSRestore:
 		go s.doRestoreDLSS(c.GameDir, c.SnapshotID, false)
 	case ConfirmMissingBackup:
-		go func() { _ = s.runUninstallOpt(c.GameDir, "", true, false) }()
+		uc := c.uconsent
+		uc.missingOK = true
+		go func() { _ = s.runUninstallOpt(c.GameDir, "", uc) }()
 	case ConfirmChangedFiles:
-		go func() { _ = s.runUninstallOpt(c.GameDir, "", false, true) }()
+		uc := c.uconsent
+		uc.changedOK = true
+		go func() { _ = s.runUninstallOpt(c.GameDir, "", uc) }()
 	case ConfirmLargeBackup:
 		switch c.Op {
 		case OpDLSSUpdate:
@@ -261,7 +265,7 @@ func changedFilesWarning(rf *installer.RefusedError) string {
 const errNotManagedToast = "not installed by this manager — adopt first or remove manually"
 
 func (s *Session) doUninstall(gameDir string) {
-	_ = s.runUninstallOpt(gameDir, "", false, false)
+	_ = s.runUninstallOpt(gameDir, "", uninstallConsent{})
 }
 
 // runUninstallOpt is the uninstall body with an outcome, mirroring
@@ -275,7 +279,7 @@ func (s *Session) doUninstall(gameDir string) {
 // whose backups are gone (issue 050); without it a missing backup pauses
 // the STANDALONE uninstall with a confirmation, while the switch chain
 // surfaces the typed error (no consent prompt mid-chain).
-func (s *Session) runUninstallOpt(gameDir, relocateDir string, allowMissing, allowChanged bool) error {
+func (s *Session) runUninstallOpt(gameDir, relocateDir string, uc uninstallConsent) error {
 	row := s.findRow(gameDir)
 	if row != nil && row.Status == domain.StatusExternal {
 		s.toast(errNotManagedToast, true)
@@ -290,8 +294,8 @@ func (s *Session) runUninstallOpt(gameDir, relocateDir string, allowMissing, all
 	s.opStarted("Uninstalling…")
 	_, err := app.UninstallWithOptions(ctx, s.deps.Store, gameDir, installer.UninstallOptions{
 		RelocateDir:        relocateDir,
-		AllowMissingBackup: allowMissing,
-		AllowChanged:       allowChanged,
+		AllowMissingBackup: uc.missingOK,
+		AllowChanged:       uc.changedOK,
 	})
 	s.finishOp(gameDir)
 	if errors.Is(err, context.Canceled) {
@@ -303,22 +307,24 @@ func (s *Session) runUninstallOpt(gameDir, relocateDir string, allowMissing, all
 		return err
 	}
 	var mb *installer.MissingBackupError
-	if errors.As(err, &mb) && relocateDir == "" && !allowMissing {
+	if errors.As(err, &mb) && relocateDir == "" && !uc.missingOK {
 		s.opAborted()
 		s.setConfirm(&Confirmation{
-			Kind:    ConfirmMissingBackup,
-			GameDir: gameDir,
-			Message: missingBackupWarning(mb),
+			Kind:     ConfirmMissingBackup,
+			GameDir:  gameDir,
+			Message:  missingBackupWarning(mb),
+			uconsent: uc,
 		})
 		return errInstallPaused
 	}
 	var rf *installer.RefusedError
-	if errors.As(err, &rf) && relocateDir == "" && !allowChanged {
+	if errors.As(err, &rf) && relocateDir == "" && !uc.changedOK {
 		s.opAborted()
 		s.setConfirm(&Confirmation{
-			Kind:    ConfirmChangedFiles,
-			GameDir: gameDir,
-			Message: changedFilesWarning(rf),
+			Kind:     ConfirmChangedFiles,
+			GameDir:  gameDir,
+			Message:  changedFilesWarning(rf),
+			uconsent: uc,
 		})
 		return errInstallPaused
 	}
