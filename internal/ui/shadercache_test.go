@@ -165,6 +165,48 @@ func TestShaderEnvPresets(t *testing.T) {
 	e.sess.SetShaderEnv(filepath.Join(dir, "missing"), dxvk.Key, dxvk.On)
 }
 
+// TestWarmMeasureIgnoresSharedTrees: the watchdog polls for up to 20
+// minutes — its measurer must never pay for multi-gigabyte shared-tree
+// walks it doesn't sum (review: home re-walk every 5s).
+func TestWarmMeasureIgnoresSharedTrees(t *testing.T) {
+	e := newTestEnv(t)
+	dir := scanGameOne(t, e)
+	writeUIFile(t, filepath.Join(e.bin, "game.dxvk-cache"), string(make([]byte, 100)))
+	writeUIFile(t, filepath.Join(e.home, ".cache", "nvidia", "GLCache", "g"), string(make([]byte, 200)))
+
+	b := e.sess.newLaunchWatchBackend()
+	if got := b.Measure(dir); got != 100 {
+		t.Errorf("watch measure = %d, want the 100 game bytes only", got)
+	}
+}
+
+// TestClearSharedCacheRevalidates: a consented clear re-checks the path
+// is still a tracked shared cache when the answer lands — a rescan or a
+// vanished dir between consent and accept must refuse, not delete.
+func TestClearSharedCacheRevalidates(t *testing.T) {
+	e := newTestEnv(t)
+	mesaFile := filepath.Join(e.home, ".cache", "mesa_shader_cache", "f")
+	writeUIFile(t, mesaFile, "MESADATA")
+	dir := scanGameOne(t, e)
+	var mesaPath string
+	for _, r := range e.sess.ShaderCaches(dir) {
+		if r.Kind == shadercache.KindMesa {
+			mesaPath = r.Path
+		}
+	}
+	e.sess.ClearShaderCache(dir, mesaPath)
+	waitEvent(t, e.sess, EvConfirm)
+	if err := os.RemoveAll(mesaPath); err != nil {
+		t.Fatal(err)
+	}
+	e.sess.ShaderCaches(dir) // memo still names it; the answer must re-derive
+	e.sess.AnswerConfirm(true)
+	ev := waitEvent(t, e.sess, EvOpFailed)
+	if !strings.Contains(ev.Text, "tracked") {
+		t.Errorf("refusal text %q does not say untracked", ev.Text)
+	}
+}
+
 // fakeBackend is a scripted CompilerBackend: it blocks until ctx ends
 // (like a real game session) unless result is preset.
 type fakeBackend struct {

@@ -154,8 +154,25 @@ func (s *Session) ClearGameShaderCaches(gameDir string) {
 
 // clearSharedCache runs the consented global clear inside the op shell:
 // a multi-gigabyte GLCache takes seconds, and the Working indicator
-// plus double-run guard come free.
+// plus double-run guard come free. The path is re-validated first: a
+// rescan or a vanished dir between consent and answer must refuse, not
+// delete (TOCTOU on the carried clearPath).
 func (s *Session) clearSharedCache(gameDir, path string) {
+	row := s.findRow(gameDir)
+	tracked := false
+	if row != nil {
+		for _, r := range s.freshShaderRefs(row) {
+			if r.Path == path &&
+				(r.Kind == shadercache.KindMesa || r.Kind == shadercache.KindNvidia) {
+				tracked = true
+				break
+			}
+		}
+	}
+	if !tracked {
+		s.opRefused("shared cache no longer tracked, keeping bytes: "+path, gameDir)
+		return
+	}
 	_, ok := s.registerOp(gameDir)
 	if !ok {
 		s.toast("operation already in progress for this game", true)
@@ -200,18 +217,21 @@ func ShaderCacheEnvPresets() []EnvPreset {
 // removes the key; toggling off never deletes caches, it only stops
 // growth — the pane says so next to the toggle.
 func (s *Session) SetShaderEnv(gameDir, key, value string) {
-	dir := canonicalDir(gameDir)
-	if s.findRow(dir) == nil {
+	// Raw dir, matching the op-slot convention: callers pass the row's
+	// InstallDir, and every slot/lookup below must key on the same
+	// string the frontends use for CancelOp. (SetUmuEnvOverride still
+	// canonicalizes for the settings key internally.)
+	if s.findRow(gameDir) == nil {
 		s.toast("unknown game: "+gameDir, true)
 		return
 	}
-	env := s.UmuEnvFor(dir)
+	env := s.UmuEnvFor(gameDir)
 	if value == "" || value == "default" {
 		delete(env, key)
 	} else {
 		env[key] = value
 	}
-	s.SetUmuEnvOverride(dir, env)
+	s.SetUmuEnvOverride(gameDir, env)
 }
 
 // Stop reasons for a warm run: what the watchdog actually observed.
@@ -389,6 +409,18 @@ func (s *Session) HasTrackableShaderCache(gameDir string) bool {
 	return false
 }
 
+// watchInput is the game-only discovery input for the watchdog: no
+// home dir, no Steam precache. The watchdog polls every few seconds
+// for up to 20 minutes, so it must never pay for multi-gigabyte
+// shared-tree walks it doesn't sum.
+func (s *Session) watchInput(row *GameRow) shadercache.Input {
+	prefix := row.CompatPrefix
+	if prefix == "" {
+		prefix = s.UmuPrefixFor(row.InstallDir)
+	}
+	return shadercache.Input{GameDir: row.InstallDir, PrefixDir: prefix}
+}
+
 // warmBytesForWatch sums the per-game caches a watchdog may watch grow:
 // claimed files plus the engine-owned dirs (growth there is warming
 // evidence too — we never delete them, only observe). Steam precache
@@ -396,7 +428,7 @@ func (s *Session) HasTrackableShaderCache(gameDir string) bool {
 func (s *Session) warmBytesForWatch(row *GameRow) (int64, bool) {
 	var total int64
 	trackable := false
-	for _, r := range s.freshShaderRefs(row) {
+	for _, r := range shadercache.Discover(s.watchInput(row)) {
 		switch r.Kind {
 		case shadercache.KindDXVK, shadercache.KindVKD3D, shadercache.KindUnclaimed:
 			trackable = true
@@ -406,13 +438,30 @@ func (s *Session) warmBytesForWatch(row *GameRow) (int64, bool) {
 	return total, trackable
 }
 
+// newLaunchWatchBackend wires the production warm backend: the existing
+// launch route, the existing stop path, and the game-only measurer.
+func (s *Session) newLaunchWatchBackend() LaunchWatchBackend {
+	return LaunchWatchBackend{
+		Launch:   s.Launch,
+		Stop:     s.CancelOp,
+		Launched: s.LaunchBusy,
+		Measure: func(d string) int64 {
+			r := s.findRow(d)
+			if r == nil {
+				return 0
+			}
+			total, _ := s.warmBytesForWatch(r)
+			return total
+		},
+	}
+}
+
 // StartWarm begins a launch-and-record run: guards first (unknown,
 // unsupervised route, running game, concurrent warm, nothing
 // trackable), then the backend inside the op shell. The run always
 // stops the session it started — completion, cap, crash, or cancel.
 func (s *Session) StartWarm(gameDir string) {
-	dir := canonicalDir(gameDir)
-	row := s.findRow(dir)
+	row := s.findRow(gameDir)
 	if row == nil {
 		s.toast("unknown game: "+gameDir, true)
 		return
@@ -425,12 +474,12 @@ func (s *Session) StartWarm(gameDir string) {
 		s.toast("warm needs a supervised launch (umu/runner) — this game launches fire-and-forget", true)
 		return
 	}
-	if s.LaunchBusy(dir) {
+	if s.LaunchBusy(gameDir) {
 		s.toast(row.Title+" is already running", true)
 		return
 	}
 	s.mu.Lock()
-	_, warming := s.warmRuns[dir]
+	_, warming := s.warmRuns[gameDir]
 	s.mu.Unlock()
 	if warming {
 		s.toast("warm already in progress for "+row.Title, true)
@@ -442,59 +491,47 @@ func (s *Session) StartWarm(gameDir string) {
 	}
 	backend := s.warmBackend
 	if backend == nil {
-		backend = LaunchWatchBackend{
-			Launch:   s.Launch,
-			Stop:     s.CancelOp,
-			Launched: s.LaunchBusy,
-			Measure: func(d string) int64 {
-				r := s.findRow(d)
-				if r == nil {
-					return 0
-				}
-				total, _ := s.warmBytesForWatch(r)
-				return total
-			},
-		}
+		backend = s.newLaunchWatchBackend()
 	}
 	stop := s.warmStop
 	if stop == nil {
 		stop = s.CancelOp
 	}
 	pre := preOpStatus(row)
-	ctx, ok := s.registerOp(dir)
+	ctx, ok := s.registerOp(gameDir)
 	if !ok {
 		s.toast("operation already in progress for this game", true)
 		return
 	}
 	s.mu.Lock()
-	s.warmRuns[dir] = &warmRun{since: s.now()}
+	s.warmRuns[gameDir] = &warmRun{since: s.now()}
 	s.mu.Unlock()
 	go func() {
 		s.opStarted("Warming shaders…")
-		res, err := backend.Warm(ctx, WarmTarget{Dir: dir}, func(grown int64, _ time.Duration) {
+		res, err := backend.Warm(ctx, WarmTarget{Dir: gameDir}, func(grown int64, _ time.Duration) {
 			s.mu.Lock()
-			if p, ok := s.warmRuns[dir]; ok {
+			if p, ok := s.warmRuns[gameDir]; ok {
 				p.grown = grown
 			}
 			s.mu.Unlock()
 		})
-		s.finishOp(dir)
-		stopped := stop(dir)
+		s.finishOp(gameDir)
+		stopped := stop(gameDir)
 		if stopped {
-			log.Info().Str("gameDir", dir).Msg("warm stopped the launched game")
+			log.Info().Str("gameDir", gameDir).Msg("warm stopped the launched game")
 		}
 		s.mu.Lock()
-		delete(s.warmRuns, dir)
+		delete(s.warmRuns, gameDir)
 		s.mu.Unlock()
 		switch {
 		case errors.Is(err, context.Canceled):
-			s.opCancelled(dir, pre)
+			s.opCancelled(gameDir, pre)
 		case err != nil:
-			s.opFailed(err, dir)
+			s.opFailed(err, gameDir)
 		default:
-			s.invalidateShaderCache(dir)
+			s.invalidateShaderCache(gameDir)
 			s.opDone(fmt.Sprintf("Warmed: +%s in %s (%s)",
-				FormatBytes(res.BytesGrown), FormatDuration(res.Elapsed), res.StopReason), dir)
+				FormatBytes(res.BytesGrown), FormatDuration(res.Elapsed), res.StopReason), gameDir)
 		}
 	}()
 }
