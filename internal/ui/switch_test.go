@@ -599,3 +599,63 @@ func TestSwitchAbortsWhenINIBackupFails(t *testing.T) {
 	}
 	t.Log("3b: backup write failed; switch aborted before any destructive step")
 }
+
+// TestSwitchMissingBackupsWarnsAndProceeds (issue 073): when the install's
+// backup blobs are gone (semi-manual surgery, pruned store), the version
+// switch must NOT abort — the originals are already unrecoverable, so the
+// chain warns (toast + log) and proceeds, dropping the mod bytes without
+// restoring. The standalone Uninstall keeps its issue-050 consent modal;
+// the switch is already the user's explicit destructive choice.
+func TestSwitchMissingBackupsWarnsAndProceeds(t *testing.T) {
+	e := newUpgradeEnv(t, "v0.9.4-test")
+	// Adopt-install over a pre-existing dxgi.dll so the manifest carries an
+	// Overwritten entry whose backup blob the test then deletes.
+	writeUIFile(t, filepath.Join(e.bin, "dxgi.dll"), "EXTERNAL-DXGI")
+	scanAndWait(t, e.sess)
+	e.sess.QuickInstall(e.gameRoot)
+	waitEvent(t, e.sess, EvOpDone)
+	if row := theRow(t, e.sess); row.Status != domain.StatusCommitted {
+		t.Fatalf("row status = %q, want committed (adopt)", row.Status)
+	}
+	// The adopt drops curated ini defaults; the user's tuning lands after
+	// (mirrors S1) so the switch chain has something to preserve.
+	writeUIFile(t, filepath.Join(e.bin, "OptiScaler.ini"), string(customINIBytes))
+	backup := filepath.Join(e.bin, "optiscaler-backups", "files", "dxgi.dll")
+	if _, err := os.Stat(backup); err != nil {
+		t.Fatalf("adopt backup missing before the test setup completed: %v", err)
+	}
+	if err := os.Remove(backup); err != nil {
+		t.Fatal(err)
+	}
+
+	e.sess.SwitchVersion(e.gameRoot, "v0.10.0-test")
+	ev := waitEvent(t, e.sess, EvOpSettled)
+	if ev.Text != "switched to v0.10.0-test" {
+		t.Fatalf("settle = %q, want %q — the switch must proceed despite the missing backup", ev.Text, "switched to v0.10.0-test")
+	}
+	if st := e.sess.Snapshot(); st.Confirm != nil {
+		t.Fatalf("switch paused on a confirmation (%+v); it must proceed with a warning only", st.Confirm)
+	}
+	warned := false
+	for _, toast := range e.sess.Snapshot().Toasts {
+		if toast.Warn && strings.Contains(toast.Text, "backup") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Error("no warning toast naming the missing backups")
+	}
+	manifests, err := e.store.List()
+	if err != nil || len(manifests) != 1 {
+		t.Fatalf("manifests = %d, err %v; want 1", len(manifests), err)
+	}
+	if manifests[0].Resolved.Version != "v0.10.0-test" {
+		t.Errorf("manifest version = %q, want v0.10.0-test", manifests[0].Resolved.Version)
+	}
+	if got, err := os.ReadFile(filepath.Join(e.bin, "OptiScaler.ini")); err != nil || !bytes.Equal(got, customINIBytes) {
+		t.Errorf("custom ini lost in the switch: %q (err %v)", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(e.bin, "dxgi.dll")); err != nil {
+		t.Error("new bundle's dxgi.dll missing after the switch")
+	}
+}

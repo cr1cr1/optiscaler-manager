@@ -225,3 +225,67 @@ func TestSameForkSwitchLeavesNoDatedDir(t *testing.T) {
 		t.Errorf("row version = %q, want v0.10.0-test", row.OptiScalerVersion)
 	}
 }
+
+// TestForkSwitchMissingBackupsProceeds (issue 073): the fork-switch path
+// (relocateDir != "") skipped the ConfirmMissingBackup gate by design, so a
+// lost backup blob used to hard-fail the whole switch with opFailed. The
+// chain now warns and proceeds — relocation of the old fork's files still
+// applies.
+func TestForkSwitchMissingBackupsProceeds(t *testing.T) {
+	e := newForkSwitchEnv(t)
+	if err := e.sess.AddFork(nrZipFork); err != nil {
+		t.Fatalf("AddFork: %v", err)
+	}
+	if err := e.sess.SetActiveFork(nrZipFork.Slug); err != nil {
+		t.Fatalf("SetActiveFork(nr): %v", err)
+	}
+	// A pre-existing dxgi.dll makes the NR install an adopt with an
+	// Overwritten entry whose backup blob the test then deletes.
+	writeUIFile(t, filepath.Join(e.bin, "dxgi.dll"), "EXTERNAL-DXGI")
+	e.sess.Scan(context.Background())
+	waitEvent(t, e.sess, EvScanDone)
+	e.sess.Install(e.gameRoot)
+	waitEvent(t, e.sess, EvOpDone)
+	row := theRow(t, e.sess)
+	if row.Status != domain.StatusCommitted || row.Fork != nrZipFork.Slug {
+		t.Fatalf("row after NR adopt = %q/%q, want committed %q", row.Status, row.Fork, nrZipFork.Slug)
+	}
+	if err := os.Remove(filepath.Join(e.bin, "optiscaler-backups", "files", "dxgi.dll")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := e.sess.SetActiveFork(settings.DefaultForkSlug); err != nil {
+		t.Fatalf("SetActiveFork(upstream): %v", err)
+	}
+	e.sess.now = func() time.Time { return time.Date(2026, 10, 7, 12, 0, 0, 0, time.Local) }
+
+	e.sess.SwitchVersion(e.gameRoot, "v0.9.4-test")
+	ev := waitEvent(t, e.sess, EvOpSettled)
+	if ev.Text != "switched to v0.9.4-test" {
+		t.Fatalf("settle = %q, want %q — a missing backup must not abort the fork switch", ev.Text, "switched to v0.9.4-test")
+	}
+	if st := e.sess.Snapshot(); st.Confirm != nil {
+		t.Fatalf("fork switch paused on a confirmation (%+v); it must proceed with a warning only", st.Confirm)
+	}
+	warned := false
+	for _, toast := range e.sess.Snapshot().Toasts {
+		if toast.Warn && strings.Contains(toast.Text, "backup") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Error("no warning toast naming the missing backup")
+	}
+	// The old fork's files still relocated (the mod bytes move out even
+	// when the lost original cannot be restored over the empty path).
+	if data, err := os.ReadFile(filepath.Join(e.bin, "OptiScaler-NR.261007", "dxgi.dll")); err != nil || string(data) != "NR-INJECTOR" {
+		t.Errorf("old fork's dxgi.dll not relocated intact: %q (err %v)", data, err)
+	}
+	row = theRow(t, e.sess)
+	if row.Status != domain.StatusCommitted || row.Fork != settings.DefaultForkSlug || row.OptiScalerVersion != "v0.9.4-test" {
+		t.Errorf("row after switch = %q/%q/%q, want committed upstream v0.9.4-test", row.Status, row.Fork, row.OptiScalerVersion)
+	}
+	if _, err := os.Stat(filepath.Join(e.bin, "fakenvapi.dll")); err != nil {
+		t.Error("upstream fakenvapi.dll missing after the switch")
+	}
+}

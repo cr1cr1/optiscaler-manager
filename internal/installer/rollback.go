@@ -130,6 +130,30 @@ type UninstallOptions struct {
 	AllowMissingBackup bool
 }
 
+// MissingBackupPaths lists the overwritten files whose pre-install backup
+// blob is absent from the backup store while the installed bytes still match
+// the manifest (issue 073): exactly the entries Uninstall would collect into
+// a MissingBackupError. Vanished installed files (backup-gone is a no-op
+// there) and foreign-modified files (the refusal path owns those) are not
+// reported. The version-switch chain pre-flights this so it can warn and
+// proceed with AllowMissingBackup instead of aborting the user's explicit
+// operation.
+func MissingBackupPaths(m *domain.Manifest) []string {
+	var missing []string
+	for _, ow := range m.Overwritten {
+		current, err := hashFile(ow.Path)
+		if err != nil || current != ow.InstalledSHA256 {
+			continue
+		}
+		backup := filepath.Join(backupsDir(m.InstallDir), "files", ow.BackupRelPath)
+		if _, err := os.Stat(backup); os.IsNotExist(err) {
+			missing = append(missing, ow.Path)
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
 // UninstallWithOptions is Uninstall with options; see UninstallOptions.
 func UninstallWithOptions(ctx context.Context, st *store.Store, id string, opts UninstallOptions) error {
 	m, err := st.Load(id)

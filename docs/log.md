@@ -4855,3 +4855,21 @@ wrapper only broke between segments, so unbreakable tokens never wrapped.
   column. Post-fix PNG render verified visually.
 - Docs: issue 072, vendor-patches (v0.24), scope.
 - Commit: a763e8b.
+
+## 2026-10-11 — issue 73: version switch proceeds despite missing uninstall backups
+
+User report: switching UNCHARTED to the selected non-default fork's version
+failed with `Failed: uninstall …: 8 backup file(s) missing, originals
+unrestorable`. Directive: warn, but proceed regardless. Root cause: the
+switch chain's uninstall leg ran without missing-backup consent; the
+fork-switch path skips the issue-050 consent gate by design (hard fail —
+the user's case), and the same-fork path paused on a modal whose
+continuation could never resume the chain (dead end either way).
+
+- `installer.MissingBackupPaths` pre-flights the manifest; the chain warns
+  once (log + toast) and uninstalls with `AllowMissingBackup=true`.
+- Standalone Uninstall keeps its ConfirmMissingBackup modal (050).
+- Reds witnessed on both paths; relocation verified intact for the fork
+  case.
+- Docs: issue 073, scope (backup paragraph).
+- Commit: THIS_COMMIT.

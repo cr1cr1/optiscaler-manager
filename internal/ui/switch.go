@@ -13,7 +13,9 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/app"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
+	"github.com/cr1cr1/optiscaler-manager/internal/installer"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
 )
 
@@ -178,7 +180,17 @@ func (s *Session) doSwitchVersionChain(gameDir, version string, eacConsented boo
 	if forkSlugOrDefault(row.Fork) != s.Settings().Active().Slug {
 		relocateDir = forkBackupDir(row.InjectionDir, row.Fork, s.now())
 	}
-	if err := s.runUninstallOpt(gameDir, relocateDir, false); err != nil {
+	// Missing backup blobs must not abort a switch (issue 073): the lost
+	// originals are unrecoverable either way, and the user already chose the
+	// destructive operation. The fork-switch path skips the consent gate by
+	// design and the same-fork gate's continuation could never resume the
+	// chain — so warn once here and uninstall with consent.
+	if missing := s.missingBackups(gameDir); len(missing) > 0 {
+		log.Warn().Str("gameDir", gameDir).Strs("paths", missing).
+			Msg("version switch: uninstall backups missing; proceeding without restoring originals")
+		s.toast(fmt.Sprintf("Version switch: %d backup file(s) missing — originals unrestorable; proceeding anyway", len(missing)), true)
+	}
+	if err := s.runUninstallOpt(gameDir, relocateDir, true); err != nil {
 		if removedINI {
 			// Nothing else ran (refused or busy): put the ini back so
 			// the game is exactly as found.
@@ -233,6 +245,21 @@ func (s *Session) doSwitchVersionChain(gameDir, version string, eacConsented boo
 		s.writeBackOrphanINI(gameDir, ini)
 		return "switch failed: install failed; rolled back"
 	}
+}
+
+// missingBackups pre-flights the committed manifest for uninstall backup
+// blobs that no longer exist (issue 073). Any lookup failure reads as "no
+// missing backups" — the uninstall leg's own error handling stands.
+func (s *Session) missingBackups(gameDir string) []string {
+	id, _, err := app.ManifestIDFor(gameDir)
+	if err != nil {
+		return nil
+	}
+	m, err := s.deps.Store.Load(id)
+	if err != nil {
+		return nil
+	}
+	return installer.MissingBackupPaths(m)
 }
 
 // preservedINI holds a game's OptiScaler.ini across a version switch:

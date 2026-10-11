@@ -90,8 +90,11 @@ here are closed; reopen only with new evidence.
   into a typed error and pauses for explicit consent naming them;
   accepting drops the installed bytes without restoring the lost
   originals (CLI: `uninstall --force`), declining leaves everything
-  untouched. The fork-switch chain does not consent-prompt mid-chain —
-  the typed error surfaces instead.
+  untouched. The version-switch chain (incl. fork switches) instead warns
+  and proceeds (issue 073): the user already chose the destructive
+  operation, and the lost originals are unrecoverable either way, so the
+  uninstall leg runs with `AllowMissingBackup` after a pre-flight
+  (`installer.MissingBackupPaths`) surfaces one warning naming the count.
 
 ## Discovery & classification
 
