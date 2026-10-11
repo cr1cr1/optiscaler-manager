@@ -5017,4 +5017,4 @@ directory silently disagreed.
 - Flake note: `TestClearCoverOverrideRestoresChain` TempDir race tripped
   once; rerun 36/36 green. Pre-existing.
 - Docs: issue 079, scope (manager-state principle bullet).
-- Commit: THIS_COMMIT.
+- Commit: ab18b21.

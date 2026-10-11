@@ -51,4 +51,4 @@ verdict) + `State.DetailTruth`/`EvDetailTruth` session plumbing +
 green on rerun (one `TestClearCoverOverrideRestoresChain` TempDir-race
 flake, pre-existing), vet + gofmt clean.
 
-Commit: THIS_COMMIT.
+Commit: ab18b21.
