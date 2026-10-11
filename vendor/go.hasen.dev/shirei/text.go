@@ -1085,7 +1085,50 @@ func produceShapedSegments(runes []rune, dirs []Direction, base TextStyleAttrs, 
 	return allSegments
 }
 
+// PATCHED by optiscaler-manager (v0.24): split a segment that alone exceeds
+// the wrap budget at glyph-cluster boundaries, so an unbreakable token
+// (URL, hash, spaceless path) wraps instead of overflowing the line
+// (issue 072). Glyph clusters and their rune offsets are preserved, so
+// selection and span mapping are unaffected. Segment widths are accumulated
+// xadvances (see shapeSegment), so the split accumulates the same way.
+func splitOverlongSegments(allSegments []GlyphsSegment, maxWidth float32) []GlyphsSegment {
+	if maxWidth <= 0 {
+		return allSegments
+	}
+	var out []GlyphsSegment
+	for _, seg := range allSegments {
+		if seg.Width <= maxWidth || len(seg.Glyphs) == 0 {
+			out = append(out, seg)
+			continue
+		}
+		start := 0
+		var acc float32
+		for i, g := range seg.Glyphs {
+			// i > start: a single glyph wider than the budget still forms
+			// its own chunk — the split must always make progress.
+			if i > start && acc+g.XAdvance > maxWidth {
+				chunk := seg
+				chunk.Glyphs = seg.Glyphs[start:i]
+				chunk.Width = acc
+				chunk.EndsWithNewline = false
+				out = append(out, chunk)
+				start = i
+				acc = 0
+			}
+			acc += g.XAdvance
+		}
+		tail := seg
+		tail.Glyphs = seg.Glyphs[start:]
+		tail.Width = acc
+		out = append(out, tail) // the tail keeps seg.EndsWithNewline
+	}
+	return out
+}
+
 func lineBreakShapedSegments(allSegments []GlyphsSegment, style TextStyleAttrs, maxWidth float32) []ShapedTextLine {
+	// PATCHED by optiscaler-manager (v0.24): emergency-break overlong
+	// tokens before the segment-boundary pass below.
+	allSegments = splitOverlongSegments(allSegments, maxWidth)
 	lineHeight := func(height float32) float32 {
 		if height <= 0 {
 			return style.FontSize

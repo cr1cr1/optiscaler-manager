@@ -910,7 +910,12 @@ func sortLabel(mode ui.SortMode) string {
 // status text (umu stderr tails) collapses to its first line and the full
 // output lives in the log panel behind the Log button (issue 052).
 func (m *model) statusBar() {
-	Container(Attrs(Expand, BackgroundVec(bgPanel), Pad2(sp8, sp12), Row, CrossMid, Gap(sp12)), func() {
+	// Clip (issue 072): residual overflow must never draw over the window;
+	// the status text itself is ellipsized to the measured free width so a
+	// long line can neither push the hints/count off screen nor inflate the
+	// column's intrinsic width (which would poison every virtual list's
+	// wrap budget — the "log panel expands the main view" bug).
+	Container(Attrs(Expand, BackgroundVec(bgPanel), Pad2(sp8, sp12), Row, CrossMid, Gap(sp12), Clip), func() {
 		m.statusBarRect = GetScreenRectOf(CurrentId())
 		Container(Attrs(Row), func() {
 			m.logBtnRect = GetScreenRectOf(CurrentId())
@@ -918,11 +923,56 @@ func (m *model) statusBar() {
 				m.toggleLogPanel()
 			}
 		})
-		muted(oneLineStatus(m.state.StatusLine))
+		hints := "Tab: focus · ←→↑↓: select · Enter: open · Esc: close"
+		count := fmt.Sprintf("%d games", len(m.state.Rows))
+		muted(fitStatusLine(oneLineStatus(m.state.StatusLine), m.statusTextAvailW(hints, count)))
 		Filler(1)
-		muted("Tab: focus · ←→↑↓: select · Enter: open · Esc: close")
-		muted(fmt.Sprintf("%d games", len(m.state.Rows)))
+		Container(Attrs(Row), func() {
+			m.statusHintsRect = GetScreenRectOf(CurrentId())
+			muted(hints)
+		})
+		Container(Attrs(Row), func() {
+			m.statusCountRect = GetScreenRectOf(CurrentId())
+			muted(count)
+		})
 	})
+}
+
+// statusTextAvailW is the pixel budget for the one-line status (issue 072):
+// the bar's on-screen width from the previous frame (the screen rect stays
+// correct even when a long text poisoned the resolved sizes) minus the
+// widths of the bar's other children, gaps, and padding. The other
+// children's widths come from their measured screen rects — exact from the
+// second frame on; the first frame falls back to shaped estimates.
+func (m *model) statusTextAvailW(hints, count string) float32 {
+	barW := m.statusBarRect.Size[0]
+	if barW <= 0 {
+		barW = GetHost().WindowSize[0] - sidebarW
+	}
+	btnW := m.logBtnRect.Size[0]
+	if btnW <= 0 {
+		btnW = 64 // first frame: measured from the next frame on
+	}
+	hintsW := m.statusHintsRect.Size[0]
+	if hintsW <= 0 {
+		hintsW = statusTextW(hints)
+	}
+	countW := m.statusCountRect.Size[0]
+	if countW <= 0 {
+		countW = statusTextW(count)
+	}
+	// 5 children (Log, status, Filler, hints, count) → 4 gaps + 2×padding.
+	chrome := btnW + hintsW + countW + 4*sp12 + 2*sp12
+	return barW - chrome
+}
+
+// statusTextW measures a status-bar label's single-line width.
+func statusTextW(s string) float32 {
+	sh := ShapeTextMax(s, statusTextStyle(), 0)
+	if len(sh.Lines) == 0 {
+		return 0
+	}
+	return sh.Lines[0].Width
 }
 
 // toastOverlay floats the newest toasts (at most three) at the bottom-right

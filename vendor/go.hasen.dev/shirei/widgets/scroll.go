@@ -1066,6 +1066,17 @@ func virtualListView(key any, attrs VirtualListAttrs, scrollBar ScrollBarFn) {
 		size := GetResolvedSize()
 
 		width := max(0, size[0]-SCROLLBAR_WIDTH)
+		// PATCHED by optiscaler-manager (v0.24): clamp the item width to the
+		// container's on-screen box (previous frame). shirei's top-down
+		// distribution grows children but never shrinks them, so an
+		// intrinsically wide sibling anywhere up the tree (an unbounded long
+		// label) inflates this container's resolvedSize while its screen
+		// rect stays clamped to the visible box — without the clamp, one
+		// long line silently disables wrap/measure for EVERY list
+		// (issue 072).
+		if sw := GetScreenRectOf(CurrentId()).Size[0]; sw > 0 {
+			width = min(width, max(0, sw-SCROLLBAR_WIDTH))
+		}
 		if width <= 0 {
 			// we can't do anything until width is known
 			if attrs.OutScrollOffset != nil {

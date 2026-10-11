@@ -531,3 +531,38 @@ the base, so a bare `TextStyleAttrs{TextColor: c}` would zero the font
 size. Reapply after `go mod vendor`: extend `logViewSearch` with the
 `extraSpans` param, delegate nil from `logView`/`LogViewSearch`, add
 `LogViewSearchExt`, and append `extraSpans(idx)` in the item view.
+
+## shirei widgets: virtual list visible-width clamp + text wrapper glyph break (v0.24)
+
+- **Files**: `vendor/go.hasen.dev/shirei/widgets/scroll.go`
+  (`virtualListView` clamps the item width to the container's on-screen
+  box) and `vendor/go.hasen.dev/shirei/text.go` (`splitOverlongSegments`,
+  called from `lineBreakShapedSegments`).
+- **Marker**: `// PATCHED by optiscaler-manager (v0.24)` in both files.
+- **Guard**: `internal/gui/csd_test.go` (`TestVendorCSDPatchPresent`
+  checks both markers); behavior pinned by
+  `internal/gui/widgets_test.go` (`TestVirtualListWidthClampedToVisibleBox`)
+  and `internal/gui/logpanel_test.go`
+  (`TestShapeTextMaxBreaksOverlongToken`) — issue 072.
+
+**What.** Two layout/text robustness patches behind the "log panel expands
+the main view / long lines don't wrap" bug:
+
+1. shirei's top-down size distribution grows children but never shrinks
+   them, so an intrinsically wide sibling (any unbounded long label)
+   inflates a container's `resolvedSize` while its on-screen rect stays
+   clamped. `virtualListView` derived the item width from the poisoned
+   `GetResolvedSize()` feedback, silently breaking wrap and measure for
+   every list. The patch clamps the item width to the container's
+   previous-frame screen-rect width when that is known.
+2. `lineBreakShapedSegments` only broke *between* segments (words/spaces),
+   so a single token longer than the wrap budget (URL, hash, spaceless
+   path) never wrapped. `splitOverlongSegments` pre-splits such segments
+   at glyph-cluster boundaries; clusters and rune offsets are preserved,
+   so selection and span mapping are unaffected.
+
+Reapply after `go mod vendor`: in `scroll.go`, after
+`width := max(0, size[0]-SCROLLBAR_WIDTH)` add the screen-rect clamp
+(`GetScreenRectOf(CurrentId()).Size[0]` when > 0); in `text.go`, call
+`splitOverlongSegments(allSegments, maxWidth)` at the top of
+`lineBreakShapedSegments` and add the helper.

@@ -108,6 +108,41 @@ func (m *model) logLineExtraSpans(idx int) []StyleSpan {
 	return []StyleSpan{{From: 0, To: m.logPrefixRuns[idx], Style: st}}
 }
 
+// fitStatusLine (issue 072) truncates the one-line status to maxW pixels
+// with an ellipsis so the status bar's intrinsic width can never exceed the
+// window: an unbounded long status inflates the main column's resolved width
+// (shirei's distribution grows but never shrinks children), which poisons
+// the width feedback every virtual list — the log view included — shapes
+// against. maxW <= 0 (width unknown, first frame) leaves the text alone.
+func fitStatusLine(s string, maxW float32) string {
+	if maxW <= 0 || s == "" {
+		return s
+	}
+	st := statusTextStyle()
+	if len(ShapeTextMax(s, st, maxW).Lines) <= 1 {
+		return s
+	}
+	runes := []rune(s)
+	// Longest prefix that fits one line with an ellipsis appended; the
+	// predicate is monotone, so binary search. ShapeTextMax is cached —
+	// the ~log2(n) probes of the same paragraph are cheap.
+	lo, hi := 0, len(runes)-1 // full string is known not to fit
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		if len(ShapeTextMax(string(runes[:mid])+"…", st, maxW).Lines) <= 1 {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	return string(runes[:lo]) + "…"
+}
+
+// statusTextStyle mirrors muted() (status bar text) for width measurement.
+func statusTextStyle() TextStyleAttrs {
+	return TextStyleAttrs{TextColor: txtMuted, FontSize: 12}
+}
+
 // oneLineStatus collapses the status text to its first line for the
 // single-line status bar; the full text lives in the log panel.
 func oneLineStatus(s string) string {
@@ -200,6 +235,7 @@ func logTextStyle() TextStyleAttrs {
 // layout easing, which would double-animate the height).
 func (m *model) logPanel() {
 	m.logPanelRect = Rect{}
+	m.logPanelResolvedW = 0
 	t := m.logT()
 	if t <= 0 {
 		return
@@ -210,6 +246,7 @@ func (m *model) logPanel() {
 	h := logPanelHeight(GetHost().WindowSize[1]) * t
 	Container(Attrs(Expand, FixHeight(h), NoAnimate, Clip, BackgroundVec(bgPanel), BorderWidth(1), BorderColorVec(border)), func() {
 		m.logPanelRect = GetScreenRectOf(CurrentId())
+		m.logPanelResolvedW = GetResolvedSize()[0] // issue 072 test seam: must equal the on-screen width
 		Container(Attrs(Row, CrossMid, Pad2(sp4, sp12), Gap(sp12)), func() {
 			Label("Log", TextColorVec(txtMain), FontSize(12), FontWeight(WeightBold))
 			Filler(1)

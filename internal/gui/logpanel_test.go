@@ -354,3 +354,83 @@ func TestLogEntriesRenderTitlePrefix(t *testing.T) {
 		t.Errorf("global line has spans: %+v", spans)
 	}
 }
+
+// Issue 072: a very long single-line status must not inflate the layout's
+// resolved widths. shirei's top-down distribution grows children but never
+// shrinks them, so an over-wide status label poisons the main column's
+// resolvedSize — and the log view's wrap budget derives from that feedback
+// (GetResolvedSize), not from the clamped on-screen rect. The visible
+// result: log lines stop wrapping and clip at the window edge; extreme
+// lines make the whole main view horizontally scrollable.
+func TestLongStatusLineKeepsLogWrapBudget(t *testing.T) {
+	headlessFrames(t, 1100, 700)
+	WaitForSystemFontScan()
+	if len(AllFontFaces()) <= 2 {
+		t.Skip("system fonts unavailable; shaping has no metrics")
+	}
+	m := newModel(Config{})
+	m.state.StatusLine = strings.Repeat("word ", 200) // ~1000 chars: several times wider than any window
+	m.syncLogLines([]string{"short line"})
+	m.toggleLogPanel()
+	m.logAnimStart = time.Now().Add(-time.Second)
+	for i := 0; i < 8; i++ {
+		keyFrame(KeyCodeNone, 0, m.rootView)
+	}
+	got, want := m.logPanelResolvedW, m.logPanelRect.Size[0]
+	if got < 100 {
+		t.Fatalf("log panel never resolved (rect %+v, resolved %v)", m.logPanelRect, got)
+	}
+	if d := got - want; d > 2 || d < -2 {
+		t.Errorf("log panel resolved width %v vs on-screen %v: the long status poisoned the layout width feedback", got, want)
+	}
+}
+
+// Issue 072: fitStatusLine ellipsizes the one-line status to the available
+// pixel width, so the status bar can never push the hints/game count off
+// screen or inflate the column's intrinsic width.
+func TestFitStatusLineEllipsizes(t *testing.T) {
+	headlessFrames(t, 1100, 700)
+	WaitForSystemFontScan()
+	if len(AllFontFaces()) <= 2 {
+		t.Skip("system fonts unavailable; shaping has no metrics")
+	}
+	long := strings.Repeat("word ", 200)
+	fit := fitStatusLine(long, 500)
+	if fit == long {
+		t.Fatal("long status not truncated to its width budget")
+	}
+	if !strings.HasSuffix(fit, "…") {
+		t.Errorf("truncated status lacks the ellipsis marker: %q", fit[len(fit)-12:])
+	}
+	if n := len(ShapeTextMax(fit, statusTextStyle(), 500).Lines); n != 1 {
+		t.Errorf("ellipsized status still wraps to %d lines at its budget", n)
+	}
+	if got := fitStatusLine("Ready", 500); got != "Ready" {
+		t.Errorf("short status changed: %q", got)
+	}
+	if got := fitStatusLine(long, 0); got != long {
+		t.Error("an unknown width budget must leave the text alone (first frame)")
+	}
+}
+
+// Issue 072: one unbreakable token longer than the wrap budget (URLs,
+// hashes, spaceless paths) must wrap at glyph boundaries instead of
+// overflowing — lineBreakShapedSegments used to break only BETWEEN
+// segments, so a single over-budget segment stayed one line at any width.
+func TestShapeTextMaxBreaksOverlongToken(t *testing.T) {
+	headlessFrames(t, 1100, 700)
+	WaitForSystemFontScan()
+	if len(AllFontFaces()) <= 2 {
+		t.Skip("system fonts unavailable; shaping has no metrics")
+	}
+	tok := strings.Repeat("x", 600)
+	sh := ShapeTextMax(tok, logTextStyle(), 1000)
+	if len(sh.Lines) < 2 {
+		t.Fatalf("overlong token did not wrap: %d line(s), width %v", len(sh.Lines), sh.Lines[0].Width)
+	}
+	for i, l := range sh.Lines {
+		if l.Width > 1000+1 {
+			t.Errorf("wrapped line %d width %v exceeds the 1000px budget", i, l.Width)
+		}
+	}
+}

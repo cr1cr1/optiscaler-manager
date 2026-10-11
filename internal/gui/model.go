@@ -54,7 +54,10 @@ type model struct {
 	logSyncedLast         string                      // last mirrored line; drift means the session ring evicted -> rebuild
 	statusBarRect         Rect                        // screen rect of the status bar shell (single-line height test seam, issue 052)
 	logBtnRect            Rect                        // screen rect of the status bar's Log button (toggle test seam, issue 052)
+	statusHintsRect       Rect                        // screen rect of the status bar's hints label (status width budget, issue 072)
+	statusCountRect       Rect                        // screen rect of the status bar's game-count label (status width budget, issue 072)
 	logPanelRect          Rect                        // screen rect of the log panel shell (slide-up test seam, issue 052)
+	logPanelResolvedW     float32                     // resolved width of the log panel shell (layout-poison test seam, issue 072)
 	logSearchBuf          string                      // log panel search field buffer (issue 054); debounced into logSearchQuery (issue 055)
 	logSearchState        *editState                  // log search field edit state (onEnter jumps to the next match, issue 054)
 	logSearchHitLine      int                         // ring line index of the current search hit, -1 none (issue 054)

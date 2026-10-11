@@ -187,12 +187,15 @@ Added after v0.1, modeled on the reference client's main window:
 - **Chrome**: dark theme (incl. dark modal cards — upstream Modal is
   hardcoded white, so gui ships a local `modal()`), icon sidebar, toolbar
   (scan/add/search/view toggle), toast overlay (single-line cards raised
-  above the status bar; issue 058), single-line status bar
+  above the status bar; issue 058), single-line status bar (over-long
+  status text is ellipsized to the measured free width so it can never
+  stretch the layout; issue 072)
   with a `Log` button sliding up a bordered, monospace, readonly and
-  selectable log panel with 300ms-debounced term search + hit highlight
+  selectable log panel whose long lines soft-wrap — including unbreakable
+  tokens (vendor v0.24) — with 300ms-debounced term search + hit highlight
   and game-title prefixes (the session's
   status history, incl. umu stderr tails; issues 052,
-  054, 055, 057), About modal.
+  054, 055, 057, 072), About modal.
 - **`internal/ui` Session**: frontend-agnostic interactive core (state,
   commands, event stream, consent gating). The shirei GUI is a thin binding
   over it; a bubbletea TUI will bind to the same Session (decided, not yet

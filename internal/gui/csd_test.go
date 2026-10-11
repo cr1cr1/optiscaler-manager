@@ -73,6 +73,23 @@ func TestVendorCSDPatchPresent(t *testing.T) {
 	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.23)") {
 		t.Error("vendored widgets/logview.go lacks the v0.23 extra-spans patch (LogViewSearchExt paints per-line app spans, e.g. colored game-title prefixes); reapply it (docs/vendor-patches.md)")
 	}
+	// v0.24 (issue 072) spans the list width feedback and the text wrapper.
+	scroll := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "widgets", "scroll.go")
+	b, err = os.ReadFile(scroll)
+	if err != nil {
+		t.Fatalf("vendored widgets/scroll.go unreadable: %v", err)
+	}
+	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.24)") {
+		t.Error("vendored widgets/scroll.go lacks the v0.24 visible-width clamp patch (a virtual list's item width never exceeds its on-screen box); reapply it (docs/vendor-patches.md)")
+	}
+	text := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "text.go")
+	b, err = os.ReadFile(text)
+	if err != nil {
+		t.Fatalf("vendored text.go unreadable: %v", err)
+	}
+	if !strings.Contains(string(b), "PATCHED by optiscaler-manager (v0.24)") {
+		t.Error("vendored text.go lacks the v0.24 overlong-segment glyph-break patch (unbreakable tokens wrap instead of overflowing); reapply it (docs/vendor-patches.md)")
+	}
 	renderpng := filepath.Join(root, "vendor", "go.hasen.dev", "shirei", "renderpng.go")
 	b, err = os.ReadFile(renderpng)
 	if err != nil {

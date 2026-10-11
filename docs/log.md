@@ -4832,3 +4832,26 @@ no such file or directory` — stranding the mod installed forever.
   control renders.
 - Docs: issue 071, scope (pill gate + three-file bullets), README.
 - Commit: 3ca87eb.
+
+## 2026-10-11 — issue 72: log panel wraps long lines; layout immune to long text
+
+User report: the log panel expanded the main view on very long lines and
+lines were not wrapped. Root cause, proven by instrumented headless probes
+with real font metrics: the status bar's unbounded status label inflated
+the main column's intrinsic width past the window; shirei's grow-only
+distribution never shrinks children, so the poisoned width fed back through
+`GetResolvedSize()` into the log view's wrap budget — lines shaped wider
+than the visible panel and clipped at the window edge, and extreme lines
+overflowed the root Row into horizontal scroll. A second gap: the text
+wrapper only broke between segments, so unbreakable tokens never wrapped.
+
+- Status bar ellipsizes the one-line status to the measured free width
+  (`fitStatusLine`, binary-searched prefix + ellipsis) and clips its row.
+- Vendor v0.24: virtual lists clamp item width to the on-screen box
+  (`widgets/scroll.go`); overlong unbreakable segments split at glyph
+  boundaries (`text.go` `splitOverlongSegments`).
+- Reds witnessed: poisoned width parity (6806 vs 1028 px), missing
+  ellipsis, unwrapped 600-char token, 2988 px list width in a 928 px
+  column. Post-fix PNG render verified visually.
+- Docs: issue 072, vendor-patches (v0.24), scope.
+- Commit: THIS_COMMIT.
