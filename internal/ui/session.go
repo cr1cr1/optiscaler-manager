@@ -76,6 +76,10 @@ const (
 	// are terminal. The frontends only poke on events, so the kind is
 	// invisible to them; the CLI one-shot waiter keys on it.
 	EvOpSettled
+	// EvDetailTruth pokes the frontends after the selected game's
+	// directory reconciliation settled (State.DetailTruth changed). The
+	// event is only a poke; renderers re-read the snapshot (issue 079).
+	EvDetailTruth
 )
 
 // Scan progress phases, in pipeline order. Enrichment is inlined into
@@ -217,6 +221,12 @@ type State struct {
 	DLSSLatest       dlss.Latest
 	DLSSCached       string
 	DLSSCachedCommit string
+	// DetailTruth is the directory-verified install state behind the open
+	// details pane (issue 079): nil until the first reconciliation for the
+	// selected game settles, stale-Dir while a newer panel is opening.
+	// Frontends render TruthLine from it instead of trusting the cached
+	// row status.
+	DetailTruth *DetailTruth
 }
 
 // Deps wires the session to the lower layers.
@@ -352,6 +362,9 @@ type Session struct {
 	// warmSupervised gates Warm on supervised launches (test seam);
 	// nil uses shouldRouteWinBinary.
 	warmSupervised func(row *GameRow) bool
+	// detailTruthGen serializes details-pane reconciliations (issue 079):
+	// only the latest request's result is published. Guarded by mu.
+	detailTruthGen uint64
 
 	// resolveVersion is the test seam for resolving the configured default
 	// version to a concrete tag (fresh = live fetch, not cache); nil picks
@@ -623,6 +636,11 @@ func (s *Session) opDone(what, gameDir string) {
 	s.setStatusGame(gameDir, what)
 	s.toast(what, false)
 	s.emit(Event{Kind: EvOpDone, Text: what, GameDir: gameDir})
+	// The op rewrote the game directory, so a visible details pane must
+	// re-reconcile instead of displaying pre-op truth (issue 079).
+	if gameDir != "" {
+		s.reconcileDetail(gameDir)
+	}
 }
 
 func (s *Session) opFailed(err error, gameDir string) {

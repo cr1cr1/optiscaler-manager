@@ -4989,3 +4989,32 @@ env presets, launch-and-record warm.
 - Docs: issues 078 (design→outcome), 080 (fossilize follow-up), scope
   (details-pane bullet).
 - Commits: d04fd9e, f4e99db, ae8de8e, d7e509a, e286250.
+
+## 2026-10-11 — issue 79: details pane reconciles install truth from the game directory
+
+User directive after the 076/077 uninstall flow deleted a file the
+game's current setup still needed: manager state is never the truth —
+the details pane must reconcile from the actual game directory. The
+pane rendered the cached row status (`probeInstallState` only fills an
+empty status), so a `committed` row displayed as installed while the
+directory silently disagreed.
+
+- `app.ReconcileInstall` (new): manifest tracked files re-hashed
+  (verified/changed/missing) + injection/disabled-hook probes, read-only.
+  Red first (undefined), then green.
+- Session: `State.DetailTruth` + `EvDetailTruth` poke; async
+  `reconcileDetail` (generation-guarded) triggered from
+  `RefreshInstallState` (both frontends open details through it) and
+  `opDone` for the selected game; `Select("")` clears.
+- GUI detail panel renders the "Game dir:" line below the
+  pills/tech/fields blocks (never above — the fold-sensitive pill rows
+  keep their exact layout); drift renders in main text, agreement muted.
+  TUI detail view renders the same line after Status.
+- Caught in development: the first placement (above the pills) pushed
+  the DLSS pill control past the fold at 1100x700 and broke two DLSS
+  panel tests; baseline-at-HEAD worktree proved the tree was green.
+  Moved below; full suite green.
+- Flake note: `TestClearCoverOverrideRestoresChain` TempDir race tripped
+  once; rerun 36/36 green. Pre-existing.
+- Docs: issue 079, scope (manager-state principle bullet).
+- Commit: THIS_COMMIT.

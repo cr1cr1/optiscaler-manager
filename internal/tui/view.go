@@ -540,6 +540,16 @@ func (m Model) detailView(w, contentH int) string {
 		}
 		fmt.Fprintf(&b, "Components: %s\n", components)
 		fmt.Fprintf(&b, "Status: %s · EAC: %s\n", status, eac)
+		// Directory-verified install truth (issue 079): the Status above
+		// is the manager's cached claim — this line is the game
+		// directory's word, reconciled on every details-pane open.
+		if m.sess != nil {
+			if st := m.sess.Snapshot(); st.DetailTruth != nil && st.DetailTruth.Dir == row.InstallDir {
+				if line := ui.TruthLine(st.DetailTruth); line != "" {
+					fmt.Fprintf(&b, "%s\n", line)
+				}
+			}
+		}
 		if row.ProtonTier != "" {
 			fmt.Fprintf(&b, "ProtonDB: %s\n", row.ProtonTier)
 		}

@@ -13,12 +13,16 @@ import (
 // hook installed, removed, or renamed by hand while the manager sat on
 // scan-cached state renders correctly without a rescan. The probe is a
 // handful of stats plus one bounded PE identity parse — cheap enough to
-// run synchronously on a click.
+// run synchronously on a click. The full manifest-vs-directory
+// reconciliation (hashing every tracked file) runs async alongside it:
+// reconcileDetail publishes State.DetailTruth with an EvDetailTruth poke
+// for the details pane (issue 079).
 func (s *Session) RefreshInstallState(dir string) {
 	row := s.findRow(dir)
 	if row == nil {
 		return
 	}
+	s.reconcileDetail(dir)
 	next := *row
 	probeRowInstallState(&next)
 	if next.Status == row.Status && next.Actionable == row.Actionable &&

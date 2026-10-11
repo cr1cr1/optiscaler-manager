@@ -418,6 +418,7 @@ func (m *model) detailPanel() {
 	m.quickBtnRect = Rect{}
 	m.launchBtnRect = Rect{}
 	m.rescanBtnRect = Rect{}
+	m.truthLineRect = Rect{}
 	m.titleInputID = nil
 	m.envBtnRect = Rect{}
 	m.envApplyRect = Rect{}
@@ -585,6 +586,25 @@ func (m *model) detailPanel() {
 					detailField("Steam AppID", e.SteamAppID)
 				}
 			})
+			// Directory-verified install truth (issue 079): the Status pills
+			// above are the manager's cached claim — this line is the game
+			// directory's word, reconciled on every panel open. It sits below
+			// the pills/tech/fields blocks (never above them) so the
+			// fold-sensitive pill rows keep their exact layout. Drift
+			// renders in main text so the disagreement is impossible to
+			// miss; agreement stays muted.
+			if t := m.state.DetailTruth; t != nil && t.Dir == e.InstallDir {
+				if line := ui.TruthLine(t); line != "" {
+					Container(Attrs(Row, Wrap), func() {
+						m.truthLineRect = GetScreenRectOf(CurrentId())
+						if t.Managed && (t.Changed > 0 || t.Missing > 0) {
+							txt(line)
+						} else {
+							muted(line)
+						}
+					})
+				}
+			}
 			if m.sess == nil {
 				return
 			}

@@ -130,12 +130,16 @@ func (s *Session) ToggleView() {
 // Select marks a game as the dashboard target ("" closes it). Selecting a
 // game re-probes its install state from disk, so hooks installed, removed,
 // or disabled/enabled by hand since the last scan render correctly.
+// Closing clears the reconciled details-pane truth (issue 079).
 func (s *Session) Select(dir string) {
 	if dir != "" {
 		s.RefreshInstallState(dir)
 	}
 	s.mu.Lock()
 	s.st.Selected = dir
+	if dir == "" {
+		s.st.DetailTruth = nil
+	}
 	s.mu.Unlock()
 }
 

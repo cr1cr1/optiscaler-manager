@@ -107,6 +107,17 @@ here are closed; reopen only with new evidence.
   unrecoverable either way, so the uninstall leg runs with
   `AllowMissingBackup` after a pre-flight
   (`installer.MissingBackupPaths`) surfaces one warning naming the count.
+- **Manager state is never the truth** (issue 079): the details pane
+  displays install state reconciled live from the actual game directory,
+  not the cached row status. `app.ReconcileInstall` re-hashes every
+  manifest-tracked file (verified/changed/missing) and probes the
+  injection hook on every details-pane open (both frontends route through
+  `Session.RefreshInstallState`) and after every op on the selected game;
+  the result rides the snapshot as `State.DetailTruth` (async,
+  `EvDetailTruth` poke) and both the GUI detail panel and the TUI detail
+  view render a "Game dir:" line from it. A foreign-modified file shows
+  as changed there while the manifest still claims committed — the
+  directory's word beside the manager's claim.
 
 ## Discovery & classification
 
