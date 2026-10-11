@@ -5039,4 +5039,4 @@ directory silently disagreed.
   green slice by slice. Fallback and resolver edge cases pinned
   (backup-skip, tie-break, no-anchor).
 - Docs: issue 081, scope (v0.14 OptiScaler-dir bullet).
-- Commit: THIS_COMMIT.
+- Commit: 2b1d898.

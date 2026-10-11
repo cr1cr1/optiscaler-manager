@@ -34,4 +34,4 @@ displayed version is the version of the set the updater manages.
 Shipped: `app.ResolveDLSSDir` + ops/probe/scan wiring, red-first on
 both agreed seams (writer + probe). Full suite, vet, gofmt clean.
 Docs: scope v0.14 bullet, log entry.
-Commit: THIS_COMMIT.
+Commit: 2b1d898.
