@@ -316,6 +316,46 @@ func TestUninstallRefusesChangedFile(t *testing.T) {
 	t.Logf("refused as designed: %v", rf)
 }
 
+// TestUninstallAllowChangedRestoresAndRemoves: with AllowChanged consent a
+// foreign-modified created file is removed and a foreign-modified
+// overwritten file drops the current bytes and gets its SHA-verified
+// pre-install backup restored — the consented escape from RefusedError
+// (issue 076).
+func TestUninstallAllowChangedRestoresAndRemoves(t *testing.T) {
+	root, bin, st := newGame(t)
+	writeFile(t, filepath.Join(bin, "dxgi.dll"), "ORIGINAL-DXGI")
+	if _, err := Install(context.Background(), st, request(root, bin)); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	// Foreign modifications after install: one created file, one
+	// overwritten file (e.g. another fork extracted over the managed
+	// install).
+	createdVictim := filepath.Join(bin, "fakenvapi.ini")
+	overwrittenVictim := filepath.Join(bin, "dxgi.dll")
+	writeFile(t, createdVictim, "FOREIGN-INI")
+	writeFile(t, overwrittenVictim, "FOREIGN-DXGI")
+
+	id := manifestID(t, bin)
+	if err := UninstallWithOptions(context.Background(), st, id, UninstallOptions{AllowChanged: true}); err != nil {
+		t.Fatalf("consented uninstall: %v", err)
+	}
+	if _, serr := os.Stat(createdVictim); !os.IsNotExist(serr) {
+		t.Error("changed created file survived consented uninstall")
+	}
+	data, rerr := os.ReadFile(overwrittenVictim)
+	if rerr != nil || string(data) != "ORIGINAL-DXGI" {
+		t.Errorf("changed overwritten file = %q, %v; want ORIGINAL-DXGI restored from backup", data, rerr)
+	}
+	if _, err := st.Load(id); err == nil {
+		t.Error("manifest should be deleted after consented uninstall")
+	}
+	if _, err := os.Stat(filepath.Join(bin, "optiscaler-backups")); !os.IsNotExist(err) {
+		t.Error("backup dir should be deleted after consented uninstall")
+	}
+	t.Log("consented uninstall: foreign bytes removed, original restored")
+}
+
 func TestInstallUninstallRoundTrip(t *testing.T) {
 	root, bin, st := newGame(t)
 	writeFile(t, filepath.Join(bin, "OptiScaler.ini"), "ORIGINAL-INI")

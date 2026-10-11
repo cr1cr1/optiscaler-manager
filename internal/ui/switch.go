@@ -190,7 +190,7 @@ func (s *Session) doSwitchVersionChain(gameDir, version string, eacConsented boo
 			Msg("version switch: uninstall backups missing; proceeding without restoring originals")
 		s.toast(fmt.Sprintf("Version switch: %d backup file(s) missing — originals unrestorable; proceeding anyway", len(missing)), true)
 	}
-	if err := s.runUninstallOpt(gameDir, relocateDir, true); err != nil {
+	if err := s.runUninstallOpt(gameDir, relocateDir, true, false); err != nil {
 		if removedINI {
 			// Nothing else ran (refused or busy): put the ini back so
 			// the game is exactly as found.

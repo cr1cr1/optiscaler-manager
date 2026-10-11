@@ -4911,3 +4911,31 @@ under steamapps/common.
   an async cache write on one run; rerun 35/35 green. Pre-existing.
 - Docs: issue 075, scope (umu bullet).
 - Commit: 1c40733.
+
+## 2026-10-11 — issue 76: uninstall warns and proceeds on changed files
+
+User report (recurring): "WRN Failed: uninstall refused 1 changed file(s):
+[…/The Witcher 3 Wild Hunt GOTY/bin/x64_dx12/libxell.dll". Root cause:
+the disk libxell.dll was byte-identical to the jlrouzies NR fork v0.8.92
+archive's copy (zip-internal mtime Sep 26 preserved) — extracted over the
+managed official v0.9.4 install outside the manager. The manifest hash
+check worked as designed; the defect was the missing recovery path: every
+retry re-failed on the same file with no way past it from any frontend.
+
+- `UninstallOptions.AllowChanged` (installer): consented foreign-modified
+  created files take the normal created fate (delete/relocate),
+  overwritten ones drop the current bytes and still restore the
+  SHA-verified original; zerolog warn per file. Without consent the
+  RefusedError behavior is unchanged.
+- Session: standalone uninstall pauses with ConfirmChangedFiles naming
+  the files (mirrors issue-050 ConfirmMissingBackup); accepting resumes
+  with the override. The version-switch chain keeps refusing (issue-010
+  semantics). CLI gains `uninstall --force-changed` (+ error hint).
+- Reds witnessed: build failures (undefined AllowChanged /
+  ConfirmChangedFiles); green after implementation.
+- Flake note: `TestVersionDropdownMenuOffersLatest` timed out once (20s
+  wall-clock row wait in a path this diff doesn't touch); rerun 35/35
+  green. Same load-flake class as the known
+  `TestClearCoverOverrideRestoresChain` TempDir race.
+- Docs: issue 076, scope (install/backup bullet).
+- Commit: THIS_COMMIT.

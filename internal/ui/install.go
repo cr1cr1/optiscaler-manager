@@ -112,7 +112,9 @@ func (s *Session) AnswerConfirm(accept bool) {
 	case ConfirmDLSSRestore:
 		go s.doRestoreDLSS(c.GameDir, c.SnapshotID, false)
 	case ConfirmMissingBackup:
-		go func() { _ = s.runUninstallOpt(c.GameDir, "", true) }()
+		go func() { _ = s.runUninstallOpt(c.GameDir, "", true, false) }()
+	case ConfirmChangedFiles:
+		go func() { _ = s.runUninstallOpt(c.GameDir, "", false, true) }()
 	case ConfirmLargeBackup:
 		switch c.Op {
 		case OpDLSSUpdate:
@@ -240,6 +242,18 @@ func missingBackupWarning(mb *installer.MissingBackupError) string {
 		len(mb.Paths), strings.Join(names, ", "))
 }
 
+// changedFilesWarning words the ConfirmChangedFiles gate (issue 076):
+// the named files changed since install; consent drops the foreign
+// bytes and restores originals from backup where one exists.
+func changedFilesWarning(rf *installer.RefusedError) string {
+	names := make([]string, len(rf.Paths))
+	for i, p := range rf.Paths {
+		names[i] = filepath.Base(p)
+	}
+	return fmt.Sprintf("%d file(s) changed since install (%s). Uninstall will remove them and restore originals from backup where available. Proceed?",
+		len(rf.Paths), strings.Join(names, ", "))
+}
+
 // errNotManagedToast is the user-facing refusal when an uninstall targets an
 // install this manager never made (external, or its manifest vanished): the
 // store holds no manifest, so no SHA-verified removal is possible and the
@@ -247,7 +261,7 @@ func missingBackupWarning(mb *installer.MissingBackupError) string {
 const errNotManagedToast = "not installed by this manager — adopt first or remove manually"
 
 func (s *Session) doUninstall(gameDir string) {
-	_ = s.runUninstallOpt(gameDir, "", false)
+	_ = s.runUninstallOpt(gameDir, "", false, false)
 }
 
 // runUninstallOpt is the uninstall body with an outcome, mirroring
@@ -261,7 +275,7 @@ func (s *Session) doUninstall(gameDir string) {
 // whose backups are gone (issue 050); without it a missing backup pauses
 // the STANDALONE uninstall with a confirmation, while the switch chain
 // surfaces the typed error (no consent prompt mid-chain).
-func (s *Session) runUninstallOpt(gameDir, relocateDir string, allowMissing bool) error {
+func (s *Session) runUninstallOpt(gameDir, relocateDir string, allowMissing, allowChanged bool) error {
 	row := s.findRow(gameDir)
 	if row != nil && row.Status == domain.StatusExternal {
 		s.toast(errNotManagedToast, true)
@@ -277,6 +291,7 @@ func (s *Session) runUninstallOpt(gameDir, relocateDir string, allowMissing bool
 	_, err := app.UninstallWithOptions(ctx, s.deps.Store, gameDir, installer.UninstallOptions{
 		RelocateDir:        relocateDir,
 		AllowMissingBackup: allowMissing,
+		AllowChanged:       allowChanged,
 	})
 	s.finishOp(gameDir)
 	if errors.Is(err, context.Canceled) {
@@ -294,6 +309,16 @@ func (s *Session) runUninstallOpt(gameDir, relocateDir string, allowMissing bool
 			Kind:    ConfirmMissingBackup,
 			GameDir: gameDir,
 			Message: missingBackupWarning(mb),
+		})
+		return errInstallPaused
+	}
+	var rf *installer.RefusedError
+	if errors.As(err, &rf) && relocateDir == "" && !allowChanged {
+		s.opAborted()
+		s.setConfirm(&Confirmation{
+			Kind:    ConfirmChangedFiles,
+			GameDir: gameDir,
+			Message: changedFilesWarning(rf),
 		})
 		return errInstallPaused
 	}

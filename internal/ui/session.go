@@ -128,6 +128,13 @@ const (
 	// with AllowMissingBackup, dropping the unrestorable mod bytes
 	// instead of restoring the lost originals.
 	ConfirmMissingBackup
+	// ConfirmChangedFiles pauses a standalone uninstall whose tracked
+	// files no longer match the manifest (issue 076 — foreign
+	// modification, e.g. another fork extracted over the managed
+	// install): accepting resumes the uninstall with AllowChanged,
+	// dropping the foreign bytes and restoring the SHA-verified
+	// originals where the file had overwritten one.
+	ConfirmChangedFiles
 )
 
 // Large-backup op discriminators for Confirmation.Op (ConfirmLargeBackup

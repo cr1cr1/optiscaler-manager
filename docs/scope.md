@@ -90,10 +90,19 @@ here are closed; reopen only with new evidence.
   into a typed error and pauses for explicit consent naming them;
   accepting drops the installed bytes without restoring the lost
   originals (CLI: `uninstall --force`), declining leaves everything
-  untouched. The version-switch chain (incl. fork switches) instead warns
-  and proceeds (issue 073): the user already chose the destructive
-  operation, and the lost originals are unrecoverable either way, so the
-  uninstall leg runs with `AllowMissingBackup` after a pre-flight
+  untouched. A tracked file whose bytes changed since install (foreign
+  modification — e.g. another fork extracted over the managed install)
+  gets the same escape hatch (issue 076): the standalone uninstall pauses
+  for explicit consent naming the changed files; accepting drops the
+  foreign bytes — created files take the normal created fate, overwritten
+  files still get their SHA-verified original restored (CLI:
+  `uninstall --force-changed`) — and declining leaves everything
+  untouched. The version-switch chain keeps refusing foreign-modified
+  files (issue 010). For missing backups the version-switch chain (incl.
+  fork switches) instead warns and proceeds (issue 073): the user already
+  chose the destructive operation, and the lost originals are
+  unrecoverable either way, so the uninstall leg runs with
+  `AllowMissingBackup` after a pre-flight
   (`installer.MissingBackupPaths`) surfaces one warning naming the count.
 
 ## Discovery & classification

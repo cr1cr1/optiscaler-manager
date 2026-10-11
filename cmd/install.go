@@ -35,17 +35,22 @@ func (c *InstallCmd) Run(d *Deps) error {
 
 // UninstallCmd reverses a committed install.
 type UninstallCmd struct {
-	Path  string `arg:"" help:"Game root directory" type:"path"`
-	Force bool   `help:"Proceed with removal even when backups of original files are missing"`
+	Path         string `arg:"" help:"Game root directory" type:"path"`
+	Force        bool   `help:"Proceed with removal even when backups of original files are missing"`
+	ForceChanged bool   `help:"Proceed with removal even when files changed since install"`
 }
 
 // Run resolves the install dir and uninstalls.
 func (c *UninstallCmd) Run(d *Deps) error {
 	dir, err := app.UninstallWithOptions(context.Background(), d.Store, c.Path,
-		installer.UninstallOptions{AllowMissingBackup: c.Force})
+		installer.UninstallOptions{AllowMissingBackup: c.Force, AllowChanged: c.ForceChanged})
 	var mb *installer.MissingBackupError
 	if errors.As(err, &mb) {
 		return fmt.Errorf("%w (use --force to proceed with removal anyway)", err)
+	}
+	var rf *installer.RefusedError
+	if errors.As(err, &rf) {
+		return fmt.Errorf("%w (use --force-changed to proceed with removal anyway)", err)
 	}
 	if err != nil {
 		return err

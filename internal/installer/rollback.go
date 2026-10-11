@@ -128,6 +128,15 @@ type UninstallOptions struct {
 	// Without it every missing backup collects into a MissingBackupError
 	// after all processable entries were handled.
 	AllowMissingBackup bool
+	// AllowChanged consents to dropping files whose bytes no longer match
+	// the manifest (issue 076 — e.g. another fork's files extracted over
+	// the managed install): created files take the normal created fate
+	// (delete, or relocate when RelocateDir is set, so the bytes stay
+	// recoverable) and overwritten files lose their current bytes but
+	// still get the SHA-verified pre-install original restored. Without
+	// it every changed file collects into a RefusedError after all
+	// processable entries were handled.
+	AllowChanged bool
 }
 
 // MissingBackupPaths lists the overwritten files whose pre-install backup
@@ -208,19 +217,25 @@ func UninstallWithOptions(ctx context.Context, st *store.Store, id string, opts 
 		if err != nil {
 			return fmt.Errorf("uninstall inspect %s: %w", c.Path, err)
 		}
-		if current == c.SHA256 {
-			if _, err := removeOrRelocate(c.Path); err != nil {
-				return err
-			}
-			op := "delete"
-			if opts.RelocateDir != "" {
-				op = "relocate"
-			}
-			m.Ops = append(m.Ops, domain.OpEntry{Op: op, Path: c.Path})
+		changed := current != c.SHA256
+		if changed && !opts.AllowChanged {
+			refused = append(refused, c.Path)
+			kept = append(kept, c)
 			continue
 		}
-		refused = append(refused, c.Path)
-		kept = append(kept, c)
+		if changed {
+			log.Warn().Str("path", c.Path).
+				Msg("uninstall: created file changed since install; removing with consent")
+		}
+		if _, err := removeOrRelocate(c.Path); err != nil {
+			return err
+		}
+		op := "delete"
+		if opts.RelocateDir != "" {
+			op = "relocate"
+		}
+		m.Ops = append(m.Ops, domain.OpEntry{Op: op, Path: c.Path})
+		continue
 	}
 	m.Created = kept
 
@@ -236,10 +251,15 @@ func UninstallWithOptions(ctx context.Context, st *store.Store, id string, opts 
 			// Our installed file vanished; restoring the original is still right.
 		case err != nil:
 			return fmt.Errorf("uninstall inspect %s: %w", ow.Path, err)
-		case current != ow.InstalledSHA256:
+		case current != ow.InstalledSHA256 && !opts.AllowChanged:
 			refused = append(refused, ow.Path)
 			keptOw = append(keptOw, ow)
 			continue
+		case current != ow.InstalledSHA256:
+			// Consented (issue 076): the foreign bytes are dropped and
+			// the SHA-verified pre-install original restored below.
+			log.Warn().Str("path", ow.Path).
+				Msg("uninstall: overwritten file changed since install; restoring original with consent")
 		}
 		if !vanished && opts.RelocateDir != "" {
 			// The old distribution's bytes move out BEFORE the original
