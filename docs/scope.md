@@ -609,7 +609,9 @@ decisions the per-version sections above do not cover.
   install dir (detail pane, issue 048), `UmuPrefixPath` sets the global
   default (settings picker over detected Heroic/Bottles (default roots
   plus the custom_bottles_path from data.yml)/Steam (named
-  from the appmanifest)/Lutris/PlayOnLinux/CrossOver/~/.wine
+  from the appmanifest, else from the install root's
+  appcache/appinfo.vdf so uninstalled games keep their title —
+  issue 074)/Lutris/PlayOnLinux/CrossOver/~/.wine
   prefixes), and with neither the launch reuses a prefix the game
   already lives in (an enclosing `drive_c`, or a Heroic prefix matching
   the game's AppName) before deriving a deterministic per-game prefix

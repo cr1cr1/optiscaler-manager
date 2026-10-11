@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -46,7 +47,8 @@ type prefixContainer struct {
 // (XDG and Flatpak) plus the custom_bottles_path root named in
 // Bottles' data.yml (issue 053), every Steam root and extra library's
 // steamapps/compatdata (named from the sibling appmanifest when
-// present), PlayOnLinux's wineprefix/, CrossOver's ~/.cxoffice, the
+// present, else from the install root's appcache/appinfo.vdf — an
+// uninstalled game keeps its compatdata, issue 074), PlayOnLinux's wineprefix/, CrossOver's ~/.cxoffice, the
 // per-game prefix: paths in Lutris's YAML configs (XDG config and
 // Flatpak), and the ~/.wine singleton. Missing dirs are skipped;
 // entries resolving to the same directory through symlinks are
@@ -115,6 +117,30 @@ func FindPrefixes(_ context.Context) []Prefix {
 	// for the owner ref (issue 060); unmapped prefixes fall back to the
 	// directory name.
 	heroicApps := heroicWinePrefixes(home, xdgConfig)
+	// Steam's appcache/appinfo.vdf names apps whose appmanifest is gone —
+	// an uninstalled game keeps its compatdata, which would otherwise
+	// list as the raw appid in the prefix dropdowns (issue 074). Parsed
+	// lazily on the first manifest miss.
+	var appNames map[uint32]string
+	appNamesLoaded := false
+	appinfoName := func(appid string) string {
+		if !appNamesLoaded {
+			appNamesLoaded = true
+			appNames = map[uint32]string{}
+			for _, dir := range steamInstallDirs(home, xdgData) {
+				for id, n := range appinfoNames(filepath.Join(dir, "appcache", "appinfo.vdf")) {
+					if _, ok := appNames[id]; !ok {
+						appNames[id] = n
+					}
+				}
+			}
+		}
+		id, err := strconv.ParseUint(appid, 10, 32)
+		if err != nil {
+			return ""
+		}
+		return appNames[uint32(id)]
+	}
 	for _, c := range containers {
 		entries, err := os.ReadDir(c.root)
 		if err != nil {
@@ -129,6 +155,8 @@ func FindPrefixes(_ context.Context) []Prefix {
 			if c.pfx {
 				dir = filepath.Join(dir, "pfx")
 				if n := appmanifestName(filepath.Dir(c.root), name); n != "" {
+					name = n
+				} else if n := appinfoName(name); n != "" {
 					name = n
 				}
 			}

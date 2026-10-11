@@ -84,11 +84,11 @@ func RunnerRoots() []string {
 	return roots
 }
 
-// steamLibraryRoots returns the Steam root directory candidates
-// (native, Flatpak, Snap, XDG data) plus every extra library folder
-// recorded in each root's steamapps/libraryfolders.vdf. Candidates are
-// not filtered for existence; callers stat what they need.
-func steamLibraryRoots(home, xdgData string) []string {
+// steamInstallDirs returns the Steam installation root candidates
+// (native, Flatpak, Snap, XDG data) — the directories that hold an
+// appcache/appinfo.vdf. Candidates are not filtered for existence;
+// callers stat what they need.
+func steamInstallDirs(home, xdgData string) []string {
 	var steamDirs []string
 	if home != "" {
 		steamDirs = append(steamDirs,
@@ -100,6 +100,15 @@ func steamLibraryRoots(home, xdgData string) []string {
 	if xdgData != "" {
 		steamDirs = append(steamDirs, filepath.Join(xdgData, "Steam"))
 	}
+	return steamDirs
+}
+
+// steamLibraryRoots returns the Steam root directory candidates
+// (native, Flatpak, Snap, XDG data) plus every extra library folder
+// recorded in each root's steamapps/libraryfolders.vdf. Candidates are
+// not filtered for existence; callers stat what they need.
+func steamLibraryRoots(home, xdgData string) []string {
+	steamDirs := steamInstallDirs(home, xdgData)
 	out := append([]string{}, steamDirs...)
 	for _, dir := range steamDirs {
 		data, err := os.ReadFile(filepath.Join(dir, "steamapps", "libraryfolders.vdf"))

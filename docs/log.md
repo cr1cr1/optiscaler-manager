@@ -4873,3 +4873,23 @@ continuation could never resume the chain (dead end either way).
   case.
 - Docs: issue 073, scope (backup paragraph).
 - Commit: 26c6eb3.
+
+## 2026-10-11 — issue 74: steam prefixes named from appinfo.vdf
+
+User report: the settings/per-game prefix dropdowns list some Steam
+prefixes by internal appid instead of the display name. Root cause:
+compatdata prefixes are named from the sibling appmanifest only; an
+uninstalled game's manifest is gone from every library, so the raw appid
+stayed. All five orphans on the machine resolve via Steam's local
+appcache/appinfo.vdf (Rain World, PUBG, Metro Exodus EE, Proton Hotfix,
+Proton 9.0).
+
+- `umu.appinfoNames` parses appinfo.vdf (legacy 0x07564427 and
+  string-pool 0x07564428/29 layouts); `steamInstallDirs` factored out of
+  `steamLibraryRoots`; FindPrefixes falls back to the appinfo name on a
+  manifest miss (lazy, once per call). Raw id stays when nothing knows
+  it; appmanifest still wins.
+- Reds witnessed (empty map, `Name = "312520"`); two-record test caught a
+  record-walker double-advance; real-file probe confirmed all five names.
+- Docs: issue 074, scope (umu bullet).
+- Commit: THIS_COMMIT.
