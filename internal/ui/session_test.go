@@ -76,6 +76,10 @@ func newTestEnv(t *testing.T) *testEnv {
 		e.opened = append(e.opened, path)
 		return nil
 	}
+	// Hermetic home: shader-cache discovery must never see the
+	// developer's real driver caches (gigabytes, machine-specific).
+	home := t.TempDir()
+	e.sess.homeDir = func() (string, error) { return home, nil }
 	return e
 }
 

@@ -260,6 +260,7 @@ func (s *Session) RescanGame(dir string) {
 		disambiguateTitles(s.st.Rows)
 		s.mu.Unlock()
 		s.persistCache()
+		s.invalidateShaderCache(dir) // the game dir may have changed
 		s.toast("rescanned "+row.Title, false)
 		s.emit(Event{Kind: EvScanDone, Text: "rescanned " + row.Title})
 	}()
@@ -389,6 +390,7 @@ func (s *Session) runScan(ctx context.Context) {
 	s.st.Progress = nil
 	s.mu.Unlock()
 	s.persistCache()
+	s.invalidateAllShaderCaches() // installs may have changed the bytes
 	s.emit(Event{Kind: EvScanDone, Text: fmt.Sprintf("%d games", len(rows))})
 }
 

@@ -21,6 +21,7 @@ import (
 	"github.com/cr1cr1/optiscaler-manager/internal/pickdir"
 	"github.com/cr1cr1/optiscaler-manager/internal/protondb"
 	"github.com/cr1cr1/optiscaler-manager/internal/settings"
+	"github.com/cr1cr1/optiscaler-manager/internal/shadercache"
 	"github.com/cr1cr1/optiscaler-manager/internal/steam"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
 	"github.com/cr1cr1/optiscaler-manager/internal/umu"
@@ -135,6 +136,10 @@ const (
 	// dropping the foreign bytes and restoring the SHA-verified
 	// originals where the file had overwritten one.
 	ConfirmChangedFiles
+	// ConfirmSharedCache pauses a shared driver-cache clear (issue
+	// 078): the Mesa/NVIDIA blobs belong to every game, so accepting
+	// clears the path carried in clearPath.
+	ConfirmSharedCache
 )
 
 // Large-backup op discriminators for Confirmation.Op (ConfirmLargeBackup
@@ -179,6 +184,9 @@ type Confirmation struct {
 	// uconsent is the uninstall's accumulated overrides at pause time
 	// (ConfirmMissingBackup/ConfirmChangedFiles).
 	uconsent uninstallConsent
+	// clearPath is the shared cache path a ConfirmSharedCache resumes
+	// clearing.
+	clearPath string
 }
 
 // Toast is a transient notification.
@@ -307,8 +315,13 @@ type Session struct {
 	now        func() time.Time
 	opCancels  map[string]context.CancelFunc // in-flight op per game dir
 	launchRuns map[string]context.CancelFunc // running routed launches per game dir (issue 068)
-	cacheMu    sync.Mutex                    // serializes games-cache writes
-	logEntries []LogEntry                    // capped status history with game titles (issues 052, 057), guarded by mu
+	// shaderMemos caches per-game shader discovery (issue 078),
+	// invalidated by clear/warm/rescan; warmRuns tracks live warm
+	// sessions for WarmState. Both guarded by mu.
+	shaderMemos map[string][]shadercache.Ref
+	warmRuns    map[string]*warmRun
+	cacheMu     sync.Mutex // serializes games-cache writes
+	logEntries  []LogEntry // capped status history with game titles (issues 052, 057), guarded by mu
 
 	progressMu sync.Mutex // serializes progress poke throttling
 	lastPoke   time.Time
@@ -322,6 +335,17 @@ type Session struct {
 	pickDir      func(ctx context.Context) (string, error)
 	pickFile     func(ctx context.Context) (string, error)
 	removeAll    func(path string) error
+
+	// homeDir locates the shared driver caches (test seam: temp HOME).
+	homeDir func() (string, error)
+	// warmBackend runs warm sessions (test seam: scripted backend).
+	warmBackend CompilerBackend
+	// warmStop stops the launched game when a run ends (test seam:
+	// recorder); nil uses CancelOp, the existing stop path.
+	warmStop func(gameDir string) bool
+	// warmSupervised gates Warm on supervised launches (test seam);
+	// nil uses shouldRouteWinBinary.
+	warmSupervised func(row *GameRow) bool
 
 	// resolveVersion is the test seam for resolving the configured default
 	// version to a concrete tag (fresh = live fetch, not cache); nil picks
@@ -389,6 +413,9 @@ func NewSession(deps Deps) *Session {
 		pickDir:      pickdir.Pick,
 		pickFile:     pickdir.PickFile,
 		removeAll:    os.RemoveAll,
+		homeDir:      os.UserHomeDir,
+		shaderMemos:  map[string][]shadercache.Ref{},
+		warmRuns:     map[string]*warmRun{},
 	}
 }
 

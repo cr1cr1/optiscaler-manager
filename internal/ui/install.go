@@ -119,6 +119,8 @@ func (s *Session) AnswerConfirm(accept bool) {
 		uc := c.uconsent
 		uc.changedOK = true
 		go func() { _ = s.runUninstallOpt(c.GameDir, "", uc) }()
+	case ConfirmSharedCache:
+		go s.clearSharedCache(c.GameDir, c.clearPath)
 	case ConfirmLargeBackup:
 		switch c.Op {
 		case OpDLSSUpdate:
