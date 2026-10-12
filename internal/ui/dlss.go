@@ -202,11 +202,13 @@ func (s *Session) refreshComponentVersions(gameDir string) {
 	components, raw := app.ComponentVersions(row.InjectionDir)
 	labels := componentLabels(components)
 	ready := dlss.Complete(row.InjectionDir)
-	// Same DLSS-dir rule as the scan probe (issue 081): readiness and
-	// the applied version describe the set the updater manages.
-	if dd, err := app.ResolveDLSSDir(gameDir); err == nil {
-		raw, _ = pever.FileVersion(filepath.Join(dd, dlss.Files[0]))
-		ready = dlss.Complete(dd)
+	// Same presence rule as the scan probe (issue 082): the pill shows
+	// the present set, OptiScaler dir first, then the bin dir.
+	if dir := app.DLSSPresenceDir(gameDir, row.InjectionDir); dir != "" {
+		if v, err := pever.FileVersion(filepath.Join(dir, dlss.Files[0])); err == nil {
+			raw = v
+		}
+		ready = dlss.Complete(dir)
 	}
 	s.mu.Lock()
 	for i := range s.st.Rows {

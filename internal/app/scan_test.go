@@ -229,12 +229,13 @@ func TestLibraryEntryDLSSReadiness(t *testing.T) {
 	}
 }
 
-// TestLibraryEntryDLSSReadsOptiScalerDir: the DLSS pill follows the
-// updater's destination (issue 081) — the directory holding
-// dlssg_to_fsr3_amd_is_better.dll — not the injection dir. The NR-layout
-// game reads ready from its OptiScaler/ subdir despite a decoy DLL in the
-// root; a game whose set never moved next to its dlssg reads not-ready,
-// exactly where the updater would install.
+// TestLibraryEntryDLSSReadsOptiScalerDir: the DLSS pill reflects the
+// present set (issue 082) — the OptiScaler dir first, then the bin dir,
+// with or without OptiScaler installed. The NR-layout game reads ready
+// from its OptiScaler/ subdir despite a decoy DLL in the root; a game
+// whose set never moved next to its dlssg still shows the present root
+// set; a versioned set nested below the top level (no OptiScaler at
+// all) keeps the pre-081 versioned-but-not-ready display.
 func TestLibraryEntryDLSSReadsOptiScalerDir(t *testing.T) {
 	steamRoot := mkSteamRoot(t)
 
@@ -252,6 +253,12 @@ func TestLibraryEntryDLSSReadsOptiScalerDir(t *testing.T) {
 	writeScanFile(t, filepath.Join(shadow, "OptiScaler", "dlssg_to_fsr3_amd_is_better.dll"), []byte("FG"))
 	for i, name := range dlss.Files {
 		writeScanFile(t, filepath.Join(shadow, name), testutil.FixedVersionPE(3, 7, uint16(20+i), 0))
+	}
+
+	nested := mkSteamGame(t, steamRoot, "304", "Nested Game", "NestedGame")
+	writeScanFile(t, filepath.Join(nested, "nestedgame.exe"), []byte("GAME"))
+	for i, name := range dlss.Files {
+		writeScanFile(t, filepath.Join(nested, "libs", name), testutil.FixedVersionPE(5, 0, uint16(i), 0))
 	}
 
 	entries, err := ScanAllLibraries(context.Background(), nil, ScanAllOptions{SteamRoot: steamRoot})
@@ -273,11 +280,21 @@ func TestLibraryEntryDLSSReadsOptiScalerDir(t *testing.T) {
 	if !ok {
 		t.Fatal("shadow game missing")
 	}
-	if s.DLSSReady {
-		t.Error("set in the injection root while dlssg_to_fsr3 lives in OptiScaler/ must not read ready")
+	if !s.DLSSReady {
+		t.Error("present complete root set must read ready even though dlssg_to_fsr3 lives in OptiScaler/")
 	}
-	if s.DLSSVersion != "" {
-		t.Errorf("shadow DLSSVersion = %q, want empty (the updater manages the OptiScaler dir)", s.DLSSVersion)
+	if s.DLSSVersion != "3.7.20.0" {
+		t.Errorf("shadow DLSSVersion = %q, want the present root set 3.7.20.0", s.DLSSVersion)
+	}
+	g, ok := byName["Nested Game"]
+	if !ok {
+		t.Fatal("nested game missing")
+	}
+	if g.DLSSReady {
+		t.Error("nested-only set must not read ready (readiness is a top-level fact)")
+	}
+	if g.DLSSVersion != "5.0.0.0" {
+		t.Errorf("nested DLSSVersion = %q, want the discovered set 5.0.0.0", g.DLSSVersion)
 	}
 }
 

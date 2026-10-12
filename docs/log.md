@@ -5040,3 +5040,23 @@ directory silently disagreed.
   (backup-skip, tie-break, no-anchor).
 - Docs: issue 081, scope (v0.14 OptiScaler-dir bullet).
 - Commit: 2b1d898.
+
+## 2026-10-11 — issue 082: DLSS pill reflects the present set, OptiScaler-independent
+
+- User correction to 081: OptiScaler is not a precondition for the DLSS
+  libraries — the pill must show whatever version is present,
+  OptiScaler dir first, then the bin dir. 081 had coupled the probe to
+  the updater's destination (a set stranded in the root read not-ready
+  with no version) and dropped the pre-081 nested discovery.
+- `app.DLSSPresenceDir` (new; `findAnchor` factored out of
+  `ResolveDLSSDir`): anchor dir first when it holds any runtime member,
+  else the injection dir when it holds any, else none. Scan
+  `enrichVersions` and the post-op UI refresh read version (top-level
+  PE read, recursive-walk value kept as fallback) and readiness from
+  that dir. The updater still installs into `ResolveDLSSDir`.
+- Red: flipped the 081 probe test's shadow expectations to the
+  presence contract + a nested no-OptiScaler game (version shown, not
+  ready); witnessed red, then green. All other behavior identical to
+  pre-081 by construction (presence-empty path keeps the old values).
+- Docs: issue 082, scope bullet reworded to the presence rule.
+- Commit: THIS_COMMIT.

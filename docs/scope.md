@@ -719,9 +719,11 @@ decisions the per-version sections above do not cover.
   `dlssg_to_fsr3_amd_is_better.dll` lives when OptiScaler is installed
   (the `OptiScaler/` subdir for the dlssnr fork, the injection dir
   itself for standard layouts), else the resolved injection dir. Backup
-  stores never qualify as the destination. The pill's readiness/version
-  probe reads that same dir, so the displayed version is always the
-  managed set's.
+  stores never qualify as the destination. The pill, however, reflects
+  whatever set is present (issue 082 — OptiScaler is not a precondition
+  for the DLSS libraries): readiness/version probe the OptiScaler dir
+  first when it holds runtime members, else the injection dir when it
+  holds any, with the recursive-walk version as the fallback.
 - **Immutable-commit source**: NVIDIA/DLSS `main` resolves to a commit
   SHA via the GitHub API; files come from
   `lib/Windows_x86_64/rel/<name>` at that exact commit. No mutable-URL
