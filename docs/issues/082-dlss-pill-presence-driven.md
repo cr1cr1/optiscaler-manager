@@ -41,4 +41,4 @@ walk fallback kept) and readiness from it. The 081 probe test's
 shadow expectations flipped to the presence contract and a nested
 no-OptiScaler case pins the pre-081 display. Full suite, vet,
 gofmt clean.
-Commit: THIS_COMMIT.
+Commit: dceb308.

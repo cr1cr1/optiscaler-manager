@@ -5059,4 +5059,4 @@ directory silently disagreed.
   ready); witnessed red, then green. All other behavior identical to
   pre-081 by construction (presence-empty path keeps the old values).
 - Docs: issue 082, scope bullet reworded to the presence rule.
-- Commit: THIS_COMMIT.
+- Commit: dceb308.
