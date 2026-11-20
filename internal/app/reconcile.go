@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/dlss"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 	"github.com/cr1cr1/optiscaler-manager/internal/pever"
 	"github.com/cr1cr1/optiscaler-manager/internal/store"
@@ -32,6 +33,13 @@ type InstallTruth struct {
 	Hook         bool
 	HookVersion  string
 	HookDisabled bool
+	// DLSSDir is the presence dir behind the DLSS pill (issue 082): the
+	// anchor dir first when it holds runtime members, else the
+	// injection dir, else "". ShadowDLSS names a complete NVIDIA set
+	// stranded outside DLSSDir (issue 083) — the copy the game loader
+	// may prefer while the updater manages DLSSDir; "" when none.
+	DLSSDir    string
+	ShadowDLSS string
 }
 
 // ReconcileInstall verifies a game root against its actual directory and
@@ -58,6 +66,17 @@ func ReconcileInstall(st *store.Store, gameRoot, injectionDir string) InstallTru
 		}
 		if _, f := pever.DisabledHook(injectionDir); f != "" {
 			truth.HookDisabled = true
+		}
+	}
+	// Shadow set (issue 083): a complete NVIDIA set stranded in the
+	// injection dir while the presence dir is an OptiScaler subdir. The
+	// canonical comparison keeps a standard layout (anchor directly in
+	// the injection dir, possibly via a symlinked path) from reading as
+	// its own shadow; a vanished injection dir cannot be complete, so a
+	// failed canonicalization settles to no shadow.
+	if truth.DLSSDir = DLSSPresenceDir(gameRoot, injectionDir); truth.DLSSDir != "" && dlss.Complete(injectionDir) {
+		if ci, err := canonicalDir(injectionDir); err == nil && ci != truth.DLSSDir {
+			truth.ShadowDLSS = injectionDir
 		}
 	}
 	return truth

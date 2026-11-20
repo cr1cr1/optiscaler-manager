@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cr1cr1/optiscaler-manager/internal/app"
 	"github.com/cr1cr1/optiscaler-manager/internal/domain"
 )
 
@@ -67,4 +68,28 @@ func TestTruthLineShapes(t *testing.T) {
 		t.Errorf("clean line = %q", clean)
 	}
 	t.Log("truth line shapes pinned")
+}
+
+// TestTruthLineShadowDLSS: a stranded complete set warns beside the
+// managed copy, naming both locations (issue 083); a clean truth stays
+// silent.
+func TestTruthLineShadowDLSS(t *testing.T) {
+	line := TruthLine(&DetailTruth{
+		Dir: "g",
+		InstallTruth: app.InstallTruth{
+			DLSSDir:    "g/OptiScaler",
+			ShadowDLSS: "g",
+		},
+	})
+	if !strings.Contains(line, "shadow DLSS set in game root (managed copy in OptiScaler)") {
+		t.Errorf("shadow line = %q, want the shadow + managed locations", line)
+	}
+	clean := TruthLine(&DetailTruth{
+		Dir:          "g",
+		InstallTruth: app.InstallTruth{DLSSDir: "g/OptiScaler"},
+	})
+	if strings.Contains(clean, "shadow") {
+		t.Errorf("clean line = %q, want no shadow warning", clean)
+	}
+	t.Log("truth line shadow wording pinned")
 }

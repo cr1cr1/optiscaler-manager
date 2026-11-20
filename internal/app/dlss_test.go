@@ -80,6 +80,43 @@ func TestUpdateDLSSTargetsOptiScalerDir(t *testing.T) {
 	}
 }
 
+// TestUpdateDLSSLeavesShadowSetUntouched: on a shadow layout the update
+// manages the OptiScaler-dir set and never touches the stranded root
+// copy — no automatic deletion, move, or overwrite of game files
+// without consent (issue 083).
+func TestUpdateDLSSLeavesShadowSetUntouched(t *testing.T) {
+	game := t.TempDir()
+	writeScanFile(t, filepath.Join(game, "game.exe"), []byte("GAME"))
+	seedDLSSSet(t, game, 3, 7)
+	opti := filepath.Join(game, "OptiScaler")
+	writeScanFile(t, filepath.Join(opti, "dlssg_to_fsr3_amd_is_better.dll"), []byte("FG"))
+	seedDLSSSet(t, opti, 1, 0)
+
+	before := map[string]string{}
+	for _, name := range dlss.Files {
+		h, err := fileSHA256(filepath.Join(game, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[name] = h
+	}
+
+	server, _ := dlssTestServer(t, 310, 9, 1, 0)
+	client := dlss.NewWithBaseURLs(server.Client(), server.URL, server.URL)
+	if _, err := UpdateDLSS(context.Background(), client, t.TempDir(), game, "", false); err != nil {
+		t.Fatalf("UpdateDLSS: %v", err)
+	}
+	for _, name := range dlss.Files {
+		h, err := fileSHA256(filepath.Join(game, name))
+		if err != nil || h != before[name] {
+			t.Errorf("shadow root %s changed (err=%v); the updater must not touch it", name, err)
+		}
+		if v, err := pever.FileVersion(filepath.Join(opti, name)); err != nil || v != "310.9.1.0" {
+			t.Errorf("OptiScaler/%s version %q, err=%v; want the update applied there", name, v, err)
+		}
+	}
+}
+
 // TestResolveDLSSDirPrefersAnchorOverBackups: the anchor search skips
 // rollback stores (an uninstalled OptiScaler's relocated copy must not
 // hijack the target) and breaks anchor ties deterministically; without

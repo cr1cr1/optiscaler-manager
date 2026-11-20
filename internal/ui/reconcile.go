@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/cr1cr1/optiscaler-manager/internal/app"
@@ -50,7 +51,26 @@ func TruthLine(t *DetailTruth) string {
 	} else if t.Managed && t.Tracked > 0 && !t.Hook {
 		b.WriteString(" · hook missing")
 	}
+	if t.ShadowDLSS != "" {
+		fmt.Fprintf(&b, " · shadow DLSS set in %s (managed copy in %s)",
+			truthRel(t.Dir, t.ShadowDLSS), truthRel(t.Dir, t.DLSSDir))
+	}
 	return b.String()
+}
+
+// truthRel renders dir for the truth line: locations inside the game
+// read relative ("OptiScaler"), the game root itself reads as "game
+// root", anything unrelatable reads as its base name.
+func truthRel(root, dir string) string {
+	if rel, err := filepath.Rel(root, dir); err == nil {
+		switch {
+		case rel == ".":
+			return "game root"
+		case rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)):
+			return rel
+		}
+	}
+	return filepath.Base(dir)
 }
 
 // reconcileDetail verifies the selected game against its actual directory
