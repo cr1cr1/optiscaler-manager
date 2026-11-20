@@ -61,9 +61,7 @@ func logPanelHeight(winH float32) float32 {
 
 // syncLogEntries mirrors session log entries into the LogView ring,
 // appending only unseen entries. Game-scoped entries render as
-// "Title › line" and the prefix's rune length is recorded in
-// logPrefixRuns (lockstep with the ring — the ring's line cap exceeds
-// the session's, so the ring never evicts silently). When the session
+// "Title › line". When the session
 // ring evicted (the mirror can no longer line up: fewer entries, or the
 // last synced line drifted), the ring rebuilds from the full source.
 // (Issues 052, 057.)
@@ -74,7 +72,6 @@ func (m *model) syncLogEntries(entries []ui.LogEntry) {
 	if m.logSynced > len(entries) ||
 		(m.logSynced > 0 && entries[m.logSynced-1].Line != m.logSyncedLast) {
 		m.logRing = NewTextRingSize(1<<20, logRingMaxLines)
-		m.logPrefixRuns = m.logPrefixRuns[:0]
 		m.logSynced = 0
 		m.logSyncedLast = ""
 	}
@@ -82,30 +79,13 @@ func (m *model) syncLogEntries(entries []ui.LogEntry) {
 		e := entries[m.logSynced]
 		if e.Game == "" {
 			m.logRing.AppendLine(e.Line)
-			m.logPrefixRuns = append(m.logPrefixRuns, 0)
 			continue
 		}
-		prefix := e.Game + " › "
-		m.logRing.AppendLine(prefix + e.Line)
-		m.logPrefixRuns = append(m.logPrefixRuns, len([]rune(prefix)))
+		m.logRing.AppendLine(e.Game + " › " + e.Line)
 	}
 	if m.logSynced > 0 {
 		m.logSyncedLast = entries[m.logSynced-1].Line
 	}
-}
-
-// logLineExtraSpans returns the per-line app spans for LogViewSearchExt
-// (vendor v0.23): the game-title prefix painted in logGamePrefix
-// (issue 057). The span style is built from the log text base style —
-// overlayStyle replaces fields that differ, so a bare struct would zero
-// the font size.
-func (m *model) logLineExtraSpans(idx int) []StyleSpan {
-	if idx < 0 || idx >= len(m.logPrefixRuns) || m.logPrefixRuns[idx] == 0 {
-		return nil
-	}
-	st := logTextStyle()
-	st.TextColor = logGamePrefix
-	return []StyleSpan{{From: 0, To: m.logPrefixRuns[idx], Style: st}}
 }
 
 // fitStatusLine (issue 072) truncates the one-line status to maxW pixels
@@ -281,11 +261,11 @@ func (m *model) logPanel() {
 			}
 			// LogView is readonly by construction: drag-selects across
 			// lines, copies with Ctrl/Cmd+C, pins to the newest line.
-			// LogViewSearchExt (vendor v0.22+v0.23) highlights every
-			// occurrence of the applied query — debounced 300ms from
-			// typing (issue 055) — and paints game-title prefixes in
-			// logGamePrefix (issue 057).
-			LogViewSearchExt(m.logRing, logTextStyle(), logListKey, &m.logProbe, m.logSearchQuery, searchHitBg, m.logLineExtraSpans)
+			// Search still scrolls to the next match (logSearchNext);
+			// the hit highlight and colored game-title prefixes were
+			// vendor patches (v0.22/v0.23), dropped in the shirei v0.9.1
+			// upgrade — see docs/vendor-patches.md.
+			LogViewExt(m.logRing, logTextStyle(), logListKey, &m.logProbe)
 		})
 	})
 }

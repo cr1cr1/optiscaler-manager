@@ -120,6 +120,7 @@ func TestGUISettingsShowsOnlineLookupsToggle(t *testing.T) {
 
 	headlessFrames(t, 1100, 700)
 	keyFrame(KeyCodeNone, 0, m.rootView) // open frame: the trap auto-focuses the General tab
+	keyFrame(KeyCodeNone, 0, m.rootView) // settle (shirei v0.9.1: focus lands a frame later)
 	keyFrame(KeyTab, 0, m.rootView)      // Optiscaler tab
 	keyFrame(KeyTab, 0, m.rootView)      // online-lookups toggle
 	keyFrame(KeyEnter, 0, m.rootView)    // arm the flip
@@ -167,6 +168,7 @@ func TestGUISettingsThemedInputs(t *testing.T) {
 	template0 := m.templateBuf
 
 	typeFrame("", KeyCodeNone)        // open frame: trap auto-focuses the General tab
+	typeFrame("", KeyCodeNone)        // settle (shirei v0.9.1: focus lands a frame later)
 	typeFrame("", KeyTab)             // Optiscaler tab
 	keyFrame(KeyEnter, 0, m.rootView) // switch to the Optiscaler tab
 	typeFrame("", KeyTab)             // version field (first content stop on the tab)
@@ -331,6 +333,7 @@ func TestGUISettingsUmuToggleFlipsViaKeyboard(t *testing.T) {
 
 	headlessFrames(t, 1100, 700)
 	keyFrame(KeyCodeNone, 0, m.rootView) // open frame: trap auto-focuses the General tab
+	keyFrame(KeyCodeNone, 0, m.rootView) // settle (shirei v0.9.1: focus lands a frame later)
 	for i := 0; i < 8; i++ {             // optiscaler-tab, online, card-size ×3, add-dir, template, umu-enabled
 		keyFrame(KeyTab, 0, m.rootView)
 	}

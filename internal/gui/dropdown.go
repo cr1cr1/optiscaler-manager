@@ -70,7 +70,7 @@ func dropdownMenuKeys(st *dropdownState, n int) (enterPick, spaceToggle bool) {
 // the row is picked and the popup is closed — keyboard distinguishes an
 // Enter pick (keyboard focus never left the trigger) from a pointer pick.
 func dropdownRow(st *dropdownState, idx int, enterPick, hoverAdopt bool, content func(hl bool), pick func(keyboard bool)) {
-	Container(Attrs(PointerHand, Row, Expand, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(2)), func() {
+	Container(Attrs(Row, Expand, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(2)), func() {
 		if IsHovered() && hoverAdopt {
 			st.hl = idx
 		}

@@ -323,24 +323,3 @@ func TestApplySkipsUnchangedTitle(t *testing.T) {
 		t.Errorf("unchanged title was written: TitleOverrides = %v", loaded.TitleOverrides)
 	}
 }
-
-func TestPanelHeaderButtonsPointerHand(t *testing.T) {
-	sess, _ := guiFakes(t)
-	row := scanOneRow(t, sess)
-	m := newModel(Config{Session: sess})
-	sess.Select(row.InstallDir)
-
-	headlessFrames(t, 1100, 1400)
-	keyFrame(KeyCodeNone, 0, m.rootView)
-	keyFrame(KeyCodeNone, 0, m.rootView)
-	for name, r := range map[string]Rect{"Set title": m.setTitleRect, "Close": m.closeBtnRect} {
-		if r.Size[0] == 0 {
-			t.Fatalf("%s button not rendered", name)
-		}
-		pt := Vec2{r.Origin[0] + r.Size[0]/2, r.Origin[1] + r.Size[1]/2}
-		if got := hoverShape(m.rootView, pt); got != CursorShapePointer {
-			t.Errorf("%s hover cursor = %d, want CursorShapePointer", name, got)
-		}
-	}
-	GetInputState().MousePoint = Vec2{-50, -50}
-}

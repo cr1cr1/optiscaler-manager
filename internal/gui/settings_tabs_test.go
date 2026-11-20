@@ -31,6 +31,7 @@ func TestGUISettingsTabSwitchViaKeyboard(t *testing.T) {
 
 	headlessFrames(t, 1100, 700)
 	keyFrame(KeyCodeNone, 0, m.rootView) // open frame: trap auto-focuses the General tab
+	keyFrame(KeyCodeNone, 0, m.rootView) // settle (shirei v0.9.1: focus lands a frame later)
 	keyFrame(KeyTab, 0, m.rootView)      // Optiscaler tab
 	keyFrame(KeyEnter, 0, m.rootView)    // switch
 	keyFrame(KeyCodeNone, 0, m.rootView) // settle
@@ -59,6 +60,7 @@ func TestGUISettingsTabArrowKeys(t *testing.T) {
 
 	headlessFrames(t, 1100, 700)
 	keyFrame(KeyCodeNone, 0, m.rootView) // General tab focused
+	keyFrame(KeyCodeNone, 0, m.rootView) // settle (shirei v0.9.1: focus lands a frame later)
 	keyFrame(KeyRight, 0, m.rootView)    // switch right
 	keyFrame(KeyCodeNone, 0, m.rootView) // settle
 	if m.settingsTab != settingsTabOptiscaler {
@@ -81,6 +83,7 @@ func TestGUISettingsGeneralTabHidesOptiscalerFields(t *testing.T) {
 
 	headlessFrames(t, 1100, 700)
 	keyFrame(KeyCodeNone, 0, m.rootView) // open frame: General tab focused
+	keyFrame(KeyCodeNone, 0, m.rootView) // settle (shirei v0.9.1: focus lands a frame later)
 	keyFrame(KeyTab, 0, m.rootView)      // Optiscaler tab
 	keyFrame(KeyTab, 0, m.rootView)      // online-lookups toggle (no version field in between)
 	keyFrame(KeyEnter, 0, m.rootView)    // arm the flip
@@ -127,6 +130,7 @@ func TestGUISettingsTabSwitchViaMouse(t *testing.T) {
 
 	headlessFrames(t, 1100, 700)
 	keyFrame(KeyCodeNone, 0, m.rootView) // build + register tab rects/ids
+	keyFrame(KeyCodeNone, 0, m.rootView) // settle (shirei v0.9.1: focus lands a frame later)
 	r := m.settingsTabRects[settingsTabOptiscaler]
 	if r.Size[0] == 0 {
 		t.Fatal("Optiscaler tab rect not registered")

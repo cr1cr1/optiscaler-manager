@@ -70,7 +70,6 @@ type model struct {
 	logSearchPrevBuf      string                      // buffer seen last frame; a change re-arms the debounce (issue 055)
 	logSearchPending      bool                        // debounce armed: promotion due once the pause elapses (issue 055)
 	logSearchDirtyAt      time.Time                   // last buffer change (issue 055); tests backdate it to expire the pause
-	logPrefixRuns         []int                       // rune length of each ring line's "Title › " prefix, 0 when gameless (issue 057); lockstep with logRing (the ring cap exceeds the session cap, so no silent eviction)
 	toastRects            []Rect                      // screen rects of rendered toast cards, rebuilt each frame (bottom-clip test seam, issue 058)
 	versionBuf            string
 	templateBuf           string

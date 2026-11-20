@@ -327,8 +327,9 @@ func TestLogSearchNextFlushesDebounce(t *testing.T) {
 	}
 }
 
-// Issue 057: game-scoped entries render as "Title › line" with the
-// prefix painted in logGamePrefix; global lines render unprefixed.
+// Issue 057: game-scoped entries render as "Title › line"; global lines
+// render unprefixed. (The prefix's distinct color was a vendor patch,
+// dropped in the shirei v0.9.1 upgrade.)
 
 func TestLogEntriesRenderTitlePrefix(t *testing.T) {
 	m := newModel(Config{})
@@ -341,17 +342,6 @@ func TestLogEntriesRenderTitlePrefix(t *testing.T) {
 	}
 	if got := m.logRing.Line(1); got != "Ready" {
 		t.Fatalf("global line = %q, want unprefixed", got)
-	}
-	spans := m.logLineExtraSpans(0)
-	prefixRunes := len([]rune("Cyberpunk 2077 › "))
-	if len(spans) != 1 || spans[0].From != 0 || spans[0].To != prefixRunes {
-		t.Fatalf("prefix span = %+v, want [0,%d)", spans, prefixRunes)
-	}
-	if spans[0].Style.TextColor != logGamePrefix {
-		t.Errorf("prefix color = %v, want logGamePrefix %v", spans[0].Style.TextColor, logGamePrefix)
-	}
-	if spans := m.logLineExtraSpans(1); len(spans) != 0 {
-		t.Errorf("global line has spans: %+v", spans)
 	}
 }
 
@@ -410,27 +400,5 @@ func TestFitStatusLineEllipsizes(t *testing.T) {
 	}
 	if got := fitStatusLine(long, 0); got != long {
 		t.Error("an unknown width budget must leave the text alone (first frame)")
-	}
-}
-
-// Issue 072: one unbreakable token longer than the wrap budget (URLs,
-// hashes, spaceless paths) must wrap at glyph boundaries instead of
-// overflowing — lineBreakShapedSegments used to break only BETWEEN
-// segments, so a single over-budget segment stayed one line at any width.
-func TestShapeTextMaxBreaksOverlongToken(t *testing.T) {
-	headlessFrames(t, 1100, 700)
-	WaitForSystemFontScan()
-	if len(AllFontFaces()) <= 2 {
-		t.Skip("system fonts unavailable; shaping has no metrics")
-	}
-	tok := strings.Repeat("x", 600)
-	sh := ShapeTextMax(tok, logTextStyle(), 1000)
-	if len(sh.Lines) < 2 {
-		t.Fatalf("overlong token did not wrap: %d line(s), width %v", len(sh.Lines), sh.Lines[0].Width)
-	}
-	for i, l := range sh.Lines {
-		if l.Width > 1000+1 {
-			t.Errorf("wrapped line %d width %v exceeds the 1000px budget", i, l.Width)
-		}
 	}
 }

@@ -32,6 +32,15 @@ func headlessFrames(t *testing.T, w, h int) {
 	GetHost().HeadlessRender = true
 	t.Cleanup(func() { GetHost().HeadlessRender = false })
 	ResetInputSession()
+	// shirei v0.9.1's ResetInputSession keeps the identity tree (the
+	// dropped v0.16 vendor patch reset it), so Use-hook state and
+	// FirstRender would leak in from the previous test. Identity nodes
+	// unclaimed for a few frames are pruned by the sweep; run empty
+	// frames to drop the old tree, then reset input again.
+	for range 16 {
+		RunFrameFn(func() {})
+	}
+	ResetInputSession()
 }
 
 // keyFrame runs one frame with the given key press injected.
@@ -922,43 +931,5 @@ func TestEditCaretXTracksCursor(t *testing.T) {
 	want := st.textRect.Origin[0] + textWidth("he")
 	if d := st.caretX - want; d < -1 || d > 1 {
 		t.Errorf("caret x = %v, want %v (text origin + advance of 'he')", st.caretX, want)
-	}
-}
-
-// Issue 072: a virtual list's item width must never exceed its on-screen
-// box. An intrinsically wide sibling anywhere in the column (an unbounded
-// long label) inflates the resolvedSize feedback while the on-screen rect
-// stays clamped — the list must shape items at the VISIBLE width or every
-// list silently stops wrapping/measuring correctly.
-func TestVirtualListWidthClampedToVisibleBox(t *testing.T) {
-	headlessFrames(t, 1000, 600)
-	var itemW float32
-	view := func() {
-		Container(Attrs(Viewport, Row), func() {
-			Container(Attrs(FixWidth(72), Expand), func() {})
-			Container(Attrs(Grow(1), Expand), func() {
-				// The poison: an unbounded 3000px-wide sibling (a long
-				// status line stands in here — text measures zero headless).
-				Container(Attrs(Expand, Row), func() {
-					Element(Attrs(FixSize(3000, 12)))
-				})
-				VirtualListViewExt("zz-list", VirtualListAttrs{
-					ItemCount:  3,
-					ItemKey:    func(i int) any { return i },
-					ItemHeight: func(i int, w float32) float32 { return 20 },
-					ItemView:   func(i int, w float32) { itemW = w },
-				})
-			})
-		})
-	}
-	for i := 0; i < 8; i++ {
-		keyFrame(KeyCodeNone, 0, view)
-	}
-	const visible = 1000 - 72
-	if itemW > visible {
-		t.Errorf("virtual list item width %v exceeds the visible column %v — poisoned resolvedSize feedback", itemW, visible)
-	}
-	if itemW < 100 {
-		t.Errorf("virtual list never resolved a sane width: %v", itemW)
 	}
 }

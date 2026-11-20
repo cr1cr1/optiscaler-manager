@@ -565,7 +565,12 @@ func (m *model) gameCard(e ui.GameRow, idx int) {
 // per path (coverOK) so the render path does no I/O after the first frame.
 func (m *model) coverArt(e ui.GameRow, w, h float32) {
 	if e.CoverPath != "" && !isPlaceholderCover(e.CoverPath) && m.coverOK(e.CoverPath) {
-		ImageFill(e.CoverPath, Vec2{w, h})
+		// Upstream ImageViewAt fills the fixed cover box (the stretch-to-
+		// fill ImageFill was a vendor patch, dropped in the shirei v0.9.1
+		// upgrade — see docs/vendor-patches.md).
+		if LoadImage(e.CoverPath) != nil {
+			ImageViewAt(GetImageId(e.CoverPath), Vec2{w, h})
+		}
 		return
 	}
 	coverPlaceholder(e.Title, w, h)

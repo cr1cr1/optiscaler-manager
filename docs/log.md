@@ -5060,3 +5060,18 @@ directory silently disagreed.
   pre-081 by construction (presence-empty path keeps the old values).
 - Docs: issue 082, scope bullet reworded to the presence rule.
 - Commit: dceb308.
+
+## 2026-11-21 — Issue 084: build fixed after the shirei v0.9.1 upgrade, no vendor patches
+
+- The dependency upgrade (shirei v0.8.0 → v0.9.1) regenerated `vendor/`
+  and dropped all local shirei patches; per the user's instruction none
+  were reapplied. `vendor/` is byte-identical to the pristine module.
+- `internal/gui` migrated to the upstream API: `PointerHand`/`TextEntry`
+  removed (no upstream cursor-shape API), cover art via `ImageViewAt`,
+  log panel via `LogViewExt` (search scroll-to-match stays; the hit
+  highlight and colored title prefix are gone).
+- Test isolation fixed at the app seam: `headlessFrames` sweeps the
+  identity tree with empty frames (replaces the dropped v0.16 reset).
+- `go vet ./...`, `go test ./...` (36 packages), and a Windows
+  cross-compile all pass. Details: `docs/issues/084-*.md`,
+  `docs/vendor-patches.md`.

@@ -70,7 +70,7 @@ func (m *model) sidebarItem(icon IconGlyph, label string, active bool, action fu
 	if active {
 		fg = accentHov
 	}
-	Container(Attrs(PointerHand, Center, Expand, Gap(2), Pad2(sp4, 2), Corners(radiusS)), func() {
+	Container(Attrs(Center, Expand, Gap(2), Pad2(sp4, 2), Corners(radiusS)), func() {
 		m.sidebarRects = append(m.sidebarRects, GetScreenRectOf(CurrentId()))
 		if !active && IsHovered() {
 			ModAttrs(BackgroundVec(bgRaised))
@@ -186,7 +186,7 @@ func (m *model) settingsTabBar() {
 // arrow handlers are muted while the modal is open).
 func (m *model) settingsTabButton(tab settingsTab, label string) {
 	active := m.settingsTab == tab
-	Container(Attrs(Focusable, PointerHand, Center, Pad2(sp4, sp12), Corners(radiusS)), func() {
+	Container(Attrs(Focusable, Center, Pad2(sp4, sp12), Corners(radiusS)), func() {
 		FocusOnClick()
 		if m.settingsTabIDs == nil {
 			m.settingsTabIDs = map[settingsTab]ContainerId{}
@@ -304,7 +304,7 @@ func (m *model) umuPrefixPicker() {
 	if st.open {
 		navRows = len(ui.UmuPickerRows("Auto (detected)", m.umuPrefixBuf, m.umuPrefixes))
 	}
-	Container(Attrs(Focusable, PointerHand, Row, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(radiusS), BackgroundVec(bgCard), MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH})), func() {
+	Container(Attrs(Focusable, Row, CrossMid, Gap(sp8), Pad2(sp4, sp8), Corners(radiusS), BackgroundVec(bgCard), MinSize(260, fieldH), MaxSizeVec(Vec2{460, fieldH})), func() {
 		FocusOnClick()
 		st.btnID = CurrentId()
 		m.umuPrefixTriggerRect = GetScreenRectOf(CurrentId())
@@ -443,7 +443,7 @@ func (m *model) prefixDropdown(e *ui.GameRow) {
 	if pin != "" {
 		trigger = "Prefix: " + filepath.Base(pin)
 	}
-	Container(Attrs(Focusable, PointerHand, Row, CrossMid, Gap(sp4), Pad2(3, 6), Corners(radiusS), BackgroundVec(bgCard)), func() {
+	Container(Attrs(Focusable, Row, CrossMid, Gap(sp4), Pad2(3, 6), Corners(radiusS), BackgroundVec(bgCard)), func() {
 		FocusOnClick()
 		st.btnID = CurrentId()
 		m.prefixDDTriggerRect = GetScreenRectOf(CurrentId())
@@ -610,7 +610,7 @@ func (m *model) optionsPicker(id, trigger, pin, dir string, optionsFn func() []p
 		*items = nil
 	}
 	enterPick := false
-	Container(Attrs(Focusable, PointerHand, Row, CrossMid, Gap(sp4), Pad2(3, 6), Corners(radiusS), BackgroundVec(bgCard)), func() {
+	Container(Attrs(Focusable, Row, CrossMid, Gap(sp4), Pad2(3, 6), Corners(radiusS), BackgroundVec(bgCard)), func() {
 		FocusOnClick()
 		st.btnID = CurrentId()
 		*triggerRect = GetScreenRectOf(CurrentId())

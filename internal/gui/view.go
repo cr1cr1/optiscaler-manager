@@ -768,7 +768,7 @@ func (m *model) detailPanel() {
 // wrapper's container id, which the continuation seam needs.
 func (m *model) panelHeaderButton(icon IconGlyph, label string) bool {
 	activated := false
-	Container(Attrs(Focusable, PointerHand, Corners(6)), func() {
+	Container(Attrs(Focusable, Corners(6)), func() {
 		FocusOnClick()
 		if m.panelFirstID == nil {
 			m.panelFirstID = CurrentId()

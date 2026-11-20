@@ -4,6 +4,17 @@ type: reference
 
 # Vendor patches
 
+**Status (2026-11-21, issue 084): no patches are carried.** The shirei
+v0.9.1 upgrade regenerated `vendor/`, and per the user's instruction the
+patches below were NOT reapplied — `vendor/` is byte-identical to the
+pristine module. The app was fixed against the upstream API instead:
+`PointerHand`/`TextEntry` and the hand cursor are gone (upstream has no
+cursor-shape API), cover art uses upstream `ImageViewAt`, and the log
+panel uses upstream `LogViewExt` (the search-hit highlight and the colored
+game-title prefix are gone; the prefix text and scroll-to-match stay).
+Wayland key repeat (v0.10) and Shift+Tab (v0.9) are implemented upstream
+now. The patch descriptions below are kept for the record only.
+
 Local patches applied on top of vendored dependencies (`vendor/`). Every
 patch carries a marker comment so it can be found and reapplied, and is
 guarded by a test so a silent revert (e.g. after `go mod vendor`) fails CI.
