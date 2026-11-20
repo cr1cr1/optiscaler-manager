@@ -39,7 +39,8 @@ type FrameFn func()
 // several frames.
 func RequestNextFrame() {
 	traceRequestNextFrame()
-	ui.Host.NextFrame.Store(true)
+	activeUI.Load().Host.NextFrame.Store(true)
+	windowUIs.Range(func(key, _ any) bool { key.(*UI).RequestFrame(); return true })
 }
 
 func frameHasTransientInput() bool {
@@ -84,10 +85,18 @@ const (
 
 type MouseAction uint8
 
+// MouseClick and MouseRelease are independent bits. A frame may set both
+// when a press and a release are sampled together. Readers use Has; a
+// burst still collapses to these two bits rather than a queue of clicks.
 const (
-	MouseClick MouseAction = 1 + iota
+	MouseClick MouseAction = 1 << iota
 	MouseRelease
 )
+
+// Has reports whether flag is set on a.
+func (a MouseAction) Has(flag MouseAction) bool {
+	return a&flag != 0
+}
 
 type Modifiers uint32
 
@@ -207,9 +216,18 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 	mutex.Lock()
 	defer mutex.Unlock()
 
+	return RunFrameFnLocked(frameFn)
+}
+
+// RunFrameFnLocked produces a frame for the active UI. The backend must hold
+// the frame lock (for example through EnterUI). It must not nest frame builds.
+func RunFrameFnLocked(frameFn FrameFn) FrameOutputData {
 	ui.FrameTimings = FrameTimings{ProduceStart: time.Now()}
 	ui.frameInProgress = true
 	ui.runFirstFrame = ui.FrameNumber + 1
+	for _, fn := range frameStarts {
+		fn()
+	}
 
 	// Build the frame; if the build queried geometry that had no answer yet
 	// (see geometryQueryMissed), or hit previous-frame sizes whose layout
@@ -256,7 +274,7 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 
 		// click-streak detection (double clicks and beyond): a click close in
 		// time and space to the previous one continues the streak
-		if ui.Host.FrameInput.Mouse == MouseClick {
+		if ui.Host.FrameInput.Mouse.Has(MouseClick) {
 			d := Vec2Sub(ui.Host.Input.MousePoint, ui.lastClickPoint)
 			near := d[0]*d[0]+d[1]*d[1] <= DoubleClickSlop*DoubleClickSlop
 			if near && ui.frameStart.Sub(ui.lastClickTime) <= DoubleClickInterval {
@@ -278,16 +296,6 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 		// detect hovers based on last frame artifacts
 		ui.directHovered = nil
 		g.ResetSlice(&ui.hoverList)
-		// PATCHED by optiscaler-manager (v0.17): pick the mouse cursor shape
-		// from the hover chain, innermost first: an explicit PointerHand
-		// asks for the pointing hand; a TextEntry keeps the default arrow
-		// (the caret already signals editability, and it wins over a
-		// PointerHand ancestor); everything else — including focusable
-		// containers, whose whole surface is not a click affordance (grid
-		// cards, tab stops) — stays the default arrow. The backends apply
-		// the shape after the frame.
-		MouseCursorShape = CursorShapeDefault
-		cursorDecided := false
 		for _, hoverable := range slices.Backward(ui.hoverables) {
 			if RectContainsPoint(hoverable.Rect, ui.Host.Input.MousePoint) {
 				c := hoverable.Container
@@ -295,14 +303,6 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 				for c != nil {
 					if !c.ClickThrough {
 						g.Append(&ui.hoverList, c.node)
-					}
-					if !cursorDecided {
-						if c.TextEntry {
-							cursorDecided = true
-						} else if c.PointerHand {
-							MouseCursorShape = CursorShapePointer
-							cursorDecided = true
-						}
 					}
 					c = c.parent
 				}
@@ -802,13 +802,8 @@ type AttrSet struct {
 	// inside a ClickThrough overlay.
 	clickThroughSet bool
 	Focusable       bool // items that can receive focus via clicking or tab-cycling
-	// PATCHED by optiscaler-manager (v0.17): mouse cursor intent. TextEntry
-	// keeps the default arrow over a text-editing container; PointerHand
-	// requests the pointing hand over a click affordance — the ONLY cursor
-	// hand trigger (focusability does not imply one).
-	TextEntry   bool
-	PointerHand bool
-	FocusTrap   bool // this container wants to be a focus trap (only for modals)
+	AcceptTab       bool // plain Tab belongs to the focused control; Shift+Tab still cycles
+	FocusTrap       bool // this container wants to be a focus trap (only for modals)
 	// TabAfter, when set, orders this container's focusable subtree immediately
 	// after that id in the tab ring. Source-order collect still runs; a post-pass
 	// splices the run. Unset (nil) leaves the subtree where it was collected.
@@ -1149,8 +1144,7 @@ func ScrollOnInput() {
 		// Wheel input scrolls what's on screen, so clamping against the
 		// previous frame eagerly is right here — unlike SetScrollOffset,
 		// which records a target for this frame's layout to reconcile.
-		// PATCHED by optiscaler-manager (v0.8): scroll speedup (x2/x3) — reapply after `go mod vendor` (see docs/vendor-patches.md)
-		desired := Vec2Add(ui.current.ScrollOffset, Vec2{ui.Host.FrameInput.Scroll[0] * 2, ui.Host.FrameInput.Scroll[1] * 3})
+		desired := Vec2Add(ui.current.ScrollOffset, ui.Host.FrameInput.Scroll)
 
 		var paddingSize Vec2
 		paddingSize[0] = ui.current.Padding[PAD_LEFT] + ui.current.Padding[PAD_RIGHT]
@@ -1225,14 +1219,15 @@ func SetScrollOffset(offset Vec2) {
 // released while still hovered — the standard button behavior.
 func PressAction() bool {
 	var action bool
+	mouse := ui.Host.FrameInput.Mouse
 	if IsHovered() {
-		if ui.Host.FrameInput.Mouse == MouseClick {
+		if mouse.Has(MouseClick) {
 			// action = true
 			setActive()
 		}
 	}
 	if IsActive() {
-		if ui.Host.FrameInput.Mouse == MouseRelease {
+		if mouse.Has(MouseRelease) {
 			unsetActive()
 			action = IsHovered() // if released while over the target!
 		}
@@ -1246,7 +1241,7 @@ func PressAction() bool {
 // FocusOnClick takes focus on a pointer press over the current container and
 // clears its ordinary focus indicator. A press elsewhere schedules a blur.
 func FocusOnClick() {
-	if ui.Host.FrameInput.Mouse == MouseClick {
+	if ui.Host.FrameInput.Mouse.Has(MouseClick) {
 		if IsHovered() {
 			focusImmediate()
 		} else if ui.focused == ui.current.node && !IsHovered() {
@@ -1462,13 +1457,7 @@ func resolveLayout(container *_Container, clipRect Rect) {
 				if child.Animations != 0 {
 					prev, ok := child.node.prevRenderData()
 					if ok && child.node.bornFrame < ui.runFirstFrame {
-						// PATCHED by optiscaler-manager (v0.13): disable ALL layout animation. rate=1
-						// snaps every container to its target immediately — no smooth
-						// transitions on resize, panel open/close, view switch, or hover.
-						// The user explicitly requested no animations; the 5-7x reduction in
-						// repaint frames during any layout change is a bonus. Reapply after
-						// `go mod vendor` (see docs/vendor-patches.md).
-						rate := float32(1)
+						var rate = min(1, ui.timeDelta*20)
 						var distCutoff float32 = 1
 						var clrCutoff float32 = 0.01
 						af := child.Animations
@@ -2104,6 +2093,7 @@ func stealFocusOnMount() {
 // paint order) and fills ui.focusables. InFront/Behind therefore do not
 // scramble tab order relative to reading order.
 func collectFocusables(container *_Container) {
+	container.node.acceptTab = container.AcceptTab
 	if container.Focusable {
 		if ui.frameFocusTrap == nil ||
 			container.node.focusTrapOwner == ui.frameFocusTrap {
@@ -2275,6 +2265,9 @@ func _cycleFocusOnTab(currentNode *identNode) {
 	}
 
 	if ui.Host.FrameInput.Key == KeyTab {
+		if currentNode != nil && currentNode.acceptTab && ui.Host.Input.Modifiers == 0 {
+			return
+		}
 		var dir = 1
 		if ui.Host.Input.Modifiers&ModShift != 0 {
 			dir = -1
@@ -2362,22 +2355,6 @@ func isChildNode(target *identNode) bool {
 func HasFocusWithin() bool {
 	return isChildNode(ui.focused)
 }
-
-// PATCHED by optiscaler-manager (v0.17): mouse cursor shape selection.
-// Values mirror wp_cursor_shape_device_v1.shape (default=1, pointer=4 — the
-// pointing hand); the wayland backend maps them straight through. The X11
-// and Win32 backends keep their static cursors for now (documented in
-// docs/vendor-patches.md).
-const (
-	CursorShapeDefault = 1 // arrow
-	CursorShapePointer = 4 // pointing hand
-)
-
-// MouseCursorShape is the cursor shape the last finished frame wants under
-// the pointer, picked by the hover-chain rule in RunFrameFn. Backends read
-// it after every frame; it resets to the default whenever nothing clickable
-// is hovered.
-var MouseCursorShape = CursorShapeDefault
 
 // IdIsHovered reports whether the pointer is over the container with the given
 // handle (anywhere in its hover stack, not necessarily on top).
@@ -2474,7 +2451,7 @@ func TouchById(id uint32) (TouchInfo, bool) {
 // IsClicked reports whether the current container was clicked this frame — it is
 // hovered and the mouse went down.
 func IsClicked() bool {
-	return IsHovered() && ui.Host.FrameInput.Mouse == MouseClick
+	return IsHovered() && ui.Host.FrameInput.Mouse.Has(MouseClick)
 }
 
 // IsDoubleClicked reports whether this frame's click is the second (or
@@ -2483,13 +2460,13 @@ func IsClicked() bool {
 // escalate pattern (click selects, double-click acts) needs no special
 // handling for that.
 func IsDoubleClicked() bool {
-	return IsHovered() && ui.Host.FrameInput.Mouse == MouseClick && ui.Host.FrameInput.ClickCount >= 2
+	return IsHovered() && ui.Host.FrameInput.Mouse.Has(MouseClick) && ui.Host.FrameInput.ClickCount >= 2
 }
 
 // IdIsClicked reports whether the container with the given handle was clicked
 // this frame.
 func IdIsClicked(id ContainerId) bool {
-	return IdIsHovered(id) && ui.Host.FrameInput.Mouse == MouseClick
+	return IdIsHovered(id) && ui.Host.FrameInput.Mouse.Has(MouseClick)
 }
 
 func setActive() {

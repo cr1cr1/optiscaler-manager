@@ -10,6 +10,7 @@ import (
 	"time"
 	"unsafe"
 
+	"go.hasen.dev/shirei"
 	"golang.org/x/sys/unix"
 )
 
@@ -20,7 +21,7 @@ var (
 )
 
 // SetModifiers is the compositor's advertised dmabuf modifiers for the
-// window format (XRGB8888), including DRM_FORMAT_MOD_INVALID (implicit).
+// window format, including DRM_FORMAT_MOD_INVALID (implicit).
 func SetModifiers(mods []uint64) {
 	allowedMods = append([]uint64(nil), mods...)
 }
@@ -131,7 +132,11 @@ func gpuBindDest(dest unsafe.Pointer, w, h int) error {
 	glBindFramebuffer(glFramebuffer, t.fbo)
 	glViewport(0, 0, int32(w), int32(h))
 	glDisable(glScissorTest)
-	glClearColor(1, 1, 1, 1)
+	if shirei.GetHost().TransparentBackground {
+		glClearColor(0, 0, 0, 0)
+	} else {
+		glClearColor(1, 1, 1, 1)
+	}
 	glClear(glColorBufferBit)
 	glEnable(glScissorTest)
 	glUseProgram(glProg)
@@ -189,41 +194,21 @@ func AllocTarget(w, h int) (*Target, error) {
 	}
 	eglMakeCurrent(eglDpy, 0, 0, eglCtx)
 
-	// PATCHED by optiscaler-manager (v0.19): try every BO allocation
-	// strategy until one imports as a COMPLETE framebuffer. NVIDIA's GBM
-	// happily allocates a LINEAR bo (preferred first: scanout-safe) that
-	// glCheckFramebufferStatus then rejects — a single-shot attempt turned
-	// that into a permanent software fallback ("framebuffer incomplete").
-	// Reapply after `go mod vendor` (see docs/vendor-patches.md).
-	var lastErr error
-	for _, mk := range glesBOStrategies(w, h) {
-		bo := mk()
-		if bo == 0 {
-			continue
-		}
-		t, err := importBO(w, h, bo)
-		if err == nil {
-			return t, nil
-		}
-		lastErr = err
+	format := uint32(drmFormatXRGB8888)
+	if shirei.GetHost().TransparentBackground {
+		format = drmFormatARGB8888
 	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("gbm_bo_create %dx%d failed", w, h)
+	bo := glesCreateBO(w, h, format)
+	if bo == 0 {
+		return nil, fmt.Errorf("gbm_bo_create %dx%d failed", w, h)
 	}
-	return nil, lastErr
-}
-
-// importBO wraps one gbm buffer object as an EGL image + texture + FBO.
-// Any failure destroys every partial resource including bo. (Patch v0.19:
-// extracted from AllocTarget so the caller can retry across modifiers.)
-func importBO(w, h int, bo uintptr) (*Target, error) {
 	nplane := 1
 	if havePlaneCount && haveFdForPlane {
 		if n := int(gbmBoGetPlaneCount(bo)); n >= 1 && n <= 4 {
 			nplane = n
 		}
 	}
-	t := &Target{w: w, h: h, nplane: nplane, format: drmFormatXRGB8888, bo: bo}
+	t := &Target{w: w, h: h, nplane: nplane, format: format, bo: bo}
 	for i := 0; i < nplane; i++ {
 		t.pfd[i] = -1
 	}
@@ -267,7 +252,7 @@ func importBO(w, h int, bo uintptr) (*Target, error) {
 		attribs = []int32{
 			eglWidth, int32(w),
 			eglHeight, int32(h),
-			eglLinuxDRMFourccEXT, int32(drmFormatXRGB8888),
+			eglLinuxDRMFourccEXT, int32(t.format),
 			eglDMABufPlane0FDEXT, int32(t.pfd[0]),
 			eglDMABufPlane0OffsetEXT, int32(t.poff[0]),
 			eglDMABufPlane0PitchEXT, int32(t.pstride[0]),
@@ -307,47 +292,50 @@ func importBO(w, h int, bo uintptr) (*Target, error) {
 	return t, nil
 }
 
-// glesBOStrategies lists the BO allocation attempts in preference order
-// (patch v0.19: extracted from glesCreateBO so AllocTarget can retry the
-// import+FBO stage per strategy). LINEAR first when advertised: window
-// present must send a pair the compositor listed (linux-dmabuf v4+ posts
-// invalid_format otherwise). A full modifier list can make GBM return a
-// CCS/DCC variant that was not advertised.
-func glesBOStrategies(w, h int) []func() uintptr {
+func glesCreateBO(w, h int, format uint32) uintptr {
 	explicit, implicit := splitMods(allowedMods)
-	var strats []func() uintptr
+
+	// LINEAR first when advertised: window present must send a pair the
+	// compositor listed (linux-dmabuf v4+ posts invalid_format otherwise).
+	// A full modifier list can make GBM return a CCS/DCC variant that was
+	// not advertised.
 	if hasMod(explicit, drmModLinear) {
-		strats = append(strats,
-			func() uintptr { return keepSendable(gbmCreateExplicit(w, h, []uint64{drmModLinear})) },
-			func() uintptr {
-				return keepSendable(gbmBoCreate(gbmDev, uint32(w), uint32(h), drmFormatXRGB8888, uint32(gbmBoUseRendering|gbmBoUseLinear)))
-			})
+		if bo := keepSendable(gbmCreateExplicit(w, h, format, []uint64{drmModLinear})); bo != 0 {
+			return bo
+		}
+		if bo := keepSendable(gbmBoCreate(gbmDev, uint32(w), uint32(h), format, uint32(gbmBoUseRendering|gbmBoUseLinear))); bo != 0 {
+			return bo
+		}
 	}
-	strats = append(strats, func() uintptr { return keepSendable(gbmCreateExplicit(w, h, explicit)) })
+	if bo := keepSendable(gbmCreateExplicit(w, h, format, explicit)); bo != 0 {
+		return bo
+	}
 	for _, m := range explicit {
 		if m == drmModLinear {
 			continue
 		}
-		strats = append(strats, func() uintptr { return keepSendable(gbmCreateExplicit(w, h, []uint64{m})) })
+		if bo := keepSendable(gbmCreateExplicit(w, h, format, []uint64{m})); bo != 0 {
+			return bo
+		}
 	}
 	if implicit {
-		strats = append(strats, func() uintptr {
-			return keepSendable(gbmBoCreate(gbmDev, uint32(w), uint32(h), drmFormatXRGB8888, uint32(gbmBoUseRendering)))
-		})
+		if bo := keepSendable(gbmBoCreate(gbmDev, uint32(w), uint32(h), format, uint32(gbmBoUseRendering))); bo != 0 {
+			return bo
+		}
 	}
-	return strats
+	return 0
 }
 
-func gbmCreateExplicit(w, h int, mods []uint64) uintptr {
+func gbmCreateExplicit(w, h int, format uint32, mods []uint64) uintptr {
 	if len(mods) == 0 || !(haveCreateWithModifiers2 || haveCreateWithModifiers) {
 		return 0
 	}
 	var bo uintptr
 	if haveCreateWithModifiers2 {
-		bo = gbmBoCreateWithModifiers2(gbmDev, uint32(w), uint32(h), drmFormatXRGB8888, &mods[0], uint32(len(mods)), uint32(gbmBoUseRendering))
+		bo = gbmBoCreateWithModifiers2(gbmDev, uint32(w), uint32(h), format, &mods[0], uint32(len(mods)), uint32(gbmBoUseRendering))
 	}
 	if bo == 0 && haveCreateWithModifiers {
-		bo = gbmBoCreateWithModifiers(gbmDev, uint32(w), uint32(h), drmFormatXRGB8888, &mods[0], uint32(len(mods)))
+		bo = gbmBoCreateWithModifiers(gbmDev, uint32(w), uint32(h), format, &mods[0], uint32(len(mods)))
 	}
 	runtime.KeepAlive(mods)
 	return bo
@@ -420,7 +408,7 @@ func eglImageAttribs(w, h int, t *Target) []int32 {
 	a = append(a,
 		eglWidth, int32(w),
 		eglHeight, int32(h),
-		eglLinuxDRMFourccEXT, int32(drmFormatXRGB8888),
+		eglLinuxDRMFourccEXT, int32(t.format),
 	)
 	for i := 0; i < t.nplane; i++ {
 		base := int32(eglDMABufPlane0FDEXT + i*3)

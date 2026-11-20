@@ -1,8 +1,6 @@
 package widgets
 
 import (
-	"strings"
-
 	. "go.hasen.dev/shirei"
 )
 
@@ -55,59 +53,7 @@ func LogViewStyled(ring *TextRing, attrs TextStyleAttrs, listKey any, probe *Log
 	logView(ring, attrs, listKey, probe, style, scrollBarWithStyle(style.ScrollBar))
 }
 
-// PATCHED by optiscaler-manager (v0.22): search-hit highlighting.
-// LogViewSearch is LogViewExt plus a query whose case-insensitive matches
-// are painted with a hitColor Background span. Jump-to-line stays with the
-// caller (VirtualListScrollIntoView(listKey, ring.LineID(idx))).
-func LogViewSearch(ring *TextRing, attrs TextStyleAttrs, listKey any, probe *LogViewProbe, query string, hitColor Vec4) {
-	logViewSearch(ring, attrs, listKey, probe, CurrentColorScheme.Log, ScrollBars, query, hitColor, nil)
-}
-
-// PATCHED by optiscaler-manager (v0.23): per-line app-supplied spans.
-// LogViewSearchExt is LogViewSearch plus extraSpans, called per visible
-// line to append app-computed StyleSpans (e.g. a colored game-title
-// prefix); nil keeps search-only behavior. Spans must be built FROM the
-// line's base style: overlayStyle replaces fields that differ, so a
-// zero FontSize would clobber it.
-func LogViewSearchExt(ring *TextRing, attrs TextStyleAttrs, listKey any, probe *LogViewProbe, query string, hitColor Vec4, extraSpans func(idx int) []StyleSpan) {
-	logViewSearch(ring, attrs, listKey, probe, CurrentColorScheme.Log, ScrollBars, query, hitColor, extraSpans)
-}
-
-// PATCHED by optiscaler-manager (v0.22): one Background-highlighted
-// StyleSpan per case-insensitive occurrence of query in runes.
-func logSearchSpans(runes []rune, query string, base TextStyleAttrs, hitColor Vec4) []StyleSpan {
-	qr := []rune(strings.ToLower(query))
-	if len(qr) == 0 {
-		return nil
-	}
-	lr := []rune(strings.ToLower(string(runes)))
-	var spans []StyleSpan
-	for i := 0; i+len(qr) <= len(lr); {
-		match := true
-		for j := range qr {
-			if lr[i+j] != qr[j] {
-				match = false
-				break
-			}
-		}
-		if match {
-			st := base
-			st.Background = hitColor
-			spans = append(spans, StyleSpan{From: i, To: i + len(qr), Style: st})
-			i += len(qr)
-		} else {
-			i++
-		}
-	}
-	return spans
-}
-
 func logView(ring *TextRing, attrs TextStyleAttrs, listKey any, probe *LogViewProbe, style LogStyle, scrollBar ScrollBarFn) {
-	// PATCHED by optiscaler-manager (v0.22): default is no search highlight.
-	logViewSearch(ring, attrs, listKey, probe, style, scrollBar, "", Vec4{}, nil)
-}
-
-func logViewSearch(ring *TextRing, attrs TextStyleAttrs, listKey any, probe *LogViewProbe, style LogStyle, scrollBar ScrollBarFn, query string, hitColor Vec4, extraSpans func(idx int) []StyleSpan) {
 	if ring == nil {
 		ring = &TextRing{}
 	}
@@ -235,19 +181,7 @@ func logViewSearch(ring *TextRing, attrs TextStyleAttrs, listKey any, probe *Log
 					}
 				}
 
-				// PATCHED by optiscaler-manager (v0.22): highlight every
-				// case-insensitive occurrence of the search query.
-				var spans []StyleSpan
-				if query != "" {
-					spans = logSearchSpans(shaped.Runes, query, attrs, hitColor)
-				}
-				// PATCHED by optiscaler-manager (v0.23): app-supplied per-line
-				// spans (colored game-title prefixes) compose with the search
-				// highlight.
-				if extraSpans != nil {
-					spans = append(spans, extraSpans(idx)...)
-				}
-				ShapedTextLayoutStyled(shaped, attrs, selFrom, selTo, style.Selection, spans...)
+				ShapedTextLayoutStyled(shaped, attrs, selFrom, selTo, style.Selection)
 			})
 		}
 

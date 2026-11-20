@@ -53,6 +53,10 @@ func touchImage(id ImageId) {
 		return
 	}
 	res.imageLastUsed[id] = ui.FrameNumber
+	if ui.imageUses == nil {
+		ui.imageUses = make(map[ImageId]int64)
+	}
+	ui.imageUses[id] = ui.FrameNumber
 }
 
 // putImage registers data under key, or replaces the pixels behind an existing
@@ -76,6 +80,7 @@ func putImage(key any, data *ImageData) ImageId {
 		res.imageKeyOf = append(res.imageKeyOf, key)
 		res.imageLastUsed = append(res.imageLastUsed, ui.FrameNumber)
 	}
+	touchImage(id)
 	res.imageKeys[key] = id
 	return id
 }
@@ -100,6 +105,7 @@ func freeImage(id ImageId) {
 	if id == 0 || int(id) >= len(res.imageIds) || res.imageIds[id] == nil {
 		return
 	}
+	windowUIs.Range(func(key, _ any) bool { delete(key.(*UI).imageUses, id); return true })
 	key := res.imageKeyOf[id]
 	if key != nil {
 		delete(res.imageKeys, key)
@@ -133,6 +139,17 @@ func maybeSweepImages() {
 			continue
 		}
 		if res.imageLastUsed[id] <= stale {
+			used := false
+			windowUIs.Range(func(key, _ any) bool {
+				u := key.(*UI)
+				if last, ok := u.imageUses[id]; ok && last > u.FrameNumber-contentCachePruneAfterFrames {
+					used = true
+				}
+				return !used
+			})
+			if used {
+				continue
+			}
 			freeImage(id)
 		}
 	}
@@ -243,22 +260,6 @@ func LoadImage(fpath string) *ImageData {
 
 	img := new(ImageData)
 	content := ReadFileContent(fpath)
-
-	// PATCHED by optiscaler-manager (v0.21): a missing/unreadable file
-	// must NOT be registered or file-cached. The visible caller touches
-	// the entry every frame, so a pixel-less registration is pinned
-	// forever and never re-decodes when the file appears at the same path
-	// (a cover re-fetched after a cache wipe — the card shows the filler
-	// until restart). Return a transient pixel-less image for this frame
-	// only; the next frame retries the cheap stat+read and decodes once
-	// the file lands. Present-but-undecodable files keep the cached
-	// behavior (no per-frame hammering); a nil content while a >64MB
-	// async read is in flight retries after the read caches, and the
-	// load-id guard there prevents duplicate reads. Reapply after
-	// `go mod vendor` (see docs/vendor-patches.md).
-	if len(content) == 0 {
-		return img
-	}
 
 	// read just the header
 	img.Config, _, _ = image.DecodeConfig(bytes.NewReader(content))
@@ -422,17 +423,4 @@ func RestrictedSize(size Vec2, maxSize Vec2) Vec2 {
 	}
 	scale := min(scaleX, scaleY)
 	return Vec2Mul(size, scale)
-}
-
-// ImageFill draws an image stretched to exactly fill the given size,
-// ignoring aspect ratio. PATCHED by optiscaler-manager (v0.14): for grid
-// cover thumbnails where a gap is worse than minor distortion. Reapply
-// after `go mod vendor` (see docs/vendor-patches.md).
-func ImageFill(fpath string, size Vec2) {
-	if LoadImage(fpath) == nil {
-		return
-	}
-	Container(AttrSet{MaxSize: size, MinSize: size, Clip: true}, func() {
-		ui.current.imageId = GetImageId(fpath)
-	})
 }

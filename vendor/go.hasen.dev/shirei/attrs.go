@@ -460,17 +460,9 @@ func Focusable(a *AttrSet) {
 	a.Focusable = true
 }
 
-// PATCHED by optiscaler-manager (v0.17): cursor intent attrs. TextEntry
-// marks a text-editing container (the default arrow stays); PointerHand
-// marks a click affordance. The hover-chain rule in RunFrameFn picks the
-// shape; see shirei.go.
-func TextEntry(a *AttrSet) {
-	a.TextEntry = true
-}
-
-func PointerHand(a *AttrSet) {
-	a.PointerHand = true
-}
+// AcceptTab delivers plain Tab to this focused container. Shift+Tab remains
+// available to leave it through the focus ring.
+func AcceptTab(a *AttrSet) { a.AcceptTab = true }
 
 func FocusTrap(a *AttrSet) {
 	a.FocusTrap = true
